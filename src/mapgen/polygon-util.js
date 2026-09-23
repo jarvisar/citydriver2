@@ -47,9 +47,9 @@ export function pointInRectangle(point, origin, dimensions) {
 
 // Drops repeated consecutive vertices, including a closing repeat of the first.
 export function dedupePolygon(polygon, minDistance = 1e-6) {
-  const out = [];
-  for (const p of polygon) if (!out.length || out[out.length - 1].distanceTo(p) > minDistance) out.push(p);
-  while (out.length > 1 && out[0].distanceTo(out[out.length - 1]) <= minDistance) out.pop();
+  const out = [], apart = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) > minDistance;
+  for (const p of polygon) if (!out.length || apart(out[out.length - 1], p)) out.push(p);
+  while (out.length > 1 && !apart(out[0], out[out.length - 1])) out.pop();
   return out;
 }
 

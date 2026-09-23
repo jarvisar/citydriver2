@@ -1,12 +1,14 @@
 import { navGraph } from './world/nav-graph.js';
 import { onRoadAt } from './world/city-route.js';
+import { junctionSpeed } from './city-junctions.js';
+export { cityGreen } from './city-junctions.js';
 
 // Cruise along whichever street the driver is on, in the direction they are
 // facing, turning at random junctions. Lane following is local to the nav
 // graph edge, so enabling cruise never aims across a block.
 export class CityAutodrive {
   constructor({ random = Math.random } = {}) { this.random = random; this.enabled = false; this.reset(); }
-  reset() { this.path = null; this.next = null; }
+  reset() { this.path = null; this.next = null; this.stopKey = null; this.stopWait = 0; this.stopReleased = false; }
   toggle() { this.enabled = !this.enabled; this.reset(); return this.enabled; }
   canStart(player) { return Boolean(onRoadAt(player.s, player.u)); }
   update(player, traffic, speedLimit = player.stats.topSpeed, dt = 1 / 60) {
@@ -24,7 +26,7 @@ export class CityAutodrive {
     const hit = nav.nearest(player.s, player.u, 40);
     if (hit && hit.edge === path.edge) path.along = path.direction > 0 ? hit.along : hit.edge.length - hit.along;
     else if (hit && this.next && hit.edge === this.next.edge) {
-      path.edge = this.next.edge; path.direction = this.next.direction; this.next = null;
+      path.edge = this.next.edge; path.direction = this.next.direction; this.next = null; this.stopKey = null; this.stopWait = 0; this.stopReleased = false;
       path.along = path.direction > 0 ? hit.along : hit.edge.length - hit.along;
     }
     const remaining = path.edge.length - path.along;
@@ -46,6 +48,7 @@ export class CityAutodrive {
     const along = ds / Math.max(.001, length), across = du / Math.max(.001, length);
     const cruiseSpeed = player.carId === 'formula' ? player.stats.topSpeed : path.edge.profile.speed * 1.15;
     let speed = Math.min(cruiseSpeed, speedLimit, player.stats.topSpeed, turnSpeed);
+    if (traffic.enabled) speed = Math.min(speed, junctionSpeed(this, traffic, nav, path.edge, path.direction, path.along, player.speed ?? 0, dt));
     for (const car of traffic.enabled ? traffic.vehicles : []) {
       const dx = car.u - player.u, dz = car.s - player.s, heading = Math.atan2(across, along);
       const ahead = dz * Math.cos(heading) + dx * Math.sin(heading);

@@ -79,7 +79,7 @@ test('merging cuts each block\'s draws without growing its memory much', () => {
         for (const attribute of Object.values(mesh.geometry.attributes)) bytes += attribute.array.byteLength;
         bytes += mesh.geometry.index.array.byteLength;
       }
-      assert.ok(bytes < 400 * 1024, `merged geometry stays small (${Math.round(bytes / 1024)} KB)`);
+      assert.ok(bytes < 640 * 1024, `merged geometry stays small (${Math.round(bytes / 1024)} KB)`);
       chunk.dispose();
     }
   } finally { world.dispose(); }

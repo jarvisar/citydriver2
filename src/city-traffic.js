@@ -4,6 +4,7 @@ import { navGraph } from './world/nav-graph.js';
 import { createTrafficModels, TRAFFIC_MODELS, TRAFFIC_COLORS } from './traffic-models.js';
 import { trafficContact } from './traffic.js';
 import { collisionImpulse, contactPoint } from './impact.js';
+import { junctionSpeed } from './city-junctions.js';
 const up = new THREE.Vector3(0, 1, 0);
 const SPAWN_CLEARANCE = 150, RECYCLE_BEHIND = 190, LOCAL_RADIUS = 380;
 // A junction is reserved for a few seconds by whichever car reaches it first;
@@ -29,7 +30,7 @@ export class CityTraffic {
   reset(route, s, journey = 'city', u = 0) {
     this.route = route; this.journey = journey; this.time = 0; this.lastS = s; this.lastU = u;
     this.travelS = 0; this.travelU = 0; this.lookAhead = 0;
-    this.reservations = new Map();
+    this.junctionReservations = new Map();
     for (const car of this.vehicles) this.spawn(car, s, u, true);
   }
   setEnabled(enabled, player) {
@@ -52,7 +53,7 @@ export class CityTraffic {
       if (distance < (initial ? 25 : SPAWN_CLEARANCE) || distance > LOCAL_RADIUS) continue;
       if (!initial && this.lookAhead && ds * this.travelS + du * this.travelU < 60) continue;
       if (this.vehicles.some(other => other !== car && Math.hypot(pose.s - other.s, pose.u - other.u) < 14)) continue;
-      Object.assign(car, { edge, direction, along, lane: edge.profile.lane, next: null, waiting: 0 });
+      Object.assign(car, { edge, direction, along, lane: edge.profile.lane, next: null, waiting: 0, stopKey: null, stopWait: 0, stopReleased: false });
       car.cruiseSpeed = edge.profile.speed * (.75 + r(4) * .25); car.speed = car.cruiseSpeed;
       this.pose(car); car.previousPosition.copy(car.position); car.previousQuaternion.copy(car.quaternion);
       return true;
@@ -75,20 +76,17 @@ export class CityTraffic {
     const choice = Math.abs(straight.turn) < .5 && roll < .55 ? straight : options[Math.floor(roll * options.length)];
     car.along = Math.max(0, car.along - car.edge.length);
     car.edge = choice.edge; car.direction = choice.direction; car.lane = choice.edge.profile.lane; car.next = null;
+    car.stopKey = null; car.stopWait = 0; car.stopReleased = false;
   }
-  // How fast a car may go into the junction ahead of it
+  // How fast a car may go into the junction ahead of it: the shared signal
+  // cycle, a stop and give way, or straight through on a priority road. The
+  // player counts as traffic in the box.
   junctionSpeed(car, player, dt) {
-    const remaining = car.edge.length - car.along, node = this.nav.endNode(car.edge, car.direction);
-    if (node.edges.length < 3 || remaining > 45) { car.junction = null; return Infinity; }
-    const key = node.id, reservation = this.reservations.get(key);
-    if (reservation && reservation.until <= this.time) this.reservations.delete(key);
-    const holder = this.reservations.get(key);
-    if (holder?.car === car) return Infinity;
-    const playerInside = Math.hypot(player.s - node.y, player.u - node.x) < JUNCTION_BOX + 2;
-    const gap = remaining - STOP_LINE;
-    if (!holder && !playerInside && gap < 2.5 && car.speed < 1) { this.reservations.set(key, { car, until: this.time + RESERVATION_SECONDS }); return Infinity; }
-    if (!holder && !playerInside && gap < 14) { this.reservations.set(key, { car, until: this.time + RESERVATION_SECONDS }); return Infinity; }
-    return Math.sqrt(14 * Math.max(0, gap));
+    const remaining = car.edge.length - car.along;
+    if (remaining > 50) return Infinity;
+    const node = this.nav.endNode(car.edge, car.direction);
+    if (Math.hypot(player.s - node.y, player.u - node.x) < car.edge.profile.halfWidth + 8 && remaining > 8) return Math.sqrt(14 * Math.max(0, remaining - car.edge.profile.halfWidth - 6));
+    return junctionSpeed(car, this, this.nav, car.edge, car.direction, car.along, car.speed, dt);
   }
   update(dt, player) {
     if (!this.enabled) return;

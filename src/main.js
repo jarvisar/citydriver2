@@ -21,7 +21,9 @@ import { SEED } from './world/route.js';
 import { resolveWorldSeed } from './world/generation.js';
 import { CityWeather } from './world/city-weather.js';
 import { NightLighting } from './night-lighting.js';
-import { cityCell, cityDistrict, nearestLanePose, journeyStart } from './world/city-route.js';
+import { cityCell, cityDistrict, nearestLanePose, journeyStart, lanePose, roadAt } from './world/city-route.js';
+import { CITY } from './world/city.js';
+import { navGraph } from './world/nav-graph.js';
 import { CityGuide } from './city-guide.js';
 import { TaxiRun } from './taxi-run.js';
 import { taxiLicense } from './taxi-license.js';
@@ -858,7 +860,7 @@ async function boot() {
     renderer.setAnimationLoop(frame);
     void vr.detect();
     // Development-only inspection surface for automated driving and streaming checks.
-    if (import.meta.env.DEV) window.__citydriver = { seed: SEED, vehicle, traffic, weather, autodrive, audio, graphics, vr, cityGuide, taxi, taxiView, beginTaxi, beginFree, get gameMode() { return gameMode; }, get world() { return world; }, rendering, input, action, changeJourney, chooseCar, applyPaint, get carId() { return carId; }, get paint() { return paint; }, get journey() { return journey; }, get changingJourney() { return changingJourney; }, get paused() { return paused; }, get started() { return started; } };
+    if (import.meta.env.DEV) window.__citydriver = { seed: SEED, city: CITY, nav: navGraph(), lanePose, roadAt, nearestLanePose, vehicle, traffic, weather, autodrive, audio, graphics, vr, cityGuide, taxi, taxiView, beginTaxi, beginFree, get gameMode() { return gameMode; }, get world() { return world; }, rendering, input, action, changeJourney, chooseCar, applyPaint, get carId() { return carId; }, get paint() { return paint; }, get journey() { return journey; }, get changingJourney() { return changingJourney; }, get paused() { return paused; }, get started() { return started; } };
   } catch (error) { console.error('Could not start Citydriver:', error); $('#loading').classList.add('loaded'); $('#error').hidden = false; }
 }
 boot();

@@ -10,9 +10,13 @@ import { cityItemMatrix, cityRigidFrame, cityAffinePoint } from './city-layout-r
 import { addSurfacePolygon, rectanglePolygon } from './city-surfaces.js';
 import { buildGrassFringe } from './city-grass.js';
 import { createWaterMaterial } from './city-water.js';
-import { createWalkerMaterial, setWalkerAppearance } from './city-life.js';
+import { cityWalker, walkerFloat, WALKER_COLORS, createWalkerMaterial, walkerAppearance, setWalkerAppearance, pairWalkers, offsetWalkerPose } from './city-life.js';
+import { applyWalkerHop, walkerTravelTime, holdWalkerTravel } from './pedestrian-reactions.js';
 import { stableShadowDepth } from './shadow-depth.js';
 import { navGraph } from './nav-graph.js';
+import { junctionControls, cityGreen } from '../city-junctions.js';
+import { signalLens } from './city-detail-assets.js';
+import { cityPlaces } from '../city-exploration.js';
 import { SIDEWALK } from '../mapgen/generate.js';
 import { offsetPolyline, offsetPolygon, insidePolygon, calcPolygonArea, averagePoint, polygonBounds, dedupePolygon, extendPolyline } from '../mapgen/polygon-util.js';
 
@@ -21,9 +25,14 @@ const windowGeometry = new THREE.PlaneGeometry(1, 1);
 const warmupMergedGeometry = new THREE.BufferGeometry();
 for (const name of ['position', 'normal', 'color']) warmupMergedGeometry.setAttribute(name, new THREE.BufferAttribute(new Float32Array(9), 3));
 const transform = new THREE.Object3D();
+const residentItem = { p: [0, 0, 0], scale: [1, 1, 1], yaw: 0, roll: 0 };
+const residentFloat = {};
 const tint = new THREE.Color();
 const dryRoad = new THREE.Color('#666c70'), wetRoad = new THREE.Color('#424e58');
 const GREENS = ['#63924d', '#80a85c', '#4f8054', '#93ab65'];
+const SIGNAL_GREEN = new THREE.Color('#62d996'), SIGNAL_AMBER = new THREE.Color('#ffd571'), SIGNAL_RED = new THREE.Color('#ed654b'), SIGNAL_OFF = new THREE.Color('#293538');
+// Distant chunks further than this many cells from the car are not drawn at all.
+const DISTANT_VISIBLE = 4;
 const pick = (items, random) => items[Math.floor(random() * items.length)];
 const LAMP_SPACING = 26, TREE_SPACING = 21;
 
@@ -311,6 +320,7 @@ export class CityChunk {
     yield* buildCityBuildingSteps(this);
     yield;
     this.buildFurniture(); yield;
+    this.buildLife(); yield;
     this.mapFeatures(); yield;
     buildGrassFringe(this); yield;
     yield* this.finishSteps();
@@ -400,9 +410,93 @@ export class CityChunk {
       else if (piece.kind === 'bollard') { this.prop('bollard', x, s); this.post(x, s, .16); }
       else if (piece.kind === 'railing') this.rigid(x, s, () => { this.prop('railing', x, s, 0, piece.y ?? PAVEMENT_LEVEL); this.solid(x, s, .24, 4); }, cityRigidFrame(piece.s, piece.u, piece.yaw));
       else if (piece.kind === 'sign') this.sign(discoverySignFor(piece.type, piece.variant), x, PAVEMENT_LEVEL + 2.6, s, piece.yaw);
+      else if (piece.kind === 'stop') { this.prop('stop', x, s, piece.yaw); this.post(x, s, .12); }
+      else if (piece.kind === 'signal') {
+        this.prop('signal', x, s, piece.yaw); this.post(x, s, .15);
+        if (this.distant) continue;
+        const indices = [];
+        for (const y of [4.92, 4.6, 4.28]) {
+          this.item('signal-lens', signalLens, this.materials.lit, [x + Math.sin(piece.yaw) * .215, PAVEMENT_LEVEL + y, -s + Math.cos(piece.yaw) * .215], [.105, .105, 1], '#293538', piece.yaw);
+          indices.push(this.batches.get('signal-lens').items.length - 1);
+        }
+        this.features.signals.push({ axis: piece.axis, indices });
+      }
+      else if (piece.kind === 'hedge') this.rigid(x, s, () => { this.box(x, PAVEMENT_LEVEL + .55, s, 1.6, 1.1, piece.length, '#4f7a46'); this.solid(x, s, 1.6, piece.length); }, cityRigidFrame(piece.s, piece.u, piece.yaw));
+      else if (piece.kind === 'barrier') this.rigid(x, s, () => {
+        this.box(x, PAVEMENT_LEVEL + .5, s, piece.length, .9, .3, '#d8d3c3'); this.box(x, PAVEMENT_LEVEL + .62, s, piece.length, .18, .32, '#c0463a');
+        this.solid(x, s, piece.length, .3);
+      }, cityRigidFrame(piece.s, piece.u, piece.yaw));
     }
   }
-  animate() { /* nothing moves inside a chunk yet */ }
+  // Residents walk the pavement round their block; pairs stroll together.
+  buildLife() {
+    this.walkers = [];
+    if (this.distant) return;
+    const random = seededRandom(this.plan.seed + 912);
+    for (const block of this.world.blocksByChunk.get(this.index) ?? []) {
+      const count = block.perimeter > 140 ? 3 : 2, walkers = [];
+      for (let i = 0; i < count; i++) walkers.push({
+        loop: block, phase: random() * block.perimeter, speed: 1.1 + random() * 1.1, side: 0,
+        direction: i % 2 ? -1 : 1, size: .9 + random() * .22, width: .92 + random() * .16, color: pick(WALKER_COLORS, random),
+        appearance: walkerAppearance(this.plan.seed + block.index * 131 + i * 719),
+      });
+      pairWalkers(walkers, this.plan.seed + block.index);
+      this.walkers.push(...walkers);
+    }
+    for (const walker of this.walkers) {
+      const pose = offsetWalkerPose(this.walkerPose(walker, 0), walker);
+      const motion = walkerFloat(walker, 0, residentFloat), width = walker.size * walker.width;
+      this.item('residents', cityWalker, this.materials.residents, [pose.x - this.east, PAVEMENT_LEVEL + motion.lift, -(pose.s - this.start)],
+        [width, walker.size * motion.stretch, width], walker.color, pose.yaw, motion.roll);
+      this.batches.get('residents').items.at(-1).appearance = walker.appearance;
+    }
+  }
+  // Where a walker is on its loop: world (x east, s north) and a yaw facing the way it walks
+  walkerPose(walker, time) {
+    const loop = walker.loop, travel = walker.phase + time * walker.speed * walker.direction;
+    const d = ((travel % loop.perimeter) + loop.perimeter) % loop.perimeter, points = loop.points, cumulative = loop.cumulative;
+    let i = 0;
+    while (i < points.length - 1 && cumulative[i + 1] <= d) i++;
+    const a = points[i], b = points[(i + 1) % points.length], span = (cumulative[i + 1] - cumulative[i]) || 1, t = (d - cumulative[i]) / span;
+    const du = (b.x - a.x) / span * walker.direction, ds = (b.y - a.y) / span * walker.direction;
+    return { x: a.x + (b.x - a.x) * t, s: a.y + (b.y - a.y) * t, yaw: -Math.atan2(du, ds) };
+  }
+  animate(time, signalTime = time, animatePeople = true, contacts = null) {
+    this.animateSignals(signalTime);
+    if (!animatePeople || !this.peopleMesh) return;
+    const mesh = this.peopleMesh;
+    for (let i = 0; i < this.walkers.length; i++) {
+      const walker = this.walkers[i], travelTime = walkerTravelTime(walker, time);
+      const pose = offsetWalkerPose(this.walkerPose(walker, travelTime), walker);
+      const motion = walkerFloat(walker, time, residentFloat), width = walker.size * walker.width;
+      residentItem.p[0] = pose.x - this.east; residentItem.p[1] = PAVEMENT_LEVEL + motion.lift; residentItem.p[2] = -(pose.s - this.start);
+      residentItem.yaw = pose.yaw; residentItem.roll = motion.roll;
+      residentItem.scale[0] = residentItem.scale[2] = width; residentItem.scale[1] = walker.size * motion.stretch;
+      const matrix = cityItemMatrix(residentItem, this.east, this.start, transform.matrix), e = matrix.elements;
+      if (contacts?.hit(walker, e[12] + this.east, e[13], e[14] - this.start, .28 * width, time)) {
+        const partner = walker.pairOffset ? this.walkers[i + (walker.pairOffset < 0 ? 1 : -1)] : null;
+        holdWalkerTravel(walker, partner, time);
+      }
+      applyWalkerHop(walker, matrix, time);
+      mesh.setMatrixAt(i, matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+  }
+  animateSignals(signalTime) {
+    const phase = Math.floor(signalTime % 24);
+    // The lamps change at six moments in each cycle; recolour only then.
+    const northGreen = cityGreen('north', signalTime), eastGreen = cityGreen('east', signalTime);
+    const lights = (northGreen ? 1 : phase === 10 ? 2 : 0) + (eastGreen ? 3 : phase === 22 ? 6 : 0);
+    if (lights === this.signalLights || !this.signalMesh) return;
+    this.signalLights = lights;
+    for (const signal of this.features.signals) {
+      const north = signal.axis === 'north', green = north ? northGreen : eastGreen, amber = north ? phase === 10 : phase === 22;
+      for (let i = 0; i < 3; i++) {
+        this.signalMesh.setColorAt(signal.indices[i], (i === 2 && green) ? SIGNAL_GREEN : (i === 1 && amber) ? SIGNAL_AMBER : (i === 0 && !green && !amber) ? SIGNAL_RED : SIGNAL_OFF);
+      }
+    }
+    this.signalMesh.instanceColor.needsUpdate = true;
+  }
   finish() { for (const _ of this.finishSteps()) { /* synchronous tools/startup */ } }
   *finishSteps() {
     this.features.lamps = (this.batches.get('lamp')?.items ?? []).map(item => {
@@ -411,6 +505,13 @@ export class CityChunk {
       return { x: point.x + this.east, y: point.y, z: point.z - this.start, yaw: Math.atan2(matrix.elements[8], matrix.elements[10]) };
     });
     yield* renderBatchSteps(this.group, this.batches, this.east, this.start);
+    this.signalMesh = this.group.getObjectByName('citydriver-signal-lens');
+    this.peopleMesh = this.group.getObjectByName('citydriver-residents');
+    if (this.peopleMesh) {
+      this.peopleMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      // Their initial positions do not bound the full walk around the block.
+      this.peopleMesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(CITY_CELL / 2, PAVEMENT_LEVEL + 1, -CITY_CELL / 2), CITY_CELL * 1.3);
+    }
     this.group.matrixAutoUpdate = false;
     this.collisionBounds = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
     for (const c of this.features.colliders) {
@@ -454,6 +555,7 @@ export class CitydriverWorld {
   constructor(scene) {
     this.scene = scene; this.chunks = new Map(); this.origin = 0; this.center = null; this.radius = 0;
     this.pending = []; this.building = null; this.materials = resources(); this.nav = navGraph();
+    this.animationFrustum = new THREE.Frustum(); this.animationMatrix = new THREE.Matrix4(); this.animationSphere = new THREE.Sphere();
     this.prepareLots(); this.placeFurniture();
     this.staticGroup = new THREE.Group(); this.staticGroup.name = 'citydriver-static'; this.staticGroup.matrixAutoUpdate = false;
     scene.add(this.staticGroup);
@@ -465,7 +567,20 @@ export class CitydriverWorld {
   }
   inCity(ix, iz) { return ix >= CITY.ix0 && ix <= CITY.ix1 && iz >= CITY.iz0 && iz <= CITY.iz1; }
   prepareLots() {
-    this.lotsByChunk = new Map(); this.neighbourCache = new Map();
+    this.lotsByChunk = new Map(); this.neighbourCache = new Map(); this.blocksByChunk = new Map();
+    // A walking loop just inside every block's kerb
+    CITY.blocks.forEach((block, index) => {
+      if (block.sidewalk.length < 3) return;
+      const points = offsetPolygon(block.sidewalk, -1.5);
+      if (points.length < 3) return;
+      const cumulative = [0];
+      for (let i = 0; i < points.length; i++) { const a = points[i], b = points[(i + 1) % points.length]; cumulative.push(cumulative[i] + Math.hypot(b.x - a.x, b.y - a.y)); }
+      const perimeter = cumulative[points.length];
+      if (perimeter < 70) return;
+      const centre = averagePoint(points), key = cityCell(centre.y, centre.x).key;
+      if (!this.blocksByChunk.has(key)) this.blocksByChunk.set(key, []);
+      this.blocksByChunk.get(key).push({ index, points, cumulative, perimeter });
+    });
     CITY.lots.forEach((polygon, index) => {
       const centre = averagePoint(polygon), area = calcPolygonArea(polygon), cell = cityCell(centre.y, centre.x);
       const lot = { polygon, index, centre, area, seed: Math.floor(randomAt(Math.round(centre.x), Math.round(centre.y) + 7102, CITY.seed) * 0xffffffff) >>> 0, fit: null };
@@ -539,6 +654,59 @@ export class CitydriverWorld {
         });
       }
     });
+    // Signals and stop signs at the right-hand kerb of every controlled approach
+    for (const [node, control] of junctionControls(this.nav)) {
+      for (const [edge, approach] of control.approaches) {
+        if (approach.kind === 'priority') continue;
+        const direction = edge.b === node.id ? 1 : -1;
+        const end = this.nav.pose(edge, edge.length, direction), du = Math.sin(end.heading), ds = Math.cos(end.heading);
+        const back = approach.crossHalfWidth + 2.2, right = edge.profile.halfWidth + 1.2;
+        const u = node.x - du * back + ds * right, y = node.y - ds * back - du * right;
+        if (waterAt(y, u)) continue;
+        // The head faces back down the approach, toward the arriving car
+        const yaw = Math.atan2(-du, -ds);
+        add(approach.kind === 'signal' ? { kind: 'signal', u, s: y, yaw, axis: approach.axis } : { kind: 'stop', u, s: y, yaw });
+      }
+    }
+    // Railings along the quays, with a gap wherever a road meets the water
+    for (const run of CITY.walls) {
+      const inland = offsetPolyline(run, -1.1);
+      for (const p of alongPolyline(inland, 4, 2)) {
+        const road = roadAt(p.y, p.x, 30);
+        if (road && road.distance < road.road.profile.halfWidth + 1.5) continue;
+        add({ kind: 'railing', u: p.x, s: p.y, yaw: Math.atan2(p.tx, p.ty), y: PAVEMENT_LEVEL });
+      }
+    }
+    // A hedge around the edge of the city, with a barrier across every road that reaches it
+    const edgeRuns = [
+      [{ x: CITY.minX + CITY.margin, y: CITY.minY + CITY.margin }, { x: CITY.maxX - CITY.margin, y: CITY.minY + CITY.margin }],
+      [{ x: CITY.maxX - CITY.margin, y: CITY.minY + CITY.margin }, { x: CITY.maxX - CITY.margin, y: CITY.maxY - CITY.margin }],
+      [{ x: CITY.maxX - CITY.margin, y: CITY.maxY - CITY.margin }, { x: CITY.minX + CITY.margin, y: CITY.maxY - CITY.margin }],
+      [{ x: CITY.minX + CITY.margin, y: CITY.maxY - CITY.margin }, { x: CITY.minX + CITY.margin, y: CITY.minY + CITY.margin }],
+    ];
+    const barred = new Set();
+    for (const run of edgeRuns) for (const p of alongPolyline(run, 6, 3)) {
+      const inward = { x: p.x - p.ty * 3, y: p.y + p.tx * 3 };
+      if (waterAt(inward.y, inward.x)) continue;
+      const road = roadAt(inward.y, inward.x, 30);
+      if (road && road.distance < road.road.profile.halfWidth + 2.5) {
+        const key = `${road.roadIndex}:${Math.round(p.x / 40)}:${Math.round(p.y / 40)}`;
+        if (barred.has(key)) continue;
+        barred.add(key);
+        add({ kind: 'barrier', u: road.x - road.tx * 0 , s: road.y, yaw: Math.atan2(road.tx, road.ty) + Math.PI / 2, length: road.road.profile.halfWidth * 2 - .6 });
+        continue;
+      }
+      add({ kind: 'hedge', u: inward.x, s: inward.y, yaw: Math.atan2(p.tx, p.ty), length: 6.2 });
+    }
+    // A sign board on the pavement at every venue's entrance
+    for (const place of cityPlaces()) {
+      const road = roadAt(place.entrance.s, place.entrance.u, 40);
+      if (!road) continue;
+      const du = Math.sin(place.entrance.heading), ds = Math.cos(place.entrance.heading), reach = road.road.profile.halfWidth + 2.6;
+      const u = road.x + ds * reach, y = road.y - du * reach;
+      if (waterAt(y, u) || this.insideLot(u, y)) continue;
+      add({ kind: 'sign', type: place.type, variant: place.variant, u, s: y, yaw: Math.atan2(du, ds) + Math.PI / 2 });
+    }
     // Bridges: a run of road over water gets railings on both edges
     this.bridges = [];
     for (const road of CITY.roads) {
@@ -603,6 +771,19 @@ export class CitydriverWorld {
       }
       if (!markings.empty) { for (let i = 0; i < markings.positions.length; i++) ground.positions.push(markings.positions[i]); ground.normals.push(...markings.normals); ground.colors.push(...markings.colors); }
     }
+    // Stop lines and zebra crossings on every controlled approach
+    for (const [node, control] of junctionControls(this.nav)) {
+      for (const [edge, approach] of control.approaches) {
+        const direction = edge.b === node.id ? 1 : -1;
+        const end = this.nav.pose(edge, edge.length, direction), du = Math.sin(end.heading), ds = Math.cos(end.heading);
+        const halfWidth = edge.profile.halfWidth, back = approach.crossHalfWidth;
+        const at = (behind, across) => ({ x: node.x - du * behind + ds * across, y: node.y - ds * behind - du * across });
+        if (approach.kind !== 'priority') ground.polygon([at(back + 1.2, .3), at(back + 1.2, halfWidth - .4), at(back + 1.6, halfWidth - .4), at(back + 1.6, .3)], ROAD_LEVEL + .014, '#e1dfce');
+        for (let across = -halfWidth + .9; across < halfWidth - .4; across += 1.7) {
+          ground.polygon([at(back + 2.1, across), at(back + 2.1, across + .9), at(back + 4.9, across + .9), at(back + 4.9, across)], ROAD_LEVEL + .014, '#deddd0');
+        }
+      }
+    }
     // Sidewalks with kerbs, parks, then the lots on top
     for (const block of CITY.blocks) {
       if (block.sidewalk.length < 3) continue;
@@ -625,7 +806,7 @@ export class CitydriverWorld {
     };
     if (CITY.sea) water.polygon(CITY.sea, WATER_LEVEL, '#397780', () => [1, 0]);
     if (CITY.river) water.polygon(CITY.river, WATER_LEVEL, '#397780', flowAt);
-    for (const run of CITY.walls) walls.wall(run, PAVEMENT_LEVEL + .02, WATER_LEVEL - 1.6, '#8a8578');
+    for (const run of CITY.walls) { walls.wall(run, PAVEMENT_LEVEL + .02, WATER_LEVEL - 1.6, '#9b9789'); walls.ribbon(offsetPolyline(run, -.25), .3, PAVEMENT_LEVEL + .2, '#b3aea0'); }
     // Bridge decks: the road surface is already there; add the sides and piers
     for (const bridge of this.bridges) {
       const halfWidth = bridge.road.profile.halfWidth, points = bridge.points;
@@ -665,8 +846,9 @@ export class CitydriverWorld {
       }
       this.pending.sort((a, b) => a.distance - b.distance || a.iz - b.iz || a.ix - b.ix);
       if (this.building && !this.pending.some(next => next.key === this.building.index)) { this.building.dispose(); this.building = null; }
-      // The skyline fills in from the car outward
+      // The skyline fills in from the car outward, and is only drawn where the fog can show it
       this.distantPending.sort((a, b) => Math.hypot(a.ix - cell.ix, a.iz - cell.iz) - Math.hypot(b.ix - cell.ix, b.iz - cell.iz));
+      for (const chunk of this.distant.values()) chunk.group.visible = !this.chunks.has(chunk.index) && Math.max(Math.abs(chunk.ix - cell.ix), Math.abs(chunk.iz - cell.iz)) <= radius + DISTANT_VISIBLE;
     }
     let built = 0;
     while (this.pending.length) {
@@ -685,7 +867,7 @@ export class CitydriverWorld {
       const next = this.distantPending.shift();
       const chunk = new CityChunk(this, next.ix, next.iz, true);
       chunk.group.position.set(chunk.east, 0, -chunk.start); chunk.group.updateMatrix();
-      chunk.group.visible = !this.chunks.has(next.key);
+      chunk.group.visible = !this.chunks.has(next.key) && Math.max(Math.abs(chunk.ix - cell.ix), Math.abs(chunk.iz - cell.iz)) <= radius + DISTANT_VISIBLE;
       this.distantGroup.add(chunk.group); this.distant.set(next.key, chunk);
     }
   }
@@ -696,8 +878,24 @@ export class CitydriverWorld {
     this.materials.road.roughness = .6 - wet * .33;
     this.materials.road.color.copy(dryRoad).lerp(wetRoad, wet);
   }
-  animate(time) {
+  animate(time, signalTime = time, camera = null, contacts = null) {
     this.materials.water.userData.time.value = time;
+    if (camera) {
+      camera.updateMatrixWorld();
+      this.animationMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      this.animationFrustum.setFromProjectionMatrix(this.animationMatrix);
+    }
+    for (const chunk of this.chunks.values()) {
+      let visible = true;
+      if (camera && chunk.peopleMesh) {
+        this.animationSphere.copy(chunk.peopleMesh.boundingSphere);
+        this.animationSphere.center.add(chunk.group.position);
+        // Include residents whose shadows can fall into the visible area.
+        this.animationSphere.radius += 12;
+        visible = this.animationFrustum.intersectsSphere(this.animationSphere);
+      }
+      chunk.animate(time, signalTime, visible, contacts);
+    }
   }
   warmupObjects() {
     return Object.entries(this.materials).filter(([key]) => key !== 'residents').map(([key, material]) => {

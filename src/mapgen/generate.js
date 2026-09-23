@@ -111,14 +111,26 @@ export function generateCityMap(options = {}) {
   if (water.hasCoast) roadList.push({ kind: 'coast', points: waterRoads.shift() });
   for (const points of waterRoads) roadList.push({ kind: 'riverbank', points });
   if (water.riverSecondaryRoad.length > 1) roadList.push({ kind: 'riverbank', points: water.riverSecondaryRoad });
-  // Minor roads that wind through a park are its paths
-  for (const road of roadList) {
-    if (road.kind === 'minor' && field.parks.length) {
-      const inPark = road.points.filter(p => field.inParks(p)).length;
-      if (inPark >= road.points.length * .6) road.kind = 'path';
+  // Minor roads that wind through a park are its paths. A road that leaves a
+  // park is split where it does, so the street outside stays a street.
+  if (field.parks.length) {
+    const split = [];
+    for (const road of roadList) {
+      if (road.kind !== 'minor') { split.push(road); continue; }
+      const inside = road.points.map(p => field.inParks(p));
+      let run = [road.points[0]], runInside = inside[0];
+      for (let i = 1; i < road.points.length; i++) {
+        if (inside[i] === runInside) { run.push(road.points[i]); continue; }
+        // The boundary vertex belongs to both runs
+        run.push(road.points[i]);
+        if (run.length > 1) split.push({ kind: runInside ? 'path' : 'minor', points: run });
+        run = [road.points[i]]; runInside = inside[i];
+      }
+      if (run.length > 1) split.push({ kind: runInside ? 'path' : 'minor', points: run });
     }
-    road.profile = ROAD_PROFILES[road.kind];
+    roadList.length = 0; roadList.push(...split);
   }
+  for (const road of roadList) road.profile = ROAD_PROFILES[road.kind];
   const roadIndex = new RoadIndex(roadList);
   const streamlines = roadList.map(road => road.points);
   // The navigation graph keeps dead ends; the lot graph drops them
