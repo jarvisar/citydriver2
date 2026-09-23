@@ -1,0 +1,48 @@
+{
+  "id": "./",
+  "name": "Citydriver",
+  "short_name": "Citydriver",
+  "description": "Arcade taxi driving.",
+  "lang": "en-US",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "background_color": "#20323d",
+  "theme_color": "#20323d",
+  "screenshots": [
+    {
+      "src": "screenshots/desktop.jpg",
+      "sizes": "1280x800",
+      "type": "image/jpeg",
+      "form_factor": "wide",
+      "label": "Citydriver on desktop"
+    },
+    {
+      "src": "screenshots/mobile.jpg",
+      "sizes": "540x960",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "Citydriver with touch driving controls"
+    }
+  ],
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

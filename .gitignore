@@ -1,0 +1,14 @@
+node_modules/
+dist/
+# Ignore dot-prefixed directories at any depth.
+.*/
+# Keep GitHub build and deployment workflows tracked.
+!/.github/
+*.log
+dist-electron/
+release/
+/coastline_copy_reference
+
+# Local agent instructions.
+[Aa][Gg][Ee][Nn][Tt][Ss].[Mm][Dd]
+[Cc][Ll][Aa][Uu][Dd][Ee].[Mm][Dd]

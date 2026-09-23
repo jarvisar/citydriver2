@@ -1,0 +1,130 @@
+/* Citydriver's title screen sits directly over the city. */
+:root {
+  --menu-ink: #fffdf3;
+  --action: #254f44;
+  --action-hover: #326454;
+  --ui-line: color-mix(in srgb, var(--ink) 18%, transparent);
+}
+body { --action: #263f4b; --action-hover: #3d5f6b; --ink: #253e49; --cream: #f4f4ec; }
+
+.topbar { justify-content: space-between; }
+#welcome {
+  top: max(calc(var(--ui-top) + 62px), 13dvh);
+  right: var(--ui-right); bottom: max(calc(var(--ui-bottom) + 20px), 21dvh); left: var(--ui-left);
+  display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+  width: auto; height: auto; max-width: none; max-height: none;
+  padding: 0; border: 0; border-radius: 0; background: none; backdrop-filter: none;
+  overflow: visible; transform: none; pointer-events: none; color: var(--menu-ink);
+  text-align: center; text-shadow: 0 2px 18px #163e3560;
+  transition: opacity .45s, visibility 0s;
+}
+#welcome.hidden { opacity: 0; visibility: hidden; transform: none; transition: opacity .45s, visibility 0s .45s; }
+#welcome .menu-brand { display: flex; flex-direction: column; gap: 0; text-shadow: 0 2px 4px #10272060, 0 6px 24px #1027204d; }
+/* Soft pools of shade separate the menu from passing scenery without a panel. */
+#welcome .menu-brand, #welcome .menu-actions { position: relative; isolation: isolate; }
+#welcome .menu-brand::before, #welcome .menu-actions::before {
+  content: ''; position: absolute; z-index: -1; pointer-events: none;
+  left: 50%; top: -64px; bottom: -64px; width: min(640px, 100vw); transform: translateX(-50%);
+  background: radial-gradient(ellipse, #10272060 0%, #10272034 38%, #10272000 72%);
+}
+#welcome .menu-actions::before { width: min(560px, 100vw); top: -56px; bottom: -48px; }
+#welcome .brand-mark { display: block; width: clamp(68px, 8.5dvh, 96px); height: auto; filter: drop-shadow(0 2px 3px #10272060) drop-shadow(0 6px 16px #10272030); }
+#welcome .wordmark {
+  margin: 3px 0 18px; font-family: 'Arial Rounded MT Bold', 'Trebuchet MS', 'Segoe UI', sans-serif;
+  font-size: clamp(48px, 6.2vw, 80px); font-weight: 750; line-height: 1; letter-spacing: -.055em;
+}
+#welcome .eyebrow { display: flex; justify-content: center; gap: 15px; font-size: clamp(9px, 1vw, 11px); font-weight: 650; letter-spacing: .34em; line-height: 1.5; }
+#welcome .eyebrow::before, #welcome .eyebrow::after { content: ''; width: 23px; height: 1px; background: currentColor; opacity: .8; flex-shrink: 0; }
+.menu-actions { display: flex; flex-direction: column; align-items: center; margin-top: 32px; max-width: 100%; }
+.start-button {
+  justify-content: center; gap: 12px; min-height: 48px; padding: 12px 26px;
+  border: 1px solid #ffffff35; border-radius: 999px;
+  color: var(--menu-ink); background: linear-gradient(180deg, #ffffff0c, transparent 70%), var(--action);
+  box-shadow: inset 0 1px 0 #ffffff1c, 0 6px 18px #132e3429;
+  font-size: 14px; font-weight: 600; text-shadow: none;
+  transition: background .2s, transform .2s, box-shadow .2s;
+}
+body .start-button:hover { background: var(--action-hover); box-shadow: inset 0 1px 0 #ffffff1c, 0 8px 24px #132e3438; transform: translateY(-2px); }
+.start-button:active { transform: translateY(1px); }
+.start-button span { font: inherit; line-height: 1.2; }
+.start-button .wheel-icon { width: 25px; height: 25px; flex-shrink: 0; }
+#welcome .start-button {
+  width: clamp(248px, 27vw, 340px); max-width: 100%; min-height: 82px; padding: 18px 30px; gap: 20px;
+  font-size: clamp(24px, 2.3vw, 29px); font-weight: 650; letter-spacing: -.6px;
+  color: var(--action); background: linear-gradient(180deg, #fffef9, #eeeadd); border-color: #fffdf3;
+  box-shadow: 0 0 0 5px #1027201c, 0 8px 24px #10272030, inset 0 1px 0 #ffffff;
+}
+#welcome .start-button:hover { background: #fffef9; box-shadow: 0 0 0 5px #fffdf326, 0 12px 32px #10272040, inset 0 1px 0 #ffffff; }
+#welcome .start-button:focus-visible { outline: 3px solid var(--menu-ink); outline-offset: 8px; }
+#welcome .wheel-icon { width: 43px; height: 43px; }
+/* The route and VR buttons share the main action's finish at a smaller size.
+   Both stack under it, so the toolbar has nothing left to show on the menu. */
+#welcome .start-button.menu-secondary {
+  position: static; width: clamp(148px, 15vw, 190px); min-height: 44px; margin-top: 12px; padding: 9px 16px; gap: 9px;
+  font-size: clamp(14px, 1.25vw, 15px); font-weight: 600; letter-spacing: -.3px;
+}
+#welcome .menu-secondary svg { width: 21px; height: 21px; }
+#welcome .menu-secondary .control-label { margin: 0; text-transform: none; }
+#app:has(#welcome:not(.hidden)) .drive-actions { display: none; }
+#app:has(#welcome:not(.hidden)) .vignette { background: linear-gradient(180deg, transparent 55%, #173b381a); }
+
+/* Shared shapes and icon weight continue into the pause screen and choosers. */
+button svg:not(.chooser-art) { stroke-linecap: round; stroke-linejoin: round; }
+.drive-actions { border-radius: 999px; padding: 3px; }
+.drive-actions button { border-radius: 999px; }
+.drive-actions svg { width: 20px; height: 20px; }
+.drive-actions .control-label { font-size: inherit; }
+.drive-actions svg [stroke-width="1.5"], .panel-button svg [stroke-width="1.5"], .icon-button svg [stroke-width="1.5"] { stroke-width: 1.8; }
+.chooser { border-radius: 24px; box-shadow: 0 24px 80px #183f3638; }
+.chooser-title, .pause-overlay h2 { font-family: 'Trebuchet MS', 'Segoe UI', sans-serif; font-weight: 600; letter-spacing: -1.4px; }
+.chooser-title { font-size: 36px; }
+.chooser-card { border-radius: 16px; }
+.chooser-card[aria-current=true] { box-shadow: 0 0 0 1px var(--ink), 0 4px 14px #183f3610; }
+.chooser-card-title > svg { width: 18px; height: 18px; flex-shrink: 0; opacity: .65; }
+.chooser-current { letter-spacing: 1.5px; }
+.chooser-heading .icon-button { border-color: var(--ui-line); background: color-mix(in srgb, var(--ink) 5%, transparent); }
+.pause-overlay > .start-button { margin-bottom: 24px; min-width: 220px; }
+.pause-overlay > h2 { margin-top: clamp(8px, calc((100dvh - 760px) / 2), 96px); }
+.pause-panel, .graphics-panel, #enter-vr-pause { width: 360px; }
+.panel-button, .panel-toggle, .graphics-levels button { border-radius: 12px; border-color: var(--ui-line); min-height: 44px; }
+.graphics-levels button { padding-inline: 10px; }
+.pause-panel h3, .graphics-panel h3, .paint-shop h3, .garage-subheading { font-size: 10px; letter-spacing: 1.6px; }
+.location, .paint-shop { border-radius: 16px; }
+.controls { border-radius: 999px; }
+.dismiss-control-help svg { width: 18px; height: 18px; }
+#stick-help .dismiss-control-help svg { width: 14px; height: 14px; }
+
+@media (max-width: 760px) {
+  #welcome { top: max(calc(var(--ui-top) + 66px), 15dvh); bottom: max(calc(var(--ui-bottom) + 28px), 23dvh); }
+  #welcome .wordmark { font-size: clamp(46px, 10.8vw, 64px); margin-bottom: 15px; }
+  #welcome .start-button { min-height: 76px; }
+  #welcome .eyebrow { font-size: 9px; gap: 12px; letter-spacing: .28em; }
+  .chooser-title { font-size: 30px; }
+}
+@media (max-width: 760px), (max-height: 560px) {
+  .pause-overlay .location { margin: 0 0 18px; }
+  .pause-overlay > h2 { margin-top: 0; }
+}
+@media (max-height: 560px) {
+  #welcome { top: calc(var(--ui-top) + 54px); bottom: calc(var(--ui-bottom) + 12px); }
+  #welcome .brand-mark { width: 56px; }
+  #welcome .wordmark { font-size: 44px; margin: 2px 0 12px; }
+  #welcome .eyebrow { font-size: 8px; }
+  #welcome .start-button { min-height: 60px; padding: 12px 26px; font-size: 22px; width: 242px; }
+  #welcome .wheel-icon { width: 32px; height: 32px; }
+  #welcome .start-button.menu-secondary { width: 146px; margin-top: 9px; padding: 6px 14px; font-size: 13px; }
+  #welcome .menu-secondary svg { width: 18px; height: 18px; }
+  .menu-actions { margin-top: 22px; }
+  .pause-overlay > .start-button { margin-bottom: 18px; }
+}
+@media (max-height: 380px) and (orientation: landscape) {
+  #welcome { top: calc(var(--ui-top) + 56px); bottom: calc(var(--ui-bottom) + 8px); }
+  #welcome .brand-mark { width: 48px; }
+  #welcome .wordmark { font-size: 40px; }
+  #welcome .eyebrow { gap: 8px; font-size: 7px; }
+  #welcome .eyebrow::before, #welcome .eyebrow::after { width: 14px; }
+  .menu-actions { margin-top: 12px; }
+  #welcome .start-button { min-height: 54px; font-size: 20px; }
+  #welcome .start-button.menu-secondary { margin-top: 7px; padding-block: 6px; font-size: 13px; }
+}
+#welcome > .controller-hint { position: relative; margin: 18px auto 0; padding: 6px 38px 6px 12px; width: fit-content; max-width: 100%; text-align: center; border-radius: 8px; }

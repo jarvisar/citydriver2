@@ -1,0 +1,273 @@
+/* Shared limits for the header, panels, HUD and touch controls. */
+.vr-entry[hidden], #welcome.hidden :is(.vr-entry, .update-entry) { display: none !important; }
+.vr-entry, .update-entry { pointer-events: auto; justify-content: center; }
+/* The pause screen's entry is a settings row, sized like the panels above it. */
+#enter-vr-pause { width: 340px; max-width: 100%; margin: 0 0 14px; }
+#vr-error { position: absolute; top: var(--header-clear); right: var(--ui-right); max-width: min(360px, 85vw); padding: 12px; background: var(--cream); color: var(--ink); border-radius: 6px; z-index: 5; }
+:root {
+  --edge: clamp(6px, 1.25vw, 16px);
+  --ui-top: calc(var(--edge) + var(--safe-top));
+  --ui-left: calc(var(--edge) + var(--safe-left));
+  --ui-right: calc(var(--edge) + var(--safe-right));
+  --ui-bottom: calc(var(--edge) + var(--safe-bottom));
+  --header-clear: calc(var(--ui-top) + 60px);
+  --stick-size: 145.2px;
+}
+.topbar { top: var(--ui-top); left: var(--ui-left); right: var(--ui-right); gap: 12px; }
+body[data-controller=true] #app :is(.controls, #pause, #change-journey) { display: none !important; }
+.chooser > .controller-hint { margin: 0 0 12px; }
+.chooser-card:focus { outline: 3px solid #568d78; outline-offset: 3px; }
+/* A controller sends no keystroke, so :focus-visible cannot be counted on to
+   show where the ring is. While one is connected, the pause screen draws it
+   on plain focus. */
+body[data-controller=true] .pause-overlay button:focus { outline: 2px solid var(--ink); outline-offset: 3px; }
+.journey-button { position: static; }
+.brand { min-width: 0; }
+#app:has(.welcome.hidden) .topbar .brand,
+#app:has(#pause-overlay:not([hidden])) .brand { visibility: hidden; }
+
+/* Menus reserve space for their primary action, not for the driving HUD. */
+#app:has(.welcome.hidden, #pause-overlay:not([hidden]), dialog[open], #journey-transition.active) .vignette { display: none; }
+#app:has(.welcome:not(.hidden)) :is(.bottom-bar, .touch-controls, #pause),
+#app:has(#pause-overlay:not([hidden])) :is(.bottom-bar, .touch-controls, .welcome),
+#app:has(.chooser[open]) :is(.topbar, .bottom-bar, .touch-controls, .welcome, #pause-overlay, #toast) { visibility: hidden; pointer-events: none; }
+#app:has(.welcome:not(.hidden)) #pause { display: none; }
+#app:has(#pause-overlay:not([hidden])) #pause { display: flex; visibility: visible; pointer-events: auto; }
+.welcome {
+  --panel-top: max(var(--header-clear), calc(50% - 220px));
+  top: var(--panel-top); bottom: auto; left: var(--ui-left); transform: none;
+  width: 420px; max-width: calc(100% - var(--ui-left) - var(--ui-right));
+  max-height: calc(100% - var(--panel-top) - var(--ui-bottom));
+  padding: clamp(18px, 3vw, 28px); scrollbar-width: thin;
+}
+.welcome.hidden { transform: translateY(8px); }
+.welcome h1 { font-size: clamp(34px, 4.2vw, 58px); margin: 16px 0; }
+.welcome p { font-size: 14px; line-height: 1.7; margin: 0 0 20px; }
+.welcome .start-button { min-height: 48px; }
+
+.bottom-bar { left: var(--ui-left); right: var(--ui-right); bottom: var(--ui-bottom); gap: 16px; }
+.location-title { line-height: 1.5; }
+.location-sub { line-height: 1.5; overflow-wrap: anywhere; }
+.controls { position: static; transform: none; margin: 0; gap: 12px; flex-shrink: 0; }
+.controls button { min-width: 44px; }
+.touch-controls { left: var(--ui-left); right: var(--ui-right); bottom: var(--ui-bottom); align-items: center; gap: 16px; }
+.touch-controls { opacity: 1; transition: opacity .15s; }
+.touch-controls.autodrive-hidden { opacity: 0; transition: opacity 1.5s; }
+#touch-stick { width: var(--stick-size); height: var(--stick-size); opacity: .65; }
+/* Hidden until a thumb lands on the scene; then centred on that exact point. */
+#touch-stick { position: fixed; z-index: 2; translate: -50% -50%; pointer-events: none; display: none; }
+#touch-stick.active { display: block; }
+.stick-thumb { width: 52.8px; height: 52.8px; left: calc(50% - 26.4px); top: calc(50% - 26.4px); }
+
+.pause-overlay { padding: var(--header-clear) var(--ui-right) var(--ui-bottom) var(--ui-left); justify-content: flex-start; overflow-y: auto; overscroll-behavior: contain; }
+.pause-overlay > * { flex-shrink: 0; max-width: 100%; }
+.pause-overlay > h2 { margin-top: clamp(0px, calc((100dvh - 560px) / 2), 180px); font-size: clamp(32px, 5vw, 48px); }
+.pause-overlay p { margin: 12px 0 20px; }
+.pause-overlay .controller-hint { max-width: 330px; }
+#toast { top: var(--header-clear); max-width: calc(100% - var(--ui-left) - var(--ui-right)); width: max-content; white-space: normal; text-align: center; line-height: 1.5; }
+#app:has(.welcome:not(.hidden)) #toast { display: none; }
+
+.chooser { width: min(930px, calc(100% - var(--ui-left) - var(--ui-right))); max-height: calc(100dvh - var(--ui-top) - var(--ui-bottom)); padding: 20px; overscroll-behavior: contain; scrollbar-width: thin; }
+.chooser-heading { position: sticky; top: -20px; z-index: 1; padding: 4px 0; background: #f6f5ea; }
+/* Focus moved by a controller or the keyboard scrolls clear of the pinned heading. */
+:is(.chooser, #taxi-fleet-dialog) { scroll-padding-block: 80px 16px; }
+body[data-journey=desert] .chooser-heading { background: #fff2dd; }
+body[data-journey=snow] .chooser-heading { background: #1c2b41; }
+body[data-journey=jungle] .chooser-heading { background: #203a27; }
+body[data-journey=city] .chooser-heading { background: #eef1f4; }
+.chooser-options { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.chooser-card { min-width: 0; }
+
+@media (any-pointer: coarse) {
+  #next-journey { display: none; }
+  .bottom-bar { bottom: calc(var(--ui-bottom) + var(--stick-size) + 16px); }
+  body[data-controller=true] .bottom-bar { bottom: var(--ui-bottom); }
+  .controls { gap: 4px; }
+  .controls button { min-width: 64px; }
+}
+@media (max-width: 1100px) {
+  .touch-utility-icon { display: block; width: 18px; height: 18px; }
+  .controls button { min-width: 64px; padding: 0 9px; gap: 6px; }
+  .controls .control-label { margin: 0; text-transform: capitalize; }
+}
+@media (max-width: 760px) {
+  :root { --header-clear: calc(var(--ui-top) + 116px); }
+  .journey-button { position: absolute; right: 0; top: 56px; }
+  .controls { position: fixed; top: calc(var(--ui-top) + 56px); left: var(--ui-left); bottom: auto; transform: none; gap: 4px; padding: 3px; }
+  .welcome { width: 360px; }
+  .welcome h1 { font-size: clamp(32px, 9vw, 44px); }
+  .chooser { padding: 16px; }
+  .chooser-heading { top: -16px; }
+  .chooser-options { grid-template-columns: 1fr; }
+  .chooser-card { grid-template-columns: 88px minmax(0, 1fr); }
+}
+
+/* Short landscape screens trade secondary readouts for a clear driving area. */
+@media (max-height: 560px) and (orientation: landscape) {
+  :root { --edge: 6px; --header-clear: calc(var(--ui-top) + 60px); --stick-size: 125.84px; }
+  .brand-caption, #stick-help, #welcome > .controller-hint { display: none; }
+  .brand-mark { width: 32px; height: 32px; }
+  .wordmark { font-size: 23px; }
+  .journey-button { position: static; font-size: 11px; padding: 10px 12px; }
+  .welcome { --panel-top: var(--header-clear); width: 380px; padding: 16px; }
+  .welcome h1 { font-size: 32px; margin: 10px 0; }
+  .welcome .eyebrow { display: none; }
+  .welcome p { font-size: 13px; line-height: 1.5; margin-bottom: 12px; }
+  .bottom-bar, body[data-controller=true] .bottom-bar { bottom: var(--ui-bottom); justify-content: flex-start; }
+  .controls { position: fixed; top: auto; bottom: var(--ui-bottom); left: 50%; transform: translateX(-50%); }
+  .pause-overlay h2 { font-size: 32px; margin-top: 8px; }
+  .pause-overlay p { margin: 8px 0 12px; }
+  .chooser-options { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .chooser-card { display: block; }
+  .chooser-art, .chooser-note { display: none; }
+  .chooser-intro { margin-bottom: 12px; font-size: 12px; }
+  .chooser-title { margin-top: 4px; font-size: 30px; }
+}
+@media (max-width: 600px) and (max-height: 560px) {
+  .welcome .eyebrow { display: none; }
+  .welcome h1 { font-size: 30px; margin: 8px 0 12px; }
+  .welcome p { font-size: 12px; line-height: 1.5; margin-bottom: 12px; }
+  .welcome { padding: 16px; }
+}
+@media (max-width: 600px) and (orientation: landscape) {
+  .brand-mark { display: none; }
+  .wordmark { font-size: 21px; }
+  .topbar { gap: 8px; }
+}
+
+/* The route and its mileage read as one card on the pause screen. */
+.bottom-bar { justify-content: flex-start; }
+.location { display: flex; align-items: center; gap: 11px; max-width: 100%; padding: 10px 12px; border: 1px solid #ffffff50; border-radius: 10px; background: #f9f8ee5e; backdrop-filter: blur(12px); }
+.location-copy { display: flex; flex-direction: column; gap: 3px; }
+.location-title { font-size: 10px; letter-spacing: .9px; }
+.location-sub { margin-top: 0; font-size: 11px; }
+body[data-journey=snow] .location { background: #17273ed1; border-color: #93acc64a; }
+body[data-journey=jungle] .location { background: #1c3423d1; border-color: #9cbf8f4a; }
+@media (min-width: 761px) {
+  .controls { position: fixed; left: 50%; bottom: var(--ui-bottom); top: auto; transform: translateX(-50%); }
+}
+.bottom-bar, body[data-controller=true] .bottom-bar { bottom: var(--ui-bottom); }
+.touch-controls { flex-direction: row-reverse; }
+#stick-help { position: absolute; right: 0; bottom: calc(var(--stick-size) + 12px); }
+@media (max-width: 600px) and (orientation: landscape) {
+  .controls button { min-width: 44px; padding: 0; justify-content: center; }
+  .controls .control-label { display: none; }
+}
+@media (max-width: 360px) {
+  .controls button { min-width: 44px; padding: 0; justify-content: center; }
+  .controls .control-label { display: none; }
+}
+
+/* Anchor dismiss icons to the help area's corner, away from the copy. */
+.dismiss-control-help, .touch-controls .dismiss-control-help, .controls .dismiss-control-help {
+  position: absolute; top: 0; right: 0; width: 32px; height: 32px; min-width: 32px; min-height: 32px;
+  padding: 0; transform: none; background: transparent; font-size: 17px;
+}
+.dismiss-control-help > span { position: absolute; top: 3px; right: 3px; display: grid; place-items: center; width: 22px; height: 22px; line-height: 1; }
+.dismiss-control-help:hover { background: transparent; }
+.dismiss-control-help:hover > span { background: #25473e15; border-radius: 50%; }
+.controls > [data-control-help] { position: static; }
+@media (min-width: 1101px) and (pointer: fine) {
+  body:not([data-control-help-dismissed=true]) .controls { padding-right: 36px; }
+}
+@media (any-pointer: coarse) {
+  .dismiss-control-help, .touch-controls .dismiss-control-help { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
+}
+
+/* One row of driving actions, pause included, sits at the top right. */
+:root { --header-clear: calc(var(--ui-top) + 76px); }
+.drive-actions {
+  position: relative; flex-shrink: 0;
+  display: flex; align-items: center; padding: 1px 3px; gap: 2px;
+  border: 1px solid #f9f8ee75; border-radius: 12px;
+  background: #f9f8ee5e; backdrop-filter: blur(12px); pointer-events: auto;
+}
+.drive-actions button {
+  position: static; display: flex; align-items: center; justify-content: center; gap: 6px;
+  min-width: 44px; min-height: 44px; padding: 0 9px;
+  border: 0; border-radius: 8px; background: transparent; backdrop-filter: none;
+  font-size: 12px; font-weight: 600; white-space: nowrap;
+}
+.drive-actions button:hover { background: #25473e12; }
+.drive-actions svg { display: block; width: 18px; height: 18px; flex-shrink: 0; }
+.drive-actions kbd { display: none; }
+.drive-actions .control-label { margin: 0; text-transform: capitalize; }
+#app:has(.welcome:not(.hidden), #pause-overlay:not([hidden])) .drive-actions :is(#view, #reset) { display: none; }
+#app:has(.welcome.hidden) .topbar .brand,
+#app:has(#pause-overlay:not([hidden])) .brand { display: none; }
+#app:has(.welcome.hidden, #pause-overlay:not([hidden])) .topbar { justify-content: flex-end; }
+body[data-controller=true] .drive-actions { display: none; }
+body[data-journey=snow] .drive-actions { background: #17273ed1; border-color: #93acc64a; }
+body[data-journey=snow] .drive-actions button { background: transparent; }
+body[data-journey=snow] .drive-actions button:hover { background: #304663e0; }
+body[data-journey=jungle] .drive-actions { background: #1c3423d1; border-color: #9cbf8f4a; }
+body[data-journey=jungle] .drive-actions button { background: transparent; }
+body[data-journey=jungle] .drive-actions button:hover { background: #2f5136e0; }
+@media (any-pointer: coarse), (max-width: 1100px) {
+  .controls { display: none; }
+}
+@media (any-pointer: coarse), (max-width: 760px) {
+  :root { --edge: 18px; }
+}
+@media (max-width: 360px) {
+  .drive-actions button { padding-inline: 7px; gap: 5px; }
+}
+@media (max-height: 560px) and (orientation: landscape) {
+  .welcome { padding: 12px; }
+  .welcome h1 { font-size: 26px; margin: 0 0 8px; }
+  .welcome h1 br { display: none; }
+  .welcome h1 em::before { content: ' '; white-space: pre; }
+  .welcome p { margin-bottom: 8px; }
+}
+
+#fps-counter { position: absolute; top: var(--header-clear); left: var(--ui-left); z-index: 6; padding: 6px 9px; border-radius: 4px; background: #102019d9; color: #edffe9; font: 12px/1.4 monospace; font-variant-numeric: tabular-nums; pointer-events: none; }
+
+/* Four route cards: two columns on mid-width screens before the single mobile column. */
+@media (min-width: 761px) and (max-width: 960px) {
+  .chooser-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* The pause screen carries the readout the drive no longer shows: pinned to
+   its top-left corner where the header's brand would sit, and folded back
+   into the column when the screen is too small for a corner. */
+.pause-overlay .location { position: absolute; top: var(--ui-top); left: var(--ui-left); width: max-content; max-width: calc(100% - var(--ui-left) - var(--ui-right)); }
+.pause-overlay .location-title { font-size: 10px; }
+.pause-overlay .location-sub { font-size: 12px; }
+@media (max-width: 760px), (max-height: 560px) {
+  .pause-overlay .location { position: static; display: flex; margin: clamp(0px, calc((100dvh - 620px) / 2), 180px) 0 14px; }
+  .pause-overlay > h2 { margin-top: 0; }
+}
+/* The drive's own toasts have to clear the pause screen now that sound,
+   fullscreen and the graphics levels are all set from it. */
+#toast { z-index: 4; }
+.drive-actions #pause .play-icon { display: none; }
+.drive-actions #pause[aria-pressed=true] .pause-icon { display: none; }
+.drive-actions #pause[aria-pressed=true] .play-icon { display: block; }
+/* Four actions in one row: on a narrow screen only the route keeps its word. */
+@media (max-width: 760px) {
+  .drive-actions :is(#view, #reset, #pause) .control-label { display: none; }
+}
+
+/* The joystick's caption is a caption, not a dialog: the copy and its dismiss
+   button share one line instead of the button floating in a band of reserved
+   space above the text. The button keeps a 44px tap target through a halo, so
+   it can look like the small control it is. */
+#stick-help {
+  display: flex; align-items: center; gap: 8px;
+  width: max-content; max-width: min(230px, 62vw);
+  padding: 8px 8px 8px 13px; line-height: 1.45;
+}
+/* Both lines start together so the arrows line up as a legend. */
+.stick-help-copy { min-width: 0; text-align: left; }
+#stick-help .stick-help-line { display: inline-block; margin-top: 1px; opacity: .8; }
+#stick-help .dismiss-control-help {
+  position: relative; inset: auto; flex: none;
+  width: 26px; height: 26px; min-width: 26px; min-height: 26px;
+  border-radius: 50%; background: #25473e14; font-size: 14px; line-height: 1;
+}
+#stick-help .dismiss-control-help::after { content: ''; position: absolute; inset: -9px; }
+#stick-help .dismiss-control-help > span { position: static; width: auto; height: auto; }
+#stick-help .dismiss-control-help:hover { background: #25473e29; }
+#stick-help .dismiss-control-help:hover > span { background: none; }
+body:is([data-journey=snow], [data-journey=jungle]) #stick-help .dismiss-control-help { background: #f2f7ff1f; }
+body:is([data-journey=snow], [data-journey=jungle]) #stick-help .dismiss-control-help:hover { background: #f2f7ff38; }

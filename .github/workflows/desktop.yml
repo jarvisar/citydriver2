@@ -1,0 +1,79 @@
+name: Build Citydriver desktop
+
+# Version tags publish desktop packages; manual runs only upload build artifacts.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            script: electron:build:win
+          - name: Linux
+            os: ubuntu-latest
+            script: electron:build:linux
+          - name: macOS
+            os: macos-latest
+            script: electron:build:mac
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run ${{ matrix.script }}
+      - uses: actions/upload-artifact@v6
+        with:
+          name: citydriver-desktop-${{ matrix.name }}
+          path: |
+            release/*.exe
+            release/*.AppImage
+            release/*.dmg
+            release/*.zip
+          if-no-files-found: error
+          # Tag builds are copied into the GitHub Release, so the artifact is only a hand-off.
+          retention-days: ${{ github.event_name == 'push' && 1 || 7 }}
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: citydriver-desktop-*
+          path: release
+          merge-multiple: true
+      - name: Publish desktop packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release/* --clobber
+          else
+            gh release create "$RELEASE_TAG" release/* \
+              --verify-tag --title "$RELEASE_TAG" --generate-notes
+          fi

@@ -1,0 +1,176 @@
+/* Citydriver's shared visual language. Layout stays in the component styles.
+   Slate panels come from the district HUD; taxi yellow marks action/selection. */
+:root {
+  --city-panel: #263b45;
+  --city-glass: #263b45f2;
+  --city-raised: #304954;
+  --city-hover: #3b5662;
+  --city-recessed: #1b2d36;
+  --city-text: #f5f4e9;
+  --city-muted: #c4d3d8;
+  --city-line: #afc9d13d;
+  --city-accent: #ffd238;
+  --city-accent-hover: #ffe177;
+  --city-gold: #f3d899;
+  --city-on-accent: #17262f;
+  --city-radius: 16px;
+  --city-control-radius: 10px;
+  --city-shadow: 0 6px 24px #101e282b;
+  --city-font: 'Segoe UI', Arial, sans-serif;
+}
+body, body[data-journey] {
+  --ink: var(--city-text);
+  --cream: var(--city-panel);
+  --ui-line: var(--city-line);
+  --action: var(--city-raised);
+  --action-hover: var(--city-hover);
+  --menu-ink: var(--city-text);
+  color: var(--city-text);
+  background: var(--city-recessed);
+  font-family: var(--city-font);
+  color-scheme: dark;
+}
+#app :is(button, input, select):focus-visible,
+#app .chooser-card:focus,
+body[data-controller=true] #app :is(button, input, select):focus {
+  outline: 3px solid var(--city-gold); outline-offset: 3px;
+}
+#app kbd { border-color: var(--city-line); background: #ffffff09; color: inherit; }
+
+/* HUD panels share a finish in both free drive and taxi mode. */
+#app :is(.city-hud, .drive-actions, .city-guide, .taxi-task, .taxi-dash, .controls, #stick-help, .location) {
+  color: var(--city-text); background: var(--city-glass); border-color: var(--city-line);
+  box-shadow: var(--city-shadow); backdrop-filter: blur(12px);
+}
+/* The city behind the panels moves every frame, so each blur is redrawn every
+   frame, a whole extra pass per panel on a phone. The glass is 95% opaque and
+   hides nearly all of it, so the lighter levels leave the blur out. */
+:root:is([data-graphics='smooth'], [data-graphics='basic']) #app :is(.city-hud, .drive-actions, .city-guide, .taxi-task, .taxi-dash, .controls, #stick-help, .location) {
+  backdrop-filter: none;
+}
+#app :is(.city-hud, .drive-actions, .city-guide, .taxi-task, .controls) { border-radius: var(--city-radius); }
+#app .drive-actions { padding: 3px; }
+#app :is(.city-hud, .drive-actions) { min-height: 58px; }
+#app .city-hud, #app .city-hud-copy { min-width: 0; }
+#app :is(#city-location, #weather-label) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#app .drive-actions button { color: var(--city-text); border-radius: var(--city-control-radius); font-weight: 650; }
+#app .drive-actions button:hover { background: var(--city-hover); }
+#app .city-heading { color: var(--city-gold); border-color: #f3d89966; }
+#app :is(#weather-label, #taxi-task-detail, #taxi-fares, #taxi-fare-status, #taxi-offer) { color: var(--city-muted); }
+#app .taxi-score { background: var(--city-glass); color: var(--city-text); }
+#app #taxi-stage { color: var(--city-accent); }
+#app .taxi-task[data-arriving=true] #taxi-task-detail { color: #c3f4bb; }
+#app .city-guide-header { background: var(--city-panel); }
+#app .city-guide[data-expanded=false] .city-guide-header { background: transparent; }
+#app #city-map-toggle { color: var(--city-text); border-radius: var(--city-control-radius); }
+#app #city-map-toggle:hover { background: var(--city-hover); }
+/* With a controller, the map button names the pad button that opens it. */
+body[data-controller=true] #app #city-map-toggle::before { content: 'VIEW'; margin-right: 6px; padding: 1px 5px; border: 1px solid var(--city-line); border-radius: 4px; font-size: 9px; letter-spacing: .5px; vertical-align: 1px; }
+#app #taxi-buttons button { border-radius: var(--city-control-radius); border-color: var(--city-line); }
+#app #taxi-buttons > button { color: var(--city-text); background: var(--city-glass); }
+#app #taxi-buttons[data-drifting=true] [data-drive-button=handbrake] { background: var(--city-hover); }
+
+/* Keep the circular steering target, but retire the cream frosted-glass finish. */
+#app #touch-stick { background: #263b45b8; border-color: #afc9d170; opacity: 1; box-shadow: var(--city-shadow); }
+#app .stick-guide { border-color: #c4d3d84d; }
+#app .stick-thumb { background: var(--city-muted); border-color: #f5f4e970; box-shadow: 0 3px 10px #101e2859; }
+#app #touch-stick.active .stick-thumb { background: var(--city-accent); border-color: var(--city-accent-hover); }
+#app #stick-help { border: 1px solid var(--city-line); border-radius: var(--city-control-radius); }
+#app #welcome > .controller-hint { border: 1px solid var(--city-line); background: var(--city-glass); color: var(--city-text); }
+#app #stick-help .stick-help-line { opacity: 1; color: var(--city-muted); }
+#app #stick-help .dismiss-control-help { color: var(--city-muted); background: transparent; }
+#app #stick-help .dismiss-control-help:hover { color: var(--city-text); background: var(--city-hover); }
+
+/* Menus, pause settings and dialogs use the same palette as the HUD. */
+#app .pause-overlay, #app .taxi-results { background: #101e28df; color: var(--city-text); backdrop-filter: blur(10px); }
+#app :is(.pause-header h2, .chooser-title, .garage-title, #taxi-fleet-heading, .error h2) {
+  font-family: var(--city-font); font-weight: 750; letter-spacing: -.6px; color: var(--city-text); text-shadow: none;
+}
+#app :is(.pause-header .location-copy, .pause-settings h3) { text-shadow: none; }
+#app .pause-header .location { background: none; border: 0; box-shadow: none; backdrop-filter: none; }
+#app :is(.pause-settings h3, .paint-shop h3, .garage-subheading) { color: var(--city-gold); font-weight: 750; opacity: 1; }
+#app :is(.chooser, #taxi-fleet-dialog, .taxi-result-card) {
+  color: var(--city-text); background: var(--city-panel); border: 1px solid var(--city-line);
+  border-radius: var(--city-radius); box-shadow: 0 18px 60px #07131d70;
+}
+#app :is(.chooser, #taxi-fleet-dialog)::backdrop { background: #101e28d9; backdrop-filter: blur(8px); }
+#app :is(.chooser-heading, #taxi-fleet-dialog .chooser-heading) { background: var(--city-panel); }
+#app :is(.icon-button, .chooser-heading .icon-button, #taxi-fleet-dialog .icon-button) {
+  color: var(--city-text); background: var(--city-raised); border: 1px solid var(--city-line);
+  border-radius: var(--city-control-radius); box-shadow: none;
+}
+#app .icon-button:hover { background: var(--city-hover); transform: none; }
+#app :is(.panel-button, .panel-toggle, .weather-setting, .graphics-levels button, .pwa-install-button) {
+  color: var(--city-text); border: 1px solid var(--city-line); background: var(--city-raised);
+  border-radius: var(--city-control-radius); box-shadow: none; backdrop-filter: none;
+}
+#app :is(.panel-button, .panel-toggle, .graphics-levels button, .pwa-install-button):hover { background: var(--city-hover); }
+#app .panel-button:disabled { background: var(--city-recessed); color: var(--city-muted); opacity: .65; }
+#app .pause-panel > .panel-button + .panel-button { margin-top: 6px; }
+#app :is(.panel-button-value, .graphics-toggle small, .audio-mixer-toggle small, .graphics-status, .weather-note,
+  .audio-description, .audio-channel output, .pixel-density-control output, .paint-current, .paint-note,
+  .chooser-intro, .chooser-card-description, .chooser-note, .car-meter, .controller-hint) {
+  color: var(--city-muted); opacity: 1;
+}
+#app #pause-overlay .pwa-install-help { color: var(--city-muted); opacity: 1; }
+#app :is(.graphics-settings, .audio-mixer, .paint-shop, .notebook-panel) {
+  color: var(--city-text); border-color: var(--city-line); background: var(--city-recessed);
+}
+#app :is(.graphics-toggle, .audio-mixer-toggle)[aria-expanded=true] { border-radius: var(--city-control-radius) var(--city-control-radius) 0 0; }
+#app :is(.graphics-settings, .audio-mixer) { border-radius: 0 0 var(--city-control-radius) var(--city-control-radius); }
+#app .weather-setting select { color: var(--city-text); border-color: var(--city-line); background: var(--city-recessed); border-radius: 7px; }
+#app .panel-switch { border-color: #afc9d180; background: var(--city-recessed); }
+#app .panel-switch::after { background: var(--city-muted); }
+#app .panel-toggle[aria-pressed=true] .panel-switch { background: var(--city-accent); border-color: var(--city-accent); }
+#app .panel-toggle[aria-pressed=true] .panel-switch::after { background: var(--city-on-accent); }
+#app :is(.graphics-levels button[aria-checked=true], .audio-presets button[aria-pressed=true]) {
+  color: var(--city-on-accent); background: var(--city-accent); border-color: var(--city-accent); font-weight: 750;
+}
+#app .audio-presets { background: var(--city-panel); }
+#app .audio-presets button { color: var(--city-muted); }
+#app .audio-presets button:hover { background: var(--city-hover); }
+#app .audio-presets button[aria-pressed=true]:hover { color: var(--city-on-accent); background: var(--city-accent-hover); }
+#app :is(#pixel-density, progress) { accent-color: var(--city-accent); }
+#app .audio-channel input { --control-level: var(--audio-level, 0%); }
+#app :is(.audio-channel input, #pixel-density) { --control-track: #afc9d138; appearance: none; background: transparent; cursor: pointer; }
+#app :is(.audio-channel input, #pixel-density)::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--city-accent) var(--control-level), var(--control-track) var(--control-level)); }
+#app :is(.audio-channel input, #pixel-density)::-webkit-slider-thumb { appearance: none; width: 16px; height: 16px; margin-top: -6px; border: 2px solid var(--city-recessed); border-radius: 50%; background: var(--city-accent); box-shadow: 0 0 0 1px var(--city-line); }
+#app :is(.audio-channel input, #pixel-density)::-moz-range-track { height: 4px; border-radius: 2px; background: var(--control-track); }
+#app :is(.audio-channel input, #pixel-density)::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--city-accent); }
+#app :is(.audio-channel input, #pixel-density)::-moz-range-thumb { box-sizing: border-box; width: 16px; height: 16px; border: 2px solid var(--city-recessed); border-radius: 50%; background: var(--city-accent); }
+
+/* Shared primary and secondary actions; no cream gradients or pill buttons. */
+#app :is(.start-button, .taxi-result-card button), #app #welcome .start-button {
+  color: var(--city-on-accent); background: var(--city-accent); border: 1px solid var(--city-accent);
+  border-radius: var(--city-control-radius); box-shadow: var(--city-shadow); font-weight: 750; text-shadow: none;
+}
+#app :is(.start-button, .taxi-result-card button):hover, #app #welcome .start-button:hover {
+  color: var(--city-on-accent); background: var(--city-accent-hover); border-color: var(--city-accent-hover); transform: none;
+}
+#app #welcome .start-button.menu-secondary, #app .taxi-result-card button + button {
+  color: var(--city-text); background: var(--city-panel); border-color: var(--city-line); box-shadow: var(--city-shadow);
+}
+#app #welcome .start-button.menu-secondary:hover, #app .taxi-result-card button + button:hover { background: var(--city-hover); }
+#app :is(.chooser-card, .taxi-fleet-card) { color: var(--city-text); background: var(--city-raised); border-color: var(--city-line); border-radius: 12px; }
+#app .chooser-card:hover { background: var(--city-hover); border-color: var(--city-gold); transform: none; }
+#app .chooser-card[aria-current=true] { border-color: var(--city-accent); box-shadow: inset 0 3px var(--city-accent); }
+#app .chooser-current { color: var(--city-accent); }
+#app .paint-custom { border-color: var(--city-line); border-radius: var(--city-control-radius); }
+#app .paint-custom[data-active=true], #app .paint-swatch[aria-checked=true] { border-color: var(--city-accent); box-shadow: 0 0 0 2px var(--city-accent); }
+#app .car-meter-track { background: #afc9d138; }
+#app .car-meter-track > span { background: var(--city-gold); }
+#app .taxi-fleet-card[data-selected=true] { border-color: var(--city-accent); box-shadow: inset 0 3px var(--city-accent); }
+#app .taxi-fleet-card button { border-radius: var(--city-control-radius); }
+#app .notebook-stamp { color: var(--city-text); border-color: var(--city-line); }
+#app .notebook-place[data-found=true] .notebook-stamp { color: var(--city-on-accent); }
+#app .notebook-check { color: var(--city-gold); }
+#app #city-stop-name { font-family: var(--city-font); font-weight: 700; }
+
+/* Peripheral states should not fall back to the old light/green theme. */
+#app > #toast, #app #vr-error { background: var(--city-panel); color: var(--city-text); border: 1px solid var(--city-line); border-radius: var(--city-control-radius); box-shadow: var(--city-shadow); }
+#app .taxi-task #toast { border: 0; box-shadow: none; }
+#app :is(.error, #journey-transition, .loading) { background: var(--city-panel); color: var(--city-text); }
+#app .error button { background: var(--city-accent); color: var(--city-on-accent); border-color: var(--city-accent); border-radius: var(--city-control-radius); }
+@media (forced-colors: active) {
+  #app :is(.audio-channel input, #pixel-density) { appearance: auto; accent-color: auto; }
+}

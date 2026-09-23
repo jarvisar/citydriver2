@@ -1,0 +1,42 @@
+{
+  "name": "citydriver",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview --host",
+    "test": "node --import ./tests/world-seed.js --test tests/*.test.js",
+    "test:browser": "node scripts/citydriver-smoke.mjs",
+    "test:fleet": "node scripts/taxi-fleet-test.mjs",
+    "electron:web": "vite build --outDir dist-electron",
+    "electron:dev": "node scripts/electron-launch.mjs",
+    "electron:start": "npm run electron:web && node scripts/electron-launch.mjs --built",
+    "electron:icons": "node scripts/electron-icons.mjs",
+    "electron:pack": "npm run electron:web && electron-builder --config electron/builder.config.cjs --dir",
+    "electron:build": "npm run electron:web && electron-builder --config electron/builder.config.cjs --publish never",
+    "electron:build:win": "npm run electron:web && electron-builder --config electron/builder.config.cjs --publish never --win --x64",
+    "electron:build:linux": "npm run electron:web && electron-builder --config electron/builder.config.cjs --publish never --linux --x64",
+    "electron:build:mac": "npm run electron:web && electron-builder --config electron/builder.config.cjs --publish never --mac",
+    "test:electron": "node scripts/electron-test.mjs",
+    "pwa:icons": "node scripts/pwa-icons.mjs",
+    "pwa:screenshots": "node scripts/pwa-screenshots.mjs",
+    "test:pwa": "node scripts/pwa-test.mjs",
+    "test:smoke": "node scripts/citydriver-smoke.mjs",
+    "city:svg": "node scripts/city-map-svg.mjs"
+  },
+  "dependencies": {
+    "n8ao": "2.0.1",
+    "postprocessing": "^6.39.5",
+    "three": "^0.186.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "electron": "^44.3.0",
+    "electron-builder": "^26.15.3",
+    "vite": "^8.3.0"
+  },
+  "description": "Arcade taxi driving in a generated city."
+}

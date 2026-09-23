@@ -1,0 +1,13 @@
+/* Installation is a quiet setting, with instructions only when requested. */
+.pwa-install { width: 360px; max-width: 100%; margin: 0 0 12px; text-align: center; }
+.pwa-install[hidden], .pwa-install-help[hidden] { display: none; }
+.pwa-install-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 44px; padding: 8px 14px; border: 0; border-radius: 999px;
+  color: inherit; background: transparent; font: inherit; font-size: 12px; cursor: pointer;
+}
+.pwa-install-button svg { width: 18px; height: 18px; }
+.pwa-install-button:hover { background: color-mix(in srgb, currentColor 7%, transparent); }
+.pwa-install-button:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.pwa-install-button:disabled { cursor: wait; opacity: .6; }
+#pause-overlay .pwa-install-help { margin: 4px auto 0; max-width: 280px; font-size: 12px; line-height: 1.6; opacity: .75; }

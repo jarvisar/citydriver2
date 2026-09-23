@@ -1,0 +1,87 @@
+/* The garage names itself on one line and goes straight to the cars: a
+   portrait, a name, and four meters is everything a card needs to say. */
+#car-dialog .chooser-heading { padding: 6px 0 16px; }
+.garage-title { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: 2.1px; text-transform: uppercase; }
+/* The pause screen's car section matches the graphics panel beside it. */
+.pause-panel { width: 340px; max-width: 100%; margin: 4px 0 14px; text-align: left; }
+.pause-panel h3 { font-size: 9px; font-weight: 700; letter-spacing: 2.1px; text-transform: uppercase; margin: 0 0 10px; opacity: .72; }
+.panel-button {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; min-height: 44px; padding: 0 12px;
+  border: 1px solid #25473e2e; border-radius: 8px;
+  background: #f9f8ee6b; backdrop-filter: blur(12px);
+  font-size: 12px; font-weight: 550;
+  transition: background .2s;
+}
+.panel-button:hover { background: #f9f8eecc; }
+.panel-button svg { width: 18px; height: 18px; flex-shrink: 0; }
+.panel-button-value { margin-left: auto; opacity: .7; font-weight: 500; }
+/* Sound and fullscreen read as switch rows beside the garage, and soft
+   shading follows the same shape inside the graphics panel. */
+.panel-toggle { justify-content: flex-start; }
+.panel-toggle .panel-switch { margin-left: auto; }
+.panel-button-label { min-width: 0; }
+body[data-journey=snow] .panel-button { background: #17273ed1; border-color: #93acc64a; }
+body[data-journey=snow] .panel-button:hover { background: #304663e0; }
+body[data-journey=jungle] .panel-button { background: #1c3423e0; border-color: #9cbf8f4a; }
+body[data-journey=jungle] .panel-button:hover { background: #2c4a33e8; }
+@media (max-height: 560px) { .pause-panel { margin: 2px 0 8px; } .pause-panel h3 { margin-bottom: 6px; } }
+
+/* The paint counter sits above the fleet: the colour the garage is wearing,
+   and one row of chips that repaint the car where it stands. */
+.paint-shop { margin: 2px 0 20px; padding: 13px 16px 14px; border: 1px solid #25473e24; border-radius: 12px; background: #fff7; }
+.paint-shop-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.paint-shop h3 { margin: 0; font-size: 9px; font-weight: 700; letter-spacing: 2.1px; text-transform: uppercase; opacity: .72; }
+.paint-current { font-size: 11px; letter-spacing: .2px; opacity: .68; text-align: right; }
+.paint-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.paint-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.paint-swatch { position: relative; display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%; background: none; }
+/* Chips stay 34px so a dozen colours fit on one line; the hit area is 44px. */
+.paint-swatch::after { content: ''; position: absolute; inset: -5px; border-radius: 50%; }
+.paint-chip { width: 26px; height: 26px; border-radius: 50%; background: var(--swatch, #d96143); box-shadow: inset 0 0 0 1px #0000002e; transition: transform .18s; }
+.paint-swatch:hover .paint-chip { transform: scale(1.14); }
+.paint-swatch[aria-checked=true] { box-shadow: 0 0 0 2px var(--ink); }
+.paint-swatch[aria-checked=true] .paint-chip { transform: scale(.82); }
+/* Default is not a colour, so it reads as an empty swatch with a line through
+   it rather than a disc that could be mistaken for one. */
+.paint-default .paint-chip { background: linear-gradient(135deg, transparent 45%, currentColor 45%, currentColor 55%, transparent 55%); box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 28%, transparent); }
+.paint-custom { position: relative; display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 13px 0 4px; border: 1px dashed #25473e45; border-radius: 17px; cursor: pointer; }
+.paint-custom input { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; opacity: 0; cursor: pointer; }
+.paint-custom-chip { width: 26px; height: 26px; border-radius: 50%; box-shadow: inset 0 0 0 1px #0000002e; background: conic-gradient(#d96143, #e0b44a, #78977b, #6fa9c2, #2f4a6d, #6b4a6b, #d96143); }
+.paint-custom-label { font-size: 11px; font-weight: 550; letter-spacing: .2px; }
+.paint-custom[data-active=true] { border-style: solid; border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+.paint-custom[data-active=true] .paint-custom-chip { background: var(--swatch); }
+.paint-custom:hover .paint-custom-chip { transform: scale(1.1); }
+.paint-note { margin: 11px 0 0; font-size: 11px; line-height: 1.6; opacity: .62; }
+.paint-note b { font-weight: 650; opacity: .85; }
+.garage-subheading { margin: 0 0 10px; font-size: 9px; font-weight: 700; letter-spacing: 2.1px; text-transform: uppercase; opacity: .72; }
+body[data-journey=desert] .paint-shop, body[data-journey=plains] .paint-shop, body[data-journey=city] .paint-shop { background: #fff6; }
+body[data-journey=snow] .paint-shop { background: #ffffff0f; border-color: #8aa4c442; }
+body[data-journey=jungle] .paint-shop { background: #ffffff0f; border-color: #8fb58442; }
+body[data-journey=snow] .paint-custom, body[data-journey=jungle] .paint-custom { border-color: #ffffff4d; }
+
+.car-card { --car-paint: #d96143; }
+.car-card .chooser-card-copy { padding: 12px 14px 11px; }
+.car-card .chooser-card-title { font-size: 13px; font-weight: 600; letter-spacing: -.1px; }
+.car-card-plain { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 15px 16px; }
+.car-card-plain .chooser-card-title { display: block; font-size: 13px; font-weight: 600; }
+.car-card-plain .chooser-current { margin-top: 0; }
+/* A fixed label column keeps the bars in one line down the card, and a capped
+   width stops them stretching across a wide phone row. */
+.car-meters { display: block; margin-top: 10px; max-width: 232px; }
+.car-meter { display: grid; grid-template-columns: 74px minmax(0, 1fr); align-items: center; gap: 10px; margin-top: 5px; font-size: 10px; letter-spacing: .2px; opacity: .62; }
+.car-meter-track { height: 3px; border-radius: 2px; background: #25473e2b; overflow: hidden; }
+.car-meter-track > span { display: block; height: 100%; border-radius: 2px; background: var(--ink); }
+body[data-journey=snow] .car-meter-track, body[data-journey=jungle] .car-meter-track { background: #ffffff2b; }
+@media (max-width: 600px) {
+  #car-dialog .chooser-heading { padding-bottom: 12px; }
+  .paint-shop { margin-bottom: 14px; padding: 11px 12px 12px; }
+  .paint-shop-heading { flex-direction: column; align-items: flex-start; gap: 2px; margin-bottom: 10px; }
+  .paint-current { text-align: left; }
+  .paint-swatches { gap: 6px; }
+  .car-card-plain { display: flex; padding: 13px 14px; }
+  .car-card .chooser-card-title { font-size: 12px; }
+  .car-card { grid-template-columns: 130px 1fr; }
+  .car-meter { grid-template-columns: 66px minmax(0, 1fr); gap: 8px; font-size: 9px; margin-top: 4px; }
+  .car-meters { margin-top: 8px; max-width: 190px; }
+}

@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#20323d" />
+    <meta name="description" content="Arcade taxi driving. Pick up passengers, beat the clock, and earn cash." />
+    <title>Citydriver</title>
+    <!-- Keep startup styles inline so the page is covered before the game module loads. -->
+    <style>
+      html, body { margin: 0; overflow: hidden; background: #20323d; }
+      .loading {
+        position: fixed; inset: 0; z-index: 8;
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+        background: #20323d; color: #e9f0ef;
+        font: 12px 'Segoe UI', Arial, sans-serif; letter-spacing: .3px;
+        transition: opacity .25s, visibility 0s .25s;
+      }
+      .loading.loaded { opacity: 0; visibility: hidden; pointer-events: none; }
+      .loading-spinner {
+        box-sizing: border-box; width: 20px; height: 20px;
+        border: 2px solid #e9f0ef26; border-top-color: #e9f0ef; border-radius: 50%;
+        animation: loading-spin .9s linear infinite;
+      }
+      .loading.loaded .loading-spinner { animation: none; }
+      @keyframes loading-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) {
+        .loading { transition: none; }
+        .loading-spinner { animation: none; }
+      }
+    </style>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+  <body>
+    <main id="app">
+      <div id="loading" class="loading" role="status"><span class="loading-spinner" aria-hidden="true"></span><span>Loading Citydriver…</span></div>
+      <canvas id="scene" aria-label="An endless low-poly city. Drive in any direction with WASD or the arrow keys."></canvas>
+      <div class="vignette" aria-hidden="true"></div>
+      <header class="topbar">
+        <div class="city-hud" aria-label="City navigation">
+          <span id="city-heading" class="city-heading" aria-label="Heading">N</span>
+          <span class="city-hud-copy"><span id="city-location">DOWNTOWN</span><span id="weather-label">Golden hour</span></span>
+        </div>
+        <div class="drive-actions" role="group" aria-label="Driving actions">
+          <button id="view" title="Change camera (V)"><kbd>V</kbd><svg class="touch-utility-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3" stroke="currentColor" stroke-width="1.5"/><path d="m8 5 2-3h4l2 3" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5"/></svg> <span class="control-label">view</span></button>
+          <button id="reset" title="Reset in a new area (R)" aria-label="Reset scene and generate a fresh area"><kbd>R</kbd><svg class="touch-utility-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12a8 8 0 1 0 8-8 8.7 8.7 0 0 0-6 2.4L4 8.4M4 4v4.4h4.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> <span class="control-label">reset</span></button>
+          <button id="pause" title="Pause (P or Escape)" aria-label="Pause" aria-pressed="false"><kbd>P</kbd><svg class="pause-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 6v12M16 6v12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><svg class="play-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 6 10 6-10 6V6Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg> <span class="control-label">pause</span></button>
+        </div>
+      </header>
+      <div id="fps-counter" hidden>FPS: …</div>
+      <div id="taxi-hud" class="taxi-hud" hidden>
+        <div class="taxi-clock-box"><span>SHIFT</span><strong id="taxi-clock" aria-label="Shift seconds remaining">90</strong></div>
+        <div class="taxi-score"><strong id="taxi-cash">$0</strong><span id="taxi-fares">0 fares</span></div>
+      </div>
+      <section id="taxi-task" class="taxi-task" hidden aria-label="Current taxi task">
+        <div id="taxi-nav" class="taxi-nav" hidden aria-label="Distance to drop-off">
+          <canvas id="taxi-arrow" width="52" height="52" aria-hidden="true"></canvas>
+          <span id="taxi-nav-distance">0 m</span>
+        </div>
+        <div class="taxi-task-copy">
+          <div class="taxi-task-heading"><span id="taxi-stage">Pick up</span><span id="taxi-timer" hidden></span><span id="taxi-fare-status"></span></div>
+          <strong id="taxi-task-title">Find a passenger</strong>
+          <span id="taxi-party"></span>
+          <span id="taxi-next-stop"></span>
+          <span id="taxi-task-detail" role="status"></span>
+        </div>
+        <div class="taxi-timer-track" hidden aria-hidden="true"><span id="taxi-timer-fill"></span></div>
+        <div class="taxi-stop-track" hidden role="progressbar" aria-label="Passenger boarding" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="taxi-stop-progress"></span></div>
+      </section>
+      <div id="taxi-dash" class="taxi-dash" hidden><span><b id="taxi-speed">0</b> mph</span><span id="taxi-combo"></span><span class="taxi-controller-charge">Boost<progress id="taxi-controller-boost" max="1" value="1" aria-label="Boost available"></progress></span></div>
+      <div id="taxi-buttons" hidden>
+        <div class="taxi-boost-control"><button type="button" data-drive-button="boost" aria-describedby="taxi-boost-state"><kbd>SHIFT</kbd><span>Boost</span><small id="taxi-boost-state">Hold</small></button><div id="taxi-boost" role="progressbar" aria-label="Boost available" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><span id="taxi-boost-fill"></span></div></div>
+        <button type="button" data-drive-button="handbrake"><kbd>SPACE</kbd><span>Drift</span><small>Tap + steer</small></button>
+      </div>
+      <section id="taxi-results" class="taxi-results" hidden role="dialog" aria-modal="true" aria-labelledby="taxi-result-title">
+        <div class="taxi-result-card">
+          <h2 id="taxi-result-title">TIME UP<span id="taxi-result-shift" aria-label="Shift length">0:00</span></h2>
+          <strong id="taxi-result-cash">$0</strong>
+          <div id="taxi-result-license" class="taxi-license"><span id="taxi-license-badge" class="taxi-license-badge" aria-hidden="true">–</span><span class="taxi-license-copy"><strong id="taxi-license-name">No license</strong><small id="taxi-license-next"></small></span></div>
+          <ul id="taxi-result-stats" class="taxi-result-stats" aria-label="Shift statistics"></ul>
+          <div id="taxi-result-goals" class="taxi-result-goals"></div>
+          <div id="taxi-result-career" class="taxi-result-career" hidden><div class="taxi-result-heading"><span id="taxi-career-rank">Rookie</span><span id="taxi-career-next"></span></div><progress id="taxi-career-progress" max="1" value="0"></progress><small id="taxi-career-livery"></small></div>
+          <p class="taxi-result-footer"><span id="taxi-result-best">Best $0</span><span id="taxi-result-bank"></span></p>
+          <button type="button" id="taxi-retry">Play again</button><button type="button" id="taxi-fleet-results" data-open-fleet>Taxi fleet</button><button type="button" id="taxi-free">Free drive</button>
+        </div>
+      </section>
+      <aside id="city-guide" class="city-guide" aria-label="Landmarks">
+        <div class="city-guide-header"><span>MAP <b id="city-stamps">0 / 5</b></span><button type="button" id="city-map-toggle" aria-expanded="true" aria-controls="city-map">Hide map</button></div>
+        <canvas id="city-map" width="208" height="144" role="img" aria-label="Local street map. North is up; the white arrow is your car, gold marks your route, and colored dots mark landmarks."></canvas>
+        <p id="taxi-offer" hidden></p>
+        <div class="city-guide-stop"><span class="city-guide-eyebrow">DESTINATION</span><strong id="city-stop-name">Destination</strong><span id="city-stop-context"></span><span id="city-stop-distance">Choose a stop.</span></div>
+      </aside>
+      <p id="vr-error" role="status" hidden></p>
+      <section id="welcome" class="welcome" aria-labelledby="menu-title">
+        <div class="brand menu-brand">
+          <img class="brand-mark" src="/brand-mark.svg" width="96" height="96" alt="" />
+          <h1 id="menu-title" class="wordmark">citydriver</h1>
+          <div class="eyebrow" id="menu-route">TAXI</div>
+          <p class="menu-tagline">Pick up. Drop off. Beat the clock.</p>
+        </div>
+        <div class="menu-actions">
+          <button id="start" class="start-button"><svg class="wheel-icon" viewBox="0 0 32 32" fill="none" aria-hidden="true"><circle cx="16" cy="16" r="12.5" stroke="currentColor" stroke-width="3"/><path d="M4 14h5c3 0 4-3 7-3s4 3 7 3h5v4h-6a4 4 0 0 0-4 4v6h-4v-6a4 4 0 0 0-4-4H4Z" fill="currentColor"/></svg><span>Start run</span></button>
+          <button id="free-drive" type="button" class="start-button menu-secondary"><span>Free drive</span></button>
+          <button id="change-journey" hidden class="journey-button start-button menu-secondary" aria-haspopup="dialog"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="control-label">Change route</span></button>
+          <button id="enter-vr" class="start-button vr-entry menu-secondary" type="button" hidden><svg class="vr-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3.8 7.5h16.4a1.8 1.8 0 0 1 1.8 1.8v5.4a1.8 1.8 0 0 1-1.8 1.8h-3.6a2 2 0 0 1-1.7-.9l-1.2-1.8a2 2 0 0 0-3.4 0l-1.2 1.8a2 2 0 0 1-1.7.9H3.8A1.8 1.8 0 0 1 2 14.7V9.3a1.8 1.8 0 0 1 1.8-1.8Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg><span class="vr-entry-label">Enter VR</span></button>
+        </div>
+        <span class="controller-hint">D-pad / stick: choose · A / Cross: select · RT / R2: drive</span>
+      </section>
+      <div id="pause-overlay" class="pause-overlay" hidden>
+        <div class="pause-content">
+          <header class="pause-header">
+            <h2>Paused</h2><button id="resume" class="start-button"><svg class="wheel-icon" viewBox="0 0 32 32" fill="none" aria-hidden="true"><circle cx="16" cy="16" r="12.5" stroke="currentColor" stroke-width="3"/><path d="M4 14h5c3 0 4-3 7-3s4 3 7 3h5v4h-6a4 4 0 0 0-4 4v6h-4v-6a4 4 0 0 0-4-4H4Z" fill="currentColor"/></svg><span>Resume</span></button>
+            <div class="location"><svg viewBox="0 0 29 34" fill="none" aria-hidden="true"><path d="M4 4c7 2 14 2 21 0v17c0 4-7 7-10.5 10C11 28 4 25 4 21V4Z" stroke="currentColor" stroke-width="1.3"/><text x="14.5" y="22" text-anchor="middle" fill="currentColor" font-size="19" font-family="Georgia, serif">1</text></svg><div class="location-copy"><span class="location-title">ENDLESS CITY</span><span class="location-sub"><span id="distance">0.0</span> mi driven</span></div></div>
+          </header>
+          <div class="pause-settings">
+            <section class="pause-panel" aria-labelledby="garage-heading">
+              <h3 id="garage-heading">Driving</h3>
+              <button type="button" id="restart-run" class="panel-button"><span>Restart run</span></button>
+              <button type="button" id="switch-mode" class="panel-button"><span>Free drive</span></button>
+              <button type="button" id="pause-fleet" class="panel-button" data-open-fleet aria-haspopup="dialog"><span>Taxi fleet</span><span class="panel-button-value">Upgrade / select</span></button>
+              <button type="button" id="change-car" class="panel-button" aria-haspopup="dialog" title="Garage (G)"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3.5 16h17v-4.2l-1.6-4A2 2 0 0 0 17 6.5H7a2 2 0 0 0-1.9 1.3l-1.6 4V16Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M3.5 11.8h17M4.8 16v1.8M19.2 16v1.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span class="panel-button-label">Garage</span><span id="current-car" class="panel-button-value"></span></button>
+              <button type="button" id="autodrive" class="panel-button panel-toggle" aria-pressed="false" title="Autodrive (H / D-pad Up while driving)"><span class="panel-button-label">Autodrive</span><span class="panel-switch" aria-hidden="true"></span></button>
+              <button type="button" id="traffic" class="panel-button panel-toggle" aria-pressed="true"><span class="panel-button-label">Traffic</span><span class="panel-switch" aria-hidden="true"></span></button>
+            </section>
+            <section class="pause-panel goals-panel" id="goals-panel" aria-labelledby="goals-heading" hidden>
+              <h3 id="goals-heading">Shift goals</h3>
+              <ul id="shift-goals" class="shift-goals" aria-label="Shift goals"></ul>
+              <p id="goals-summary" class="weather-note"></p>
+            </section>
+            <section class="pause-panel weather-panel" aria-labelledby="weather-heading">
+              <h3 id="weather-heading">The city</h3>
+              <label class="weather-setting" for="city-weather"><span>Weather &amp; light</span><select id="city-weather"><option value="auto" selected>Auto</option><option value="clear">Day</option><option value="overcast">Overcast</option><option value="rain">Rain</option><option value="storm">Storm</option><option value="snow">Snow</option><option value="sunset">Golden hour</option><option value="night">Night</option></select></label>
+            </section>
+            <section class="pause-panel notebook-panel" aria-labelledby="notebook-heading">
+              <h3 id="notebook-heading">City discoveries</h3>
+              <p id="city-notebook-progress">Pass landmarks to mark them visited.</p>
+              <div id="city-notebook" aria-label="Landmark discoveries"></div>
+              <p class="weather-note">Choose a place to visit. Collect stamps in free drive or while taking fares.</p>
+            </section>
+            <section class="pause-panel" aria-labelledby="sound-heading">
+              <h3 id="sound-heading">Sound</h3>
+              <button type="button" id="sound" class="panel-button panel-toggle" title="Sound (M)" aria-label="Turn sound on" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M11 5L6 9H3v6h3l5 4V5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path class="sound-off" d="m16 9 6 6m0-6-6 6" stroke="currentColor" stroke-width="1.5"/><path class="sound-on" d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14" stroke="currentColor" stroke-width="1.5"/></svg><span class="panel-button-label">Sound</span><span class="panel-switch" aria-hidden="true"></span></button>
+              <button type="button" id="audio-mixer-toggle" class="panel-button audio-mixer-toggle" aria-expanded="false" aria-controls="audio-mixer"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 3v4m0 4v10M12 3v10m0 4v4M19 3v3m0 4v11M2 9h6M9 15h6M16 8h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span class="panel-button-label">Audio settings<small id="audio-mix-label">Balanced · Music off</small></span><svg class="audio-chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 10 5 5 5-5" stroke="currentColor" stroke-width="1.8"/></svg></button>
+              <div id="audio-mixer" class="audio-mixer" hidden></div>
+            </section>
+            <section class="pause-panel graphics-panel" aria-labelledby="graphics-heading">
+              <h3 id="graphics-heading">Display</h3>
+              <button type="button" id="fullscreen" class="panel-button panel-toggle" title="Fullscreen (F / LB / L1)" aria-label="Enter fullscreen" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="panel-button-label">Fullscreen</span><span class="panel-switch" aria-hidden="true"></span></button>
+              <button type="button" id="graphics-toggle" class="panel-button graphics-toggle" aria-expanded="false" aria-controls="graphics-settings"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M8 21h8m-4-4v4" stroke="currentColor" stroke-width="1.5"/></svg><span class="panel-button-label">Graphics<small id="graphics-summary">Auto</small></span><svg class="settings-chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 10 5 5 5-5" stroke="currentColor" stroke-width="1.8"/></svg></button>
+              <div id="graphics-settings" class="graphics-settings" hidden>
+                <div class="graphics-levels" role="radiogroup" aria-label="Graphics quality">
+                  <button type="button" role="radio" aria-checked="true" data-quality="auto">Auto</button>
+                  <button type="button" role="radio" aria-checked="false" data-quality="high">High</button>
+                  <button type="button" role="radio" aria-checked="false" data-quality="balanced">Balanced</button>
+                  <button type="button" role="radio" aria-checked="false" data-quality="smooth">Smooth</button>
+                  <button type="button" role="radio" aria-checked="false" data-quality="basic">Basic</button>
+                </div>
+                <div class="pixel-density-control">
+                  <label for="pixel-density">Pixel density <output id="pixel-density-value" for="pixel-density">100% · Native</output></label>
+                  <input type="range" id="pixel-density" min="50" max="100" step="1" value="100">
+                </div>
+                <button type="button" id="soft-shading" class="panel-toggle" aria-pressed="true">Soft shading<span class="panel-switch" aria-hidden="true"></span></button>
+                <p id="graphics-status" class="graphics-status" role="status"></p>
+              </div>
+            </section>
+            <button id="enter-vr-pause" class="panel-button vr-entry" type="button" hidden><svg class="vr-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3.8 7.5h16.4a1.8 1.8 0 0 1 1.8 1.8v5.4a1.8 1.8 0 0 1-1.8 1.8h-3.6a2 2 0 0 1-1.7-.9l-1.2-1.8a2 2 0 0 0-3.4 0l-1.2 1.8a2 2 0 0 1-1.7.9H3.8A1.8 1.8 0 0 1 2 14.7V9.3a1.8 1.8 0 0 1 1.8-1.8Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg><span class="vr-entry-label">Enter VR</span></button>
+            <span class="controller-hint">D-pad / stick: choose · left / right: adjust · A / Cross: select<br>B / Circle or Start / Menu: resume · right stick: scroll<br>View / Share: map · L3: garage · X / Square: camera</span>
+          </div>
+        </div>
+      </div>
+      <footer class="bottom-bar">
+        <div class="controls"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> <span class="control-label">drive</span></span><button id="next-journey" hidden title="Next scene (N / RB / R1)" aria-label="Next scene"><kbd>N</kbd><svg class="touch-utility-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 5 10 7-10 7V5ZM18 5v14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> <span class="control-label">next</span></button></div>
+      </footer>
+      <div class="touch-controls" role="group" aria-label="Touch driving controls"><div id="touch-stick" role="group" aria-label="Virtual joystick" aria-describedby="stick-help"><span class="stick-guide" aria-hidden="true"></span><span class="stick-thumb" aria-hidden="true"></span></div><span id="stick-help"><span class="stick-help-copy">Drag anywhere to drive<br><span class="stick-help-line">Release to stop</span></span></span></div>
+      <div id="toast" role="status"></div>
+      <dialog id="journey-dialog" class="chooser" aria-labelledby="journey-heading" aria-describedby="journey-description">
+        <div class="chooser-heading"><span class="eyebrow">CITYDRIVER</span><button id="close-journeys" class="icon-button" aria-label="Close city information"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
+        <h2 id="journey-heading" class="chooser-title">City</h2>
+        <p id="journey-description" class="chooser-intro">Drive anywhere.</p>
+        <div class="chooser-options">
+          <button class="chooser-card journey-card" data-journey="city" aria-label="City" aria-current="true"><span class="chooser-card-copy"><span class="chooser-card-title">City</span><span class="chooser-card-description">Free drive.</span><span class="chooser-current">CITY</span></span></button>
+        </div>
+      </dialog>
+      <dialog id="car-dialog" class="chooser" aria-labelledby="car-heading">
+        <div class="chooser-heading"><h2 id="car-heading" class="garage-title">Garage</h2><button id="close-cars" class="icon-button" aria-label="Close garage"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
+        <span class="controller-hint">D-pad / stick: choose · A / Cross: select · B / Circle: close<br>Custom paint: A / Cross to change colour</span>
+        <section class="paint-shop" aria-labelledby="paint-heading">
+          <div class="paint-shop-heading">
+            <h3 id="paint-heading">Paint</h3>
+            <span id="paint-current" class="paint-current" role="status"></span>
+          </div>
+          <div id="paint-row" class="paint-row">
+            <div id="paint-swatches" class="paint-swatches" role="radiogroup" aria-labelledby="paint-heading"></div>
+            <label id="paint-custom-well" class="paint-custom" title="Custom color"><input type="color" id="paint-custom" aria-label="Custom color" value="#d96143"><span class="paint-custom-chip" aria-hidden="true"></span><span class="paint-custom-label">Custom</span></label>
+          </div>
+          <p class="paint-note">Paint applies to all cars.</p>
+        </section>
+        <h3 id="fleet-heading" class="garage-subheading">Fleet</h3>
+        <div class="chooser-options car-options" role="group" aria-labelledby="fleet-heading"></div>
+      </dialog>
+      <dialog id="taxi-fleet-dialog" aria-labelledby="taxi-fleet-heading" aria-describedby="fleet-note">
+        <div class="chooser-heading"><div><span class="eyebrow">BUILD YOUR FLEET</span><h2 id="taxi-fleet-heading">A faster way to fare.</h2></div><button type="button" id="close-fleet" class="icon-button" aria-label="Close taxi fleet"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
+        <div class="fleet-summary"><p id="fleet-note"></p><div class="fleet-wallet"><span>Fleet balance</span><strong id="fleet-balance">$0</strong></div></div>
+        <div class="taxi-fleet-cards"></div>
+        <section class="fleet-livery-shop" aria-labelledby="fleet-livery-heading">
+          <div class="fleet-livery-heading"><h3 id="fleet-livery-heading">Livery</h3><span id="fleet-livery-name" role="status"></span></div>
+          <div id="fleet-liveries" class="paint-swatches fleet-liveries" role="radiogroup" aria-labelledby="fleet-livery-heading"></div>
+          <p id="fleet-career" class="fleet-career"></p>
+        </section>
+        <p class="fleet-footer">Same fares. Faster cabs. Earn more by fitting more trips into each run.<br>Try every cab for free in <b>Free drive &rarr; Garage</b>.</p>
+        <p id="fleet-feedback" role="status" aria-live="polite"></p>
+        <p id="fleet-save" hidden>Saving is unavailable. Your fleet is kept for this visit only.</p>
+      </dialog>
+      <div id="journey-transition" aria-hidden="true"><span>Loading…</span></div>
+      <div id="error" class="error" hidden><h2>Unable to start the game</h2><p>WebGL 2 required. Update your browser and enable hardware acceleration.</p><button onclick="location.reload()">Try again</button></div>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
