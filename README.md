@@ -9,6 +9,16 @@ paths, and blocks cut into lots. The layout comes from a port of
 (`src/mapgen/`, LGPL-3.0); the driving, cars, garage, weather, audio, menus and
 taxi shift are Citydriver's.
 
+![The main menu over the downtown waterfront](docs/images/downtown.png)
+
+Blocks are cut into lots and every building takes the shape of its lot, so
+facades bend with the streets, big lots become perimeter blocks round a
+courtyard, and no two blocks are alike.
+
+| Perimeter blocks and houses | On the street |
+| --- | --- |
+| ![Courtyard blocks seen from above](docs/images/courtyards.png) | ![Driving down a tree-lined street](docs/images/street.png) |
+
 ## How to play
 
 Start a **Taxi run** to pick up passengers and earn money. Stop in a pickup
