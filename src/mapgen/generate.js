@@ -6,6 +6,7 @@ import StreamlineGenerator from './streamlines.js';
 import WaterGenerator from './water-generator.js';
 import Graph from './graph.js';
 import PolygonFinder from './polygon-finder.js';
+import { FIELD_TYPE } from './basis-field.js';
 import { RoadIndex } from './road-index.js';
 import { averagePoint, calcPolygonArea, offsetPolygon } from './polygon-util.js';
 
@@ -34,7 +35,8 @@ export const DEFAULT_OPTIONS = {
     riverBankSize: 14, riverSize: 58, pathIterations: 10000, simplifyTolerance: 5 },
   noise: { globalNoise: false, noiseSizePark: 80, noiseAnglePark: 90, noiseSizeGlobal: 150, noiseAngleGlobal: 20 },
   parks: { big: 2, small: 3, clusterBig: false, maxLength: 20, minArea: 2000 },
-  lots: { maxLength: 20, minArea: 700, chanceNoDivide: .05 },
+  // Lots between minArea and twice that; downtown lots are bigger, for towers
+  lots: { maxLength: 20, minArea: 380, downtownMinArea: 640, chanceNoDivide: .05, maxLotArea: 9000 },
   coast: true, river: true,
 };
 
@@ -141,12 +143,21 @@ export function generateCityMap(options = {}) {
     const nearest = roadIndex.nearest((a.x + b.x) / 2, (a.y + b.y) / 2, 30);
     return nearest ? nearest.road.profile.halfWidth : ROAD_PROFILES.minor.halfWidth;
   };
-  const finder = new PolygonFinder(lotGraph.nodes, { maxLength: o.lots.maxLength, minArea: o.lots.minArea, chanceNoDivide: o.lots.chanceNoDivide,
+  const radial = field.basisFields.find(basis => basis.FIELD_TYPE === FIELD_TYPE.Radial);
+  const minArea = polygon => {
+    if (!radial) return o.lots.minArea;
+    const centre = averagePoint(polygon), distance = Math.hypot(centre.x - radial.centre.x, centre.y - radial.centre.y) / Math.max(1, radial._size);
+    return distance < .7 ? o.lots.downtownMinArea : distance < 1.1 ? (o.lots.downtownMinArea + o.lots.minArea) / 2 : o.lots.minArea;
+  };
+  const finder = new PolygonFinder(lotGraph.nodes, { maxLength: o.lots.maxLength, minArea, chanceNoDivide: o.lots.chanceNoDivide, maxLotArea: o.lots.maxLotArea,
     shrinkSpacing: (a, b) => halfWidthAt(a, b) + SIDEWALK }, field, random);
   finder.findPolygons();
-  const blocks = finder.polygons.map(polygon => ({ polygon, sidewalk: offsetPolygon(polygon, (a, b) => -halfWidthAt(a, b)) }));
+  // A block: its face between the road centrelines, the kerb line, and the
+  // inner edge of its pavement, which is where its lots begin.
+  const blocks = finder.polygons.map(polygon => ({ polygon, sidewalk: offsetPolygon(polygon, (a, b) => -halfWidthAt(a, b)), inner: [] }));
   finder.shrink(); finder.divide();
-  const lots = finder.polygons;
+  finder.shrunkPolygons.forEach((inner, i) => { blocks[i].inner = inner; });
+  const lots = finder.polygons, lotBlocks = finder.lotBlocks;
   lap('lots');
 
   const nodeIndex = new Map(navGraph.nodes.map((node, index) => [node, index]));
@@ -165,7 +176,7 @@ export function generateCityMap(options = {}) {
     coastline: water.coastline, sea: water.seaPolygon, river: water.riverPolygon, riverStreamline: water.riverStreamline,
     riverWidth: waterParams.riverSize - waterParams.riverBankSize,
     hasCoast: water.hasCoast, hasRiver: water.hasRiver,
-    parks: field.parks, blocks, lots, nav, field,
+    parks: field.parks, blocks, lots, lotBlocks, nav, field,
     sampleDirection: (x, y) => field.samplePoint(new Vector(x, y)).getMajor(),
     timings,
   };

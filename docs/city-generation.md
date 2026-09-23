@@ -19,7 +19,10 @@ in `src/mapgen/`, and turned into the world the car drives in by `src/world/`.
 4. **Blocks and lots.** The simplified roads form a planar graph; its faces are
    the blocks. Each block is shrunk by the width of its streets plus a
    sidewalk, then split across its longest side until the pieces are lots of
-   700–1400 m².
+   380–760 m² (640–1280 m² downtown, where the towers stand). One block in
+   twenty stays whole, or splits into a few big lots when it is very large.
+   Every lot remembers its block, so a building knows which of its walls
+   face a street.
 5. **Parks.** Two big faces of the main and major road graph and three minor
    blocks.
 
@@ -42,10 +45,15 @@ with the same batching, colliders and lamp records as citydriver's blocks.
 Chunks outside the detail radius show a distant version of the same
 buildings.
 
-Buildings are citydriver's own facades and roofs, fitted to the largest
-rectangle inside each lot (`fitRectangle` in `city-buildings.js`) and turned
-with it. Lots with no room for a building become gardens. Styles follow the
-district; footprint size and distance from downtown choose the type.
+Buildings follow their lots, as MapGenerator's own drawings do: the footprint
+is the lot polygon stepped in a little (a stripe of pavement in front, an
+alley or a garden behind, by district), extruded as one flat-shaded body per
+cell (`Surface` in `surface.js`) with citydriver's windows, shopfronts, doors,
+cornices and roof furniture placed wall by wall (`city-buildings.js`). Small
+four-sided lots get hipped roofs, tall towers step back, big lots become
+perimeter blocks round a courtyard, and huge ones a low hall. Lots with no
+room for a building become gardens. Styles follow the district; footprint
+size and distance from downtown choose the type and height.
 
 `nav-graph.js` turns the road graph into edges between junctions, which the
 traffic, autodrive, taxi pickups and destinations and the map route use.

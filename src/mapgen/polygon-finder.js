@@ -1,4 +1,4 @@
-import { averagePoint, offsetPolygon, subdividePolygon } from './polygon-util.js';
+import { averagePoint, offsetPolygon, subdividePolygon, calcPolygonArea } from './polygon-util.js';
 
 // Finds the faces of the road graph: blocks, then lots and parks.
 // params: maxLength (vertices per face), minArea, shrinkSpacing (number or a
@@ -6,34 +6,39 @@ import { averagePoint, offsetPolygon, subdividePolygon } from './polygon-util.js
 export default class PolygonFinder {
   constructor(nodes, params, tensorField, random = Math.random) {
     this.nodes = nodes; this.params = params; this.tensorField = tensorField; this.random = random;
-    this._polygons = []; this._shrunkPolygons = []; this._dividedPolygons = [];
+    this._polygons = []; this._shrunkPolygons = []; this._dividedPolygons = []; this._lotBlocks = [];
   }
   get polygons() {
     if (this._dividedPolygons.length > 0) return this._dividedPolygons;
-    if (this._shrunkPolygons.length > 0) return this._shrunkPolygons;
+    if (this._shrunkPolygons.length > 0) return this._shrunkPolygons.filter(p => p.length > 0);
     return this._polygons;
   }
-  reset() { this._polygons = []; this._shrunkPolygons = []; this._dividedPolygons = []; }
+  // Shrunk polygons stay aligned with the faces they came from (empty where
+  // a face collapsed), and every lot remembers the face it was cut from.
+  get shrunkPolygons() { return this._shrunkPolygons; }
+  get lotBlocks() { return this._lotBlocks; }
+  reset() { this._polygons = []; this._shrunkPolygons = []; this._dividedPolygons = []; this._lotBlocks = []; }
   // Pull every edge in from the road so lots have the same setback all round
   shrink() {
     if (this._polygons.length === 0) this.findPolygons();
     const spacing = this.params.shrinkSpacing;
     const distance = typeof spacing === 'function' ? (a, b, i) => -spacing(a, b, i) : -spacing;
-    this._shrunkPolygons = [];
-    for (const p of this._polygons) {
-      const shrunk = offsetPolygon(p, distance);
-      if (shrunk.length > 0) this._shrunkPolygons.push(shrunk);
-    }
+    this._shrunkPolygons = this._polygons.map(p => offsetPolygon(p, distance));
   }
   divide() {
     if (this._polygons.length === 0) this.findPolygons();
     const polygons = this._shrunkPolygons.length > 0 ? this._shrunkPolygons : this._polygons;
-    this._dividedPolygons = [];
-    for (const p of polygons) {
-      if (this.params.chanceNoDivide > 0 && this.random() < this.params.chanceNoDivide) { this._dividedPolygons.push(p); continue; }
-      const divided = subdividePolygon(p, this.params.minArea, this.random);
-      if (divided.length > 0) this._dividedPolygons.push(...divided);
-    }
+    this._dividedPolygons = []; this._lotBlocks = [];
+    polygons.forEach((p, block) => {
+      if (p.length < 3) return;
+      // minArea may vary across the map, so the lots downtown can be bigger
+      const minArea = typeof this.params.minArea === 'function' ? this.params.minArea(p) : this.params.minArea;
+      // An undivided block bigger than maxLotArea still splits, into a few big lots
+      const keep = this.params.chanceNoDivide > 0 && this.random() < this.params.chanceNoDivide;
+      const whole = keep && calcPolygonArea(p) <= (this.params.maxLotArea ?? Infinity);
+      const lots = whole ? [p] : subdividePolygon(p, keep ? minArea * 5 : minArea, this.random);
+      for (const lot of lots) { this._dividedPolygons.push(lot); this._lotBlocks.push(block); }
+    });
   }
   // Every directed edge borders exactly one face. Walking from each unused
   // edge and always taking the next edge round from the one we arrived by

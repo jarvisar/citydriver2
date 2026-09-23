@@ -10,6 +10,7 @@ import { cityItemMatrix, cityRigidFrame, cityAffinePoint } from './city-layout-r
 import { addSurfacePolygon, rectanglePolygon } from './city-surfaces.js';
 import { buildGrassFringe } from './city-grass.js';
 import { createWaterMaterial } from './city-water.js';
+import { Surface } from './surface.js';
 import { cityWalker, walkerFloat, WALKER_COLORS, createWalkerMaterial, walkerAppearance, setWalkerAppearance, pairWalkers, offsetWalkerPose } from './city-life.js';
 import { applyWalkerHop, walkerTravelTime, holdWalkerTravel } from './pedestrian-reactions.js';
 import { stableShadowDepth } from './shadow-depth.js';
@@ -203,64 +204,6 @@ function resources() {
   return result;
 }
 
-// Flat-shaded static geometry: every triangle carries its own face normal
-// and colour, so the whole ground, the roads or the water are one draw each.
-class Surface {
-  constructor() { this.positions = []; this.normals = []; this.colors = []; this.flows = null; this.color = new THREE.Color(); }
-  face(ax, ay, az, bx, by, bz, cx, cy, cz, color, flow = null) {
-    const ux = bx - ax, uy = by - ay, uz = bz - az, vx = cx - ax, vy = cy - ay, vz = cz - az;
-    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
-    const length = Math.hypot(nx, ny, nz) || 1; nx /= length; ny /= length; nz /= length;
-    this.positions.push(ax, ay, az, bx, by, bz, cx, cy, cz);
-    const { r, g, b } = this.color.set(color);
-    for (let i = 0; i < 3; i++) { this.normals.push(nx, ny, nz); this.colors.push(r, g, b); }
-    if (flow) { this.flows ??= []; for (let i = 0; i < 3; i++) this.flows.push(flow[0], flow[1]); }
-  }
-  // Horizontal triangle with its normal up, whichever way the points wind. Points are {x, y} on the map.
-  flat(a, b, c, y, color, flow = null) {
-    const cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-    if (Math.abs(cross) < 1e-9) return;
-    if (cross > 0) this.face(a.x, y, -a.y, b.x, y, -b.y, c.x, y, -c.y, color, flow);
-    else this.face(a.x, y, -a.y, c.x, y, -c.y, b.x, y, -b.y, color, flow);
-  }
-  polygon(points, y, color, flowOf = null) {
-    const clean = dedupePolygon(points);
-    if (clean.length < 3) return;
-    const faces = THREE.ShapeUtils.triangulateShape(clean.map(p => new THREE.Vector2(p.x, p.y)), []);
-    for (const [i0, i1, i2] of faces) {
-      const a = clean[i0], b = clean[i1], c = clean[i2];
-      this.flat(a, b, c, y, color, flowOf ? flowOf((a.x + b.x + c.x) / 3, (a.y + b.y + c.y) / 3) : null);
-    }
-  }
-  // A strip of road along a polyline
-  ribbon(points, halfWidth, y, color) {
-    const left = offsetPolyline(points, halfWidth), right = offsetPolyline(points, -halfWidth);
-    for (let i = 0; i < points.length - 1; i++) {
-      this.flat(left[i], right[i], right[i + 1], y, color);
-      this.flat(left[i], right[i + 1], left[i + 1], y, color);
-    }
-  }
-  // Vertical faces along a polyline, closed when asked
-  wall(points, top, bottom, color, closed = false) {
-    const count = closed ? points.length : points.length - 1;
-    for (let i = 0; i < count; i++) {
-      const a = points[i], b = points[(i + 1) % points.length];
-      this.face(a.x, top, -a.y, b.x, top, -b.y, b.x, bottom, -b.y, color);
-      this.face(a.x, top, -a.y, b.x, bottom, -b.y, a.x, bottom, -a.y, color);
-    }
-  }
-  build() {
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(this.positions, 3));
-    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(this.normals, 3));
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute(this.colors, 3));
-    if (this.flows) geometry.setAttribute('flowDirection', new THREE.Float32BufferAttribute(this.flows, 2));
-    geometry.computeBoundingSphere();
-    return geometry;
-  }
-  get empty() { return this.positions.length === 0; }
-}
-
 // Points every `step` metres along a polyline, with the unit tangent
 function* samples(points, step, offset = 0) {
   let carried = -offset;
@@ -304,7 +247,7 @@ export class CityChunk {
     this.plan = { seed: Math.floor(randomAt(ix, iz + 7102, CITY.seed) * 0xffffffff) >>> 0, kind: 'blocks', ix, iz };
     this.group = new THREE.Group(); this.group.name = `citydriver-block-${this.index}`;
     this.features = { colliders: [], bridges: [], buildings: [], discoveries: [], medians: [], junctions: [], signals: [], lamps: [] };
-    this.batches = new Map(); this.random = seededRandom(this.plan.seed);
+    this.batches = new Map(); this.random = seededRandom(this.plan.seed); this.bodies = new Surface();
     this.lots = world.lotsByChunk.get(this.index) ?? []; this.neighbourLots = world.neighbourLots(ix, iz);
     this.furniture = world.furnitureByChunk.get(this.index) ?? [];
     this.construction = this.buildSteps();
@@ -504,6 +447,13 @@ export class CityChunk {
       const point = new THREE.Vector3(-1.75, 7.36, 0).applyMatrix4(matrix);
       return { x: point.x + this.east, y: point.y, z: point.z - this.start, yaw: Math.atan2(matrix.elements[8], matrix.elements[10]) };
     });
+    // The cell's building bodies are one flat-shaded mesh
+    if (!this.bodies.empty) {
+      const mesh = new THREE.Mesh(this.bodies.build(), this.materials['merged-solid']);
+      mesh.name = 'citydriver-bodies'; mesh.userData.bodies = true; mesh.dispose = () => mesh.geometry.dispose();
+      this.group.add(finishBatchMesh(mesh, { castShadow: true, receiveShadow: true, ambientOcclusion: true }, true));
+    }
+    this.bodies = null;
     yield* renderBatchSteps(this.group, this.batches, this.east, this.start);
     this.signalMesh = this.group.getObjectByName('citydriver-signal-lens');
     this.peopleMesh = this.group.getObjectByName('citydriver-residents');
@@ -583,7 +533,7 @@ export class CitydriverWorld {
     });
     CITY.lots.forEach((polygon, index) => {
       const centre = averagePoint(polygon), area = calcPolygonArea(polygon), cell = cityCell(centre.y, centre.x);
-      const lot = { polygon, index, centre, area, seed: Math.floor(randomAt(Math.round(centre.x), Math.round(centre.y) + 7102, CITY.seed) * 0xffffffff) >>> 0, fit: null };
+      const lot = { polygon, index, block: CITY.lotBlocks?.[index] ?? -1, centre, area, seed: Math.floor(randomAt(Math.round(centre.x), Math.round(centre.y) + 7102, CITY.seed) * 0xffffffff) >>> 0 };
       if (!this.lotsByChunk.has(cell.key)) this.lotsByChunk.set(cell.key, []);
       this.lotsByChunk.get(cell.key).push(lot);
     });

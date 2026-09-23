@@ -58,7 +58,7 @@ test('buildings block the car and the parks and water stay open', () => {
     car.toggleFreeDriving();
     world.update(car.s, car.u); while (world.pending.length) world.update(car.s, car.u);
     // Aim the car at the nearest building footprint and drive into it
-    const target = [...world.chunks.values()].flatMap(c => c.features.colliders).filter(c => c.corners && c.corners.length === 4)
+    const target = [...world.chunks.values()].flatMap(c => c.features.colliders).filter(c => c.corners && c.corners.length >= 4 && c.reach > 6)
       .sort((a, b) => Math.hypot(a.x - car.u, a.z + car.s) - Math.hypot(b.x - car.u, b.z + car.s))[0];
     assert.ok(target, 'a building near the start');
     car.heading = Math.atan2(target.x - car.u, -target.z - car.s);

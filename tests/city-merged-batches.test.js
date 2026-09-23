@@ -31,7 +31,7 @@ test('merged furniture reproduces every instance exactly as the instancing shade
       // Every batch is drawn exactly once, instanced or merged.
       const drawn = [...blockBatches(chunk.group)].map(batch => batch.name).sort();
       assert.deepEqual(drawn, [...batches].filter(([, batch]) => batch.items.length).map(([key]) => key).sort());
-      for (const mesh of chunk.group.children.filter(child => !child.isInstancedMesh)) {
+      for (const mesh of chunk.group.children.filter(child => !child.isInstancedMesh && !child.userData.bodies)) {
         merged++;
         const { position, normal: normals, color } = mesh.geometry.attributes;
         assert.ok(Object.keys(mesh.userData.batches).length > 1, 'a merge saves at least one draw');
@@ -75,7 +75,7 @@ test('merging cuts each block\'s draws without growing its memory much', () => {
       const batchCount = [...batches.values()].filter(batch => batch.items.length).length;
       if (batchCount >= 6) assert.ok(chunk.group.children.length <= batchCount - 2, `merging saves draws (${chunk.group.children.length} of ${batchCount})`);
       let bytes = 0;
-      for (const mesh of chunk.group.children) if (!mesh.isInstancedMesh) {
+      for (const mesh of chunk.group.children) if (!mesh.isInstancedMesh && !mesh.userData.bodies) {
         for (const attribute of Object.values(mesh.geometry.attributes)) bytes += attribute.array.byteLength;
         bytes += mesh.geometry.index.array.byteLength;
       }

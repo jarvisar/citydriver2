@@ -27,7 +27,7 @@ try {
   const place = (pose, view = 4) => page.evaluate(({ pose, view }) => {
     const g = window.__citydriver, v = g.vehicle;
     v.s = pose.s; v.u = pose.u; v.heading = pose.heading ?? v.heading; v.speed = 0; v.update(0, {});
-    while (g.world.pending.length || g.world.distantPending.length) g.world.update(v.s, v.u);
+    g.world.update(v.s, v.u); while (g.world.pending.length || g.world.distantPending.length) g.world.update(v.s, v.u);
     g.rendering.setView(view); g.rendering.snap();
     v.render(0, g.world.origin); g.rendering.update(v.car, 1, g.world.origin);
     g.traffic.reset(v.route, v.s, 'city', v.u);

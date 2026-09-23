@@ -32,7 +32,7 @@ test('a generated city has roads of every class, blocks, lots, parks and water i
   for (const lot of city.lots) {
     const centre = lot.reduce((sum, p) => sum.add(p), new Vector(0, 0)).divideScalar(lot.length);
     assert.ok(isSimple(lot));
-    assert.ok(calcPolygonArea(lot) >= 300, `lot area ${calcPolygonArea(lot)}`);
+    assert.ok(calcPolygonArea(lot) >= 150, `lot area ${calcPolygonArea(lot)}`);
     assert.ok(!insidePolygon(centre, city.sea) && !insidePolygon(centre, city.river), 'lot in the water');
     const nearest = city.roadIndex.nearest(centre.x, centre.y, 200);
     assert.ok(!nearest || nearest.distance >= nearest.road.profile.halfWidth, 'lot centre on a road');
