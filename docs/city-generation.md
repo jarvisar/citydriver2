@@ -313,16 +313,20 @@ water, quay walls and bridges). A block too small or too pointed for any lot
 (`city-islands.js`): a lawn inside a paved rim, with trees where there is
 room clear of the junctions, and on the bigger ones a flower bed or a small
 sculpture. It also places the street furniture once: signals
-and stop signs, lamps and trees round every kerb clear of the junctions,
+and stop signs, lamps round every kerb clear of the junctions and trees
+between them as each district plants its streets (an avenue of big trees in
+the garden and civic quarters, smaller ones in the old town and none in its
+lanes, and only some of the warehouse streets planted), every tree no bigger
+than its room to the building line so its crown only brushes the fronts,
 trees and double-armed lamps down the boulevards' medians, bus shelters on
 the main roads, bins, parked cars in two bays in five, car parks lined out in the paved
 yards behind the offices and warehouses, a little over half full, railings
-on the quays
-and bridges, in the parks a fountain or a bandstand on the plaza, and in
+on the quays and bridges, benches along the wider promenades facing the
+water, in the parks a fountain or a bandstand on the plaza, and in
 the squares what each is for, lanterns and benches along the walks, an
 avenue of trees round a park's loop and a row round every square's edge,
-groves over the lawns, and a few trees in the back yards where the houses
-have gardens. Every place has its sign on the pavement by its entrance,
+groves over the lawns, and trees gathered in groves in the back yards where
+the houses have gardens (thickest in the garden quarter). Every place has its sign on the pavement by its entrance,
 placed before the lamps and trees take the kerb, beside a venue's forecourt
 rather than across it; where a frontage is all junction corners (a circus)
 the sign stands just inside the grounds or the lawn. Props are turned with the helpers
@@ -352,6 +356,23 @@ facade, a flatiron's nose, rather than a knife edge. In the garden quarter a
 house on a wedge-shaped lot is a plain rectangle square to its street, and a
 lot too small for one is a garden. Heights follow the block (a street wall of
 similar storeys) and rise toward downtown, with the odd tower above them.
+
+Roofs follow the buildings under them. A small detached house has a hipped
+roof. In the old town, the market district and the garden quarter many of
+the plain four-sided buildings of up to six storeys have a pitched roof in
+terracotta or slate, its ridge along the street, its gables on the party
+walls and chimney stacks on them, so a terrace reads as a row of houses; a
+warehouse has a low one along its length with a vent on the ridge, and
+downtown and the civic quarter stay mostly flat. What stands on a flat roof
+follows what the building is: a lift overrun and plant on the offices,
+skylights down a shed, a stair head and chimney stacks on flats, now and then
+a water tank on old brick or a roof garden, all square to the building. A
+house or a terrace of houses has an ordinary ground floor in its own walls
+over a low plinth, and a detached one windows round its garden; a block over
+shops or offices stands on a tall stone base. A lot with no room for a
+building is a garden: one more lawn where the houses have gardens, and in
+the built-up districts (most often the sharp tip where two streets meet at a
+slant) a little public garden inside a paved rim, with trees sized to it.
 
 The places a passenger asks for (`city-exploration.js`) are the parks and
 squares and some thirty venues, every kind in the notebook somewhere in

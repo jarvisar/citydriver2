@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { CitydriverWorld } from '../src/world/citydriver-world.js';
+import { CitydriverWorld, CityChunk } from '../src/world/citydriver-world.js';
+import { planLot } from '../src/world/city-buildings.js';
+import { cityTrees } from '../src/world/city-assets.js';
 import { cityCell, CITY } from '../src/world/city.js';
 import { journeyStart, PAVEMENT_LEVEL, roadAt } from '../src/world/city-route.js';
 import { insidePolygon, distanceToPolyline } from '../src/mapgen/polygon-util.js';
@@ -94,4 +96,53 @@ test('buildings block the car and the parks and water stay open', () => {
     assert.ok(!entered, 'the car drove into the building');
     assert.ok(closest < 3, `the car reached the building (${closest.toFixed(1)} m)`);
   } finally { world.dispose(); car.disposeModel(); }
+});
+
+test('roofs follow the buildings under them and trees keep their crowns off the walls', () => {
+  const world = new CitydriverWorld(new THREE.Scene());
+  try {
+    const plans = [], roofs = {};
+    for (const lots of world.lotsByChunk.values()) for (const lot of lots) {
+      const plan = planLot({ east: 0, start: 0 }, lot);
+      if (plan.kind !== 'building') continue;
+      plans.push(plan);
+      roofs[plan.roofType] = (roofs[plan.roofType] ?? 0) + 1;
+      // A pitched roof sits on a four-sided building of a few storeys, its
+      // eave along a street front unless it is a shed's
+      if (plan.roofType === 'gable') {
+        assert.equal(plan.footprint.length, 4);
+        assert.ok(plan.floors <= 6 && !plan.court.length);
+        if (!['warehouse', 'pavilion'].includes(plan.type)) assert.ok(plan.street[plan.eaves], 'a terrace roof runs along its street');
+      }
+      // A house has an ordinary ground floor, not a shopfront's base
+      if (plan.domestic) assert.ok(!plan.shopfront);
+    }
+    assert.ok(roofs.gable > 50 && roofs.flat > 50, JSON.stringify(roofs));
+    // No tree crown reaches a metre into a building
+    const cells = new Map(), key = (x, y) => `${Math.floor(x / 30)},${Math.floor(y / 30)}`;
+    for (const plan of plans) {
+      const seen = new Set();
+      for (const p of plan.footprint) for (const [dx, dy] of [[-12, -12], [12, -12], [12, 12], [-12, 12], [0, 0]]) {
+        const k = key(p.x + dx, p.y + dy);
+        if (seen.has(k)) continue;
+        seen.add(k); if (!cells.has(k)) cells.set(k, []); cells.get(k).push(plan.footprint);
+      }
+    }
+    const crown = Math.max(...cityTrees.map(tree => tree.radius));
+    let trees = 0;
+    for (let ix = CITY.ix0; ix <= CITY.ix1; ix++) for (let iz = CITY.iz0; iz <= CITY.iz1; iz++) {
+      const chunk = new CityChunk(world, ix, iz);
+      for (const tree of chunk.features.trees ?? []) {
+        const p = { x: tree.x + chunk.east, y: tree.s + chunk.start }, reach = crown * tree.scale * 1.06;
+        for (const footprint of cells.get(key(p.x, p.y)) ?? []) {
+          assert.ok(!insidePolygon(p, footprint), `a tree in a building at ${p.x.toFixed(0)},${p.y.toFixed(0)}`);
+          const into = reach - distanceToPolyline(p, [...footprint, footprint[0]]);
+          assert.ok(into < 1.5, `a tree crown ${into.toFixed(1)} m into a wall at ${p.x.toFixed(0)},${p.y.toFixed(0)}`);
+        }
+        trees++;
+      }
+      chunk.dispose();
+    }
+    assert.ok(trees > 2000, `${trees} trees`);
+  } finally { world.dispose(); }
 });

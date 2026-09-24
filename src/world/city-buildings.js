@@ -30,7 +30,7 @@ const STYLES = {
   Midtown: { narrow: ['deco', 'office', 'apartment'], wide: ['office', 'atrium', 'deco', 'office'], walls: ['#8eafb9', '#accad0', '#ded0b4', '#7897a7', '#b4aaa3'], shops: .7, floors: [6, 12] },
   'Warehouse district': { narrow: ['loft', 'brick', 'loft'], wide: ['warehouse', 'loft', 'warehouse', 'pavilion'], walls: ['#b7795b', '#cfac84', '#87a19a', '#a67b69', '#c8b58c'], shops: .3, floors: [1, 4] },
   'Market district': { narrow: ['shop', 'townhouse', 'brick'], wide: ['apartment', 'shop', 'brick', 'pavilion'], walls: ['#d08a70', '#dec29a', '#74a39a', '#d6ab7d', '#859aaf'], shops: .85, floors: [2, 4] },
-  'Civic quarter': { narrow: ['brick', 'deco'], wide: ['deco', 'atrium', 'office', 'brick'], walls: ['#dbcfb8', '#a1b8bc', '#c99a83', '#ddc19e', '#afc8b4'], shops: .4, floors: [3, 6] },
+  'Civic quarter': { narrow: ['brick', 'deco', 'townhouse'], wide: ['deco', 'brick', 'apartment', 'deco', 'atrium'], walls: ['#dbcfb8', '#a1b8bc', '#c99a83', '#ddc19e', '#afc8b4'], shops: .4, floors: [3, 6] },
 };
 const HEIGHTS = { brick: [2, 6], apartment: [3, 8], shop: [1, 2], warehouse: [1, 3], office: [6, 18], deco: [4, 12], townhouse: [2, 4], loft: [3, 5], pavilion: [1, 2], atrium: [5, 12] };
 export const BUILDING_TYPES = Object.keys(HEIGHTS);
@@ -44,6 +44,25 @@ const INSETS = {
   'Warehouse district': { front: 1.6, side: .9, depth: [18, 28], rear: 2, lawn: false },
   'Garden quarter': { front: 4.5, side: 2.4, depth: [9, 13], rear: 3, lawn: true },
   'Civic quarter': { front: 2.4, side: 1.1, depth: [13, 19], rear: 2.5, lawn: true },
+};
+// How far a district's buildings stand back from the pavement
+export const frontSetback = district => (INSETS[district] ?? INSETS.Midtown).front;
+// The biggest tree (its scale) whose crown only brushes a wall `room` metres
+// from its trunk (see city-assets.js: the widest cluster on the widest tree)
+export const treeRoom = room => (room + .9) / .52;
+// The share of a district's plain four-sided buildings under a pitched roof:
+// the old streets' terraces each have their own, and the warehouses a low one
+// along their length. Downtown's and the civic quarter's are mostly flat.
+const PITCHED = { 'Old town': .75, 'Market district': .45, 'Garden quarter': .5, 'Civic quarter': .12, 'Warehouse district': .55, Midtown: 0 };
+const PITCHED_TYPES = new Set(['townhouse', 'brick', 'shop', 'apartment', 'loft', 'warehouse', 'pavilion']);
+// Tiles for a pitched roof: terracotta in the old streets, slate or sheet
+// metal where the town is newer or works for its living
+const TILES = {
+  'Old town': ['#a35f4a', '#ad6c51', '#8f5445', '#a35f4a', '#6d7277'],
+  'Market district': ['#a35f4a', '#6d7277', '#96634e', '#5f676e'],
+  'Garden quarter': ['#8a6555', '#6d7277', '#987463', '#5f676e', '#a35f4a'],
+  'Civic quarter': ['#5f676e', '#6d7277', '#737a70'],
+  'Warehouse district': ['#8b9396', '#7c8688', '#948f86'],
 };
 const signGeometry = new THREE.PlaneGeometry(1, 1);
 
@@ -159,6 +178,31 @@ function massBuilding(footprint, wallKinds, depth) {
   return { footprint: shape, wallKinds: kinds };
 }
 
+// Which wall of a four-sided building a pitched roof's eave runs along (the
+// other eave is the wall across from it), or -1 where a pitched roof would
+// not sit: a shape far from a rectangle, a span too deep to roof, or gables
+// too narrow. A terrace's ridge runs along its street and its gables stand on
+// the party walls; a shed's runs the length of the shed.
+function pitchedEaves(footprint, street, shed) {
+  if (footprint.length !== 4) return -1;
+  if (footprint.some((p, i) => Math.abs(cornerAngle(footprint, i) - Math.PI / 2) > .6)) return -1;
+  const length = i => edgeLength(footprint, i % 4);
+  let eave;
+  if (shed) eave = length(0) + length(2) >= length(1) + length(3) ? 0 : 1;
+  else {
+    eave = -1;
+    for (let i = 0; i < 4; i++) if (street[i] && (eave < 0 || length(i) > length(eave))) eave = i;
+    if (eave < 0) return -1;
+  }
+  // Opposite eaves near parallel, the gables wide enough and the span not too deep
+  const direction = i => { const a = footprint[i % 4], b = footprint[(i + 1) % 4], l = length(i) || 1; return { x: (b.x - a.x) / l, y: (b.y - a.y) / l }; };
+  const d0 = direction(eave), d2 = direction(eave + 2);
+  if (d0.x * -d2.x + d0.y * -d2.y < Math.cos(.35)) return -1;
+  const span = Math.min(length(eave + 1), length(eave + 3));
+  if (span < 4.5 || Math.max(length(eave + 1), length(eave + 3)) > (shed ? 42 : 18) || Math.min(length(eave), length(eave + 2)) < 3.5) return -1;
+  return eave;
+}
+
 const convex = polygon => polygon.every((p, i) => {
   const a = polygon[(i - 1 + polygon.length) % polygon.length], b = polygon[(i + 1) % polygon.length];
   return (p.x - a.x) * (b.y - p.y) - (p.y - a.y) * (b.x - p.x) >= -1e-6;
@@ -262,7 +306,9 @@ export function planLot(c, lot) {
   const breadth = Math.sqrt(calcPolygonArea(footprintOut));
   // No slender towers on small footprints
   floors = Math.max(Math.min(low, 2), Math.min(floors, Math.round(breadth * .9)));
-  const house = footprintOut.length === 4 && massedArea < 330 && ['townhouse', 'pavilion', 'shop', 'brick'].includes(type) && random() < (district === 'Garden quarter' ? .9 : insets.side > .5 ? .5 : .12);
+  // A small detached house has a hipped roof; a terraced one, between its
+  // neighbours' party walls, takes a pitched one below
+  const house = footprintOut.length === 4 && massedArea < 330 && ['townhouse', 'pavilion', 'shop', 'brick'].includes(type) && insets.side > .5 && random() < (district === 'Garden quarter' ? .9 : .5);
   // A big lot becomes a perimeter block round a courtyard; a huge one that
   // cannot is a low hall.
   let court = [];
@@ -275,14 +321,22 @@ export function planLot(c, lot) {
     floors = Math.max(3, Math.min(floors, 8));
   } else if (massedArea > 5000) { type = pick(['warehouse', 'pavilion'], random); floors = integer(random, 1, 2); }
   const stepped = !house && !court.length && floors >= 6 && massedArea > 260 && (type === 'deco' || type === 'office' || type === 'atrium' || (type === 'apartment' && random() < .38));
+  // A pitched roof where the district builds them, over a plain four-sided
+  // building no taller than a pitched roof is usually put on
+  const shed = type === 'warehouse' || type === 'pavilion';
+  const eaves = !house && !stepped && !court.length && floors <= 6 && PITCHED_TYPES.has(type) ? pitchedEaves(footprintOut, street, shed) : -1;
+  const pitched = eaves >= 0 && random() < (PITCHED[district] ?? 0) * (shed || district !== 'Warehouse district' ? 1 : .35);
   const shopfront = type !== 'warehouse' && type !== 'pavilion' && random() < style.shops;
+  // A house or a terrace of houses has an ordinary ground floor in its own
+  // walls, not the tall stone base of a block over shops
+  const domestic = !shopfront && (house || type === 'townhouse' || (type === 'pavilion' && insets.lawn));
   // Windows on the street, on the yard when there is room behind, and on the
   // sides only where there is a gap to look out of
   const windows = wallKinds.map((kind, i) => street[i] || (kind === 'rear' && (rear > 2.4 || footprintOut !== footprint)) || (kind === 'side' && insets.side > 1.5));
   return { kind: 'building', lot, district, footprint: local(footprintOut, c), lotLocal: local(polygon, c), court: local(court, c), street, windows, type, floors, area: massedArea, breadth,
-    wall: pick(style.walls, random), accent: pick(ACCENTS, random), roof: pick(ROOFS, random), roofType: house ? 'hip' : stepped ? 'terrace' : 'flat',
+    wall: pick(style.walls, random), accent: pick(ACCENTS, random), roof: pick(pitched ? TILES[district] ?? ROOFS : ROOFS, random), roofType: house ? 'hip' : pitched ? 'gable' : stepped ? 'terrace' : 'flat', eaves,
     setbackFloors: stepped ? Math.max(2, Math.floor(floors * .57)) : floors, seed: (lot.seed + 9973) >>> 0, variation: integer(random, 0, 3),
-    shop: pick(SHOP_NAMES, random), shopfront, lawn: insets.lawn, rearWindows: rear > 2.4 || footprintOut !== footprint };
+    shop: pick(SHOP_NAMES, random), shopfront, domestic, lawn: insets.lawn, side: insets.side, rearWindows: rear > 2.4 || footprintOut !== footprint };
 }
 
 export function edgeWindows(c, b, f, bottom, floors, random) {
@@ -440,41 +494,165 @@ function hipRoof(c, b, bodies, ring, top) {
   c.box(ridge[0].x + (ridge[1].x - ridge[0].x) * .3, y1 - .3, ridge[0].y + (ridge[1].y - ridge[0].y) * .3, .9, 1.7, .9, '#8c6a5a');
 }
 
+// A vertical face in the plane of a wall, turned to look away from `inside`:
+// points are map points with their heights
+function wallFace(bodies, points, inside, colour) {
+  const [a, b, d] = points.map(([p, y]) => [p.x, y, -p.y]);
+  const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = d[0] - a[0], vy = d[1] - a[1], vz = d[2] - a[2];
+  const nx = uy * vz - uz * vy, nz = ux * vy - uy * vx, m = points[0][0], ox = m.x - inside.x, oz = -(m.y - inside.y);
+  if (nx * ox + nz * oz >= 0) bodies.face(...a, ...b, ...d, colour);
+  else bodies.face(...a, ...d, ...b, colour);
+}
+// A pitched roof over a four-sided building: an eave along the wall `eaves`
+// and the one across from it, a ridge between them and a gable over each of
+// the other two walls. A terrace's chimneys stand on its gables, where its
+// party walls are; a shed's roof is low, with a vent along its ridge.
+function gableRoof(c, b, bodies, ring, top, random) {
+  const shed = b.type === 'warehouse' || b.type === 'pavilion', trim = '#e2d6bd';
+  const w = [0, 1, 2, 3].map(k => ring[(b.eaves + k) % 4]);
+  // The eaves overhang their walls, and the verges the gables no further than
+  // halfway to the house next door, so two roofs of a terrace never overlap
+  const verge = Math.max(0, Math.min(.25, b.side - .02)), overhang = [.55, verge, .55, verge], mapped = offsetPolygonMapped(w, (p, q, k) => overhang[k]);
+  const e = mapped?.points.length === 4 ? mapped.points : w;
+  bodies.prism(e, top - .3, top + .06, trim);
+  if (e !== w) for (let i = 0; i < 4; i++) {
+    const j = (i + 1) % 4;
+    bodies.flat(w[i], w[j], e[j], top - .3, trim, null, false); bodies.flat(w[i], e[j], e[i], top - .3, trim, null, false);
+  }
+  const mid = (p, q) => ({ x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 });
+  const span = (Math.hypot(e[2].x - e[1].x, e[2].y - e[1].y) + Math.hypot(e[0].x - e[3].x, e[0].y - e[3].y)) / 4;
+  const pitch = shed ? .22 : .56 + (b.variation % 3) * .06, y0 = top + .06, y1 = y0 + Math.min(shed ? 3.4 : 5.4, span * Math.tan(pitch));
+  const r0 = mid(e[3], e[0]), r1 = mid(e[1], e[2]);
+  bodies.slope(e[0], y0, e[1], y0, r1, y1, b.roof); bodies.slope(e[0], y0, r1, y1, r0, y1, b.roof);
+  bodies.slope(e[2], y0, e[3], y0, r0, y1, b.roof); bodies.slope(e[2], y0, r0, y1, r1, y1, b.roof);
+  // Each gable in the plane of its wall, from the top of the wall to the roof
+  // above it (the roof over the wall is higher than at the eave by its overhang)
+  // (a deep roof's ridge is kept down, so its slope is its rise over its span)
+  const centre = averagePoint(w), atWall = y0 + overhang[0] * (y1 - y0) / span;
+  for (const [p, q] of [[w[1], w[2]], [w[3], w[0]]]) {
+    const apex = mid(p, q), wallHigh = Math.min(atWall, y1);
+    wallFace(bodies, [[p, top], [q, top], [q, wallHigh]], centre, b.wall); wallFace(bodies, [[p, top], [q, wallHigh], [p, wallHigh]], centre, b.wall);
+    wallFace(bodies, [[p, wallHigh], [q, wallHigh], [apex, y1]], centre, b.wall);
+  }
+  if (c.distant) return;
+  const along = { x: r1.x - r0.x, y: r1.y - r0.y }, length = Math.hypot(along.x, along.y) || 1, ux = along.x / length, uy = along.y / length, yaw = Math.atan2(uy, ux);
+  if (shed) {
+    // A vent along the ridge of most sheds
+    if (random() < .6 && length > 12) {
+      const m = mid(r0, r1);
+      c.box(m.x, y1 + .25, m.y, length * .6, .7, 1.3, '#9da4a4', 'solid', yaw);
+      c.box(m.x, y1 + .64, m.y, length * .6 + .2, .1, 1.9, b.roof, 'solid', yaw);
+    }
+    return;
+  }
+  // Chimney stacks on the gables, straddling the ridge just inside each party wall
+  const g0 = mid(w[3], w[0]), g1 = mid(w[1], w[2]);
+  for (const [g, sign] of [[g0, 1], [g1, -1]]) {
+    if (random() > .55) continue;
+    const x = g.x + ux * sign * .55, y = g.y + uy * sign * .55, height = 1.1 + random() * .7;
+    c.box(x, y1 + height / 2 - .5, y, .8, height + 1, 1.5, '#8a6353', 'solid', yaw);
+    c.box(x, y1 + height + .02, y, 1, .14, 1.7, '#6f5a4e', 'solid', yaw);
+  }
+}
+
+// What stands on a flat roof follows what the building is: a lift overrun and
+// plant on the offices, skylights down a shed, a stair head and chimney stacks
+// on the flats and houses, the odd water tank on old brick and a roof garden
+// on a few blocks of flats.
+const COMMERCIAL = new Set(['office', 'atrium', 'deco']);
+const TANK_DISTRICTS = new Set(['Old town', 'Warehouse district', 'Market district']);
 function roofDetails(c, b, deck, top, random, holes = []) {
-  if (b.type === 'deco' && !holes.length) {
+  const blocked = holes.map(hole => offsetPolygon(hole, 1.8));
+  // A deco tower steps up to a crown; a low deco block keeps its tall parapet
+  if (b.type === 'deco' && !holes.length && b.floors >= 7) {
     const crown = offsetPolygon(deck, -b.breadth * .28);
     if (crown.length >= 3) {
+      blocked.push(offsetPolygon(crown, 3));
       c.bodies.prism(crown, top, top + 3, b.wall); c.bodies.polygon(crown, top + 3, '#d1c5ac');
       if (b.variation === 0) { const p = averagePoint(crown); c.box(p.x, top + 7, p.y, .2, 8, .2, '#b0b7ae'); }
     }
   }
   if (c.distant) return;
-  const inside = offsetPolygon(deck, -1.8), clear = holes.map(hole => offsetPolygon(hole, 1.8));
-  if (inside.length < 3) return;
-  const equipment = integer(random, 1, b.area > 400 ? 3 : 2);
-  for (let i = 0; i < equipment; i++) {
-    const p = insidePoint(inside, random, 24, clear);
-    if (!p) break;
-    const size = 1.2 + random() * 1.6, yaw = random() * Math.PI;
-    c.box(p.x, top + .3 + size * .33, p.y, size, size * .66, size * 1.15, '#919b9b', 'solid', yaw);
-    c.box(p.x, top + .365 + size * .66, p.y, size + .1, .13, size * 1.15 + .1, '#58656d', 'solid', yaw);
+  // Everything on the roof lines up with the building's longest wall
+  let longest = 0;
+  for (let i = 1; i < deck.length; i++) if (edgeLength(deck, i) > edgeLength(deck, longest)) longest = i;
+  const a = deck[longest], q = deck[(longest + 1) % deck.length], yaw = Math.atan2(q.y - a.y, q.x - a.x), ux = Math.cos(yaw), uy = Math.sin(yaw);
+  const clear = blocked.filter(hole => hole.length >= 3), placed = [];
+  // A spot for something `w` along the wall by `d` across, clear of the
+  // parapet, any courtyard and whatever already stands on the roof
+  const spot = (w, d, margin = 1.2) => {
+    const r = Math.hypot(w, d) / 2, room = offsetPolygon(deck, -(margin + r));
+    if (room.length < 3) return null;
+    for (let i = 0; i < 12; i++) {
+      const p = insidePoint(room, random, 6, clear);
+      if (p && placed.every(o => Math.hypot(o.x - p.x, o.y - p.y) > o.r + r + .6)) { placed.push({ ...p, r }); return p; }
+    }
+    return null;
+  };
+  const box = (p, y, w, h, d, colour, kind = 'solid', along = 0, across = 0) => c.box(p.x + ux * along - uy * across, top + y, p.y + uy * along + ux * across, w, h, d, colour, kind, yaw);
+  // A plant unit with its fan deck on top
+  const plant = size => {
+    const p = spot(size * 1.15, size);
+    if (!p) return;
+    box(p, .3 + size * .33, size * 1.15, size * .66, size, '#919b9b'); box(p, .365 + size * .66, size * 1.15 + .1, .13, size + .1, '#58656d');
+  };
+  const trim = b.type === 'office' ? '#b8cccd' : '#d6c9b1';
+  if (COMMERCIAL.has(b.type) || b.floors >= 8) {
+    // A lift overrun, and the offices' plant
+    if (b.area > 260 && random() < .8) {
+      const p = spot(4.4, 3.4);
+      if (p) { box(p, 1.5, 4.4, 3, 3.4, b.type === 'office' ? '#9fb1b3' : b.wall); box(p, 3.06, 4.7, .12, 3.7, trim); }
+    }
+    for (let i = integer(random, 1, b.area > 600 ? 4 : b.area > 300 ? 3 : 2); i > 0; i--) plant(1.4 + random() * 1.2);
+    return;
   }
-  if (b.type === 'brick' && b.variation < 2) {
-    const p = insidePoint(offsetPolygon(deck, -2.4), random, 24, clear);
-    if (p) c.prop('tank', p.x, p.y, 0, top + .28);
-  } else if ((b.type === 'apartment' || b.type === 'shop') && b.variation >= 2) {
-    const p = insidePoint(offsetPolygon(deck, -3.6), random, 24, clear);
-    if (p) {
-      c.box(p.x, top + .34, p.y, 5.6, .28, 4.6, '#b2a993'); c.box(p.x, top + .51, p.y, 5, .08, 4, '#829768');
-      for (const dx of [-1, 1]) for (const ds of [-1, 1]) c.box(p.x + dx * 2.5, top + 1.8, p.y + ds * 2, .17, 3, .17, '#baa27f');
-      for (let i = 0; i < 5; i++) c.box(p.x - 2.5 + i * 1.25, top + 3.32, p.y, .25, .2, 4.8, '#d7c3a0');
+  if (b.type === 'warehouse' || b.type === 'pavilion') {
+    // A row of skylights down the middle of a shed, and a vent or two
+    const centre = averagePoint(deck), room = offsetPolygon(deck, -2.6), count = Math.max(1, Math.min(5, Math.floor(edgeLength(deck, longest) / 9)));
+    for (let k = 0; k < count; k++) {
+      const along = (k - (count - 1) / 2) * 8, p = { x: centre.x + ux * along, y: centre.y + uy * along };
+      const corners = [[-1.9, -1], [1.9, -1], [1.9, 1], [-1.9, 1]].map(([s, t]) => ({ x: p.x + ux * s - uy * t, y: p.y + uy * s + ux * t }));
+      if (room.length < 3 || !corners.every(corner => insidePolygon(corner, room))) continue;
+      placed.push({ ...p, r: 2.2 });
+      box(p, .2, 3.8, .4, 2, '#d0cbbd'); box(p, .42, 3.4, .06, 1.6, '#6f8f98', 'glass');
+    }
+    for (let i = integer(random, 0, 2); i > 0; i--) plant(1.1 + random() * .6);
+    return;
+  }
+  // Flats, houses and shops: a stair head, chimney stacks along the walls in
+  // the older districts, and now and then a water tank or a roof garden
+  if (b.area > 110 && random() < .6) {
+    const p = spot(3.2, 2.4);
+    if (p) { box(p, 1.25, 3.2, 2.5, 2.4, b.wall); box(p, 2.56, 3.5, .12, 2.7, trim); }
+  }
+  if (b.district !== 'Midtown' && b.type !== 'loft') {
+    for (let i = integer(random, 0, 2); i > 0; i--) {
+      const k = Math.floor(random() * deck.length), p0 = deck[k], p1 = deck[(k + 1) % deck.length], length = edgeLength(deck, k);
+      if (length < 4) continue;
+      const t = .2 + random() * .6, nx = -(p1.y - p0.y) / length, ny = (p1.x - p0.x) / length;
+      const p = { x: p0.x + (p1.x - p0.x) * t + nx * .75, y: p0.y + (p1.y - p0.y) * t + ny * .75 };
+      if (clear.some(hole => insidePolygon(p, hole)) || placed.some(o => Math.hypot(o.x - p.x, o.y - p.y) < o.r + 1)) continue;
+      const along = Math.atan2(p1.y - p0.y, p1.x - p0.x), height = 1.2 + random() * .8;
+      c.box(p.x, top + height / 2, p.y, 1.5, height, .75, '#8a6353', 'solid', along); c.box(p.x, top + height + .07, p.y, 1.7, .14, .95, '#6f5a4e', 'solid', along);
     }
   }
+  if ((b.type === 'brick' || b.type === 'loft') && TANK_DISTRICTS.has(b.district) && random() < .3) {
+    const p = spot(3.4, 3.4, .8);
+    if (p) c.prop('tank', p.x, p.y, yaw, top + .28);
+  } else if (b.type === 'apartment' && b.variation === 3 && b.district !== 'Warehouse district' && random() < .6) {
+    // A roof garden: a planted deck under a pergola
+    const p = spot(5.6, 4.6);
+    if (p) {
+      box(p, .34, 5.6, .28, 4.6, '#b2a993'); box(p, .51, 5, .08, 4, '#829768');
+      for (const along of [-2.5, 2.5]) for (const across of [-2, 2]) box(p, 1.8, .17, 3, .17, '#baa27f', 'solid', along, across);
+      for (let i = 0; i < 5; i++) box(p, 3.32, .25, .2, 4.8, '#d7c3a0', 'solid', -2.5 + i * 1.25);
+    }
+  } else if (b.type === 'shop' && random() < .5) plant(1.1 + random() * .5);
 }
 
 function buildBuilding(c, b) {
   const random = seededRandom(b.seed ^ 0x3c6ef372), bodies = c.bodies, ring = b.footprint, n = ring.length;
-  const base = b.type === 'warehouse' ? 4.8 : 5.4, height = base + b.floors * 3.6, lower = b.setbackFloors, lowerTop = G + base + lower * 3.6;
+  const base = b.type === 'warehouse' ? 4.8 : b.domestic ? 3.6 : 5.4, height = base + b.floors * 3.6, lower = b.setbackFloors, lowerTop = G + base + lower * 3.6;
   const centre = averagePoint(ring);
   c.features.buildings.push({ x: c.east + centre.x, s: c.start + centre.y, area: b.area, height, type: b.type, floors: b.floors, roofType: b.roofType, wall: b.wall });
   c.polygonSolid(convexHull(ring).map(p => [p.x, p.y]));
@@ -482,10 +660,16 @@ function buildBuilding(c, b) {
     const lot = b.lotLocal.map(p => [p.x, p.y]);
     grassArea(c, lot, LAWN, G + .05);
     if (!c.distant) {
-      const zone = offsetPolygon(ring, 2.4), edge = [...b.lotLocal, b.lotLocal[0]];
-      for (let i = 0; i < 16; i++) {
+      // A tree or two in the garden, each no bigger than its room from the house
+      const walls = [...ring, ring[0]], edge = [...b.lotLocal, b.lotLocal[0]], trees = [];
+      const wanted = Math.min(2, 1 + Math.floor((calcPolygonArea(b.lotLocal) - b.area) / 320));
+      for (let i = 0; i < 24 && trees.length < wanted; i++) {
         const p = insidePoint(b.lotLocal, random);
-        if (p && !insidePolygon(p, zone) && distanceToPolyline(p, edge) > 1.6) { c.tree(p.x, p.y, 5 + random() * 3); break; }
+        if (!p || insidePolygon(p, ring) || distanceToPolyline(p, edge) < 1.6 || trees.some(t => Math.hypot(t.x - p.x, t.y - p.y) < 5.5)) continue;
+        // (a neighbour's wall may stand on the lot line)
+        const room = Math.min(distanceToPolyline(p, walls), distanceToPolyline(p, edge) + .2);
+        if (room < 2.2) continue;
+        c.tree(p.x, p.y, Math.min(5 + random() * 3, treeRoom(room))); trees.push(p);
       }
     }
   }
@@ -493,8 +677,10 @@ function buildBuilding(c, b) {
   const baseColour = b.type === 'office' ? '#839b9e' : b.type === 'warehouse' ? '#8e8a7d' : '#a4a69b';
   const court = b.court, courts = court.length ? [court] : [];
   bodies.prism(ring, G, lowerTop, b.wall);
-  const plinth = offsetPolygon(ring, .08), courtPlinth = court.length ? offsetPolygon(court, -.08) : [];
-  if (plinth.length >= 3) { bodies.prism(plinth, G, G + base, baseColour); bodies.polygon(plinth, G + base, baseColour, null, true, courtPlinth.length >= 3 ? [courtPlinth] : courts); }
+  // (a house stands on a low stone plinth, a string course over its ground floor)
+  const plinth = offsetPolygon(ring, .08), courtPlinth = court.length ? offsetPolygon(court, -.08) : [], plinthTop = b.domestic ? .7 : base;
+  if (plinth.length >= 3) { bodies.prism(plinth, G, G + plinthTop, baseColour); bodies.polygon(plinth, G + plinthTop, baseColour, null, true, courtPlinth.length >= 3 ? [courtPlinth] : courts); }
+  if (b.domestic && plinth.length >= 3) { bodies.prism(plinth, G + base - .22, G + base, creamTrim); bodies.polygon(plinth, G + base, creamTrim); }
   if (court.length) {
     bodies.wall(ccw(court), lowerTop, G, b.wall, true);
     if (courtPlinth.length >= 3) bodies.wall(ccw(courtPlinth), G + base, G, baseColour, true);
@@ -522,9 +708,13 @@ function buildBuilding(c, b) {
     f.street = b.street[i];
     if (f.span < 2.5) continue;
     if (f.street) groundFloor(c, b, f, base, i === primary, random);
-    if (b.windows[i]) edgeWindows(c, b, f, G + base, lower, random);
+    // (a detached house's ground floor is a storey like the others, windowed
+    // round its garden)
+    const garden = b.domestic && b.lawn && !f.street;
+    if (b.windows[i]) edgeWindows(c, b, f, garden ? G : G + base, garden ? lower + 1 : lower, random);
   }
   if (b.roofType === 'hip') { hipRoof(c, b, bodies, ring, lowerTop); return; }
+  if (b.roofType === 'gable') { gableRoof(c, b, bodies, ring, lowerTop, random); return; }
   const trim = b.type === 'office' ? '#b8cccd' : '#d6c9b1';
   let { deck, holes } = cornice(bodies, ring, lowerTop, trim, b.roof, b.wall, b.type === 'deco' ? 1.2 : .65, courts), top = lowerTop;
   if (lower < b.floors) {
@@ -543,18 +733,29 @@ function buildBuilding(c, b) {
   roofDetails(c, b, deck, top, random, holes);
 }
 
-// A lot with no room for a building: a lawn with a tree or two.
+// A lot with no room for a building. Where the houses have gardens it is one
+// more lawn; in the built-up districts (most often the sharp wedge where two
+// streets meet at a slant) it is laid out as a little public garden, as the
+// planted islands are: a lawn inside a paved rim, with trees sized to it.
+const GARDEN_RIM = 1.4;
 export function buildGarden(c, lot) {
-  const random = seededRandom(lot.seed ^ 0x2545f491);
-  const points = lot.polygon.map(p => [p.x - c.east, p.y - c.start]);
-  c.polygon(points, G + .05, .06, LAWN);
-  grassArea(c, points, LAWN, G + .08);
+  const random = seededRandom(lot.seed ^ 0x2545f491), district = cityStyleDistrict(lot.centre.y, lot.centre.x);
+  const polygon = local(ccw(dedupePolygon(lot.polygon)), c), points = polygon.map(p => [p.x, p.y]);
+  const planted = (INSETS[district] ?? INSETS.Midtown).lawn ? [] : offsetPolygon(polygon, -GARDEN_RIM);
+  const lawn = planted.length >= 3 && calcPolygonArea(planted) > 12 && isSimple(planted) ? planted : null;
+  if (lawn) c.polygon(points, G + .03, .04, '#bdb5a2');
+  const turf = (lawn ?? polygon).map(p => [p.x, p.y]);
+  c.polygon(turf, G + .05, .06, LAWN);
+  grassArea(c, turf, LAWN, G + .08);
   if (c.distant) return;
-  const polygon = local(lot.polygon, c), edge = [...polygon, polygon[0]], count = lot.area > 400 ? 2 : 1;
-  for (let i = 0, placed = 0; i < 20 && placed < count; i++) {
-    const p = insidePoint(polygon, random);
-    if (!p || distanceToPolyline(p, edge) < 2.2) continue;
-    c.tree(p.x, p.y, 6 + random() * 3); placed++;
+  const bed = lawn ?? polygon, edge = [...bed, bed[0]], count = Math.max(1, Math.min(5, Math.floor(calcPolygonArea(bed) / 150))), trees = [];
+  for (let i = 0; i < 30 && trees.length < count; i++) {
+    const p = insidePoint(bed, random);
+    if (!p || trees.some(t => Math.hypot(t.x - p.x, t.y - p.y) < 6)) continue;
+    const room = distanceToPolyline(p, edge);
+    if (room < (lawn ? 1.4 : 2.2)) continue;
+    // (as big as the garden, or where a neighbour's wall may stand on the lot line, as that allows)
+    c.tree(p.x, p.y, Math.min(6 + random() * 3, 3.5 + room * 1.6, treeRoom(room + (lawn ? GARDEN_RIM : 0)))); trees.push(p);
   }
 }
 

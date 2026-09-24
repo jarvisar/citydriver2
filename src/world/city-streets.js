@@ -1,4 +1,4 @@
-import { CITY, SIDEWALK } from './city.js';
+import { CITY, SIDEWALK, cityStyleDistrict } from './city.js';
 import { ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL, waterAt, onRoadAt } from './city-route.js';
 import { junctionGeometry, CROSSWALK, stopLineDistance } from './junction-geometry.js';
 import { junctionControls } from '../city-junctions.js';
@@ -6,10 +6,11 @@ import { cityMedians, MEDIAN_KERB } from './city-medians.js';
 import { cityParks, parkClear, pondShore, SQUARE_WALK, BED_COLOURS } from './city-parks.js';
 import { faceYaw, alongYaw } from './city-layout-render.js';
 import { randomAt, seededRandom } from './route.js';
-import { offsetPolyline, offsetPolylineClean, offsetPolygon, insidePolygon, polygonBounds, calcPolygonArea, signedArea, distanceToPolyline } from '../mapgen/polygon-util.js';
+import { offsetPolyline, offsetPolylineClean, offsetPolygon, insidePolygon, polygonBounds, calcPolygonArea, signedArea, distanceToPolyline, averagePoint } from '../mapgen/polygon-util.js';
 import { cityPlaces, placeForBlock } from '../city-exploration.js';
 import { cityIslands, islandFor } from './city-islands.js';
 import { clipInside } from '../mapgen/road-network.js';
+import { frontSetback, treeRoom } from './city-buildings.js';
 
 // The streets as the city draws and furnishes them. Everything here is laid
 // out from the same few models: the road centre lines and their profiles, the
@@ -18,7 +19,21 @@ import { clipInside } from '../mapgen/road-network.js';
 // the sign stand behind it on the approach's own right-hand pavement, and a
 // lamp or tree only ever stands on a pavement.
 
-const LAMP_SPACING = 27, TREE_SPACING = 19;
+const LAMP_SPACING = 27;
+// Street trees by district: the garden and civic quarters' streets are
+// avenues of big trees, the old town's lanes are too narrow for any and its
+// other streets have small ones, and the warehouses have them only here and
+// there. Each district's trees are sized to its pavements, so their crowns
+// clear the house fronts. `share` is the share of blocks planted.
+const STREET_TREES = {
+  'Garden quarter': { share: 1, spacing: 16, scale: [7.6, 10] },
+  'Civic quarter': { share: 1, spacing: 17, scale: [7.2, 9.4] },
+  'Market district': { share: .85, spacing: 19, scale: [6, 7.8] },
+  'Old town': { share: .8, spacing: 21, scale: [5.4, 6.8] },
+  'Warehouse district': { share: .4, spacing: 22, scale: [6.4, 8.4] },
+  Midtown: { share: .5, spacing: 19, scale: [7, 9] },
+};
+const PARK_TREES = { share: 1, spacing: 19, scale: [7.2, 9.6] };
 // What stands in the parking bays, commonest first
 const PARKED_MODELS = ['sedan', 'hatchback', 'wagon', 'sedan', 'hatchback', 'pickup', 'van'];
 // A parking bay's length along the kerb
@@ -346,8 +361,10 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
 const clockwise = polygon => signedArea(polygon) > 0 ? polygon.slice().reverse() : polygon;
 // What the ground inside a block is: gardens where the district has them, paving elsewhere
 const GARDEN_STYLES = new Set(['Garden quarter', 'Civic quarter']);
-// Where the back yards have trees in them
-const YARD_TREES = new Set(['Garden quarter', 'Civic quarter', 'Old town', 'Market district']);
+// Where the back yards have trees in them, and how thickly (square metres of
+// yard to a tree): the gardens are full of them, the old streets' yards have
+// a few
+const YARD_TREES = { 'Garden quarter': 240, 'Civic quarter': 290, 'Old town': 560, 'Market district': 480 };
 export const blockGround = block => GARDEN_STYLES.has(block.style) ? '#86a263' : block.style === 'Warehouse district' ? '#a8a598' : '#b3b2a5';
 export const yardGround = block => block.style === 'Warehouse district' ? '#9e9b8e' : block.style === 'Midtown' ? '#a9a99d' : '#83a05e';
 
@@ -476,6 +493,17 @@ export function placeStreetFurniture(nav, bridges, add) {
     const inward = Math.hypot(place.u - best.x, place.s - best.y) || 1, u = best.x + (place.u - best.x) / inward * 2.2, y = best.y + (place.s - best.y) / inward * 2.2;
     if (insidePolygon({ x: u, y }, lawn) && free(u, y, 2)) add({ kind: 'sign', type: place.type, variant: place.variant, u, s: y, yaw: faceYaw(du, ds) });
   }
+  // How far back a block's buildings stand from its pavement near a point:
+  // each lot builds as the district its middle is in, so where two districts
+  // meet it is the nearer building line of the lots beside the point
+  const lotSetbacks = new Map();
+  CITY.lots.forEach((lot, i) => {
+    const block = CITY.lotBlocks?.[i], c = averagePoint(lot);
+    if (block === undefined) return;
+    if (!lotSetbacks.has(block)) lotSetbacks.set(block, []);
+    lotSetbacks.get(block).push({ ring: [...lot, lot[0]], setback: frontSetback(cityStyleDistrict(c.y, c.x)) });
+  });
+  const setbackNear = (block, p) => (lotSetbacks.get(block.index) ?? []).reduce((least, lot) => distanceToPolyline(p, lot.ring) < 8 ? Math.min(least, lot.setback) : least, frontSetback(block.style));
   // Lamps near the kerb and trees in the pavement, round every block and park,
   // clear of the junctions. The ring of a kerb runs anticlockwise, so the road
   // is on the right and the pavement on the left.
@@ -484,7 +512,8 @@ export function placeStreetFurniture(nav, bridges, add) {
     if (ring.length < 3) continue;
     const loop = [...ring, ring[0]], perimeter = polylineLength(loop);
     if (perimeter < 40) continue;
-    const trees = !block || block.style !== 'Midtown' || randomAt(block.index, 7402, CITY.seed) < .5;
+    const planting = block ? STREET_TREES[block.style] ?? STREET_TREES.Midtown : PARK_TREES;
+    const trees = randomAt(block?.index ?? 0, 7402, CITY.seed) < planting.share;
     const lampStart = randomAt(block?.index ?? 0, 7403, CITY.seed) * LAMP_SPACING;
     // A bus shelter now and then where the pavement runs along a main road,
     // its open side to the kerb
@@ -505,10 +534,15 @@ export function placeStreetFurniture(nav, bridges, add) {
       if (++lamps % 3 === 0) put({ kind: 'bin', u: x + p.tx * 1.4, s: y + p.ty * 1.4 }, 1);
     }
     if (!trees) continue;
-    for (const p of alongPolyline(loop, TREE_SPACING, lampStart + TREE_SPACING / 2)) {
+    // Each tree no bigger than its room to the building line behind the
+    // pavement, so its crown only brushes the house fronts
+    const [low, high] = planting.scale, line = block?.inner?.length >= 3 ? [...block.inner, block.inner[0]] : null;
+    for (const p of alongPolyline(loop, planting.spacing, lampStart + planting.spacing / 2)) {
       const nx = -p.ty, ny = p.tx, x = p.x + nx * 1.9, y = p.y + ny * 1.9;
-      if (inZone(x, y)) continue;
-      put({ kind: 'tree', u: x, s: y, scale: 7.2 + randomAt(Math.round(x), Math.round(y) + 31, CITY.seed) * 2.4 }, 3);
+      if (inZone(x, y) || CITY.roadIndex.nearest(p.x, p.y, 12)?.road.profile.narrow) continue;
+      const room = line ? distanceToPolyline({ x, y }, line) + setbackNear(block, { x, y }) : Infinity;
+      const scale = Math.min(low + randomAt(Math.round(x), Math.round(y) + 31, CITY.seed) * (high - low), treeRoom(room));
+      if (scale >= 4.8) put({ kind: 'tree', u: x, s: y, scale }, 3);
     }
   }
   // Down each median: trees on a boulevard's, and now and then a lamp with an
@@ -530,6 +564,19 @@ export function placeStreetFurniture(nav, bridges, add) {
       const ax = p.x - road.x, ay = p.y - road.y, l = Math.hypot(ax, ay) || 1, x = road.x + ax / l * (road.road.profile.halfWidth + .7), y = road.y + ay / l * (road.road.profile.halfWidth + .7);
       put({ kind: 'lamp', u: x, s: y, yaw: alongYaw(ax / l, ay / l) }, 4);
     }
+  }
+  // Benches along a wide promenade, on the water side facing the view, and a
+  // bin beside every other one
+  for (const walk of CITY.quays) {
+    if (walk.halfWidth < 2.5 || walk.points.length < 2) continue;
+    alongPolyline(walk.points, 46, 23).forEach((p, i) => {
+      const road = CITY.roadIndex.nearest(p.x, p.y, 20);
+      if (!road) return;
+      const ax = p.x - road.x, ay = p.y - road.y, l = Math.hypot(ax, ay) || 1, reach = walk.halfWidth - 1.9;
+      const x = p.x + ax / l * reach, y = p.y + ay / l * reach;
+      if (waterAt(y, x) || inZone(x, y) || !insidePolygon({ x, y }, walk.polygon)) return;
+      if (put({ kind: 'bench', u: x, s: y, yaw: alongYaw(-ax / l, -ay / l) }, 2.5) && i % 2) put({ kind: 'bin', u: x + p.tx * 1.6, s: y + p.ty * 1.6 }, 1);
+    });
   }
   // Railings along the quay walls, with a gap wherever a road meets the water
   for (const run of CITY.walls) {
@@ -628,15 +675,20 @@ export function placeStreetFurniture(nav, bridges, add) {
       if (put({ kind: 'tree', u: x, s: y, scale: 7 + random() * 4.5 }, park.square ? 8 : 6.5)) count++;
     }
   }
-  // A few trees in the back yards where the houses have gardens
+  // Trees in the back yards where the houses have gardens, gathered in
+  // groves as garden trees are rather than spaced evenly over the lawn
   for (const block of CITY.blocks) {
-    if (!YARD_TREES.has(block.style) || !(block.yard?.length >= 3) || placeForBlock(block.index)) continue;
+    if (!YARD_TREES[block.style] || !(block.yard?.length >= 3) || placeForBlock(block.index)) continue;
     const yard = block.yard, area = calcPolygonArea(yard), bounds = polygonBounds(yard), random = seededRandom(CITY.seed * 31 + block.index * 7717);
-    const ring = [...yard, yard[0]], wanted = Math.floor(area / 650);
-    for (let attempt = 0, count = 0; attempt < wanted * 6 && count < wanted; attempt++) {
-      const x = bounds.minX + random() * (bounds.maxX - bounds.minX), y = bounds.minY + random() * (bounds.maxY - bounds.minY);
-      if (!insidePolygon({ x, y }, yard) || distanceToPolyline({ x, y }, ring) < 4) continue;
-      if (put({ kind: 'tree', u: x, s: y, scale: 6 + random() * 3.5 }, 7)) count++;
+    const ring = [...yard, yard[0]], wanted = Math.floor(area / YARD_TREES[block.style]);
+    const grove = (x, y) => CITY.field.noise2D(x / 55 + block.index * 3.1, y / 55 - block.index * 1.7);
+    for (let attempt = 0, count = 0; attempt < wanted * 10 && count < wanted; attempt++) {
+      const x = bounds.minX + random() * (bounds.maxX - bounds.minX), y = bounds.minY + random() * (bounds.maxY - bounds.minY), g = grove(x, y);
+      if (random() > (g > .1 ? 1 : g > -.3 ? .4 : .08)) continue;
+      const edge = distanceToPolyline({ x, y }, ring);
+      if (!insidePolygon({ x, y }, yard) || edge < 3.6) continue;
+      // (the houses stand back from the yard's edge, so a tree beside it has that room at least)
+      if (put({ kind: 'tree', u: x, s: y, scale: Math.min(5.8 + random() * 3.8, treeRoom(edge)) }, 5.5)) count++;
     }
   }
   // Planted islands: in the middle of a big enough one a flower bed, or on a

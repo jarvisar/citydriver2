@@ -58,6 +58,17 @@ export function surfacePolygons(points) {
   }
   return pieces;
 }
+// A polygon's triangles, anticlockwise: a fan across a convex polygon, and
+// ear clipping for any other, whose fan would reach outside it (an L-shaped
+// lot's lawn laid across the street beside it)
+function triangles(ring) {
+  const n = ring.length, turn = i => { const a = ring[(i + n - 1) % n], p = ring[i], b = ring[(i + 1) % n]; return (p.u - a.u) * (b.s - p.s) - (p.s - a.s) * (b.u - p.u); };
+  if (ring.every((p, i) => turn(i) >= -EPS)) return Array.from({ length: n - 2 }, (_, i) => [0, i + 1, i + 2]);
+  return THREE.ShapeUtils.triangulateShape(ring.map(p => new THREE.Vector2(p.u, p.s)), []).map(([i0, i1, i2]) => {
+    const a = ring[i0], b = ring[i1], d = ring[i2];
+    return (b.u - a.u) * (d.s - a.s) - (b.s - a.s) * (d.u - a.u) >= 0 ? [i0, i1, i2] : [i0, i2, i1];
+  });
+}
 export function addSurfacePolygon(c, points, y, height, color, kind = 'solid') {
   const flat = height <= .08 || kind === 'water';
   const key = kind === 'road' || kind === 'water' ? kind : `surface-${kind}${flat ? '' : '-volume'}`;
@@ -88,8 +99,8 @@ export function addSurfacePolygon(c, points, y, height, color, kind = 'solid') {
   const pieces = affine && kind !== 'water' ? [signedArea(points) < 0 ? [...points].reverse() : points] : surfacePolygons(points);
   for (const polygon of pieces) {
     const world = polygon.map(mapped);
-    for (let i = 1; i < world.length - 1; i++) {
-      const triangle = [world[0], world[i], world[i + 1]].map(p => [p.u - c.east, p.s - c.start]);
+    for (const [i0, i1, i2] of triangles(world)) {
+      const triangle = [world[i0], world[i1], world[i2]].map(p => [p.u - c.east, p.s - c.start]);
       if (Math.abs(signedArea(triangle)) < EPS) continue;
       const bounds = [Math.min(...triangle.map(p => p[0])), Math.min(...triangle.map(p => p[1])),
         Math.max(...triangle.map(p => p[0])), Math.max(...triangle.map(p => p[1]))];
