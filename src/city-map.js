@@ -1,8 +1,10 @@
 import { CITY } from './world/city.js';
+import { placeForBlock } from './city-exploration.js';
 
 // The local street map: the generated roads, water, parks and lots drawn
 // from cached Path2D shapes in world coordinates, so each redraw is a few
-// fills and strokes however far the car has come.
+// fills and strokes however far the car has come. A venue with a block to
+// itself shows as its grounds rather than the block's lots.
 export class CityMapCache {
   constructor(city = CITY, makePath = () => new Path2D()) {
     this.city = city;
@@ -14,7 +16,9 @@ export class CityMapCache {
     for (const piece of [...city.seaWater, ...city.riverWater]) for (const ring of [piece.outer, ...piece.holes]) polygon(this.water, ring);
     for (const park of city.parks) polygon(this.parks, park);
     for (const block of city.blocks) if (block.sidewalk.length) polygon(this.blocks, block.sidewalk);
-    for (const lot of city.lots) polygon(this.lots, lot);
+    const grounds = new Set();
+    city.blocks.forEach((block, index) => { if (city === CITY && placeForBlock(index)) { grounds.add(index); polygon(this.parks, block.inner); } });
+    city.lots.forEach((lot, index) => { if (!grounds.has(city.lotBlocks?.[index])) polygon(this.lots, lot); });
     for (const road of city.roads) {
       const key = road.kind === 'path' ? 'path' : road.profile.halfWidth * 2;
       if (!this.roads.has(key)) this.roads.set(key, makePath());

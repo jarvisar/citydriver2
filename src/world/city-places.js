@@ -41,3 +41,12 @@ export const SPACE_NAMES = Object.freeze({
   bathhouse: ['Tiled pavilions', 'Turquoise pools', 'Colonnaded terrace'], farmersmarket: ['Produce stalls', 'Flower stands', 'Coffee courtyard'],
   donut: ['Giant donut', 'Pastel diner', 'Coffee terrace'], cityhall: ['Civic chambers'],
 });
+// Where each kind of venue is at home: the districts that favour it
+export const VENUE_DISTRICTS = {
+  Midtown: ['hotel', 'cinema', 'museum', 'station', 'music', 'hospital'],
+  'Old town': ['museum', 'market', 'bathhouse', 'donut', 'music', 'postoffice'],
+  'Market district': ['market', 'donut', 'cinema', 'postoffice', 'firehouse'],
+  'Civic quarter': ['library', 'museum', 'hospital', 'postoffice', 'firehouse', 'observatory'],
+  'Garden quarter': ['observatory', 'sports', 'bathhouse', 'library', 'donut'],
+  'Warehouse district': ['depot', 'station', 'market', 'firehouse', 'sports'],
+};

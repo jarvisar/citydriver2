@@ -4,7 +4,7 @@ import { PAVEMENT_LEVEL as G } from './city-route.js';
 import { CITY, cityStyleDistrict } from './city.js';
 import { SHOP_NAMES, shopSignFor } from './city-signs.js';
 import { grassArea } from './city-grass.js';
-import { placeForLot } from '../city-exploration.js';
+import { placeForLot, placeForBlock } from '../city-exploration.js';
 import { buildLandmark } from './city-landmarks.js';
 import { averagePoint, insidePolygon, polygonBounds, offsetPolygon, offsetPolygonMapped, calcPolygonArea, signedArea, distanceToPolyline, dedupePolygon, isSimple, fitRectangle } from '../mapgen/polygon-util.js';
 import { union, intersection } from '../mapgen/booleans.js';
@@ -188,9 +188,11 @@ export function edgeFacade(c, a, b) {
 // What stands on a lot: a building shaped like the lot, or a garden where
 // the lot is too small or too awkward for one.
 export function planLot(c, lot) {
-  // A place worth a taxi ride is a landmark of its own kind
-  const place = lot.index === undefined ? null : placeForLot(lot.index);
+  // A place worth a taxi ride is a landmark of its own kind; one with a
+  // whole block to itself stands in for the block's lots
+  const place = lot.place ?? (lot.index === undefined ? null : placeForLot(lot.index));
   if (place) return { kind: 'landmark', lot, place };
+  if (lot.block !== undefined && lot.block >= 0 && placeForBlock(lot.block)) return { kind: 'none', lot };
   let polygon = dedupePolygon(lot.polygon);
   if (polygon.length < 3) return { kind: 'garden', lot };
   let kinds = lot.edges?.length === polygon.length ? lot.edges : null;
@@ -566,7 +568,7 @@ export function* buildCityBuildingSteps(c) {
   for (const b of plan) {
     if (b.kind === 'landmark') { if (!c.structure(0, 0, () => buildLandmark(c, b.lot, b.place))) buildGarden(c, b.lot); }
     else if (b.kind === 'building') c.structure(0, 0, () => buildBuilding(c, b));
-    else buildGarden(c, b.lot);
+    else if (b.kind === 'garden') buildGarden(c, b.lot);
     yield;
   }
 }

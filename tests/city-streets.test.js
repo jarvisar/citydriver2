@@ -143,7 +143,8 @@ test('buildings stand inside their lots without touching each other, and every v
     for (let x = x0 + .5; x < x1; x += 1) for (let y = y0 + .5; y < y1; y += 1) if (insidePolygon({ x, y }, a) && insidePolygon({ x, y }, b)) overlaps++;
   }
   assert.equal(overlaps, 0);
-  assert.ok(cityPlaces().filter(place => place.lot !== undefined).length > 10);
+  // (a lot or, for the grand ones, a block of their own)
+  assert.ok(cityPlaces().filter(place => place.footprint).length > 15);
 });
 
 test('traffic turns through junctions without snapping and never leaves the road', () => {

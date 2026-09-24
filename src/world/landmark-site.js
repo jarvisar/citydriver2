@@ -26,3 +26,31 @@ export function landmarkSite(lot) {
   return { polygon, rect, centre, width, depth, tx, ty, nx: -ty, ny: tx };
 }
 
+
+// How much of its site each venue's building takes: the least it needs along
+// its street and into its lot, and the most it takes, the rest of the lot its
+// grounds; and how far back from the street it stands behind its forecourt
+export const VENUE_SIZE = {
+  cityhall: [28, 22, 48, 34], museum: [22, 18, 42, 30], library: [20, 16, 36, 26], postoffice: [20, 16, 34, 26],
+  bathhouse: [22, 18, 38, 30], hospital: [24, 18, 46, 30], hotel: [18, 18, 28, 28], station: [24, 26, 40, 60],
+  depot: [20, 24, 36, 52], market: [20, 22, 34, 44], farmersmarket: [20, 20, 34, 40], cinema: [16, 16, 28, 28],
+  music: [16, 15, 26, 26], observatory: [16, 16, 26, 26], sports: [24, 28, 40, 48], firehouse: [16, 14, 26, 22],
+  donut: [14, 12, 22, 20], clock: [16, 16, 30, 30], art: [16, 16, 32, 32], garden: [18, 16, 34, 26],
+};
+const FORECOURT = { cityhall: 9, museum: 8, library: 7, postoffice: 6, hospital: 7, bathhouse: 6, station: 8, hotel: 5, observatory: 5, firehouse: 7 };
+export const venueFits = (site, type) => Boolean(site) && site.width >= (VENUE_SIZE[type]?.[0] ?? 14) && site.depth >= (VENUE_SIZE[type]?.[1] ?? 12);
+// The building's rectangle on its site: centred on it along the street, set
+// back behind the forecourt, in the site's axes. `setback` is how far its
+// front stands behind the site's front, which is itself a few metres in from
+// the lot's street edge. A venue with a whole block to itself stands in its
+// grounds, a wider forecourt before it.
+export function venueFootprint(site, type, whole = false) {
+  if (!venueFits(site, type)) return null;
+  const [, minD, maxW, maxD] = VENUE_SIZE[type] ?? [14, 12, 30, 30];
+  const court = whole ? Math.max(FORECOURT[type] ?? 6, Math.min(16, (site.depth - maxD) * .45)) : FORECOURT[type] ?? 3;
+  const width = Math.min(site.width, maxW), setback = Math.max(0, Math.min(court, site.depth - minD));
+  const depth = Math.min(site.depth - setback, maxD), into = -site.depth / 2 + setback + depth / 2;
+  const centre = { x: site.centre.x + site.nx * into, y: site.centre.y + site.ny * into };
+  return { centre, width, depth, setback, tx: site.tx, ty: site.ty, nx: site.nx, ny: site.ny,
+    front: { x: centre.x - site.nx * depth / 2, y: centre.y - site.ny * depth / 2 } };
+}

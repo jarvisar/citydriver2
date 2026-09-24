@@ -17,7 +17,9 @@ import { applyWalkerHop, walkerTravelTime, holdWalkerTravel } from './pedestrian
 import { stableShadowDepth } from './shadow-depth.js';
 import { navGraph } from './nav-graph.js';
 import { cityGreen } from '../city-junctions.js';
-import { signalLens } from './city-detail-assets.js';
+import { signalLens, round } from './city-detail-assets.js';
+import { buildMonument } from './city-monuments.js';
+import { cityPlaces } from '../city-exploration.js';
 import { basinRim, basinWater } from './city-public-space-geometry.js';
 import { buildStreetSurfaces, placeStreetFurniture, findBridges } from './city-streets.js';
 import { offsetPolygon, calcPolygonArea, averagePoint } from '../mapgen/polygon-util.js';
@@ -337,6 +339,7 @@ export class CityChunk {
   buildFurniture() {
     for (const piece of this.furniture) {
       const x = piece.u - this.east, s = piece.s - this.start;
+      if (buildMonument(this, piece, x, s)) continue;
       if (piece.kind === 'lamp') { this.prop('lamp', x, s, piece.yaw); this.post(x, s, .25); }
       // Two lamps back to back on one column, an arm over each carriageway
       else if (piece.kind === 'median-lamp') { for (const yaw of [piece.yaw, piece.yaw + Math.PI]) this.prop('lamp', x, s, yaw); this.post(x, s, .25); }
@@ -376,11 +379,22 @@ export class CityChunk {
       }
       else if (piece.kind === 'shelter') { this.prop('shelter', x, s, piece.yaw); this.rigid(x, s, () => this.solid(x + .5, s, .6, 4), itemFrame(piece.s, piece.u, piece.yaw)); }
       else if (piece.kind === 'fountain') {
-        const k = piece.size ?? 1;
-        this.item('basin-rim', basinRim, this.materials.solid, [x, PAVEMENT_LEVEL + .4, -s], [3.4 * k, .8, 3.4 * k], '#d7ccb3');
-        this.item('basin-water', basinWater, this.materials.glass, [x, PAVEMENT_LEVEL + .62, -s], [3.2 * k, 1, 3.2 * k], '#4f93a0');
-        this.box(x, PAVEMENT_LEVEL + 1.3 * Math.sqrt(k), s, .7 * k, 2.2 * Math.sqrt(k), .7 * k, '#d7ccb3');
-        this.box(x, PAVEMENT_LEVEL + 2.5 * Math.sqrt(k), s, 1.6 * k, .25, 1.6 * k, '#d7ccb3');
+        // A round basin with a column in it carrying a bowl of water, and in
+        // a big square's fountain a smaller bowl above that, and a finial
+        const k = piece.size ?? 1, stone = '#d7ccb3', water = '#4f93a0', bowl = Math.min(2, .8 + .5 * k);
+        this.item('basin-rim', basinRim, this.materials.solid, [x, PAVEMENT_LEVEL + .4, -s], [3.4 * k, .8, 3.4 * k], stone);
+        this.item('basin-water', basinWater, this.materials.glass, [x, PAVEMENT_LEVEL + .62, -s], [3.2 * k, 1, 3.2 * k], water);
+        round(this, x, PAVEMENT_LEVEL + 1.1, s, .6, 1.6, .6, stone);
+        round(this, x, PAVEMENT_LEVEL + 1.95, s, bowl * 2, .3, bowl * 2, stone);
+        round(this, x, PAVEMENT_LEVEL + 2.1, s, bowl * 1.8, .04, bowl * 1.8, water, 'y', 'glass');
+        let top = PAVEMENT_LEVEL + 2.1;
+        if (k > 1.3) {
+          round(this, x, PAVEMENT_LEVEL + 2.7, s, .38, 1.2, .38, stone);
+          round(this, x, PAVEMENT_LEVEL + 3.35, s, bowl, .24, bowl, stone);
+          round(this, x, PAVEMENT_LEVEL + 3.47, s, bowl * .86, .04, bowl * .86, water, 'y', 'glass');
+          top = PAVEMENT_LEVEL + 3.47;
+        }
+        round(this, x, top + .35, s, .24, .7, .24, stone);
         this.post(x, s, 3.5 * k);
       }
       else if (piece.kind === 'lantern') { this.prop('lantern', x, s); this.post(x, s, .2); }
@@ -564,6 +578,14 @@ export class CitydriverWorld {
       if (!this.lotsByChunk.has(cell.key)) this.lotsByChunk.set(cell.key, []);
       this.lotsByChunk.get(cell.key).push(lot);
     });
+    // A venue with a block to itself is built as one lot, the whole block
+    for (const place of cityPlaces()) {
+      if (place.block === undefined) continue;
+      const polygon = place.polygon, centre = { x: place.u, y: place.s }, cell = cityCell(place.s, place.u);
+      const lot = { polygon, block: place.block, edges: null, depth: 0, centre, area: calcPolygonArea(polygon), place, seed: Math.floor(randomAt(Math.round(centre.x), Math.round(centre.y) + 7104, CITY.seed) * 0xffffffff) >>> 0 };
+      if (!this.lotsByChunk.has(cell.key)) this.lotsByChunk.set(cell.key, []);
+      this.lotsByChunk.get(cell.key).push(lot);
+    }
   }
   neighbourLots(ix, iz) {
     const key = `${ix},${iz}`;

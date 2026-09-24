@@ -207,8 +207,19 @@ hairpins when there is another way on. The autodrive follows the same curves.
 parkway, one per street between its junctions with rounded noses short of
 the crosswalks; the renderer draws them, the furniture plants them and the
 tyres ride up onto them from the same shapes. `city-parks.js` gives each park
-its plaza or pond and lays out each square: walks in from its corners and
-long sides to a paved circle round a fountain.
+its plaza or pond and lays out each square as one of the city's open-air
+places: walks in from its corners and long sides to a paved circle, and in
+and round the circle what the square is for. A botanical garden has a
+glasshouse among flower beds and a market square rows of striped stalls and
+a bakery's kiosk; these two take the roomiest squares. A clocktower square
+has its tower on three steps (a circus's garden is the natural place for
+one), a sculpture garden a centrepiece in a pool and smaller works along its
+walks, and a fountain square a tiered fountain with a cafe's tables beside
+it. No design comes up more than twice. A paved square has a promenade
+under two rows of trees round its edge and lawns between its walks; a lawn
+has its trees in groves. The pieces (`city-monuments.js`) are laid out
+square to the square's longest side, the tower and the glasshouse at both
+detail levels.
 
 `city-streets.js` builds the static layer (carriageways with their rounded
 corners, markings, medians, parking bays, crosswalks and stop lines, a zebra
@@ -220,10 +231,14 @@ trees and double-armed lamps down the boulevards' medians, bus shelters on
 the main roads, bins, parked cars in two bays in five, car parks lined out in the paved
 yards behind the offices and warehouses, a little over half full, railings
 on the quays
-and bridges, and in the parks a fountain or a bandstand on the plaza,
-lanterns and benches along the walks, an avenue of trees round the loop,
+and bridges, in the parks a fountain or a bandstand on the plaza, and in
+the squares what each is for, lanterns and benches along the walks, an
+avenue of trees round a park's loop and a row round every square's edge,
 groves over the lawns, and a few trees in the back yards where the houses
-have gardens. A sign stands at every venue. Props are turned with the helpers
+have gardens. Every place has its sign on the pavement by its entrance,
+placed before the lamps and trees take the kerb, beside a venue's forecourt
+rather than across it; where a frontage is all junction corners (a circus)
+the sign stands just inside the grounds or the lawn. Props are turned with the helpers
 in `city-layout-render.js` (`faceYaw`, `alongYaw`, `itemFrame`), one
 convention for every item and its collider.
 
@@ -251,18 +266,39 @@ house on a wedge-shaped lot is a plain rectangle square to its street, and a
 lot too small for one is a garden. Heights follow the block (a street wall of
 similar storeys) and rise toward downtown, with the odd tower above them.
 
-The places a passenger asks for are landmarks (`city-landmarks.js`): a civic
-hall with a portico and a dome or a clock tower, a hotel tower, a vaulted
-station or market shed, a cinema's lit marquee, an observatory, a club's
-courts, a firehouse, a diner with a giant donut, or an open square with a clock
-tower or a sculpture. Each is fitted to its lot square to its main street
-(`landmark-site.js`) with the venue's sign across its front, and the drop-off
-is in the kerbside lane of the street it faces.
+The places a passenger asks for (`city-exploration.js`) are the parks and
+squares and some thirty venues, every kind in the notebook somewhere in
+every city. The venues are spread evenly: the best sites first, as far
+apart as there are sites for about two of each kind, dealt out a round at a
+time so no kind comes up more than twice, the second time under another
+name, and where its district wants it (a hotel or a cinema in midtown, a
+depot by the warehouses, an observatory in the garden quarter). The grand
+ones (a museum, a station, a hospital, a library, baths, a market hall, a
+tram depot, a sports club, an observatory) have a compact block to
+themselves, and City Hall the best block nearest downtown, which may face
+a square; a cinema, a jazz club, a hotel, a fire station, a post office or
+a diner takes a lot in a street of other buildings. A kind that no square
+could be (a city short of squares) has a block of its own instead.
+
+Each is a landmark (`city-landmarks.js`): a civic hall with a portico and a
+dome or a clock tower, a hotel tower, a vaulted station or market shed,
+baths behind a tiled arcade, a cinema's lit marquee, an observatory, a
+club's lined tennis and basketball courts, a firehouse with its engine out
+front, a diner with a giant donut. Its building is fitted square to its
+site's main street (`landmark-site.js`), no bigger than its kind of building
+is and set back behind a forecourt, and the rest of the site is its
+grounds: lawn, the paved forecourt from the street to the door, a path round
+the building, trees along the edges and in the open lawn, and before a civic
+hall flower beds and flags. The name is across the front, fitted between the
+doors and the cornice, or on a stone plinth in the forecourt where a portico
+would hide it. The drop-off is in the kerbside lane of the street it faces,
+with the venue on the right, clear of the junctions. A site's rectangle has
+no lot edge across it, so a street biting into a lot is never built over.
 
 ## Checking a city
 
 - `npm test` includes the network, street profile, park layout, shore, lot,
-  junction, furniture, building and traffic invariants;
+  junction, furniture, building, place and traffic invariants;
   `TEST_WORLD_SEED=42 npm test` runs the whole suite against another city.
 - `node scripts/city-map-svg.mjs <seed> city.svg` draws the plan.
 - `node scripts/city-tour.mjs <seed>` takes screenshots round the city.

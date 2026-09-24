@@ -228,9 +228,12 @@ export function fitRectangle(polygon, ux, uy) {
     u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v);
   }
   const corners = (a, b, c, d) => [[a, c], [b, c], [b, d], [a, d]].map(([u, v]) => ({ x: centre.x + ux * u + vx * v, y: centre.y + uy * u + vy * v }));
+  // Inside when its corners are and no edge of a concave polygon (a street
+  // biting into a lot) cuts across it
+  const crossed = rect => polygon.some((p, i) => rect.some((a, k) => segmentIntersection(a, rect[(k + 1) % 4], p, polygon[(i + 1) % polygon.length], -1e-9)));
   for (let k = 0; k < 24; k++) {
     const shrink = 1 - k * .04, rect = corners(u0 * shrink, u1 * shrink, v0 * shrink, v1 * shrink);
-    if (rect.every(p => insidePolygon(p, polygon))) return rect;
+    if (rect.every(p => insidePolygon(p, polygon)) && !crossed(rect)) return rect;
   }
   return null;
 }

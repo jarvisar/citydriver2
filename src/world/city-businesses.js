@@ -1,3 +1,5 @@
+import { CITY_PLACES, SPACE_NAMES } from './city-places.js';
+
 // Fixed catalogs keep names reproducible and texture memory bounded as the city streams.
 export const SHOP_BRANDS = {
   CAFE: [
@@ -102,4 +104,10 @@ export const VENUE_BRANDS = {
 export function venueBrand(type, variant) {
   const brand = VENUE_BRANDS[type]?.[variant];
   return brand ? { name: brand[0], lettering: brand[1], slogan: brand[2] } : null;
+}
+// What a place is called, on its sign and to a passenger: a venue by its
+// brand, City Hall as City Hall, and anywhere else by its own name (Bell
+// Court, a clocktower square; Carriage Works, a tram depot)
+export function placeName(type, variant) {
+  return venueBrand(type, variant)?.name ?? (type === 'cityhall' ? CITY_PLACES.cityhall.name : SPACE_NAMES[type]?.[variant] ?? CITY_PLACES[type].name);
 }

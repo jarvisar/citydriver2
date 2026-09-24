@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CITY_PLACES, SPACE_NAMES } from './city-places.js';
-import { SHOP_BRANDS, venueBrand } from './city-businesses.js';
+import { SHOP_BRANDS, venueBrand, placeName } from './city-businesses.js';
 
 export const SHOP_NAMES = Object.keys(SHOP_BRANDS);
 const STYLES = [
@@ -22,10 +22,18 @@ const HEADERS = {
 export const SHOP_SIGNS = SHOP_NAMES.flatMap((category, c) => SHOP_BRANDS[category].map(([name, subtitle], variant) => ({
   ...STYLES[(c + variant) % STYLES.length], category, name, subtitle, header: '',
 })));
+// A place's board carries its name (see placeName) over what it is: a
+// venue's own design, an open space's kind, or, where its name already says
+// that, what is there
+const OPEN_AIR = new Set(['park', 'plaza', 'clock', 'art', 'garden']);
+const subtitleFor = (type, variant, place, design) => {
+  if (venueBrand(type, variant) || type === 'cityhall') return design;
+  if (OPEN_AIR.has(type)) return place.short;
+  return design.toLowerCase() === place.short.toLowerCase() ? place.description.replace(/.$/, '') : place.short;
+};
 export const DISCOVERY_SIGNS = Object.entries(CITY_PLACES).flatMap(([type, place], i) => SPACE_NAMES[type].map((design, variant) => ({
   ...STYLES[(i + variant) % STYLES.length], type, variant,
-  name: venueBrand(type, variant)?.name ?? (type === 'park' || type === 'plaza' ? design : place.name),
-  subtitle: type === 'park' || type === 'plaza' ? place.short : design,
+  name: placeName(type, variant), subtitle: subtitleFor(type, variant, place, design),
   header: (venueBrand(type, variant)?.slogan ?? HEADERS[type]).toUpperCase(),
   aspect: [2.15, 1.85, 1.65, 2.2, 2][(i + variant) % STYLES.length], accent: place.color,
 })));
