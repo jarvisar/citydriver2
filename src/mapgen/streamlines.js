@@ -154,7 +154,7 @@ export default class StreamlineGenerator {
   streamlineIntegrationStep(params, major, collideBoth) {
     if (!params.valid) return;
     params.streamline.push(params.previousPoint);
-    const nextDirection = this.integrator.integrate(params.previousPoint, major);
+    const nextDirection = this.integrator.integrate(params.previousPoint, major, params.previousDirection);
     // Stop at degenerate point
     if (nextDirection.lengthSq() < .01) { params.valid = false; return; }
     // Make sure we travel in the same direction

@@ -349,7 +349,7 @@ export class CityChunk {
       else if (piece.kind === 'bollard') { this.prop('bollard', x, s); this.post(x, s, .16); }
       else if (piece.kind === 'railing') { this.prop('railing', x, s, piece.yaw, piece.y ?? PAVEMENT_LEVEL); this.rigid(x, s, () => this.solid(x, s, .24, 4), itemFrame(piece.s, piece.u, piece.yaw)); }
       else if (piece.kind === 'sign') this.sign(discoverySignFor(piece.type, piece.variant), x, PAVEMENT_LEVEL + 2.9, s, piece.yaw, 4.2);
-      else if (piece.kind === 'stop') { this.prop('stop', x, s, piece.yaw); this.post(x, s, .12); }
+      else if (piece.kind === 'stop' || piece.kind === 'yield') { this.prop(piece.kind, x, s, piece.yaw); this.post(x, s, .12); }
       else if (piece.kind === 'signal') {
         const yaw = piece.yaw, cos = Math.cos(yaw), sin = Math.sin(yaw);
         // A head `along` metres out along local -x from the pole, its middle lamp `height` up

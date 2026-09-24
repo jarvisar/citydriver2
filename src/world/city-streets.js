@@ -3,11 +3,12 @@ import { ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL, waterAt, onRoadAt } from './ci
 import { junctionGeometry, CROSSWALK, stopLineDistance } from './junction-geometry.js';
 import { junctionControls } from '../city-junctions.js';
 import { cityMedians, MEDIAN_KERB } from './city-medians.js';
-import { cityParks, parkClear, pondShore, SQUARE_WALK } from './city-parks.js';
+import { cityParks, parkClear, pondShore, SQUARE_WALK, BED_COLOURS } from './city-parks.js';
 import { faceYaw, alongYaw } from './city-layout-render.js';
 import { randomAt, seededRandom } from './route.js';
 import { offsetPolyline, offsetPolylineClean, offsetPolygon, insidePolygon, polygonBounds, calcPolygonArea, signedArea, distanceToPolyline } from '../mapgen/polygon-util.js';
 import { cityPlaces, placeForBlock } from '../city-exploration.js';
+import { cityIslands, islandFor } from './city-islands.js';
 import { clipInside } from '../mapgen/road-network.js';
 
 // The streets as the city draws and furnishes them. Everything here is laid
@@ -119,6 +120,57 @@ function approachPoint(nav, edge, node, distance) {
   return { x: p.u, y: p.s, tx: p.tx, ty: p.ty, rx: -p.ty, ry: p.tx };
 }
 
+// A crosswalk where a road leaves a junction, as its stripes span it,
+// wherever the junction's control marks one (see city-junctions.js: at a
+// signal, wherever traffic stops, and downtown across the quieter streets; a
+// link inside a junction complex has none). Two junctions a few metres apart
+// can lay two crosswalks over each other: the one across the narrower road
+// gives way.
+const crosswalkCache = new WeakMap();
+export function cityCrosswalks(nav) {
+  if (crosswalkCache.has(nav)) return crosswalkCache.get(nav);
+  const geometry = junctionGeometry(nav), controls = junctionControls(nav), all = [];
+  for (const [node, control] of controls) {
+    const shape = geometry.get(node.id);
+    for (const [edge, approach] of control.approaches) {
+      const arm = shape.approaches.get(edge), halfWidth = edge.profile.halfWidth;
+      if (arm.link || !approach.crosswalk) continue;
+      const near = approachPoint(nav, edge, node, arm.clear + .2), far = approachPoint(nav, edge, node, arm.clear + CROSSWALK);
+      const at = (p, across) => ({ x: p.x + p.rx * across, y: p.y + p.ry * across });
+      all.push({ node, edge, near, far, halfWidth, outline: [at(near, -halfWidth + .8), at(near, halfWidth - .5), at(far, halfWidth - .5), at(far, -halfWidth + .8)] });
+    }
+  }
+  all.sort((a, b) => b.halfWidth - a.halfWidth || a.edge.id - b.edge.id || a.node.id - b.node.id);
+  const kept = [], cells = new Map(), cellOf = p => `${Math.floor(p.x / 40)},${Math.floor(p.y / 40)}`;
+  for (const walk of all) {
+    const c = walk.outline[0], cx = Math.floor(c.x / 40), cy = Math.floor(c.y / 40);
+    let clear = true;
+    for (let dx = -1; dx <= 1 && clear; dx++) for (let dy = -1; dy <= 1 && clear; dy++) {
+      for (const other of cells.get(`${cx + dx},${cy + dy}`) ?? []) if (convexOverlap(other.outline, walk.outline, .3)) { clear = false; break; }
+    }
+    if (!clear) continue;
+    kept.push(walk);
+    const key = cellOf(c);
+    if (!cells.has(key)) cells.set(key, []);
+    cells.get(key).push(walk);
+  }
+  crosswalkCache.set(nav, kept);
+  return kept;
+}
+// Whether two convex polygons overlap by more than `margin` (separating axes)
+export function convexOverlap(a, b, margin = 0) {
+  for (const poly of [a, b]) for (let i = 0; i < poly.length; i++) {
+    const p = poly[i], q = poly[(i + 1) % poly.length], length = Math.hypot(q.x - p.x, q.y - p.y);
+    if (length < 1e-9) continue;
+    const ax = -(q.y - p.y) / length, ay = (q.x - p.x) / length;
+    let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+    for (const v of a) { const d = v.x * ax + v.y * ay; a0 = Math.min(a0, d); a1 = Math.max(a1, d); }
+    for (const v of b) { const d = v.x * ax + v.y * ay; b0 = Math.min(b0, d); b1 = Math.max(b1, d); }
+    if (a1 < b0 + margin || b1 < a0 + margin) return false;
+  }
+  return true;
+}
+
 // Roads, markings, junctions, pavements, parks and water, into the static
 // surfaces: ground (vertex coloured), roads (the road material, which rain
 // darkens), paths, water and walls.
@@ -134,7 +186,9 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
     for (const kerb of parkKerbs) for (const run of clipInside(road.points, kerb, 0)) paths.ribbon(run, road.profile.halfWidth, PAVEMENT_LEVEL + .035, COLOURS.path);
   }
   for (const patch of CITY.cornerPatches) roads.polygon(patch, ROAD_LEVEL, COLOURS.road);
-  // Markings along each street between its junctions
+  // Markings along each street between its junctions: lanes down a
+  // boulevard, a double centre line down an avenue, a dashed one down a
+  // collector, and none on a local street
   const markings = ground;
   const dashed = (line, every, length, width, colour, offset = 0) => {
     for (const p of alongPolyline(line, every, offset)) {
@@ -153,7 +207,8 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
         dashed(offsetPolyline(span, side * profile.divider), 9, 4.5, .11, COLOURS.line, 2);
         markings.ribbon(offsetPolyline(span, side * (profile.halfWidth - .6)), .12, ROAD_LEVEL + .012, COLOURS.line);
       }
-    } else if (profile.kind === 'avenue') dashed(span, 10, 4, .12, COLOURS.marking, 3);
+    } else if (profile.centre === 'double') for (const side of [-1, 1]) markings.ribbon(offsetPolyline(span, side * .16), .11, ROAD_LEVEL + .012, COLOURS.marking);
+    else if (profile.centre === 'dashed') dashed(span, 9, 3.5, .12, COLOURS.marking, 2.5);
     if (profile.parking) {
       // Parking bays along both kerbs: a line along their outside, and a tick between bays
       for (const side of [-1, 1]) {
@@ -176,19 +231,26 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
     ground.wall(clockwise(median.polygon), top, ROAD_LEVEL - .02, COLOURS.medianKerb, true);
   }
   // Crosswalks where each road leaves a junction, stop lines behind them
+  for (const { near, far, halfWidth } of cityCrosswalks(nav)) {
+    const at = (p, across) => ({ x: p.x + p.rx * across, y: p.y + p.ry * across });
+    for (let across = -halfWidth + .8; across < halfWidth - .5; across += 1.6) {
+      markings.polygon([at(near, across), at(near, across + .85), at(far, across + .85), at(far, across)], ROAD_LEVEL + .014, COLOURS.stripe);
+    }
+  }
   for (const [node, control] of controls) {
     const shape = geometry.get(node.id);
     for (const [edge, approach] of control.approaches) {
       const arm = shape.approaches.get(edge), halfWidth = edge.profile.halfWidth;
-      if (arm.link) continue;
-      const near = approachPoint(nav, edge, node, arm.clear + .2), far = approachPoint(nav, edge, node, arm.clear + CROSSWALK);
+      if (arm.link || approach.kind === 'priority') continue;
       const at = (p, across) => ({ x: p.x + p.rx * across, y: p.y + p.ry * across });
-      for (let across = -halfWidth + .8; across < halfWidth - .5; across += 1.6) {
-        markings.polygon([at(near, across), at(near, across + .85), at(far, across + .85), at(far, across)], ROAD_LEVEL + .014, COLOURS.stripe);
+      const inner = edge.profile.median ? edge.profile.median + .2 : .25, outer = halfWidth - (edge.profile.parking ? halfWidth - edge.profile.parking + .2 : .4);
+      if (approach.kind === 'yield') {
+        // A row of teeth across the lane, pointing at the driver who gives way
+        const base = approachPoint(nav, edge, node, stopLineDistance(arm.clear) - .3), tip = approachPoint(nav, edge, node, stopLineDistance(arm.clear) + .6);
+        for (let across = inner + .15; across + .55 <= outer; across += .85) markings.polygon([at(base, across), at(base, across + .55), at(tip, across + .275)], ROAD_LEVEL + .014, COLOURS.stop);
+        continue;
       }
-      if (approach.kind === 'priority') continue;
       const line = approachPoint(nav, edge, node, stopLineDistance(arm.clear) - .2), back = approachPoint(nav, edge, node, stopLineDistance(arm.clear) + .25);
-      const inner = edge.profile.median ? edge.profile.median + .2 : .25;
       markings.polygon([at(line, inner), at(line, halfWidth - .4), at(back, halfWidth - .4), at(back, inner)], ROAD_LEVEL + .014, COLOURS.stop);
     }
   }
@@ -207,6 +269,9 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
     if (block.kerb.length < 3) continue;
     ground.polygon(block.kerb, PAVEMENT_LEVEL, COLOURS.pavement);
     ground.wall(clockwise(block.kerb), PAVEMENT_LEVEL, ROAD_LEVEL - .02, COLOURS.kerb, true);
+    // A block with no lot is a planted island
+    const island = islandFor(block.index);
+    if (island) { ground.polygon(island.lawn, PAVEMENT_LEVEL + .02, COLOURS.lawn); continue; }
     if (block.park || block.inner.length < 3) continue;
     ground.polygon(block.inner, PAVEMENT_LEVEL + .02, blockGround(block));
     if (block.yard?.length >= 3 && !placeForBlock(block.index)) ground.polygon(block.yard, PAVEMENT_LEVEL + .035, yardGround(block));
@@ -339,7 +404,7 @@ export function placeStreetFurniture(nav, bridges, add) {
   // Bus stops, which the parked cars leave clear
   const stops = [], onPlaced = (x, y, kind, radius) => kind === 'shelter' && stops.some(stop => Math.hypot(stop.x - x, stop.y - y) < radius);
   // Street furniture stands on a pavement, whatever placed it
-  const PAVED = new Set(['lamp', 'bin', 'shelter', 'stop', 'signal', 'sign']);
+  const PAVED = new Set(['lamp', 'bin', 'shelter', 'stop', 'yield', 'signal', 'sign']);
   const put = (piece, radius = 1.5) => {
     // on a pavement, and not where a road or park path runs across it
     if (PAVED.has(piece.kind) && (!CITY.pavement.find(piece.u, piece.s) || onRoadAt(piece.s, piece.u))) return false;
@@ -350,8 +415,8 @@ export function placeStreetFurniture(nav, bridges, add) {
     add(piece);
     return true;
   };
-  // Signals and stop signs stand on the approach's right-hand pavement just
-  // behind the stop line, facing the drivers who have to obey them
+  // Signals, stop signs and give-way signs stand on the approach's right-hand
+  // pavement just behind the line, facing the drivers who have to obey them
   for (const [node, control] of controls) {
     const shape = geometry.get(node.id);
     for (const [edge, approach] of control.approaches) {
@@ -368,7 +433,7 @@ export function placeStreetFurniture(nav, bridges, add) {
         const lanes = edge.profile.divider ? [(edge.profile.median + edge.profile.divider) / 2, (edge.profile.divider + edge.profile.halfWidth - .6) / 2]
           : [edge.profile.halfWidth / 2 - .5];
         const mast = edge.profile.halfWidth >= 8 ? lanes.map(lane => reach - lane) : null;
-        if (put(approach.kind === 'signal' ? { kind: 'signal', u, s: y, yaw, axis: approach.axis, mast } : { kind: 'stop', u, s: y, yaw }, 1)) break;
+        if (put(approach.kind === 'signal' ? { kind: 'signal', u, s: y, yaw, axis: approach.axis, mast } : { kind: approach.kind === 'yield' ? 'yield' : 'stop', u, s: y, yaw }, 1)) break;
       }
     }
   }
@@ -572,6 +637,36 @@ export function placeStreetFurniture(nav, bridges, add) {
       const x = bounds.minX + random() * (bounds.maxX - bounds.minX), y = bounds.minY + random() * (bounds.maxY - bounds.minY);
       if (!insidePolygon({ x, y }, yard) || distanceToPolyline({ x, y }, ring) < 4) continue;
       if (put({ kind: 'tree', u: x, s: y, scale: 6 + random() * 3.5 }, 7)) count++;
+    }
+  }
+  // Planted islands: in the middle of a big enough one a flower bed, or on a
+  // bigger one a sculpture, square to its longest side, and trees over the
+  // lawn, all clear of the junctions' corners and crosswalks
+  for (const island of cityIslands()) {
+    const { lawn, area, deepest } = island, ring = [...lawn, lawn[0]], random = seededRandom(CITY.seed * 57 + island.index * 4099);
+    if (deepest && deepest.distance >= 2 && !inZone(deepest.point.x, deepest.point.y)) {
+      const { x, y } = deepest.point;
+      let yaw = 0, longest = 0;
+      for (let i = 0; i < lawn.length; i++) {
+        const a = lawn[i], b = lawn[(i + 1) % lawn.length], length = Math.hypot(b.x - a.x, b.y - a.y);
+        if (length > longest) { longest = length; yaw = Math.atan2(b.y - a.y, b.x - a.x); }
+      }
+      const tx = Math.cos(yaw), ty = Math.sin(yaw);
+      const fits = (w, d) => [[-1, -1], [1, -1], [1, 1], [-1, 1]].every(([a, b]) => {
+        const p = { x: x + tx * a * w / 2 - ty * b * d / 2, y: y + ty * a * w / 2 + tx * b * d / 2 };
+        return insidePolygon(p, lawn) && distanceToPolyline(p, ring) > .3;
+      });
+      if (deepest.distance >= 4.5 && area >= 260 && random() < .5) put({ kind: 'sculpture', u: x, s: y, yaw, form: Math.floor(random() * 4), size: .62 }, 3);
+      else {
+        const w = [6.5, 4.6, 3.2].find(w => fits(w, 2.2));
+        if (w) put({ kind: 'bed', u: x, s: y, yaw, w, d: 2.2, colour: BED_COLOURS[Math.floor(random() * BED_COLOURS.length)] }, w / 2 + .5);
+      }
+    }
+    const bounds = polygonBounds(lawn), wanted = Math.floor(area / 170);
+    for (let attempt = 0, count = 0; attempt < wanted * 8 && count < wanted; attempt++) {
+      const x = bounds.minX + random() * (bounds.maxX - bounds.minX), y = bounds.minY + random() * (bounds.maxY - bounds.minY);
+      if (!insidePolygon({ x, y }, lawn) || distanceToPolyline({ x, y }, ring) < 2 || inZone(x, y)) continue;
+      if (put({ kind: 'tree', u: x, s: y, scale: 6.5 + random() * 2.5 }, 6)) count++;
     }
   }
   // Cars in the car parks behind the offices and warehouses

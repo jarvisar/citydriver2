@@ -11,13 +11,14 @@ import { mulberry32 } from '../src/mapgen/random.js';
 const lengthOf = points => points.slice(1).reduce((sum, p, i) => sum + p.distanceTo(points[i]), 0);
 const cities = [4817, 1, 2024, 555, 9001].map(seed => generateCityMap({ seed }));
 
-test('every city has its boulevards, a parkway round it, and side streets as wide as their district wants', () => {
+test('every city has its boulevards, a parkway round it, collectors, and side streets as wide as their district wants', () => {
   for (const city of cities) {
     const boulevards = city.roads.filter(road => road.kind === 'main');
     assert.ok(boulevards.reduce((sum, road) => sum + lengthOf(road.points), 0) > 1500, `seed ${city.seed}: too little boulevard`);
     for (const road of boulevards) assert.equal(road.profile, PROFILES.boulevard);
     for (const road of city.roads.filter(road => road.kind === 'ring')) assert.ok(road.profile.median > 0, 'the ring is a divided parkway');
-    for (const road of city.roads.filter(road => road.kind === 'minor')) assert.ok([PROFILES.side, PROFILES.lane, PROFILES.parking].includes(road.profile));
+    // (a collector, carrying a neighbourhood through, is a little wider and has a centre line)
+    for (const road of city.roads.filter(road => road.kind === 'minor')) assert.ok((road.collector ? [PROFILES.collector, PROFILES.bayCollector] : [PROFILES.side, PROFILES.lane, PROFILES.parking]).includes(road.profile));
   }
 });
 

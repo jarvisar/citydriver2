@@ -42,7 +42,7 @@ test('every junction is controlled and the signal cycle alternates', () => {
   for (const [node, control] of controls) {
     assert.ok(node.edges.length >= 3);
     for (const [edge, approach] of control.approaches) {
-      assert.ok(['signal', 'stop', 'priority'].includes(approach.kind));
+      assert.ok(['signal', 'stop', 'yield', 'priority'].includes(approach.kind));
       // The stop line stands behind the crosswalk, which starts where the road leaves the junction
       assert.ok(approach.clear >= 1 && approach.clear <= 34 && approach.clear <= edge.length * .45 + 1e-9, `clear ${approach.clear} on a ${Math.round(edge.length)} m street`);
       assert.ok(approach.stopDistance > approach.clear + 3 && (!approach.link || approach.kind === 'priority'));

@@ -1,12 +1,30 @@
 import { navGraph } from './world/nav-graph.js';
 import { junctionGeometry, stopLineDistance } from './world/junction-geometry.js';
+import { CITY, cityStyleDistrict } from './world/city.js';
+import { randomAt } from './world/route.js';
 
-// Junction control on the generated streets. A junction where two wide roads
-// cross runs a shared signal cycle; a side street meeting a wider road stops
-// and gives way; side streets meeting each other are four-way stops. The
-// traffic, the autodrive and the signal lamps all read the same cycle, and
-// everyone stops at the line the junction's geometry puts behind its crosswalk.
+// Junction control on the generated streets, by the streets' ranks (see
+// mapgen/road-hierarchy.js). Two arterials crossing, or a collector crossing
+// an arterial, run a shared signal cycle, as do two collectors crossing
+// downtown. Otherwise the best-ranked road straight through the junction
+// has the right of way and the others stop for it, or where only local
+// streets meet, do as their district does: the old town's lanes are left
+// unmarked, the garden quarter's quiet streets give way, the warehouse
+// district's stop, and downtown and the busier quarters have all-way stops
+// at their crossroads (a few junctions in each do otherwise). The traffic, the
+// autodrive and the signal lamps all read the same cycle, and everyone stops
+// or gives way at the line the junction's geometry puts behind its crosswalk.
 const BIG = new Set(['main', 'major', 'ring', 'coast', 'riverbank']);
+const rankOf = edge => edge.profile?.rank ?? (BIG.has(edge.kind) ? 3 : 1);
+// How local streets meet in each district: 'open' (nobody stops), 'yield'
+// (the lesser street gives way), 'stop' (it stops) or 'all' (everyone stops
+// at a crossroads), and the share of junctions that do the next thing instead
+const LOCAL_RULES = {
+  'Old town': ['open', .25, 'yield'], 'Garden quarter': ['yield', .25, 'stop'], 'Warehouse district': ['stop', .2, 'all'],
+  'Market district': ['all', .3, 'stop'], 'Civic quarter': ['all', .35, 'stop'], Midtown: ['all', .15, 'stop'],
+};
+// Where crosswalks are marked across a street nobody stops on
+const DENSE = new Set(['Midtown', 'Market district']);
 
 export function cityGreen(axis, time) {
   const phase = ((time % 24) + 24) % 24;
@@ -14,30 +32,63 @@ export function cityGreen(axis, time) {
 }
 
 // Approaches at a junction fall into two groups by heading; the group of the
-// widest road is 'north' for the cycle, the other 'east'.
+// best-ranked road is 'north' for the cycle, the other 'east'. Each approach
+// is 'signal', 'stop', 'yield' or 'priority' (nobody stops), and says whether
+// a crosswalk is marked across it: at a signal or wherever traffic stops,
+// and across a street nobody stops on only downtown and in the market.
 export function junctionControls(nav = navGraph()) {
   if (nav.controls) return nav.controls;
   const controls = new Map(), geometry = junctionGeometry(nav);
   for (const node of nav.nodes) {
     const shape = geometry.get(node.id);
     if (!shape) continue;
-    const edges = shape.arms.map(arm => arm.edge);
-    const approaches = new Map();
-    const big = edges.filter(edge => BIG.has(edge.kind));
-    const primary = big[0] ?? edges[0], primaryHeading = headingInto(nav, primary, node);
-    const bigAxes = new Set();
-    for (const edge of big) bigAxes.add(Math.abs(Math.cos(headingInto(nav, edge, node) - primaryHeading)) > .7 ? 'a' : 'b');
-    const crossingBig = bigAxes.size > 1;
-    for (const edge of edges) {
-      const heading = headingInto(nav, edge, node);
-      const axis = Math.abs(Math.cos(heading - primaryHeading)) > .7 ? 'north' : 'east';
-      const arm = shape.approaches.get(edge), clear = arm.clear;
-      // A link inside a junction complex never stops: its traffic already has the junction
-      const kind = arm.link ? 'priority' : BIG.has(edge.kind) ? (crossingBig ? 'signal' : 'priority') : 'stop';
-      // Cars wait behind the crosswalk, which begins where the road leaves the junction
-      approaches.set(edge, { kind, axis, clear, stopDistance: stopLineDistance(clear), heading, link: arm.link });
+    const edges = shape.arms.map(arm => arm.edge), heading = new Map(edges.map(edge => [edge, headingInto(nav, edge, node)]));
+    // The road through the junction: the pair of arms most nearly straight
+    // across from each other, the best ranked (and the longest) first
+    let through = null, throughScore = -Infinity;
+    for (let i = 0; i < edges.length; i++) for (let j = i + 1; j < edges.length; j++) {
+      const a = edges[i], b = edges[j], straight = -Math.cos(heading.get(a) - heading.get(b));
+      if (straight < .5 && edges.length > 2) continue;
+      const score = Math.min(rankOf(a), rankOf(b)) * 100 + Math.max(rankOf(a), rankOf(b)) * 10 + straight + Math.min(a.length, b.length, 300) / 1000;
+      if (score > throughScore) { throughScore = score; through = [a, b]; }
     }
-    controls.set(node, { approaches, signal: crossingBig, fourWay: !big.length, radius: shape.radius });
+    const primary = through ? (rankOf(through[0]) >= rankOf(through[1]) ? through[0] : through[1]) : edges[0], primaryHeading = heading.get(primary);
+    const axisOf = edge => Math.abs(Math.cos(heading.get(edge) - primaryHeading)) > .7 ? 'north' : 'east';
+    const real = edges.filter(edge => !shape.approaches.get(edge).link);
+    const topOf = axis => Math.max(-1, ...edges.filter(edge => axisOf(edge) === axis).map(rankOf));
+    const cross = edges.filter(edge => axisOf(edge) === 'east'), crossTop = topOf('east'), top = topOf('north');
+    const district = cityStyleDistrict(node.y, node.x), random = randomAt(node.id, 7501, CITY.seed);
+    // Signals: two arterials crossing; a collector crossing an arterial (both
+    // its arms there); two collectors crossing downtown
+    const crossesOver = cross.filter(edge => rankOf(edge) >= 2).length >= 2;
+    const signal = (top >= 3 && crossTop >= 3) || (top >= 3 && crossTop >= 2 && crossesOver) || (district === 'Midtown' && top >= 2 && crossTop >= 2 && crossesOver);
+    // Everyone else: the road through has the right of way, and the rest stop
+    // for it, or among local streets do as the district does
+    // (a better road that ends here, on a lesser one running through)
+    const endsHere = through && edges.some(edge => !through.includes(edge) && !shape.approaches.get(edge).link && rankOf(edge) > Math.min(...through.map(rankOf)));
+    let rule;
+    if (signal) rule = 'signal';
+    else if (endsHere) rule = 'all';
+    else if (top < 0) rule = 'open';  // walks through a park
+    else if (top >= 2 && top > crossTop) rule = 'stop';
+    else if (top >= 2) rule = 'all';  // two collectors crossing
+    else {
+      const [usual, share, other] = LOCAL_RULES[district] ?? ['stop', 0, 'stop'];
+      rule = random < share ? other : usual;
+      // (an all-way stop is for a crossroads: at a T the stem stops)
+      if (rule === 'all' && real.length < 4) rule = 'stop';
+    }
+    const approaches = new Map();
+    for (const edge of edges) {
+      const arm = shape.approaches.get(edge), clear = arm.clear, onThrough = through?.includes(edge);
+      // A link inside a junction complex never stops: its traffic already has the junction
+      const kind = arm.link ? 'priority' : rule === 'signal' ? 'signal' : rule === 'open' ? 'priority' : rule === 'all' ? 'stop'
+        : onThrough ? 'priority' : rankOf(edge) < 0 ? 'stop' : rule;
+      const crosswalk = !arm.link && rankOf(edge) >= 0 && (kind === 'signal' || kind === 'stop' || (kind === 'priority' && rule !== 'open' && DENSE.has(district) && rankOf(edge) <= 2));
+      // Cars wait behind the crosswalk, which begins where the road leaves the junction
+      approaches.set(edge, { kind, axis: axisOf(edge), clear, stopDistance: stopLineDistance(clear), heading: heading.get(edge), link: arm.link, crosswalk });
+    }
+    controls.set(node, { approaches, signal, fourWay: rule === 'all', rule, district, radius: shape.radius });
   }
   nav.controls = controls;
   return controls;
@@ -83,6 +134,8 @@ const DECEL = 4;  // comfortable braking toward a stop line, m/s²
 const GIVE_WAY = 4.5;  // seconds of warning a driver giving way wants
 const CLEAR = 2.9;  // two paths closer than this, centre to centre, share road
 const LOOK = 70;  // how far ahead of a junction a driver starts to think about it
+const YIELD_SPEED = 5;  // how fast a driver giving way crosses its line, m/s
+const PATIENCE = 10;  // seconds at a stop or give-way line before the traffic lets a driver out (half on a green light)
 
 export class JunctionTraffic {
   constructor(nav = navGraph()) {
@@ -153,9 +206,16 @@ export class JunctionTraffic {
     if (driver.pending) this.drop(driver.pending);
     if (driver.leaving) this.drop(driver.leaving);
   }
-  // The right of way: a green light or a road that does not stop over a stop
-  // sign, and among those, straight on over turning right over turning left
-  precedence(control, movement) { return (control.kind === 'stop' ? 0 : 10) - movement.kind; }
+  // The right of way: a green light or a road that does not stop over a
+  // give-way sign over a stop sign, and among those, straight on over turning
+  // right over turning left. A driver who has waited at a stop or give-way
+  // line for a while is let out, and one waiting on a green light to turn
+  // across the oncoming traffic is let across: the traffic it waits for gives
+  // way to it, as drivers do, rather than streaming past for ever.
+  precedence(control, movement, driver = null) {
+    const patient = (driver?.stopWait ?? 0) > (control.kind === 'signal' ? PATIENCE / 2 : PATIENCE) && control.kind !== 'priority';
+    return (patient ? 14 : control.kind === 'stop' ? 0 : control.kind === 'yield' ? 5 : 10) - movement.kind;
+  }
   // How fast `driver` may go toward the junction at the end of its edge.
   // `drivers` are everyone else who might have the right of way; `player`,
   // the player's own car, whose way through nobody knows, is given the
@@ -207,15 +267,23 @@ export class JunctionTraffic {
       if (gap < 1.2 && speed < 1.2) driver.stopWait = (driver.stopWait ?? 0) + dt;
       else if (gap > 3) driver.stopWait = 0;
       asking = driver.stopWait > .6;
-    } else asking = green ? gap < Math.max(18, speed * 2.5) : gap < speed * speed / (2 * 6);
-    if (!asking) return stopping;
+    } else if (control.kind === 'yield' || control.kind === 'signal') {
+      // (how long it has waited to be let out, or on green for a gap to turn across)
+      if (gap < 1.2 && speed < 1.2 && green) driver.stopWait = (driver.stopWait ?? 0) + dt;
+      else if (gap > 3) driver.stopWait = 0;
+    }
+    if (asking === undefined) asking = control.kind === 'yield' ? gap < Math.max(12, speed * 2.5) : green ? gap < Math.max(18, speed * 2.5) : gap < speed * speed / (2 * 6);
+    // A driver giving way slows to look as it comes to the line, whether or
+    // not it has been given the junction yet (and asks early enough to stop)
+    const look = control.kind === 'yield' && gap > -1 ? Math.sqrt(YIELD_SPEED * YIELD_SPEED + 2 * DECEL * Math.max(0, gap)) : Infinity;
+    if (!asking) return control.kind === 'yield' ? look : stopping;
     // The junction, and the next one too if there is no room to stop between them
     const chain = [{ movement: this.movement(edge, direction, next, turn), control, next }], after = driver.after;
     if (after?.edge === next.edge && after.direction === next.direction && after.next && after.turn && after.next.edge !== after.edge) {
       const beyond = approachControl(nav, next.edge, next.direction);
       if (beyond?.kind && next.edge.length - beyond.stopDistance - chain[0].movement.exit < half * 2 + 3) chain.push({ movement: this.movement(next.edge, next.direction, after.next, after.turn), control: beyond, next: after.next });
     }
-    return this.grant(driver, chain, drivers, player) ? Infinity : stopping;
+    return this.grant(driver, chain, drivers, player) ? look : stopping;
   }
   grant(driver, chain, drivers, player) {
     const nav = this.nav;
@@ -239,7 +307,7 @@ export class JunctionTraffic {
       for (const { movement, control } of chain) {
         if (!movement.nodes.includes(theirControl.node)) continue;
         const theirs = this.movement(other.edge, other.direction, other.next, other.turn);
-        if (this.precedence(theirControl, theirs) <= this.precedence(control, movement)) continue;
+        if (this.precedence(theirControl, theirs, other) <= this.precedence(control, movement, driver)) continue;
         const gap = other.edge.length - other.along - theirControl.stopDistance;
         if (gap < -1.5 || gap / Math.max(other.speed, 1) > GIVE_WAY) continue;
         if (this.conflict(movement, theirs)) return false;

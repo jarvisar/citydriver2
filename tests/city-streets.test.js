@@ -6,7 +6,8 @@ import { surfaceAt, onRoadAt, citydriverRoute, journeyStart } from '../src/world
 import { navGraph } from '../src/world/nav-graph.js';
 import { junctionGeometry, stopLineDistance } from '../src/world/junction-geometry.js';
 import { junctionControls } from '../src/city-junctions.js';
-import { placeStreetFurniture, findBridges } from '../src/world/city-streets.js';
+import { placeStreetFurniture, findBridges, cityCrosswalks, convexOverlap } from '../src/world/city-streets.js';
+import { cityIslands } from '../src/world/city-islands.js';
 import { turnPath, wayOn, isLink } from '../src/world/lane-paths.js';
 import { planLot } from '../src/world/city-buildings.js';
 import { cityPlaces } from '../src/city-exploration.js';
@@ -46,7 +47,7 @@ test('lamps, trees, signs and signals stand on the pavement, never on a carriage
   for (const shape of geometry.values()) {
     const radius = Math.min(...shape.arms.map(arm => arm.clear));
     for (const piece of furniture) {
-      if (['stop', 'signal', 'railing', 'rim'].includes(piece.kind)) continue;
+      if (['stop', 'yield', 'signal', 'railing', 'rim'].includes(piece.kind)) continue;
       assert.ok(Math.hypot(piece.u - shape.node.x, piece.s - shape.node.y) > radius - .5, `${piece.kind} in the junction at ${shape.node.x.toFixed(0)},${shape.node.y.toFixed(0)}`);
     }
   }
@@ -54,7 +55,7 @@ test('lamps, trees, signs and signals stand on the pavement, never on a carriage
 
 test('signs and signals face the drivers they are for, lamps lean over the road', () => {
   const nav = navGraph(), controls = junctionControls(nav);
-  const signs = furniture.filter(piece => piece.kind === 'stop' || piece.kind === 'signal');
+  const signs = furniture.filter(piece => piece.kind === 'stop' || piece.kind === 'yield' || piece.kind === 'signal');
   assert.ok(signs.length > 20);
   for (const sign of signs) {
     // Every sign stands just behind the stop line of an approach of its own
@@ -78,6 +79,66 @@ test('signs and signals face the drivers they are for, lamps lean over the road'
     // The arm reaches along local -x: its head hangs over the carriageway
     const arm = side(lamp.yaw), head = { x: lamp.u - arm.x * 2.5, y: lamp.s - arm.y * 2.5 };
     assert.equal(surfaceAt(head.y, head.x), 'road', `lamp at ${lamp.u.toFixed(0)},${lamp.s.toFixed(0)} leans over the pavement`);
+  }
+});
+
+test('crosswalks are marked where traffic stops, and never lie over one another', () => {
+  const nav = navGraph(), walks = cityCrosswalks(nav), controls = junctionControls(nav);
+  for (let i = 0; i < walks.length; i++) for (let j = i + 1; j < walks.length; j++) {
+    const a = walks[i].outline[0], b = walks[j].outline[0];
+    if (Math.hypot(a.x - b.x, a.y - b.y) < 60) assert.ok(!convexOverlap(walks[i].outline, walks[j].outline, .3), `crosswalks overlap at ${a.x.toFixed(1)},${a.y.toFixed(1)}`);
+  }
+  // Every signal and stop line has its crosswalk (unless two junctions
+  // crowd each other and one gives way), and a road nobody stops on has
+  // one only downtown or in the market
+  let wanted = 0;
+  for (const [node, control] of controls) for (const [edge, approach] of control.approaches) {
+    if (approach.link || edge.kind === 'path') { assert.ok(!approach.crosswalk); continue; }
+    if (approach.kind === 'signal' || approach.kind === 'stop') assert.ok(approach.crosswalk);
+    if (approach.kind === 'priority' && approach.crosswalk) assert.ok(['Midtown', 'Market district'].includes(control.district), `crosswalk across a through road at ${node.x.toFixed(0)},${node.y.toFixed(0)}`);
+    if (approach.crosswalk) wanted++;
+  }
+  assert.ok(walks.length > wanted * .95 && walks.length <= wanted, `${walks.length} crosswalks drawn of ${wanted}`);
+});
+
+test('the street hierarchy: collectors between the avenues, marked by rank, and junctions controlled by it', () => {
+  const nav = navGraph(), controls = junctionControls(nav);
+  const length = road => road.points.slice(1).reduce((sum, p, i) => sum + p.distanceTo(road.points[i]), 0);
+  const km = test => CITY.roads.filter(test).reduce((sum, road) => sum + length(road), 0) / 1000;
+  const side = km(road => road.kind === 'minor'), collectors = km(road => road.profile.kind === 'collector');
+  // Some side streets are collectors, most are local
+  assert.ok(collectors > 1.5 && collectors < side * .3, `${collectors.toFixed(1)} km of collectors of ${side.toFixed(1)} km of side streets`);
+  for (const road of CITY.roads) {
+    assert.ok(Number.isFinite(road.profile.rank), `${road.kind} has no rank`);
+    if (road.profile.rank >= 2 && road.profile.kind !== 'boulevard') assert.ok(road.profile.centre, `${road.profile.kind} has no centre line`);
+    if (road.profile.rank <= 1) assert.ok(!road.profile.centre);
+  }
+  // A mix of controls: not every junction of two side streets is a stop
+  const counts = {};
+  for (const control of controls.values()) {
+    const kinds = [...control.approaches.values()].filter(a => !a.link).map(a => a.kind);
+    if (!kinds.length) continue;
+    const type = control.signal ? 'signal' : kinds.every(k => k === 'stop') ? 'all' : kinds.includes('stop') ? 'stop' : kinds.includes('yield') ? 'yield' : 'open';
+    counts[type] = (counts[type] ?? 0) + 1;
+    // Nobody on a better-ranked road stops for a lesser one
+    const ranks = [...control.approaches].filter(([, a]) => !a.link).map(([edge, a]) => ({ rank: edge.profile.rank, kind: a.kind }));
+    const giving = ranks.filter(r => r.kind === 'stop' || r.kind === 'yield'), through = ranks.filter(r => r.kind === 'priority');
+    if (type !== 'all') for (const g of giving) assert.ok(through.every(t => t.rank >= g.rank), `a ${g.kind} for a lesser road at a junction`);
+  }
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  assert.ok(counts.signal > 10 && counts.stop > total * .25 && (counts.all ?? 0) < total * .3, JSON.stringify(counts));
+});
+
+test('a block with no lot is a planted island: a lawn inside its kerb, with only planting on it', () => {
+  const lotted = new Set(CITY.lotBlocks);
+  for (const island of cityIslands()) {
+    assert.ok(!lotted.has(island.index) && !island.block.park);
+    for (const p of island.lawn) assert.ok(insidePolygon(p, island.block.kerb), `island lawn outside its kerb at ${p.x.toFixed(1)},${p.y.toFixed(1)}`);
+  }
+  for (const piece of furniture) {
+    if (!['bed', 'sculpture'].includes(piece.kind) || piece.yard !== undefined) continue;
+    const island = cityIslands().find(island => insidePolygon({ x: piece.u, y: piece.s }, island.block.kerb));
+    if (island) assert.ok(insidePolygon({ x: piece.u, y: piece.s }, island.lawn) && !onRoadAt(piece.s, piece.u));
   }
 });
 

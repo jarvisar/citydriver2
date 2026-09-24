@@ -94,7 +94,10 @@ export function landAndWater({ island, coast = null, river = null, bounds, keep 
   // Needles of land where two shores meet at a sharp angle are blunted, and
   // the water is whatever the land is not: the river's channel on the island,
   // the sea everywhere else
-  const landPieces = union(region(bluntTips(union(land))));
+  // (and a sliver the booleans leave where two shores all but touch is no
+  // land, nor a puddle they leave nearly cut off from the sea any water)
+  const landPieces = union(region(bluntTips(union(land)))).filter(piece => Math.abs(signedArea(piece.outer)) > 1)
+    .map(piece => ({ ...piece, holes: piece.holes.filter(hole => Math.abs(signedArea(hole)) > 500) }));
   const { minX, minY, maxX, maxY } = bounds;
   const world = [{ x: minX, y: minY }, { x: maxX, y: minY }, { x: maxX, y: maxY }, { x: minX, y: maxY }];
   const water = region(difference([world], region(landPieces)));

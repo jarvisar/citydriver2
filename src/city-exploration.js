@@ -24,9 +24,12 @@ const apart = (a, b) => Math.hypot(a.centre.x - b.centre.x, a.centre.y - b.centr
 
 // The kerbside lane of the street nearest `p` (not a park walk), running so
 // that `toward` is on the driver's right, a little way along the street if
-// that is where it is clear of the junctions
-function entranceFacing(p, toward, radius = 60) {
-  const road = CITY.roadIndex.nearest(p.x, p.y, radius, (segment, distance) => segment.road.kind === 'path' ? Infinity : distance - segment.road.profile.halfWidth);
+// that is where it is clear of the junctions. Given the way a building faces
+// (`normal`, into its site), only a street running along its front will do,
+// not one crossing it at the corner.
+function entranceFacing(p, toward, radius = 60, normal = null) {
+  const across = segment => normal && Math.abs(segment.dx * normal.x + segment.dy * normal.y) > segment.length * .7;
+  const road = CITY.roadIndex.nearest(p.x, p.y, radius, (segment, distance) => segment.road.kind === 'path' || across(segment) ? Infinity : distance - segment.road.profile.halfWidth);
   if (!road) return nearestLanePose(toward.y, toward.x, 0, 400);
   const facing = here => lanePose(here, Math.atan2(here.tx, here.ty) + ((toward.x - here.x) * here.ty - (toward.y - here.y) * here.tx >= 0 ? 0 : Math.PI));
   // (well clear of a crossing street's kerb, or if nowhere is, clear of it)
@@ -75,18 +78,20 @@ function blockCandidates({ most = 11000, fill: least = .6, squares: beside = fal
   return out;
 }
 // The best sites, well apart: about `target` of them, as far apart as that
-// allows, and `least` from the sites already `taken`
-function spread(candidates, target, taken, least) {
-  let spacing = least, chosen = [];
-  for (let pass = 0; pass < 16; pass++) {
-    chosen = [];
+// allows, and `least` from the sites already `taken`. A city short of sites
+// (an old town of narrow plots) has them closer, down to `floor`.
+function spread(candidates, target, taken, least, floor = least) {
+  const pick = spacing => {
+    const chosen = [];
     for (const site of candidates) {
-      if (taken.some(other => apart(other, site) < least) || chosen.some(other => apart(other, site) < spacing)) continue;
+      if (taken.some(other => apart(other, site) < Math.min(least, spacing)) || chosen.some(other => apart(other, site) < spacing)) continue;
       chosen.push(site);
     }
-    if (chosen.length <= target * 1.15) break;
-    spacing *= 1.08;
-  }
+    return chosen;
+  };
+  let spacing = least, chosen = pick(spacing);
+  for (let pass = 0; pass < 16 && chosen.length > target * 1.15; pass++) chosen = pick(spacing *= 1.08);
+  while (chosen.length < target * .8 && spacing > floor) chosen = pick(spacing = Math.max(floor, spacing * .92));
   return chosen;
 }
 
@@ -167,22 +172,33 @@ function buildPlaces() {
   if (hall) kinds.set(hall, 'cityhall');
   taken.push(...grand.filter(site => kinds.has(site)));
   const lotSites = lotCandidates().sort((a, b) => b.score - a.score || a.salt - b.salt);
-  const lots = spread(lotSites, EACH * lotTypes.length, taken, LOT_SPACING);
+  const lots = spread(lotSites, EACH * lotTypes.length, taken, LOT_SPACING, 200);
   for (const [site, type] of assignTypes(lots, lotTypes)) kinds.set(site, type);
-  // Any kind the dealing left out has the best site that fits it, a little
-  // closer to its neighbours if it must be
+  // Any kind the dealing left out has the best site that fits it, closer to
+  // its neighbours the fewer sites there are
   const dealt = new Set(kinds.values());
   for (const [types, sites] of [[blockTypes, blocks], [lotTypes, lotSites]]) for (const type of types) {
-    if (dealt.has(type)) continue;
-    const site = sites.find(site => venueFits(site.site, type) && ![...kinds.keys()].some(other => apart(other, site) < 200 || (other.block !== undefined && other.block === site.block)));
-    if (site) { kinds.set(site, type); dealt.add(type); }
+    for (const least of [200, 175, 155]) {
+      if (dealt.has(type)) break;
+      const site = sites.find(site => venueFits(site.site, type) && ![...kinds.keys()].some(other => apart(other, site) < least || (other.block !== undefined && other.block === site.block)));
+      if (site) { kinds.set(site, type); dealt.add(type); }
+    }
+  }
+  // and a kind of shop or hall dealt only once, where the lots were too small
+  // for it (an old town's narrow plots), has a second site if one fits
+  for (const type of lotTypes) {
+    if ([...kinds.values()].filter(t => t === type).length >= EACH) continue;
+    for (const least of [LOT_SPACING, 250, 200]) {
+      const site = lotSites.find(site => !kinds.has(site) && venueFits(site.site, type) && ![...kinds.keys()].some(other => apart(other, site) < least));
+      if (site) { kinds.set(site, type); break; }
+    }
   }
   for (const [site, type] of kinds) {
     const variant = type === 'cityhall' ? 0 : nextVariant(type), whole = site.block !== undefined, footprint = venueFootprint(site.site, type, whole);
     // The drop-off is in the kerbside lane of the street the landmark faces,
     // running so the building is on the driver's right
     const reach = footprint.setback + 10, door = { x: footprint.front.x - footprint.nx * reach, y: footprint.front.y - footprint.ny * reach };
-    const entrance = entranceFacing(door, footprint.front, 30);
+    const entrance = entranceFacing(door, footprint.front, 30, { x: footprint.nx, y: footprint.ny });
     out.push({ id: whole ? `block:${site.block}` : `lot:${site.lot}`, type, variant, ...describe(type, variant), district: cityDistrict(site.centre.y, site.centre.x),
       s: footprint.centre.y, u: footprint.centre.x, entrance: { s: entrance.s, u: entrance.u, heading: entrance.heading },
       ...(whole ? { block: site.block } : { lot: site.lot }), polygon: site.polygon, footprint });

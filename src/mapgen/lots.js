@@ -1,5 +1,5 @@
 import Vector from './vector.js';
-import { offsetPolygonMapped, signedArea, calcPolygonArea, isSimple, dedupePolygon, subdividePolygon } from './polygon-util.js';
+import { offsetPolygonMapped, signedArea, calcPolygonArea, isSimple, dedupePolygon, subdividePolygon, insidePolygon } from './polygon-util.js';
 
 // Lots with a street front. MapGenerator splits a block in half across its
 // longest side until the pieces are small, which leaves lots in the middle of
@@ -143,6 +143,9 @@ export function frontageLots(inner, { depth = 22, frontage = [12, 18], corner = 
     const deeper = depth + Math.max(0, yardWidth / 2 - 1.5), mapped = offsetPolygonMapped(polygon, -deeper);
     if (mapped) { inset = mapped; used = deeper; }
   }
+  // A stepped outline that shoots out past a sharp corner is no yard: every
+  // lot's back would reach out of the block to it
+  if (inset.points.some(point => !insidePolygon(point, polygon))) return null;
   const geometry = frame(polygon), { n } = geometry;
   const cuts = cutPositions(polygon, geometry, { frontage, corner, depth: used }, random);
   if (cuts.length < 2) return null;

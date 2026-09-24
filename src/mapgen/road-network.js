@@ -57,6 +57,16 @@ export function filletPolyline(points, maxRadius, { minTurn = .035, arcStep = .1
   } else out.push(points[n - 1].clone());
   return dedupe(out);
 }
+// A streamline that closes on itself joins its two integration fronts where
+// they met, which can be metres apart and out of line, leaving a hook: the
+// loop is cut back past the join and closed straight across, for the fillet
+// to round like any other bend
+export function closeLoop(points, trim = 12) {
+  const n = points.length;
+  if (n < 4 || points[0].distanceTo(points[n - 1]) > 1e-6 || lengthOf(points) < trim * 8) return points;
+  const kept = slicePolyline(points, trim, lengthOf(points) - trim);
+  return kept.length > 2 ? [...kept, kept[0].clone()] : points;
+}
 function dedupe(points, epsilon = 1e-4) {
   const out = [];
   for (const p of points) if (!out.length || out[out.length - 1].distanceTo(p) > epsilon) out.push(p);
@@ -857,8 +867,15 @@ export function easeKinks(roads, { minRadius = 15, window = 3, clear = 2, fixed 
     let changed = false;
     list.forEach((road, r) => {
       if (held(fixed, road) || road.kind === 'path') return;
-      const points = road.points, total = cumulative[r][points.length - 1];
-      const at = d => { const slice = slicePolyline(points, 0, Math.max(1e-6, Math.min(total, d))); return slice[slice.length - 1]; };
+      const points = road.points, along = cumulative[r], total = along[points.length - 1];
+      // The point `d` along the road (a search of the distances, not a slice: this runs every metre)
+      const at = distance => {
+        const d = Math.max(1e-6, Math.min(total, distance));
+        let lo = 0, hi = points.length - 1;
+        while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (along[mid] <= d) lo = mid; else hi = mid; }
+        const length = along[hi] - along[lo], t = length > 1e-9 ? Math.min(1, (d - along[lo]) / length) : 0;
+        return points[lo].clone().add(points[hi].clone().sub(points[lo]).multiplyScalar(t));
+      };
       // The tightest kink along the road
       let worst = null;
       for (let d = window + 1; d <= total - window - 1; d += 1) {

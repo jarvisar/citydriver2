@@ -18,9 +18,29 @@ the network first and derives everything else from it, once, in one place.
 ## Pipeline (`src/mapgen/`)
 
 1. **Tensor field.** Four grid fields around the middle of the domain and one
-   radial field, with random sizes, decays and angles. The radial field's
-   centre is downtown. Each grid field is also a neighbourhood: a block
-   belongs to the grid that weighs most at its centre (`districtAt`).
+   radial field, with random sizes, decays and angles: MapGenerator's
+   recommended field. The radial field's centre is downtown. Each grid field
+   is also a neighbourhood: a block belongs to the grid that weighs most at
+   its centre (`districtAt`). Two things are added to MapGenerator's field.
+   The old town's streets wind: MapGenerator's rotational noise (30° over
+   about 300 m) is applied only where the old town's grid weighs most, fading
+   with its share of the weight (`districtNoise`), so its lanes curve while
+   the rest of the city keeps its grids. And near the ring road the field
+   turns to run along it or meet it square, fully at the ring and less so out
+   to 300 m (`alignWith`), as MapGenerator's author advises for a waterfront;
+   otherwise a grid at an angle to the edge meets the ring in a row of sharp
+   corners and leftover wedges. A grid at 45° to the ring could turn either
+   way, so the turn fades out as the angle nears 45° rather than meeting the
+   other way in a seam, and downtown's rings keep their shape.
+
+   Two quirks of MapGenerator's own are fixed. Its blend of basis fields
+   doubled everything added before each new field (the first of five weighed
+   sixteen times the last); the fields now add as weighted. And its
+   Runge-Kutta step sampled the field at a fixed diagonal offset from the
+   point, whatever the way ahead, and added the samples whichever way each
+   eigenvector happened to face, so steps shrank and drifted wherever the
+   field turned; the samples now lie along the way the streamline is going
+   and are turned to agree.
 2. **Water.** A coastline and a river are integrated through the field with
    rotational noise. The river is one smoothed centre line
    (`water.riverCentre`), cut to its longest run on land if the stream wanders
@@ -32,9 +52,16 @@ the network first and derives everything else from it, once, in one place.
    rejected and another tried (`alongEdge`).
 3. **Roads.** Main, major and minor roads are streamlines of the field's major
    and minor eigenvectors, kept apart by `dsep` and `dtest`, as in
-   MapGenerator. After simplification every bend is rounded into a circular
-   arc (`filletPolyline`, up to 80 m for main roads and 35 m for minor ones),
-   so roads bend rather than kink.
+   MapGenerator. For the side streets the ring road is an existing
+   streamline of whichever family runs along it there, as MapGenerator keeps
+   its coast, so a street beside the ring stays a street's spacing from it
+   rather than leaving a strip too thin to build on. (The avenues keep their
+   own spacing, which the ring would crowd out.) After simplification every
+   bend is rounded into a circular arc (`filletPolyline`, up to 80 m for main
+   roads and 35 m for minor ones), so roads bend rather than kink. A
+   streamline that closes on itself joins its two ends wherever they met,
+   which can be out of line, so the loop is cut back past the join and closed
+   straight across before it is rounded (`closeLoop`).
 4. **Ring road and cleanup** (`road-network.js`). A rounded ring road inset
    from the domain edge closes every outer block; streets are clipped to it and
    it stops at the sea, as one road from coast to coast. Where the ring and a
@@ -76,27 +103,37 @@ the network first and derives everything else from it, once, in one place.
    T-junctions.
 5. **Street profiles** (`road-hierarchy.js`). Every road takes its class's
    profile, and some take more. The longest avenues through the middle of
-   town are promoted to boulevards until the city has 2.7 km of them, so
-   every seed has some however its field fell. The ring road is a parkway.
-   Side streets follow their district: narrow lanes in the old town, parking
-   bays where the houses have gardens, the warehouses have vans or downtown
-   has shoppers, and plain two-lane streets elsewhere.
+   town are promoted to boulevards until the city has 2.7 km of them (less
+   for a smaller domain), so every seed has some however its field fell. The
+   ring road is a parkway. Among the side streets, the collectors carry a
+   neighbourhood's traffic through it: the longest side streets that run
+   mostly more than 210 m from any avenue or other collector alongside them,
+   so they fall between the avenues wherever those leave a neighbourhood
+   without a through road (about one side street in ten). The rest follow
+   their district: narrow lanes in the old town, parking bays where the
+   houses have gardens, the warehouses have vans or downtown has shoppers,
+   and plain two-lane streets elsewhere. Each profile has a rank, which
+   decides who gives way at a junction, and its markings follow it: lanes
+   down a boulevard, a double centre line down an avenue, a dashed one down
+   a collector, and a local street or lane left plain.
 
-   | Profile | Where | Width | Lanes |
-   | --- | --- | ---: | --- |
-   | Boulevard | main roads, promoted avenues | 24 m | two each way, planted median with trees and lamps |
-   | Parkway | ring road | 22 m | two each way, grass median |
-   | Avenue | major, coast | 18 m | one each way, dashed centre line |
-   | Riverbank | bank roads | 16 m | one each way, dashed centre line |
-   | Parking street | garden quarter, warehouses, midtown | 15.6 m | one each way, parking bays both sides |
-   | Side street | market and civic quarters | 13 m | one each way |
-   | Lane | old town | 10.4 m | one each way |
-   | Park walk | parks | 7.2 m | |
+   | Profile | Rank | Where | Width | Lanes |
+   | --- | ---: | --- | ---: | --- |
+   | Boulevard | 4 | main roads, promoted avenues | 24 m | two each way, planted median with trees and lamps |
+   | Parkway | 4 | ring road | 22 m | two each way, grass median |
+   | Avenue | 3 | major, coast | 18 m | one each way, double centre line |
+   | Riverbank | 3 | bank roads | 16 m | one each way, double centre line |
+   | Collector | 2 | long side streets between the avenues | 14.4 m (17.2 m with bays) | one each way, dashed centre line (parking bays where the district parks) |
+   | Parking street | 1 | garden quarter, warehouses, midtown | 15.6 m | one each way, parking bays both sides |
+   | Side street | 1 | market and civic quarters | 13 m | one each way |
+   | Lane | 0 | old town | 10.4 m | one each way |
+   | Park walk | | parks | 7.2 m | |
 6. **Shore** (`shore.js`). The island's outline is the outer edge of the
    promenade outside the ring road. Land is that outline less the harbour
    (the sea side of the coast road's promenade) and less the river's channel,
    carried on until it is out at sea at both ends; sharp needles of land are
-   blunted. The city stands on its blocks and its roads with their
+   blunted, and a sliver of land or a puddle of water that the booleans leave
+   where two shores all but touch is dropped. The city stands on its blocks and its roads with their
    promenades: bare land on the shore beyond them (the tip past where the ring
    and the coast road round a corner) is sea.
    The sea and the river are whatever the land is not. These are polygon
@@ -136,14 +173,17 @@ the network first and derives everything else from it, once, in one place.
    Each district plats its blocks its own way (`LOT_STYLES` in
    `world/city.js`: narrow deep plots in the old town, wide ones in the
    warehouse district and downtown). A yard only a few metres across is
-   folded into the lots; a block too thin for a strip is cut across instead
+   folded into the lots; a block too thin for a strip, or whose stepped-in
+   yard would shoot out past a sharp corner, is cut across instead
    (keeping only the lots on its streets: the middle of a big, winding block
    is its yard), and one block in twenty-five stays whole for a hall or a
    works. The
    generator checks its own output: where a block's kerb would reach onto a
-   carriageway (two roads meeting at a shallow angle, or a road carried a few
-   metres past a junction), the carriageways are cut out of the block and the
-   rest of it kept; only a sliver with little left is left as verge. A lot
+   carriageway (two roads meeting at a shallow angle, a road carried a few
+   metres past a junction, or the square end of a wide road carrying on
+   round a bend as a narrower one), the carriageways and the joints between
+   them are cut out of the block and the rest of it kept; only a sliver with
+   little left is left as verge. A lot
    that comes closer to a road than its pavement is dropped. A carriageway
    ends square across its road's ends (`carriagewayScore`), so a wide road
    ending at a T-junction does not reach into the block across it.
@@ -182,17 +222,37 @@ tyres and the street furniture agree:
 `nav-graph.js` turns the road graph into edges between junctions (merging
 junctions under 5 m apart into one) for the traffic, the autodrive, the taxi
 and the map route. An edge ends where a road carries on as one of another
-profile (an avenue into a boulevard), so each is marked as its own road.
+profile (an avenue into a boulevard), so each is marked as its own road,
+except that a piece under 20 m (the ring road carried a few metres past a
+junction before it hands over to the coast road) goes with the street it
+carries on as, if that street is no wider, so a car turning onto it has the
+street beyond to turn into.
 `junction-geometry.js` gives each junction's approaches
 their clearance: where the road leaves the junction box, from the kerb corners
 it shares with its neighbours round the node. The crosswalk starts there, the
 stop line and the sign or signal stand behind it on the approach's own
 right-hand pavement, markings and medians stop short of it, and turning
-traffic leaves its lane there. Where two wide roads cross, the junction runs
-a signal cycle, and on an approach 16 m wide or more the signal hangs from a
-mast arm, a head over each lane. A street shorter than 24 m between two
+traffic leaves its lane there. A street shorter than 24 m between two
 junctions is the middle of one junction complex: it has no crosswalk or stop
 of its own, and traffic crosses it in one turn.
+
+Each junction's control follows the street hierarchy (`junctionControls` in
+`city-junctions.js`). Two arterials crossing, a collector crossing an
+arterial, and two collectors crossing downtown run a signal cycle; on an
+approach 16 m wide or more the signal hangs from a mast arm, a head over each
+lane. Otherwise the best-ranked road straight through the junction has the
+right of way and the others stop for it; a better road that ends on a lesser
+one makes it an all-way stop. Where only local streets meet, each district
+does as a town of its kind would: the old town's lanes are left unmarked, the
+garden quarter's quiet streets give way (a give-way sign and a row of teeth
+across the lane), the warehouse district's side streets stop, and downtown
+and the market and civic quarters have all-way stops at their crossroads,
+with a share of each district's junctions doing otherwise. A crosswalk is
+marked across every approach at a signal or a stop line, and across a
+street nobody stops on only downtown and in the market; a quiet junction
+has none. Where two junctions a few metres apart would lay two crosswalks
+over each other, the one across the narrower road gives way
+(`cityCrosswalks`).
 
 `lane-paths.js` is how a car gets from one street to the next: a circular arc
 tangent to both lanes, as wide as the junction allows. The arc's apex keeps a
@@ -210,11 +270,13 @@ tail is out of the box. A claim is refused while anyone else holds one whose
 path comes within a car's width of it, so two cars never cross paths in a
 junction; cars in one lane share the junction and follow each other. The
 right of way decides who asks first. A green light, or a road that does not
-stop, lets its cars ask about 2.5 seconds out. A stop sign makes them stop at
-the line first, and at a four-way stop the car that has waited longest goes
-first. A car gives way to anyone on a crossing path with the better right of
-way who is less than 4.5 seconds from their line: the main road over the side
-street, and straight on over turning right over turning left. Nobody enters a
+stop, lets its cars ask about 2.5 seconds out. A give-way sign slows them to
+walking pace at the line and lets them ask a little before it, and a stop
+sign makes them stop at the line first; at a four-way stop the car that has
+waited longest goes first. A car gives way to anyone on a crossing path with
+the better right of way who is less than 4.5 seconds from their line: the
+main road over the side street that gives way over the one that stops, and
+straight on over turning right over turning left. Nobody enters a
 junction whose way out is backed up. Where the street beyond is too short to
 stop on before the next junction (inside a junction complex), that junction
 is claimed at the same time. The player's car, whose way nobody knows, is
@@ -246,7 +308,11 @@ detail levels.
 corners, markings, medians, parking bays, crosswalks and stop lines, a zebra
 at each park gate, pavements and kerbs, parks and squares with their plazas,
 walks and ponds, the ground inside each block and its yard, promenades,
-water, quay walls and bridges) and places the street furniture once: signals
+water, quay walls and bridges). A block too small or too pointed for any lot
+(a wedge where streets meet at a slant) is a planted island
+(`city-islands.js`): a lawn inside a paved rim, with trees where there is
+room clear of the junctions, and on the bigger ones a flower bed or a small
+sculpture. It also places the street furniture once: signals
 and stop signs, lamps and trees round every kerb clear of the junctions,
 trees and double-armed lamps down the boulevards' medians, bus shelters on
 the main roads, bins, parked cars in two bays in five, car parks lined out in the paved
@@ -299,7 +365,9 @@ tram depot, a sports club, an observatory) have a compact block to
 themselves, and City Hall the best block nearest downtown, which may face
 a square; a cinema, a jazz club, a hotel, a fire station, a post office or
 a diner takes a lot in a street of other buildings. A kind that no square
-could be (a city short of squares) has a block of its own instead.
+could be (a city short of squares) has a block of its own instead, and a
+kind the dealing left out takes the best site that fits it, nearer its
+neighbours the fewer sites the city has.
 
 Each is a landmark (`city-landmarks.js`): a civic hall with a portico and a
 dome or a clock tower, a hotel tower, a vaulted station or market shed,

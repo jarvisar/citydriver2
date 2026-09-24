@@ -5,6 +5,7 @@ import { RoadIndex } from '../mapgen/road-index.js';
 // at junctions and dead ends, edges along the road between them, with the
 // road's polyline, class and profile. Built from the generator's node graph.
 const STUB = 14;  // Dead ends shorter than this are the overshoot past a T-junction
+const SHORT_PIECE = 20;  // A piece of street shorter than this goes with the street it carries on as
 const JOIN = 5;   // Junctions closer than this along a street are one junction
 const TANGENT = 1.5;  // Half the stretch of centre line a heading is taken across
 
@@ -81,15 +82,24 @@ export class NavGraph {
     this.edges.forEach((edge, id) => { edge.id = id; });
   }
   // Two streets of a kind meeting end to end with nothing else there are one
-  // street: split, the piece nearer a junction could leave a car no room to turn
+  // street: split, the piece nearer a junction could leave a car no room to
+  // turn. So is a street carried a few metres past a junction before it
+  // hands over to another no wider (the ring road into the coast road, say):
+  // the few metres go with the street beyond.
   mergeThrough() {
     for (const node of this.nodes) {
       if (node.edges.length !== 2) continue;
       const [first, second] = node.edges;
-      if (first === second || first.a === first.b || second.a === second.b || first.kind !== second.kind || first.profile !== second.profile) continue;
+      if (first === second || first.a === first.b || second.a === second.b) continue;
+      const alike = first.kind === second.kind && first.profile === second.profile;
+      // (and no wider than the piece, whose markings it takes over)
+      const [short, long] = first.length < second.length ? [first, second] : [second, first];
+      if (!alike && (short.length >= SHORT_PIECE || long.profile.halfWidth > short.profile.halfWidth + .01)) continue;
       const into = first.b === node.id ? first.points : first.points.slice().reverse(), from = first.b === node.id ? first.a : first.b;
       const out = second.a === node.id ? second.points : second.points.slice().reverse(), to = second.a === node.id ? second.b : second.a;
       if (from === to) continue;
+      // (the merged street is the longer piece's kind)
+      if (!alike && long === second) { first.kind = second.kind; first.profile = second.profile; first.roadIndex = second.roadIndex; }
       first.a = from; first.b = to; first.points = [...into, ...out.slice(1)];
       remeasure(first);
       second.pruned = true; node.edges = [];

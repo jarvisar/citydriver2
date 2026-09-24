@@ -118,6 +118,14 @@ function stopSign() {
   });
   return p.finish();
 }
+// A give-way sign: a white triangle, point down, in a red border.
+function yieldSign() {
+  const p = new Parts();
+  p.cylinder([0, 1.35, 0], .055, .07, 2.7, galvanised, 6);
+  p.cylinder([0, 2.72, .02], .82, .82, .06, '#b74635', 3, [Math.PI / 2, 0, 0]);
+  p.cylinder([0, 2.72, .06], .5, .5, .03, '#f1ead6', 3, [Math.PI / 2, 0, 0]);
+  return p.finish();
+}
 // A promenade bench facing the water.
 function bench() {
   const p = new Parts();
@@ -253,7 +261,7 @@ function streetTree(variant) {
 }
 
 export const cityTrees = [streetTree(0), streetTree(1)];
-export const cityAssets = { lamp: lampPost(), signal: trafficSignal(), stop: stopSign(), bench: bench(), shelter: busShelter(), railing: railing(), bollard: bollard(), manhole: manhole(), tank: waterTank(), kiosk: kiosk(), bin: litterBin(), lantern: parkLantern(), bandstand: bandstand(), 'signal-head': signalHead(), 'signal-mast': signalMast() };
+export const cityAssets = { lamp: lampPost(), signal: trafficSignal(), stop: stopSign(), yield: yieldSign(), bench: bench(), shelter: busShelter(), railing: railing(), bollard: bollard(), manhole: manhole(), tank: waterTank(), kiosk: kiosk(), bin: litterBin(), lantern: parkLantern(), bandstand: bandstand(), 'signal-head': signalHead(), 'signal-mast': signalMast() };
 
 // Parked cars reuse the traffic fleet's bodies: the paint shell carries a
 // per-instance colour and everything else keeps its own baked colours.

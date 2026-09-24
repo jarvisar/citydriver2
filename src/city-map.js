@@ -1,5 +1,6 @@
 import { CITY } from './world/city.js';
 import { placeForBlock } from './city-exploration.js';
+import { cityIslands } from './world/city-islands.js';
 
 // The local street map: the generated roads, water, parks and lots drawn
 // from cached Path2D shapes in world coordinates, so each redraw is a few
@@ -19,6 +20,8 @@ export class CityMapCache {
     const grounds = new Set();
     city.blocks.forEach((block, index) => { if (city === CITY && placeForBlock(index)) { grounds.add(index); polygon(this.parks, block.inner); } });
     city.lots.forEach((lot, index) => { if (!grounds.has(city.lotBlocks?.[index])) polygon(this.lots, lot); });
+    // and a planted island as green
+    if (city === CITY) for (const island of cityIslands()) polygon(this.parks, island.lawn);
     for (const road of city.roads) {
       const key = road.kind === 'path' ? 'path' : road.profile.halfWidth * 2;
       if (!this.roads.has(key)) this.roads.set(key, makePath());

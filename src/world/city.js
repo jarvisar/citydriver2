@@ -42,6 +42,8 @@ export const STREET_STYLES = {
   'Market district': 'side', 'Civic quarter': 'side', Midtown: 'parking',
 };
 const DOWNTOWN = .62;
+// The old town's streets wind: rotational noise over its part of the field
+const OLD_TOWN_NOISE = { angle: 30, size: 300 };
 
 function districtNames(seed) {
   const names = DISTRICT_STYLES.slice();
@@ -165,7 +167,10 @@ function crossingFree(roadIndex, points, halfWidth, own, step = 2) {
 export function buildCity(seed = SEED) {
   const names = districtNames(seed);
   const styleName = (grid, downtown) => downtown < DOWNTOWN ? 'Midtown' : names[grid] ?? 'Market district';
+  // (the four grid fields take the first four styles, so a city may have no old town)
+  const oldTown = names.indexOf('Old town');
   const map = generateCityMap({ seed, width: CITY_WIDTH, height: CITY_HEIGHT,
+    noise: { districts: oldTown < 4 ? [{ index: oldTown, ...OLD_TOWN_NOISE }] : [] },
     lots: { style: (centre, grid, downtown) => ({ ...LOT_STYLES[styleName(grid, downtown)] }) },
     streets: { style: (point, grid, downtown) => STREET_STYLES[styleName(grid, downtown)] } });
   const margin = CITY_MARGIN;
