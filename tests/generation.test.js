@@ -4,6 +4,7 @@ import { Worker } from 'node:worker_threads';
 import { resolveWorldSeed } from '../src/world/generation.js';
 import { citydriverRoute, journeyStart } from '../src/world/city-route.js';
 import { DrivingController } from '../src/vehicle.js';
+import { CityAutodrive } from '../src/city-autodrive.js';
 
 test('world seeds use fresh entropy and accept reproducible unsigned URL seeds', () => {
   let next = 80;
@@ -28,7 +29,11 @@ test('the city starts grounded on a street and a saved position is restored', ()
   try {
     assert.equal(car.s, state.s); assert.equal(car.u, state.u); assert.equal(car.distance, 0); assert.equal(car.speed, 0);
     assert.ok(Math.abs(car.car.position.y - citydriverRoute.height(car.s, car.u) - .13) < 1e-8);
-    for (let i = 0; i < 600; i++) car.update(1 / 60, { forward: true });
+    // Drive on along the streets for ten seconds
+    car.toggleFreeDriving();
+    const autodrive = new CityAutodrive({ random: () => .3 }), traffic = { enabled: false, vehicles: [], time: 0 };
+    autodrive.toggle();
+    for (let i = 0; i < 600; i++) car.update(1 / 60, autodrive.update(car, traffic, car.stats.topSpeed, 1 / 60));
     assert.ok(car.distance > 100);
     const saved = { s: car.s, u: car.u, heading: car.heading, distance: car.distance };
     car.setRoute(citydriverRoute, journeyStart());

@@ -1,40 +1,43 @@
 import { navGraph } from './world/nav-graph.js';
+import { junctionGeometry, stopLineDistance } from './world/junction-geometry.js';
 
 // Junction control on the generated streets. A junction where two wide roads
 // cross runs a shared signal cycle; a side street meeting a wider road stops
 // and gives way; side streets meeting each other are four-way stops. The
-// traffic, the autodrive and the signal lamps all read the same cycle.
-const BIG = new Set(['main', 'major', 'coast', 'riverbank']);
+// traffic, the autodrive and the signal lamps all read the same cycle, and
+// everyone stops at the line the junction's geometry puts behind its crosswalk.
+const BIG = new Set(['main', 'major', 'ring', 'coast', 'riverbank']);
 
 export function cityGreen(axis, time) {
   const phase = ((time % 24) + 24) % 24;
   return axis === 'north' ? phase < 10 : phase >= 12 && phase < 22;
 }
 
-// Approaches at a junction fall into two groups by heading; the first group is
-// 'north' for the cycle, the second 'east'.
+// Approaches at a junction fall into two groups by heading; the group of the
+// widest road is 'north' for the cycle, the other 'east'.
 export function junctionControls(nav = navGraph()) {
   if (nav.controls) return nav.controls;
-  const controls = new Map();
+  const controls = new Map(), geometry = junctionGeometry(nav);
   for (const node of nav.nodes) {
-    const edges = node.edges.filter(edge => edge.kind !== 'path');
-    if (edges.length < 3) continue;
+    const shape = geometry.get(node.id);
+    if (!shape) continue;
+    const edges = shape.arms.map(arm => arm.edge);
     const approaches = new Map();
     const big = edges.filter(edge => BIG.has(edge.kind));
-    const primary = edges[0], primaryHeading = headingInto(nav, primary, node);
-    let bigAxes = new Set();
+    const primary = big[0] ?? edges[0], primaryHeading = headingInto(nav, primary, node);
+    const bigAxes = new Set();
     for (const edge of big) bigAxes.add(Math.abs(Math.cos(headingInto(nav, edge, node) - primaryHeading)) > .7 ? 'a' : 'b');
     const crossingBig = bigAxes.size > 1;
     for (const edge of edges) {
       const heading = headingInto(nav, edge, node);
       const axis = Math.abs(Math.cos(heading - primaryHeading)) > .7 ? 'north' : 'east';
-      let kind;
-      if (BIG.has(edge.kind)) kind = crossingBig ? 'signal' : 'priority';
-      else kind = big.length ? 'stop' : 'stop';
-      const crossHalfWidth = Math.max(...edges.filter(other => other !== edge).map(other => other.profile.halfWidth));
-      approaches.set(edge, { kind, axis, crossHalfWidth, heading });
+      const arm = shape.approaches.get(edge), clear = arm.clear;
+      // A link inside a junction complex never stops: its traffic already has the junction
+      const kind = arm.link ? 'priority' : BIG.has(edge.kind) ? (crossingBig ? 'signal' : 'priority') : 'stop';
+      // Cars wait behind the crosswalk, which begins where the road leaves the junction
+      approaches.set(edge, { kind, axis, clear, stopDistance: stopLineDistance(clear), heading, link: arm.link });
     }
-    controls.set(node, { approaches, signal: crossingBig, fourWay: !big.length });
+    controls.set(node, { approaches, signal: crossingBig, fourWay: !big.length, radius: shape.radius });
   }
   nav.controls = controls;
   return controls;
@@ -48,7 +51,7 @@ function headingInto(nav, edge, node) {
 
 export function approachControl(nav, edge, direction) {
   const node = nav.endNode(edge, direction), control = junctionControls(nav).get(node);
-  return control ? { node, ...control.approaches.get(edge) } : null;
+  return control ? { node, ...control.approaches.get(edge), radius: control.radius } : null;
 }
 
 // How fast a driver may go toward the junction at the end of its edge.
@@ -57,9 +60,8 @@ export function approachControl(nav, edge, direction) {
 // approaches never slow. `driver` keeps stopKey/stopWait/stopReleased.
 export function junctionSpeed(driver, traffic, nav, edge, direction, along, speed, dt) {
   const control = approachControl(nav, edge, direction);
-  if (!control) return Infinity;
-  const remaining = edge.length - along, stopDistance = control.crossHalfWidth + 4;
-  const gap = remaining - stopDistance;
+  if (!control?.kind) return Infinity;
+  const remaining = edge.length - along, gap = remaining - control.stopDistance;
   if (gap <= -2 || control.kind === 'priority') return Infinity;
   const key = control.node.id;
   if (control.kind === 'signal') {
@@ -78,7 +80,7 @@ export function junctionSpeed(driver, traffic, nav, edge, direction, along, spee
     const crossing = traffic.vehicles.some(other => {
       if (other === driver || !other.edge) return false;
       const distance = Math.hypot(other.s - node.y, other.u - node.x);
-      if (distance < control.crossHalfWidth + 6) return true;  // in the box
+      if (distance < control.radius + 2) return true;  // in the box
       // Approaching on a road that does not stop here
       if (other.edge === edge && other.direction === direction) return false;
       const otherControl = approachControl(nav, other.edge, other.direction);

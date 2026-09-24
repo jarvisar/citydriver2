@@ -207,8 +207,9 @@ function nearbyCustomerStops(player) {
     const count = Math.max(1, Math.floor(edge.length / 110));
     for (let i = 0; i < count; i++) {
       const direction = randomAt(edge.id, i * 3 + 19110, CITY.seed) < .5 ? 1 : -1;
+      // Spread along the street from one end, whichever way each rider is going
       const along = edge.length * (i + .25 + randomAt(edge.id, i * 3 + 19410, CITY.seed) * .5) / count;
-      const pose = nav.pose(edge, along, direction, edge.profile.lane);
+      const pose = nav.pose(edge, direction > 0 ? along : edge.length - along, direction, edge.profile.lane);
       const stop = { ...pose, index: edge.id, side: 1, profile: edge.profile, id: `edge:${edge.id}:${i}`,
         fareSeed: Math.floor(randomAt(edge.id, i * 3 + 19610, CITY.seed) * 0xffffffff) };
       if (distance(stop, player) > CUSTOMER_RANGE) continue;

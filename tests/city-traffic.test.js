@@ -6,7 +6,7 @@ import { CityAutodrive } from '../src/city-autodrive.js';
 import { junctionControls, junctionSpeed, cityGreen } from '../src/city-junctions.js';
 import { navGraph } from '../src/world/nav-graph.js';
 import { DrivingController } from '../src/vehicle.js';
-import { citydriverRoute, journeyStart, onRoadAt, roadAt } from '../src/world/city-route.js';
+import { citydriverRoute, journeyStart, onRoadAt, roadAt, surfaceAt } from '../src/world/city-route.js';
 
 test('traffic spawns on the streets around the car, drives on and stays on the road', () => {
   const scene = new THREE.Scene(), player = new DrivingController(citydriverRoute, journeyStart(), 'taxi');
@@ -23,7 +23,8 @@ test('traffic spawns on the streets around the car, drives on and stays on the r
     for (let i = 0; i < 600; i++) traffic.update(1 / 60, player);
     for (const car of traffic.vehicles) {
       assert.ok(Number.isFinite(car.speed) && car.speed >= 0);
-      assert.ok(onRoadAt(car.s, car.u), 'still on a street after ten seconds');
+      // On the carriageway: a road, or a corner the kerb rounds off
+      assert.equal(surfaceAt(car.s, car.u), 'road', 'still on a street after ten seconds');
       if (car.speed > 1) moved++;
     }
     assert.ok(moved > 8, `${moved} cars moving`);
@@ -40,7 +41,9 @@ test('every junction is controlled and the signal cycle alternates', () => {
     assert.ok(node.edges.length >= 3);
     for (const [edge, approach] of control.approaches) {
       assert.ok(['signal', 'stop', 'priority'].includes(approach.kind));
-      assert.ok(approach.crossHalfWidth > 0);
+      // The stop line stands behind the crosswalk, which starts where the road leaves the junction
+      assert.ok(approach.clear >= 1 && approach.clear <= 34 && approach.clear <= edge.length * .45 + 1e-9, `clear ${approach.clear} on a ${Math.round(edge.length)} m street`);
+      assert.ok(approach.stopDistance > approach.clear + 3 && (!approach.link || approach.kind === 'priority'));
       if (approach.kind === 'signal') signals++; else if (approach.kind === 'stop') stops++; else priority++;
     }
     if (control.signal) assert.ok([...control.approaches.values()].some(a => a.axis === 'north') && [...control.approaches.values()].some(a => a.axis === 'east'));
@@ -53,7 +56,7 @@ test('every junction is controlled and the signal cycle alternates', () => {
   const [edge, approach] = [...control.approaches].find(([, a]) => a.kind === 'signal');
   const direction = edge.b === node.id ? 1 : -1, traffic = { time: approach.axis === 'north' ? 15 : 5, vehicles: [] };
   const driver = { stopKey: null, stopWait: 0, stopReleased: false };
-  const red = junctionSpeed(driver, traffic, nav, edge, direction, edge.length - approach.crossHalfWidth - 4 - 20, 10, 1 / 60);
+  const red = junctionSpeed(driver, traffic, nav, edge, direction, edge.length - approach.stopDistance - 20, 10, 1 / 60);
   assert.ok(red < 20 && red > 0, `red limit ${red}`);
   traffic.time += 10;
   assert.equal(junctionSpeed(driver, traffic, nav, edge, direction, edge.length - 30, 10, 1 / 60), Infinity);

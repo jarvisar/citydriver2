@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { ThirdPersonCamera } from '../src/third-person-camera.js';
 import { touchDrivingInput, thirdPersonDrivingInput } from '../src/touch-stick.js';
 import { DrivingController } from '../src/vehicle.js';
-import { citydriverRoute } from '../src/world/city-route.js';
+import { citydriverRoute, nearestLanePose } from '../src/world/city-route.js';
 import { fitSunShadow } from '../src/shadows.js';
 
 test('third-person view stays behind the car, frames it on phones, and survives origin shifts', () => {
@@ -25,7 +25,8 @@ test('perspective joystick follows all screen directions through the city and af
   for (const route of [citydriverRoute]) {
     for (const aspect of [390 / 844, 844 / 390]) for (const s of [24, 148, 420, 20025]) {
       for (const [x, y] of directions) {
-        const car = new DrivingController(route, { s });
+        // In a lane near there, clear of kerbs and quays
+        const lane = nearestLanePose(s, 0), car = new DrivingController(route, { s: lane.s, u: lane.u });
         const origin = Math.floor(s / 1024) * 1024;
         car.render(0, origin);
         const rig = new ThirdPersonCamera(); rig.resize(aspect); rig.update(car.car, 0);

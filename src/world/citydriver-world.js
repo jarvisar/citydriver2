@@ -6,7 +6,7 @@ import { seededRandom, randomAt } from './route.js';
 import { residentWindow } from './resident.js';
 import { buildCityBuildingSteps } from './city-buildings.js';
 import { createSignMaterial, discoverySignFor } from './city-signs.js';
-import { cityItemMatrix, cityRigidFrame, cityAffinePoint } from './city-layout-render.js';
+import { cityItemMatrix, cityRigidFrame, cityAffinePoint, itemFrame } from './city-layout-render.js';
 import { addSurfacePolygon, rectanglePolygon } from './city-surfaces.js';
 import { buildGrassFringe } from './city-grass.js';
 import { createWaterMaterial } from './city-water.js';
@@ -15,11 +15,12 @@ import { cityWalker, walkerFloat, WALKER_COLORS, createWalkerMaterial, walkerApp
 import { applyWalkerHop, walkerTravelTime, holdWalkerTravel } from './pedestrian-reactions.js';
 import { stableShadowDepth } from './shadow-depth.js';
 import { navGraph } from './nav-graph.js';
-import { junctionControls, cityGreen } from '../city-junctions.js';
+import { cityGreen } from '../city-junctions.js';
 import { signalLens } from './city-detail-assets.js';
-import { cityPlaces } from '../city-exploration.js';
-import { SIDEWALK } from '../mapgen/generate.js';
-import { offsetPolyline, offsetPolygon, insidePolygon, calcPolygonArea, averagePoint, polygonBounds, dedupePolygon, extendPolyline } from '../mapgen/polygon-util.js';
+import { basinRim, basinWater } from './city-public-space-geometry.js';
+import { buildStreetSurfaces, placeStreetFurniture, findBridges, countryside } from './city-streets.js';
+import { buildCoast } from './city-coast.js';
+import { offsetPolygon, calcPolygonArea, averagePoint } from '../mapgen/polygon-util.js';
 
 const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
 const windowGeometry = new THREE.PlaneGeometry(1, 1);
@@ -35,7 +36,6 @@ const SIGNAL_GREEN = new THREE.Color('#62d996'), SIGNAL_AMBER = new THREE.Color(
 // Distant chunks further than this many cells from the car are not drawn at all.
 const DISTANT_VISIBLE = 4;
 const pick = (items, random) => items[Math.floor(random() * items.length)];
-const LAMP_SPACING = 26, TREE_SPACING = 21;
 
 function batchFlags(key, material) {
   const flags = {
@@ -61,7 +61,9 @@ function finishBatchMesh(mesh, { castShadow, receiveShadow, ambientOcclusion }, 
 // Small batches that share a material draw as one merged mesh per chunk,
 // with each instance's transform and colour baked into the vertices; big
 // batches stay instanced. See citydriver's world for the reasoning.
-const MERGE_INSTANCE_LIMIT = 32, MERGE_VERTEX_LIMIT = 6000;
+// A chunk bakes at most this many vertices in all: the cheapest groups merge
+// first, so the draws saved come cheap and a busy street corner stays instanced.
+const MERGE_INSTANCE_LIMIT = 32, MERGE_VERTEX_LIMIT = 6000, MERGE_CHUNK_VERTICES = 18000;
 const LIVE_BATCHES = new Set(['residents', 'signal-lens', 'canal-boat', 'water']);
 const mergedMaterials = new WeakMap(), unitColors = new WeakMap();
 function inUnitRange(color) {
@@ -145,16 +147,30 @@ export function* blockBatches(group) {
   }
 }
 function* renderBatchSteps(group, batches, east = 0, start = 0) {
-  const merges = new Map();
+  const groups = new Map();
   for (const [batchKey, batch] of batches) {
     const key = batch.structure ? batchKey.slice('structure-'.length) : batchKey;
     if (!batch.items.length || !mergeable(key, batch)) continue;
     const flags = batchFlags(key, batch.material);
     const id = [batch.material.uuid, batch.structure, flags.castShadow, flags.receiveShadow, flags.ambientOcclusion].join();
-    if (!merges.has(id)) merges.set(id, { flags, structure: batch.structure, keys: [] });
-    merges.get(id).keys.push(batchKey);
+    if (!groups.has(id)) groups.set(id, { flags, structure: batch.structure, keys: [], sizes: new Map(), vertices: 0 });
+    const group = groups.get(id), vertices = batch.items.length * batch.geometry.attributes.position.count;
+    group.keys.push(batchKey); group.sizes.set(batchKey, vertices); group.vertices += vertices;
   }
-  for (const [id, merge] of merges) if (merge.keys.length < 2) merges.delete(id);
+  // Only two or more batches together save a draw. Cheapest groups first; a
+  // group too big for what is left merges its cheapest batches.
+  const merges = new Map();
+  let budget = MERGE_CHUNK_VERTICES;
+  for (const [id, group] of [...groups].filter(([, group]) => group.keys.length > 1).sort((a, b) => a[1].vertices - b[1].vertices)) {
+    const keys = [];
+    let spent = 0;
+    for (const key of group.keys.slice().sort((a, b) => group.sizes.get(a) - group.sizes.get(b))) {
+      if (spent + group.sizes.get(key) > budget) break;
+      keys.push(key); spent += group.sizes.get(key);
+    }
+    if (keys.length < 2) continue;
+    budget -= spent; merges.set(id, { ...group, keys });
+  }
   const merged = new Set([...merges.values()].flatMap(merge => merge.keys));
   for (const [batchKey, { geometry, material, items, structure }] of batches) {
     const key = structure ? batchKey.slice('structure-'.length) : batchKey;
@@ -202,39 +218,6 @@ function resources() {
   }
   result.signs = createSignMaterial();
   return result;
-}
-
-// Points every `step` metres along a polyline, with the unit tangent
-function* samples(points, step, offset = 0) {
-  let carried = -offset;
-  for (let i = 0; i < points.length - 1; i++) {
-    const a = points[i], b = points[i + 1], dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy);
-    if (length < 1e-9) continue;
-    const tx = dx / length, ty = dy / length;
-    for (let d = carried < 0 ? -carried : step - carried; d <= length; d += step) {
-      yield { x: a.x + tx * d, y: a.y + ty * d, tx, ty };
-      carried = length - d;
-    }
-    if (carried < 0 || carried >= step) carried = (length + (carried < 0 ? -carried : carried)) % step;
-    carried = (length - Math.floor((length + (carried < 0 ? -carried : 0)) / step) * step);
-  }
-}
-// Simpler: distances along a polyline at fixed intervals
-function alongPolyline(points, step, offset = 0) {
-  const out = [];
-  let travelled = 0, next = offset;
-  for (let i = 0; i < points.length - 1; i++) {
-    const a = points[i], b = points[i + 1], dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy);
-    if (length < 1e-9) continue;
-    const tx = dx / length, ty = dy / length;
-    while (next <= travelled + length) {
-      const d = next - travelled;
-      out.push({ x: a.x + tx * d, y: a.y + ty * d, tx, ty, distance: next });
-      next += step;
-    }
-    travelled += length;
-  }
-  return out;
 }
 
 // A cell of the city: the lots and street furniture inside it, built either
@@ -312,11 +295,19 @@ export class CityChunk {
   box(x, y, s, width, height, depth, color, kind = 'solid', yaw = 0, roll = 0) {
     this.item(kind, boxGeometry, this.materials[kind], [x, y, -s], [width, height, depth], color, yaw, roll);
   }
+  // A double-sided board on two posts; yaw turns its face (see faceYaw)
   sign(sign, x, y, s, yaw, width = 6.1) {
     if (this.distant || !sign) return;
+    const height = width / sign.aspect, ex = Math.cos(yaw), es = Math.sin(yaw);
     for (const facing of [yaw, yaw + Math.PI]) {
       this.item('sign-board', windowGeometry, this.materials.signs,
-        [x + Math.sin(facing) * .14, y, -s + Math.cos(facing) * .14], [width, width / sign.aspect, 1], '#ffffff', facing).signTile = sign.tile;
+        [x + Math.sin(facing) * .08, y, -s + Math.cos(facing) * .08], [width, height, 1], '#ffffff', facing).signTile = sign.tile;
+    }
+    this.box(x, y, s, width + .16, height + .16, .1, '#3d4246', 'solid', yaw);
+    for (const side of [-1, 1]) {
+      const px = x + ex * side * width * .38, ps = s + es * side * width * .38, bottom = y - height / 2;
+      this.box(px, (PAVEMENT_LEVEL + bottom) / 2, ps, .12, bottom - PAVEMENT_LEVEL, .12, '#3d4246', 'solid', yaw);
+      this.post(px, ps, .1);
     }
   }
   solid(x, s, width, depth, flexible = false) {
@@ -348,11 +339,11 @@ export class CityChunk {
       const x = piece.u - this.east, s = piece.s - this.start;
       if (piece.kind === 'lamp') { this.prop('lamp', x, s, piece.yaw); this.post(x, s, .25); }
       else if (piece.kind === 'tree') this.tree(x, s, piece.scale);
-      else if (piece.kind === 'bench') { this.prop('bench', x, s, piece.yaw); this.rigid(x, s, () => this.solid(x, s, .7, 2), cityRigidFrame(piece.s, piece.u, piece.yaw)); }
+      else if (piece.kind === 'bench') { this.prop('bench', x, s, piece.yaw); this.rigid(x, s, () => this.solid(x, s, .7, 2), itemFrame(piece.s, piece.u, piece.yaw)); }
       else if (piece.kind === 'bin') { this.prop('bin', x, s); this.post(x, s, .36); }
       else if (piece.kind === 'bollard') { this.prop('bollard', x, s); this.post(x, s, .16); }
-      else if (piece.kind === 'railing') this.rigid(x, s, () => { this.prop('railing', x, s, 0, piece.y ?? PAVEMENT_LEVEL); this.solid(x, s, .24, 4); }, cityRigidFrame(piece.s, piece.u, piece.yaw));
-      else if (piece.kind === 'sign') this.sign(discoverySignFor(piece.type, piece.variant), x, PAVEMENT_LEVEL + 2.6, s, piece.yaw);
+      else if (piece.kind === 'railing') { this.prop('railing', x, s, piece.yaw, piece.y ?? PAVEMENT_LEVEL); this.rigid(x, s, () => this.solid(x, s, .24, 4), itemFrame(piece.s, piece.u, piece.yaw)); }
+      else if (piece.kind === 'sign') this.sign(discoverySignFor(piece.type, piece.variant), x, PAVEMENT_LEVEL + 2.9, s, piece.yaw, 4.2);
       else if (piece.kind === 'stop') { this.prop('stop', x, s, piece.yaw); this.post(x, s, .12); }
       else if (piece.kind === 'signal') {
         this.prop('signal', x, s, piece.yaw); this.post(x, s, .15);
@@ -364,11 +355,15 @@ export class CityChunk {
         }
         this.features.signals.push({ axis: piece.axis, indices });
       }
-      else if (piece.kind === 'hedge') this.rigid(x, s, () => { this.box(x, PAVEMENT_LEVEL + .55, s, 1.6, 1.1, piece.length, '#4f7a46'); this.solid(x, s, 1.6, piece.length); }, cityRigidFrame(piece.s, piece.u, piece.yaw));
-      else if (piece.kind === 'barrier') this.rigid(x, s, () => {
-        this.box(x, PAVEMENT_LEVEL + .5, s, piece.length, .9, .3, '#d8d3c3'); this.box(x, PAVEMENT_LEVEL + .62, s, piece.length, .18, .32, '#c0463a');
-        this.solid(x, s, piece.length, .3);
-      }, cityRigidFrame(piece.s, piece.u, piece.yaw));
+      else if (piece.kind === 'shelter') { this.prop('shelter', x, s, piece.yaw); this.rigid(x, s, () => this.solid(x + .5, s, .6, 4), itemFrame(piece.s, piece.u, piece.yaw)); }
+      else if (piece.kind === 'fountain') {
+        this.item('basin-rim', basinRim, this.materials.solid, [x, PAVEMENT_LEVEL + .4, -s], [3.4, .8, 3.4], '#d7ccb3');
+        this.item('basin-water', basinWater, this.materials.glass, [x, PAVEMENT_LEVEL + .62, -s], [3.2, 1, 3.2], '#4f93a0');
+        this.box(x, PAVEMENT_LEVEL + 1.3, s, .7, 2.2, .7, '#d7ccb3');
+        this.box(x, PAVEMENT_LEVEL + 2.5, s, 1.6, .25, 1.6, '#d7ccb3');
+        this.post(x, s, 3.5);
+      }
+      else if (piece.kind === 'hedge') { this.box(x, PAVEMENT_LEVEL + .55, s, 1.6, 1.1, piece.length, '#4f7a46', 'solid', piece.yaw); this.rigid(x, s, () => this.solid(x, s, 1.6, piece.length), itemFrame(piece.s, piece.u, piece.yaw)); }
     }
   }
   // Residents walk the pavement round their block; pairs stroll together.
@@ -506,7 +501,7 @@ export class CitydriverWorld {
     this.scene = scene; this.chunks = new Map(); this.origin = 0; this.center = null; this.radius = 0;
     this.pending = []; this.building = null; this.materials = resources(); this.nav = navGraph();
     this.animationFrustum = new THREE.Frustum(); this.animationMatrix = new THREE.Matrix4(); this.animationSphere = new THREE.Sphere();
-    this.prepareLots(); this.placeFurniture();
+    this.prepareLots(); this.bridges = findBridges(); this.placeFurniture();
     this.staticGroup = new THREE.Group(); this.staticGroup.name = 'citydriver-static'; this.staticGroup.matrixAutoUpdate = false;
     scene.add(this.staticGroup);
     this.buildStatic();
@@ -520,8 +515,8 @@ export class CitydriverWorld {
     this.lotsByChunk = new Map(); this.neighbourCache = new Map(); this.blocksByChunk = new Map();
     // A walking loop just inside every block's kerb
     CITY.blocks.forEach((block, index) => {
-      if (block.sidewalk.length < 3) return;
-      const points = offsetPolygon(block.sidewalk, -1.5);
+      if (block.kerb.length < 3) return;
+      const points = offsetPolygon(block.kerb, -1.5);
       if (points.length < 3) return;
       const cumulative = [0];
       for (let i = 0; i < points.length; i++) { const a = points[i], b = points[(i + 1) % points.length]; cumulative.push(cumulative[i] + Math.hypot(b.x - a.x, b.y - a.y)); }
@@ -533,7 +528,7 @@ export class CitydriverWorld {
     });
     CITY.lots.forEach((polygon, index) => {
       const centre = averagePoint(polygon), area = calcPolygonArea(polygon), cell = cityCell(centre.y, centre.x);
-      const lot = { polygon, index, block: CITY.lotBlocks?.[index] ?? -1, centre, area, seed: Math.floor(randomAt(Math.round(centre.x), Math.round(centre.y) + 7102, CITY.seed) * 0xffffffff) >>> 0 };
+      const lot = { polygon, index, block: CITY.lotBlocks?.[index] ?? -1, edges: CITY.lotEdges?.[index] ?? null, depth: CITY.lotDepths?.[index] ?? 0, centre, area, seed: Math.floor(randomAt(Math.round(centre.x), Math.round(centre.y) + 7102, CITY.seed) * 0xffffffff) >>> 0 };
       if (!this.lotsByChunk.has(cell.key)) this.lotsByChunk.set(cell.key, []);
       this.lotsByChunk.get(cell.key).push(lot);
     });
@@ -547,137 +542,19 @@ export class CitydriverWorld {
     }
     return this.neighbourCache.get(key);
   }
-  insideLot(u, s) {
-    const point = { x: u, y: s };
-    return this.neighbourLots(Math.floor(u / CITY_CELL), Math.floor(s / CITY_CELL)).some(lot => insidePolygon(point, lot.polygon));
-  }
-  // Lamps and trees along every street, trees through the parks, railings on
-  // the bridges: computed once and handed to whichever chunk they fall in.
+  // Lamps, trees, signs and signals, railings, the hedge round the city and the
+  // parks' trees and benches: placed once (see city-streets.js) and handed to
+  // whichever chunk they fall in.
   placeFurniture() {
     this.furnitureByChunk = new Map();
-    const add = piece => {
+    placeStreetFurniture(this.nav, this.bridges, piece => {
       const key = cityCell(piece.s, piece.u).key;
       if (!this.furnitureByChunk.has(key)) this.furnitureByChunk.set(key, []);
       this.furnitureByChunk.get(key).push(piece);
-    };
-    const junctions = this.nav.nodes.filter(node => node.edges.length >= 3);
-    const nearJunction = (x, y, radius) => junctions.some(node => Math.abs(node.x - x) < radius && Math.abs(node.y - y) < radius && Math.hypot(node.x - x, node.y - y) < radius);
-    const clear = (x, y, radius) => !nearJunction(x, y, radius) && !waterAt(y, x) && !this.insideLot(x, y);
-    for (const road of CITY.roads) {
-      if (road.kind === 'path') continue;
-      const halfWidth = road.profile.halfWidth;
-      alongPolyline(road.points, LAMP_SPACING, 13).forEach((p, i) => {
-        const side = i % 2 ? 1 : -1, nx = -p.ty * side, ny = p.tx * side;
-        const x = p.x + nx * (halfWidth + 1.1), y = p.y + ny * (halfWidth + 1.1);
-        if (clear(x, y, 12)) add({ kind: 'lamp', u: x, s: y, yaw: Math.atan2(ny, nx) });
-      });
-      alongPolyline(road.points, TREE_SPACING, 24).forEach((p, i) => {
-        const side = i % 2 ? -1 : 1, nx = -p.ty * side, ny = p.tx * side;
-        const x = p.x + nx * (halfWidth + 2.7), y = p.y + ny * (halfWidth + 2.7);
-        if (clear(x, y, 11)) add({ kind: 'tree', u: x, s: y, scale: 7.5 + randomAt(Math.round(x), Math.round(y) + 31, CITY.seed) * 2.5 });
-      });
-    }
-    // Parks: trees scattered off the paths, benches beside them
-    this.parkLawns = [];
-    CITY.parks.forEach((park, index) => {
-      const lawn = offsetPolygon(park, (a, b) => { const road = roadAt((a.y + b.y) / 2, (a.x + b.x) / 2, 30); return -((road?.road.profile.halfWidth ?? 6.5) + 1.2); });
-      if (!lawn.length) return;
-      this.parkLawns.push(lawn);
-      const random = seededRandom(CITY.seed + index * 7919), bounds = polygonBounds(lawn), area = calcPolygonArea(lawn);
-      const placed = [], wanted = Math.min(400, Math.floor(area / 240));
-      for (let attempt = 0; attempt < wanted * 6 && placed.length < wanted; attempt++) {
-        const x = bounds.minX + random() * (bounds.maxX - bounds.minX), y = bounds.minY + random() * (bounds.maxY - bounds.minY);
-        if (!insidePolygon({ x, y }, lawn)) continue;
-        const road = roadAt(y, x, 30);
-        if (road && road.distance < road.road.profile.halfWidth + 3.5) continue;
-        if (placed.some(q => Math.hypot(q.x - x, q.y - y) < 8)) continue;
-        placed.push({ x, y });
-        add({ kind: 'tree', u: x, s: y, scale: 7 + random() * 4.5 });
-      }
-      for (const road of CITY.roads) {
-        if (road.kind !== 'path') continue;
-        alongPolyline(road.points, 44, 22).forEach((p, i) => {
-          const side = i % 2 ? 1 : -1, nx = -p.ty * side, ny = p.tx * side, x = p.x + nx * 5.3, y = p.y + ny * 5.3;
-          if (!insidePolygon({ x, y }, lawn) || nearJunction(x, y, 10)) return;
-          // The bench faces the path: its seat looks along +x, so turn +x toward the path
-          add({ kind: 'bench', u: x, s: y, yaw: Math.atan2(-ny, -nx) });
-        });
-      }
     });
-    // Signals and stop signs at the right-hand kerb of every controlled approach
-    for (const [node, control] of junctionControls(this.nav)) {
-      for (const [edge, approach] of control.approaches) {
-        if (approach.kind === 'priority') continue;
-        const direction = edge.b === node.id ? 1 : -1;
-        const end = this.nav.pose(edge, edge.length, direction), du = Math.sin(end.heading), ds = Math.cos(end.heading);
-        const back = approach.crossHalfWidth + 2.2, right = edge.profile.halfWidth + 1.2;
-        const u = node.x - du * back + ds * right, y = node.y - ds * back - du * right;
-        if (waterAt(y, u)) continue;
-        // The head faces back down the approach, toward the arriving car
-        const yaw = Math.atan2(-du, -ds);
-        add(approach.kind === 'signal' ? { kind: 'signal', u, s: y, yaw, axis: approach.axis } : { kind: 'stop', u, s: y, yaw });
-      }
-    }
-    // Railings along the quays, with a gap wherever a road meets the water
-    for (const run of CITY.walls) {
-      const inland = offsetPolyline(run, -1.1);
-      for (const p of alongPolyline(inland, 4, 2)) {
-        const road = roadAt(p.y, p.x, 30);
-        if (road && road.distance < road.road.profile.halfWidth + 1.5) continue;
-        add({ kind: 'railing', u: p.x, s: p.y, yaw: Math.atan2(p.tx, p.ty), y: PAVEMENT_LEVEL });
-      }
-    }
-    // A hedge around the edge of the city, with a barrier across every road that reaches it
-    const edgeRuns = [
-      [{ x: CITY.minX + CITY.margin, y: CITY.minY + CITY.margin }, { x: CITY.maxX - CITY.margin, y: CITY.minY + CITY.margin }],
-      [{ x: CITY.maxX - CITY.margin, y: CITY.minY + CITY.margin }, { x: CITY.maxX - CITY.margin, y: CITY.maxY - CITY.margin }],
-      [{ x: CITY.maxX - CITY.margin, y: CITY.maxY - CITY.margin }, { x: CITY.minX + CITY.margin, y: CITY.maxY - CITY.margin }],
-      [{ x: CITY.minX + CITY.margin, y: CITY.maxY - CITY.margin }, { x: CITY.minX + CITY.margin, y: CITY.minY + CITY.margin }],
-    ];
-    const barred = new Set();
-    for (const run of edgeRuns) for (const p of alongPolyline(run, 6, 3)) {
-      const inward = { x: p.x - p.ty * 3, y: p.y + p.tx * 3 };
-      if (waterAt(inward.y, inward.x)) continue;
-      const road = roadAt(inward.y, inward.x, 30);
-      if (road && road.distance < road.road.profile.halfWidth + 2.5) {
-        const key = `${road.roadIndex}:${Math.round(p.x / 40)}:${Math.round(p.y / 40)}`;
-        if (barred.has(key)) continue;
-        barred.add(key);
-        add({ kind: 'barrier', u: road.x - road.tx * 0 , s: road.y, yaw: Math.atan2(road.tx, road.ty) + Math.PI / 2, length: road.road.profile.halfWidth * 2 - .6 });
-        continue;
-      }
-      add({ kind: 'hedge', u: inward.x, s: inward.y, yaw: Math.atan2(p.tx, p.ty), length: 6.2 });
-    }
-    // A sign board on the pavement at every venue's entrance
-    for (const place of cityPlaces()) {
-      const road = roadAt(place.entrance.s, place.entrance.u, 40);
-      if (!road) continue;
-      const du = Math.sin(place.entrance.heading), ds = Math.cos(place.entrance.heading), reach = road.road.profile.halfWidth + 2.6;
-      const u = road.x + ds * reach, y = road.y - du * reach;
-      if (waterAt(y, u) || this.insideLot(u, y)) continue;
-      add({ kind: 'sign', type: place.type, variant: place.variant, u, s: y, yaw: Math.atan2(du, ds) + Math.PI / 2 });
-    }
-    // Bridges: a run of road over water gets railings on both edges
-    this.bridges = [];
-    for (const road of CITY.roads) {
-      if (road.kind === 'path') continue;
-      let run = null;
-      const flush = () => { if (run && run.length > 2) this.bridges.push({ road, points: run }); run = null; };
-      for (const p of alongPolyline(road.points, 3)) {
-        if (waterAt(p.y, p.x)) { run ??= []; run.push(p); } else flush();
-      }
-      flush();
-    }
-    for (const bridge of this.bridges) {
-      const halfWidth = bridge.road.profile.halfWidth, line = extendPolyline(bridge.points.map(p => ({ x: p.x, y: p.y, clone() { return { ...this }; }, sub(v) { this.x -= v.x; this.y -= v.y; return this; }, add(v) { this.x += v.x; this.y += v.y; return this; }, setLength(l) { const d = Math.hypot(this.x, this.y) || 1; this.x *= l / d; this.y *= l / d; return this; } })), 5);
-      for (const side of [-1, 1]) {
-        const edge = offsetPolyline(line, side * (halfWidth - .35));
-        for (const p of alongPolyline(edge, 4, 2)) add({ kind: 'railing', u: p.x, s: p.y, yaw: Math.atan2(p.tx, p.ty), y: ROAD_LEVEL });
-      }
-    }
   }
   buildStatic() {
-    const ground = new Surface(), roads = new Surface(), paths = new Surface(), water = new Surface(), walls = new Surface();
+    const ground = new Surface(), roads = new Surface(), paths = new Surface(), water = new Surface(), walls = new Surface(), glow = new Surface();
     const add = (surface, material, { castShadow = false, receiveShadow = true, ambientOcclusion = true, name = 'static' } = {}) => {
       if (surface.empty) return null;
       const mesh = new THREE.Mesh(surface.build(), material);
@@ -687,88 +564,36 @@ export class CitydriverWorld {
       this.staticGroup.add(mesh);
       return mesh;
     };
-    // Land, in the pieces the water leaves
-    for (const piece of CITY.land) ground.polygon(piece, ROAD_LEVEL - .04, '#a9ad9f');
-    // Roads, with their markings, then the park paths a little higher on the lawns
-    const junctions = this.nav.nodes.filter(node => node.edges.length >= 3);
-    const nearJunction = (x, y, radius) => junctions.some(node => Math.hypot(node.x - x, node.y - y) < radius);
-    for (const road of CITY.roads) {
-      const profile = road.profile;
-      if (road.kind === 'path') { paths.ribbon(road.points, profile.halfWidth, PAVEMENT_LEVEL + .01, '#b9ad8e'); continue; }
-      roads.ribbon(road.points, profile.halfWidth, ROAD_LEVEL, '#666c70');
-      const markings = new Surface();
-      if (profile.kind === 'boulevard') {
-        for (const p of alongPolyline(road.points, 11, 4)) {
-          if (nearJunction(p.x, p.y, profile.halfWidth + 14)) continue;
-          const a = { x: p.x, y: p.y }, b = { x: p.x + p.tx * 5, y: p.y + p.ty * 5 };
-          for (const offset of [-profile.median - .4, profile.median + .4]) markings.ribbon(offsetPolyline([a, b], offset), .12, ROAD_LEVEL + .012, '#d8bd80');
-          for (const offset of [-(profile.halfWidth - .6), profile.halfWidth - .6]) markings.ribbon(offsetPolyline([a, b], offset), .13, ROAD_LEVEL + .012, '#d7d8c9');
+    buildStreetSurfaces({ ground, roads, paths, water, walls }, this.nav, this.bridges);
+    // Beaches, rocks and the lighthouse round the island
+    this.lighthouse = buildCoast({ ground, walls, glow });
+    // The country: fields over the land, and its trees as two instanced meshes
+    const country = countryside();
+    for (const field of country.fields) ground.polygon(field.polygon, ROAD_LEVEL - .05, field.colour);
+    if (country.trees.length) {
+      const random = seededRandom(CITY.seed ^ 0x5eed);
+      // One pair of meshes per 400 m tile, so the camera and the sun's shadow
+      // only draw the country trees near them
+      const tiles = new Map();
+      country.trees.forEach((tree, i) => {
+        const key = `${Math.floor(tree.x / 400)},${Math.floor(tree.y / 400)},${i % 4 === 0 ? 1 : 0}`;
+        if (!tiles.has(key)) tiles.set(key, []);
+        tiles.get(key).push(tree);
+      });
+      for (const [key, trees] of tiles) {
+        const variant = cityTrees[Number(key.split(',')[2])];
+        const trunks = new THREE.InstancedMesh(variant.bark, this.materials.bark, trees.length), crowns = new THREE.InstancedMesh(variant.leaves, this.materials.leaves, trees.length);
+        trees.forEach((tree, i) => {
+          const width = tree.scale * (.82 + random() * .24);
+          transform.position.set(tree.x, PAVEMENT_LEVEL - .1, -tree.y); transform.rotation.set(0, random() * Math.PI * 2, 0); transform.scale.set(width, tree.scale, width); transform.updateMatrix();
+          trunks.setMatrixAt(i, transform.matrix); crowns.setMatrixAt(i, transform.matrix);
+          trunks.setColorAt(i, tint.set('#ffffff')); crowns.setColorAt(i, tint.set(pick(GREENS, random)).multiplyScalar(.9));
+        });
+        for (const mesh of [trunks, crowns]) {
+          mesh.name = 'citydriver-country-trees'; mesh.castShadow = true; mesh.receiveShadow = true;
+          mesh.computeBoundingSphere(); mesh.matrixAutoUpdate = false; mesh.updateMatrix();
+          this.staticGroup.add(mesh);
         }
-        // The planted median between junctions
-        for (const p of alongPolyline(road.points, 3, 0)) {
-          if (nearJunction(p.x, p.y, profile.halfWidth + 16)) continue;
-          const a = { x: p.x, y: p.y }, b = { x: p.x + p.tx * 3.05, y: p.y + p.ty * 3.05 };
-          ground.ribbon([a, b], profile.median, ROAD_LEVEL + .22, '#c3bfab');
-          ground.ribbon([a, b], profile.median - .2, ROAD_LEVEL + .28, '#779757');
-          ground.wall(offsetPolyline([a, b], profile.median), ROAD_LEVEL + .22, ROAD_LEVEL, '#b5b19e');
-          ground.wall(offsetPolyline([a, b], -profile.median), ROAD_LEVEL + .22, ROAD_LEVEL, '#b5b19e');
-        }
-      } else if (profile.kind === 'avenue') {
-        for (const p of alongPolyline(road.points, 11, 4)) {
-          if (nearJunction(p.x, p.y, profile.halfWidth + 12)) continue;
-          markings.ribbon([{ x: p.x, y: p.y }, { x: p.x + p.tx * 4, y: p.y + p.ty * 4 }], .13, ROAD_LEVEL + .012, '#d8bd80');
-        }
-      }
-      if (!markings.empty) { for (let i = 0; i < markings.positions.length; i++) ground.positions.push(markings.positions[i]); ground.normals.push(...markings.normals); ground.colors.push(...markings.colors); }
-    }
-    // Stop lines and zebra crossings on every controlled approach
-    for (const [node, control] of junctionControls(this.nav)) {
-      for (const [edge, approach] of control.approaches) {
-        const direction = edge.b === node.id ? 1 : -1;
-        const end = this.nav.pose(edge, edge.length, direction), du = Math.sin(end.heading), ds = Math.cos(end.heading);
-        const halfWidth = edge.profile.halfWidth, back = approach.crossHalfWidth;
-        const at = (behind, across) => ({ x: node.x - du * behind + ds * across, y: node.y - ds * behind - du * across });
-        if (approach.kind !== 'priority') ground.polygon([at(back + 1.2, .3), at(back + 1.2, halfWidth - .4), at(back + 1.6, halfWidth - .4), at(back + 1.6, .3)], ROAD_LEVEL + .014, '#e1dfce');
-        for (let across = -halfWidth + .9; across < halfWidth - .4; across += 1.7) {
-          ground.polygon([at(back + 2.1, across), at(back + 2.1, across + .9), at(back + 4.9, across + .9), at(back + 4.9, across)], ROAD_LEVEL + .014, '#deddd0');
-        }
-      }
-    }
-    // Sidewalks with kerbs, parks, then the lots on top
-    for (const block of CITY.blocks) {
-      if (block.sidewalk.length < 3) continue;
-      ground.polygon(block.sidewalk, PAVEMENT_LEVEL, '#acafa8');
-      ground.wall(block.sidewalk, PAVEMENT_LEVEL, ROAD_LEVEL - .02, '#9a9d98', true);
-    }
-    for (const lawn of this.parkLawns) {
-      ground.polygon(lawn, PAVEMENT_LEVEL, '#79a05a');
-      ground.wall(lawn, PAVEMENT_LEVEL, ROAD_LEVEL - .02, '#9a9d98', true);
-    }
-    for (const lot of CITY.lots) ground.polygon(lot, PAVEMENT_LEVEL + .03, '#b3b2a5');
-    // Water and the quays that hold the city above it
-    const riverCentre = CITY.riverCentre;
-    const flowAt = (x, y) => {
-      if (!riverCentre) return [1, 0];
-      let best = 0, bestDistance = Infinity;
-      for (let i = 0; i < riverCentre.length - 1; i += 4) { const d = Math.hypot(riverCentre[i].x - x, riverCentre[i].y - y); if (d < bestDistance) { bestDistance = d; best = i; } }
-      const a = riverCentre[best], b = riverCentre[Math.min(riverCentre.length - 1, best + 1)], length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-      return [(b.x - a.x) / length, -(b.y - a.y) / length];
-    };
-    if (CITY.sea) water.polygon(CITY.sea, WATER_LEVEL, '#397780', () => [1, 0]);
-    if (CITY.river) water.polygon(CITY.river, WATER_LEVEL, '#397780', flowAt);
-    for (const run of CITY.walls) { walls.wall(run, PAVEMENT_LEVEL + .02, WATER_LEVEL - 1.6, '#9b9789'); walls.ribbon(offsetPolyline(run, -.25), .3, PAVEMENT_LEVEL + .2, '#b3aea0'); }
-    // Bridge decks: the road surface is already there; add the sides and piers
-    for (const bridge of this.bridges) {
-      const halfWidth = bridge.road.profile.halfWidth, points = bridge.points;
-      for (const side of [-1, 1]) walls.wall(offsetPolyline(points, side * halfWidth), ROAD_LEVEL - .01, ROAD_LEVEL - 1.4, '#8f8b80');
-      walls.ribbon(points, halfWidth, ROAD_LEVEL - 1.4, '#6f6b63');
-      for (const p of alongPolyline(points, 30, 15)) {
-        const nx = -p.ty, ny = p.tx, along = 1.2, across = halfWidth - 1;
-        const corners = [
-          { x: p.x + p.tx * along + nx * across, y: p.y + p.ty * along + ny * across }, { x: p.x - p.tx * along + nx * across, y: p.y - p.ty * along + ny * across },
-          { x: p.x - p.tx * along - nx * across, y: p.y - p.ty * along - ny * across }, { x: p.x + p.tx * along - nx * across, y: p.y + p.ty * along - ny * across },
-        ];
-        walls.wall(corners, ROAD_LEVEL - 1.3, WATER_LEVEL - 3, '#7d7a72', true);
       }
     }
     this.groundMesh = add(ground, this.materials.ground, { name: 'ground' });
@@ -776,6 +601,7 @@ export class CitydriverWorld {
     add(paths, this.materials.ground, { name: 'paths' });
     this.waterMesh = add(water, this.materials.water, { name: 'water', ambientOcclusion: false });
     add(walls, this.materials.ground, { name: 'walls', castShadow: true });
+    add(glow, this.materials.clock, { name: 'lantern', receiveShadow: false, ambientOcclusion: false });
   }
   update(s, u, { budgetMs = Infinity } = {}) {
     const deadline = performance.now() + budgetMs;
@@ -860,7 +686,7 @@ export class CitydriverWorld {
     this.building?.dispose(); this.building = null;
     for (const chunk of this.distant.values()) chunk.dispose(); this.distant.clear(); this.distantPending = [];
     this.distantGroup.removeFromParent();
-    for (const mesh of this.staticGroup.children) mesh.geometry.dispose();
+    for (const mesh of this.staticGroup.children) if (!mesh.isInstancedMesh) mesh.geometry.dispose(); else mesh.dispose();
     this.staticGroup.removeFromParent();
     for (const material of Object.values(this.materials)) { material.map?.dispose(); material.dispose(); }
   }

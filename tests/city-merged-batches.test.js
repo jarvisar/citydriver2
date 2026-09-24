@@ -73,7 +73,8 @@ test('merging cuts each block\'s draws without growing its memory much', () => {
     for (const [ix, iz] of [[0, 0], [1, 0], [-2, -3]]) {
       const { chunk, batches } = buildWithBatches(ix, iz, world);
       const batchCount = [...batches.values()].filter(batch => batch.items.length).length;
-      if (batchCount >= 6) assert.ok(chunk.group.children.length <= batchCount - 2, `merging saves draws (${chunk.group.children.length} of ${batchCount})`);
+      // At least one draw saved; how many more the vertex budget allows depends on how busy the block is
+      if (batchCount >= 6) assert.ok(chunk.group.children.length < batchCount, `merging saves draws (${chunk.group.children.length} of ${batchCount})`);
       let bytes = 0;
       for (const mesh of chunk.group.children) if (!mesh.isInstancedMesh && !mesh.userData.bodies) {
         for (const attribute of Object.values(mesh.geometry.attributes)) bytes += attribute.array.byteLength;

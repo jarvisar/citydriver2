@@ -1,4 +1,5 @@
-import { averagePoint, offsetPolygon, subdividePolygon, calcPolygonArea } from './polygon-util.js';
+import { subdividePolygon, calcPolygonArea, interiorPoint } from './polygon-util.js';
+import { insetPolygon } from './booleans.js';
 
 // Finds the faces of the road graph: blocks, then lots and parks.
 // params: maxLength (vertices per face), minArea, shrinkSpacing (number or a
@@ -6,7 +7,7 @@ import { averagePoint, offsetPolygon, subdividePolygon, calcPolygonArea } from '
 export default class PolygonFinder {
   constructor(nodes, params, tensorField, random = Math.random) {
     this.nodes = nodes; this.params = params; this.tensorField = tensorField; this.random = random;
-    this._polygons = []; this._shrunkPolygons = []; this._dividedPolygons = []; this._lotBlocks = [];
+    this.reset();
   }
   get polygons() {
     if (this._dividedPolygons.length > 0) return this._dividedPolygons;
@@ -17,13 +18,15 @@ export default class PolygonFinder {
   // a face collapsed), and every lot remembers the face it was cut from.
   get shrunkPolygons() { return this._shrunkPolygons; }
   get lotBlocks() { return this._lotBlocks; }
-  reset() { this._polygons = []; this._shrunkPolygons = []; this._dividedPolygons = []; this._lotBlocks = []; }
+  // The graph nodes round each face, parallel to its vertices
+  get faceNodes() { return this._faceNodes; }
+  reset() { this._polygons = []; this._shrunkPolygons = []; this._dividedPolygons = []; this._lotBlocks = []; this._faceNodes = []; }
   // Pull every edge in from the road so lots have the same setback all round
   shrink() {
     if (this._polygons.length === 0) this.findPolygons();
     const spacing = this.params.shrinkSpacing;
     const distance = typeof spacing === 'function' ? (a, b, i) => -spacing(a, b, i) : -spacing;
-    this._shrunkPolygons = this._polygons.map(p => offsetPolygon(p, distance));
+    this._shrunkPolygons = this._polygons.map(p => insetPolygon(p, distance));
   }
   divide() {
     if (this._polygons.length === 0) this.findPolygons();
@@ -45,7 +48,7 @@ export default class PolygonFinder {
   // visits every face once. Faces with a dead end inside them are skipped,
   // as MapGenerator did, and the outer boundary is dropped by its winding.
   findPolygons() {
-    this._shrunkPolygons = []; this._dividedPolygons = [];
+    this._shrunkPolygons = []; this._dividedPolygons = []; this._faceNodes = [];
     const sorted = new Map();
     const neighborsOf = node => {
       let list = sorted.get(node);
@@ -72,29 +75,28 @@ export default class PolygonFinder {
           let choice = null;
           for (const entry of list) if (entry.angle > back + 1e-12) { choice = entry.next; break; }
           if (choice === null) choice = list[0].next;
-          if (choice === from && list.length > 1) { ok = false; break; }
           if (choice === from) { ok = false; break; }
           from = to; to = choice;
           if (from === node && to === first) break;
         }
         if (!ok || walk.length < 3) continue;
-        faces.push(visited.map(n => n.value.clone()));
+        faces.push({ polygon: visited.map(n => n.value.clone()), nodes: visited });
       }
     }
     // Inner faces all wind the same way; the outer boundary winds the other
     let clockwise = 0, counter = 0;
-    const areas = faces.map(face => face.reduce((sum, a, i) => { const b = face[(i + 1) % face.length]; return sum + a.x * b.y - b.x * a.y; }, 0) / 2);
+    const areas = faces.map(({ polygon }) => polygon.reduce((sum, a, i) => { const b = polygon[(i + 1) % polygon.length]; return sum + a.x * b.y - b.x * a.y; }, 0) / 2);
     for (const area of areas) if (area < 0) clockwise++; else counter++;
     const keep = clockwise >= counter ? area => area < 0 : area => area > 0;
-    const polygons = faces.filter((face, i) => keep(areas[i]) && face.length < this.params.maxLength);
-    this._polygons = this.filterPolygonsByWater(polygons);
+    const kept = faces.filter((face, i) => keep(areas[i]) && face.polygon.length < this.params.maxLength && this.onDryLand(face.polygon));
+    this._polygons = kept.map(face => face.polygon);
+    this._faceNodes = kept.map(face => face.nodes);
   }
-  filterPolygonsByWater(polygons) {
-    const out = [];
-    for (const p of polygons) {
-      const centre = averagePoint(p);
-      if (this.tensorField.onLand(centre) && !this.tensorField.inParks(centre)) out.push(p);
-    }
-    return out;
+  // A face whose inside is in the water or a park is not a block
+  onDryLand(polygon) {
+    // A point inside the face, which its centroid need not be
+    const centre = interiorPoint(polygon);
+    return this.tensorField.onLand(centre) && !this.tensorField.inParks(centre);
   }
+  filterPolygonsByWater(polygons) { return polygons.filter(p => this.onDryLand(p)); }
 }

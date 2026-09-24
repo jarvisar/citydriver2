@@ -4,37 +4,45 @@ import { PAVEMENT_LEVEL as G } from './city-route.js';
 import { CITY, cityStyleDistrict } from './city.js';
 import { SHOP_NAMES, shopSignFor } from './city-signs.js';
 import { grassArea } from './city-grass.js';
-import { averagePoint, insidePolygon, polygonBounds, offsetPolygon, calcPolygonArea, signedArea, distanceToPolyline, dedupePolygon, isSimple } from '../mapgen/polygon-util.js';
+import { placeForLot } from '../city-exploration.js';
+import { buildLandmark } from './city-landmarks.js';
+import { averagePoint, insidePolygon, polygonBounds, offsetPolygon, offsetPolygonMapped, calcPolygonArea, signedArea, distanceToPolyline, dedupePolygon, isSimple, fitRectangle } from '../mapgen/polygon-util.js';
 export { SHOP_NAMES } from './city-signs.js';
 
-// Buildings follow their lots. Each lot is the polygon MapGenerator cut from
-// its block, and the building is that polygon stepped in a little: a stripe
-// of pavement in front, an alley or a garden behind. So facades bend with the
-// streets and no two blocks are alike, as in MapGenerator's own drawings.
+// Buildings follow their lots. A lot is one plot of a block's frontage strip
+// (see mapgen/lots.js) and knows which of its edges face the street, which
+// its neighbours and which the yard behind. The building is the lot stepped
+// in edge by edge: a small step from the pavement in front, a party wall or a
+// garden gap at the sides by district, and a yard behind so the building is
+// only as deep as its kind of building is. Facades bend with the streets and
+// corner buildings wrap their corners.
 const pick = (items, random) => items[Math.floor(random() * items.length)];
 const integer = (random, min, max) => min + Math.floor(random() * (max - min + 1));
 const ACCENTS = ['#386f73', '#a9503e', '#cc9a48', '#456282', '#687b59'];
 const creamTrim = '#e4d2b0', LAWN = '#7f9a5e';
 const ROOFS = ['#647c7a', '#667789', '#987463', '#758a7d', '#8b8874'];
+// Each district's building kinds (for narrow and for wide frontages), walls,
+// share of shopfronts, and the storeys its street walls rise to
 const STYLES = {
-  'Old town': { types: ['townhouse', 'brick', 'townhouse', 'shop', 'deco'], walls: ['#c88368', '#d4bb91', '#a65e52', '#ead2b0', '#7b9d95'], shops: .75 },
-  'Garden quarter': { types: ['apartment', 'townhouse', 'pavilion', 'apartment', 'shop'], walls: ['#cbd6b5', '#86b1a1', '#e6d1ad', '#d5a998', '#9daec1'], shops: .12 },
-  Midtown: { types: ['office', 'atrium', 'deco', 'office', 'atrium'], walls: ['#8eafb9', '#accad0', '#ded0b4', '#7897a7', '#b4aaa3'], shops: .7 },
-  'Warehouse district': { types: ['warehouse', 'loft', 'loft', 'brick', 'pavilion'], walls: ['#b7795b', '#cfac84', '#87a19a', '#a67b69', '#c8b58c'], shops: .3 },
-  'Market district': { types: ['townhouse', 'apartment', 'shop', 'pavilion', 'brick'], walls: ['#d08a70', '#dec29a', '#74a39a', '#d6ab7d', '#859aaf'], shops: .85 },
-  'Civic quarter': { types: ['deco', 'atrium', 'brick', 'office', 'pavilion'], walls: ['#dbcfb8', '#a1b8bc', '#c99a83', '#ddc19e', '#afc8b4'], shops: .4 },
+  'Old town': { narrow: ['townhouse', 'townhouse', 'brick', 'shop'], wide: ['brick', 'deco', 'apartment'], walls: ['#c88368', '#d4bb91', '#a65e52', '#ead2b0', '#7b9d95'], shops: .75, floors: [3, 5] },
+  'Garden quarter': { narrow: ['townhouse', 'pavilion', 'townhouse'], wide: ['apartment', 'townhouse', 'pavilion'], walls: ['#cbd6b5', '#86b1a1', '#e6d1ad', '#d5a998', '#9daec1'], shops: .12, floors: [1, 3] },
+  Midtown: { narrow: ['deco', 'office', 'apartment'], wide: ['office', 'atrium', 'deco', 'office'], walls: ['#8eafb9', '#accad0', '#ded0b4', '#7897a7', '#b4aaa3'], shops: .7, floors: [6, 12] },
+  'Warehouse district': { narrow: ['loft', 'brick', 'loft'], wide: ['warehouse', 'loft', 'warehouse', 'pavilion'], walls: ['#b7795b', '#cfac84', '#87a19a', '#a67b69', '#c8b58c'], shops: .3, floors: [1, 4] },
+  'Market district': { narrow: ['shop', 'townhouse', 'brick'], wide: ['apartment', 'shop', 'brick', 'pavilion'], walls: ['#d08a70', '#dec29a', '#74a39a', '#d6ab7d', '#859aaf'], shops: .85, floors: [2, 4] },
+  'Civic quarter': { narrow: ['brick', 'deco'], wide: ['deco', 'atrium', 'office', 'brick'], walls: ['#dbcfb8', '#a1b8bc', '#c99a83', '#ddc19e', '#afc8b4'], shops: .4, floors: [3, 6] },
 };
-const HEIGHTS = { brick: [2, 6], apartment: [3, 8], shop: [1, 2], warehouse: [1, 3], office: [7, 16], deco: [5, 12], townhouse: [2, 4], loft: [3, 5], pavilion: [1, 2], atrium: [5, 11] };
+const HEIGHTS = { brick: [2, 6], apartment: [3, 8], shop: [1, 2], warehouse: [1, 3], office: [6, 18], deco: [4, 12], townhouse: [2, 4], loft: [3, 5], pavilion: [1, 2], atrium: [5, 12] };
 export const BUILDING_TYPES = Object.keys(HEIGHTS);
-// How far a building stands back from its lot lines: a step from the
-// pavement in front, and an alley, a yard or a garden between neighbours.
+// How a building stands on its lot: its step back from the pavement, the gap
+// to each neighbour (a hair for a party wall), how deep the building itself
+// is, the least yard behind it, and whether its plot is a garden.
 const INSETS = {
-  'Old town': { front: .9, rear: 1, jitter: .6, lawn: false },
-  'Market district': { front: 1, rear: 1.1, jitter: .8, lawn: false },
-  Midtown: { front: 1.2, rear: 1.2, jitter: .8, lawn: false },
-  'Warehouse district': { front: 1.4, rear: 1.4, jitter: 1.2, lawn: false },
-  'Garden quarter': { front: 2.6, rear: 3.4, jitter: 2.2, lawn: true },
-  'Civic quarter': { front: 1.8, rear: 2.2, jitter: 1.2, lawn: true },
+  'Old town': { front: .45, side: .08, depth: [11, 15], rear: 1.5, lawn: false },
+  'Market district': { front: .6, side: .08, depth: [12, 16], rear: 1.5, lawn: false },
+  Midtown: { front: 1.2, side: .1, depth: [20, 30], rear: 1.2, lawn: false },
+  'Warehouse district': { front: 1.6, side: .9, depth: [18, 28], rear: 2, lawn: false },
+  'Garden quarter': { front: 4.5, side: 2.4, depth: [9, 13], rear: 3, lawn: true },
+  'Civic quarter': { front: 2.4, side: 1.1, depth: [13, 19], rear: 2.5, lawn: true },
 };
 const signGeometry = new THREE.PlaneGeometry(1, 1);
 
@@ -51,7 +59,7 @@ export function convexHull(points) {
   for (const p of sorted.reverse()) { while (upper.length >= 2 && cross(upper.at(-2), upper.at(-1), p) <= 0) upper.pop(); upper.push(p); }
   return lower.slice(0, -1).concat(upper.slice(0, -1));
 }
-function insidePoint(polygon, random, tries = 24, holes = []) {
+export function insidePoint(polygon, random, tries = 24, holes = []) {
   if (polygon.length < 3) return null;
   const bounds = polygonBounds(polygon);
   for (let i = 0; i < tries; i++) {
@@ -60,29 +68,34 @@ function insidePoint(polygon, random, tries = 24, holes = []) {
   }
   return null;
 }
-// Which edges of the stepped-in footprint came from a street edge of the lot:
-// the parallel lot edge whose line lies closest.
-function edgeFlags(footprint, polygon, street) {
-  const n = polygon.length;
-  return footprint.map((a, i) => {
-    const b = footprint[(i + 1) % footprint.length], mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-    const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy) || 1;
-    let best = -1, bestDistance = Infinity;
-    for (let j = 0; j < n; j++) {
-      const p = polygon[j], q = polygon[(j + 1) % n], ex = q.x - p.x, ey = q.y - p.y, el = Math.hypot(ex, ey) || 1;
-      if (Math.abs((dx * ey - dy * ex) / (length * el)) > .08) continue;
-      const t = ((mx - p.x) * ex + (my - p.y) * ey) / (el * el);
-      if (t < -.05 || t > 1.05) continue;
-      const distance = Math.abs(((mx - p.x) * ey - (my - p.y) * ex) / el);
-      if (distance < bestDistance) { bestDistance = distance; best = j; }
-    }
-    return best >= 0 && street[best];
+// Which edges of a lot face the street, when the lot does not say: those on
+// its block's inner edge, or failing that its longest edge
+function streetEdges(polygon, block) {
+  const n = polygon.length, inner = CITY.blocks[block]?.inner ?? [], boundary = inner.length >= 3 ? [...inner, inner[0]] : null;
+  const kinds = polygon.map((a, i) => {
+    const b = polygon[(i + 1) % n];
+    return boundary && distanceToPolyline({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, boundary) < .6 ? 'street' : 'side';
   });
+  if (!kinds.includes('street')) {
+    let best = 0;
+    for (let i = 1; i < n; i++) if (edgeLength(polygon, i) > edgeLength(polygon, best)) best = i;
+    kinds[best] = 'street';
+  }
+  return kinds;
+}
+const convex = polygon => polygon.every((p, i) => {
+  const a = polygon[(i - 1 + polygon.length) % polygon.length], b = polygon[(i + 1) % polygon.length];
+  return (p.x - a.x) * (b.y - p.y) - (p.y - a.y) * (b.x - p.x) >= -1e-6;
+});
+// Storeys a block's street walls rise to, shared by its buildings
+function blockFloors(block, style) {
+  const random = seededRandom((block * 7919 + CITY.seed * 31) >>> 0);
+  return integer(random, style.floors[0], style.floors[1]);
 }
 
 // Coordinates on one wall of a building: offset along the wall from its
 // middle, height, and distance outwards. The wall's own yaw turns each box.
-function edgeFacade(c, a, b) {
+export function edgeFacade(c, a, b) {
   const dx = b.x - a.x, dy = b.y - a.y, span = Math.hypot(dx, dy) || 1, tx = dx / span, ty = dy / span, nx = ty, ny = -tx;
   const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, yaw = Math.atan2(ty, tx);
   const point = (offset, outward) => ({ x: mx + tx * offset + nx * outward, s: my + ty * offset + ny * outward });
@@ -99,57 +112,95 @@ function edgeFacade(c, a, b) {
 // What stands on a lot: a building shaped like the lot, or a garden where
 // the lot is too small or too awkward for one.
 export function planLot(c, lot) {
-  const polygon = ccw(dedupePolygon(lot.polygon)), n = polygon.length;
-  if (n < 3) return { kind: 'garden', lot };
-  const random = seededRandom(lot.seed);
+  // A place worth a taxi ride is a landmark of its own kind
+  const place = lot.index === undefined ? null : placeForLot(lot.index);
+  if (place) return { kind: 'landmark', lot, place };
+  let polygon = dedupePolygon(lot.polygon);
+  if (polygon.length < 3) return { kind: 'garden', lot };
+  let kinds = lot.edges?.length === polygon.length ? lot.edges : null;
+  if (signedArea(polygon) < 0) { polygon = polygon.slice().reverse(); kinds = null; }
+  kinds ??= streetEdges(polygon, lot.block);
+  const n = polygon.length, random = seededRandom(lot.seed);
   const district = cityStyleDistrict(lot.centre.y, lot.centre.x), style = STYLES[district] ?? STYLES['Market district'], insets = INSETS[district] ?? INSETS.Midtown;
-  const inner = CITY.blocks[lot.block]?.inner ?? [], boundary = inner.length >= 3 ? [...inner, inner[0]] : null;
-  const isStreet = (a, b) => Boolean(boundary) && distanceToPolyline({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, boundary) < .6;
-  const street = polygon.map((a, i) => isStreet(a, polygon[(i + 1) % n]));
-  if (!street.some(Boolean)) {
-    let best = 0;
-    for (let i = 1; i < n; i++) if (edgeLength(polygon, i) > edgeLength(polygon, best)) best = i;
-    street[best] = true;
-  }
-  const rear = insets.rear + random() * insets.jitter;
-  const footprint = offsetPolygon(polygon, (a, b) => -(isStreet(a, b) ? insets.front : rear));
+  // The building's own depth decides how much yard is left behind it
+  const depth = insets.depth[0] + random() * (insets.depth[1] - insets.depth[0]);
+  const rear = Math.max(insets.rear, (lot.depth || depth + insets.front + insets.rear) - insets.front - depth);
+  const front = insets.front + (district === 'Old town' || district === 'Market district' ? random() * .35 : 0);
+  const setback = i => kinds[i] === 'street' ? front : kinds[i] === 'rear' ? rear : insets.side;
+  const mapped = offsetPolygonMapped(polygon, (a, b, i) => -setback(i));
+  const footprint = mapped?.points ?? [];
   const area = footprint.length >= 3 ? calcPolygonArea(footprint) : 0;
   const perimeter = footprint.reduce((sum, p, i) => sum + edgeLength(footprint, i), 0);
-  if (area < 60 || area / (perimeter * perimeter) < .035) return { kind: 'garden', lot };
-  const flags = edgeFlags(footprint, polygon, street);
-  if (!flags.some(Boolean)) flags[0] = true;
+  if (area < 45 || area / (perimeter * perimeter) < .035) return { kind: 'garden', lot };
+  // Each wall of the footprint takes the kind of the lot edge it was stepped from
+  const wallKinds = footprint.map(() => 'side');
+  for (let j = 0; j < n; j++) {
+    const k0 = mapped.source[j], k1 = mapped.source[(j + 1) % n];
+    if (k0 !== k1 && (k0 + 1) % footprint.length === k1) wallKinds[k0] = kinds[j];
+  }
+  // A detached house on a wedge or L-shaped lot is a plain rectangle, square
+  // to its longest street
+  let footprintOut = footprint;
+  if (insets.side > 1.5 && (!convex(footprint) || footprint.length > 5)) {
+    let best = -1;
+    for (let j = 0; j < n; j++) if (kinds[j] === 'street' && (best < 0 || edgeLength(polygon, j) > edgeLength(polygon, best))) best = j;
+    const a = polygon[best], b = polygon[(best + 1) % n], length = edgeLength(polygon, best) || 1;
+    const rect = best >= 0 ? fitRectangle(footprint, (b.x - a.x) / length, (b.y - a.y) / length) : null;
+    if (rect && calcPolygonArea(rect) > 45) {
+      footprintOut = signedArea(rect) < 0 ? rect.reverse() : rect;
+      // A wall faces a street when a street edge of the lot lies beyond it
+      const centre = averagePoint(footprintOut);
+      wallKinds.length = 0;
+      for (let i = 0; i < 4; i++) {
+        const p = footprintOut[i], q = footprintOut[(i + 1) % 4], nx = q.y - p.y, ny = p.x - q.x, nl = Math.hypot(nx, ny) || 1;
+        let facing = 'side';
+        for (let j = 0; j < n; j++) {
+          if (kinds[j] !== 'street') continue;
+          const m = { x: (polygon[j].x + polygon[(j + 1) % n].x) / 2 - centre.x, y: (polygon[j].y + polygon[(j + 1) % n].y) / 2 - centre.y }, ml = Math.hypot(m.x, m.y) || 1;
+          if ((m.x * nx + m.y * ny) / (ml * nl) > .8) facing = 'street';
+        }
+        wallKinds.push(facing);
+      }
+    }
+  }
+  const street = wallKinds.map(kind => kind === 'street');
+  if (!street.some(Boolean)) street[0] = true;
+  const frontage = footprintOut.reduce((sum, p, i) => sum + (street[i] ? edgeLength(footprintOut, i) : 0), 0);
   const downtown = Math.hypot(lot.centre.x - CITY.downtown.u, lot.centre.y - CITY.downtown.s) / Math.max(1, CITY.downtown.radius);
-  let type = pick(style.types, random);
-  if (area > 900 && random() < .6) type = pick(['office', 'deco', 'atrium', 'warehouse', 'apartment'], random);
-  if (downtown < .7 && random() < .55) type = pick(['office', 'deco', 'atrium'], random);
-  if (area < 200 && ['office', 'atrium', 'deco', 'warehouse'].includes(type)) type = pick(['shop', 'townhouse', 'brick', 'pavilion'], random);
+  let type = pick(frontage < 16 ? style.narrow : style.wide, random);
+  if (area < 150 && ['office', 'atrium', 'deco', 'warehouse'].includes(type)) type = pick(['shop', 'townhouse', 'brick'], random);
   const [low, high] = HEIGHTS[type];
-  let floors = integer(random, low, high);
-  if (downtown < 1) floors += Math.round((1 - downtown) * 5 * random());
-  const breadth = Math.sqrt(area);
+  let floors = Math.max(low, Math.min(high, blockFloors(lot.block, style) + integer(random, -1, 1)));
+  // The skyline rises toward downtown, with the odd tower above it
+  if (downtown < 1.1) floors += Math.round(Math.max(0, 1 - downtown) * 7 * random());
+  if (downtown < .55 && random() < .22) floors += integer(random, 4, 10);
+  const breadth = Math.sqrt(calcPolygonArea(footprintOut));
   // No slender towers on small footprints
-  floors = Math.max(low, Math.min(floors, Math.round(breadth * .9)));
-  const house = footprint.length === 4 && area < 330 && ['townhouse', 'pavilion', 'shop', 'brick'].includes(type) && random() < (district === 'Garden quarter' ? .9 : .5);
+  floors = Math.max(Math.min(low, 2), Math.min(floors, Math.round(breadth * .9)));
+  const house = footprintOut.length === 4 && area < 330 && ['townhouse', 'pavilion', 'shop', 'brick'].includes(type) && random() < (district === 'Garden quarter' ? .9 : insets.side > .5 ? .5 : .12);
   // A big lot becomes a perimeter block round a courtyard; a huge one that
   // cannot is a low hall.
   let court = [];
   if (area > 2600 && !house && type !== 'warehouse') {
-    const inner = offsetPolygon(footprint, -Math.min(18, Math.max(11, breadth * .3)));
+    const inner = offsetPolygon(footprintOut, -Math.min(18, Math.max(11, breadth * .3)));
     if (inner.length >= 3 && calcPolygonArea(inner) > 160 && isSimple(inner)) court = inner;
   }
   if (court.length) {
     if (!['apartment', 'brick', 'deco', 'office'].includes(type)) type = pick(['apartment', 'brick', 'deco', 'office'], random);
     floors = Math.max(3, Math.min(floors, 8));
   } else if (area > 5000) { type = pick(['warehouse', 'pavilion'], random); floors = integer(random, 1, 2); }
-  const stepped = !house && !court.length && floors >= 5 && area > 260 && (type === 'deco' || type === 'office' || type === 'atrium' || (type === 'apartment' && random() < .38));
-  const shopfront = flags.some(Boolean) && type !== 'warehouse' && type !== 'pavilion' && random() < style.shops;
-  return { kind: 'building', lot, district, footprint: local(footprint, c), lotLocal: local(polygon, c), court: local(court, c), street: flags, type, floors, area, breadth,
+  const stepped = !house && !court.length && floors >= 6 && area > 260 && (type === 'deco' || type === 'office' || type === 'atrium' || (type === 'apartment' && random() < .38));
+  const shopfront = type !== 'warehouse' && type !== 'pavilion' && random() < style.shops;
+  // Windows on the street, on the yard when there is room behind, and on the
+  // sides only where there is a gap to look out of
+  const windows = wallKinds.map((kind, i) => street[i] || (kind === 'rear' && rear > 2.4) || (kind === 'side' && insets.side > 1.5));
+  return { kind: 'building', lot, district, footprint: local(footprintOut, c), lotLocal: local(polygon, c), court: local(court, c), street, windows, type, floors, area, breadth,
     wall: pick(style.walls, random), accent: pick(ACCENTS, random), roof: pick(ROOFS, random), roofType: house ? 'hip' : stepped ? 'terrace' : 'flat',
     setbackFloors: stepped ? Math.max(2, Math.floor(floors * .57)) : floors, seed: (lot.seed + 9973) >>> 0, variation: integer(random, 0, 3),
     shop: pick(SHOP_NAMES, random), shopfront, lawn: insets.lawn, rearWindows: rear > 2.4 };
 }
 
-function edgeWindows(c, b, f, bottom, floors, random) {
+export function edgeWindows(c, b, f, bottom, floors, random) {
   const modern = b.type === 'office' || b.type === 'atrium', loft = b.type === 'warehouse' || b.type === 'loft', span = f.span;
   if (span < 3.2) return;
   const bays = Math.max(1, Math.floor((span - 1.6) / (modern ? 4.4 : loft ? 6.5 : b.variation === 1 ? 5.6 : 4.8)));
@@ -254,7 +305,7 @@ function cap(bodies, a, b, y, colour) {
 }
 // A cornice, a parapet and the roof deck inside it, with the same again round
 // any courtyard. Returns the deck polygon and the holes in it.
-function cornice(bodies, ring, top, trim, roofColour, wall, parapet, courts = []) {
+export function cornice(bodies, ring, top, trim, roofColour, wall, parapet, courts = []) {
   const band = offsetPolygon(ring, .32), courtBands = courts.map(court => offsetPolygon(court, -.32)).filter(p => p.length >= 3);
   if (band.length >= 3) { bodies.prism(band, top - .3, top + .12, trim); bodies.polygon(band, top + .12, trim, null, true, courtBands); }
   else bodies.polygon(ring, top + .12, trim, null, true, courtBands);
@@ -344,7 +395,7 @@ function buildBuilding(c, b) {
   c.polygonSolid(convexHull(ring).map(p => [p.x, p.y]));
   if (b.lawn) {
     const lot = b.lotLocal.map(p => [p.x, p.y]);
-    c.polygon(lot, G + .05, .06, LAWN); grassArea(c, lot, LAWN, G + .08);
+    grassArea(c, lot, LAWN, G + .05);
     if (!c.distant) {
       const zone = offsetPolygon(ring, 2.4), edge = [...b.lotLocal, b.lotLocal[0]];
       for (let i = 0; i < 16; i++) {
@@ -386,7 +437,7 @@ function buildBuilding(c, b) {
     f.street = b.street[i];
     if (f.span < 2.5) continue;
     if (f.street) groundFloor(c, b, f, base, i === primary, random);
-    if (f.street || b.rearWindows) edgeWindows(c, b, f, G + base, lower, random);
+    if (b.windows[i]) edgeWindows(c, b, f, G + base, lower, random);
   }
   if (b.roofType === 'hip') { hipRoof(c, b, bodies, ring, lowerTop); return; }
   const trim = b.type === 'office' ? '#b8cccd' : '#d6c9b1';
@@ -430,7 +481,8 @@ export function* buildCityBuildingSteps(c) {
   const plan = c.lots.map(lot => planLot(c, lot));
   yield;
   for (const b of plan) {
-    if (b.kind === 'building') c.structure(0, 0, () => buildBuilding(c, b));
+    if (b.kind === 'landmark') { if (!c.structure(0, 0, () => buildLandmark(c, b.lot, b.place))) buildGarden(c, b.lot); }
+    else if (b.kind === 'building') c.structure(0, 0, () => buildBuilding(c, b));
     else buildGarden(c, b.lot);
     yield;
   }

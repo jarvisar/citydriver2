@@ -270,8 +270,9 @@ test('traffic geometry stays stable through long straight drives, reverse travel
     }
     assert.ok(traffic.vehicles.some(car => car.generation > 2));
     for (const s of [100000, -100000, 24]) {
+      // A reset settles into the nearest lane, wherever the city has one
       player.s = s; player.reset(); traffic.update(1 / 60, player);
-      assert.ok(traffic.vehicles.every(car => Math.abs(car.s - s) < 625 * traffic.spacing));
+      assert.ok(traffic.vehicles.every(car => Math.abs(car.s - player.s) < 625 * traffic.spacing));
     }
     traffic.dispose();
   }

@@ -28,6 +28,7 @@
     "city:svg": "node scripts/city-map-svg.mjs"
   },
   "dependencies": {
+    "clipper-lib": "^6.4.2",
     "n8ao": "2.0.1",
     "postprocessing": "^6.39.5",
     "three": "^0.186.0"

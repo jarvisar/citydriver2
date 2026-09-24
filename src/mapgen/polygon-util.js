@@ -23,6 +23,18 @@ export function averagePoint(polygon) {
   return sum.divideScalar(polygon.length);
 }
 
+// The centre of area, which unlike the vertex average does not drift toward
+// the densely sampled side of a curved block.
+export function polygonCentroid(polygon) {
+  let area = 0, x = 0, y = 0;
+  for (let i = 0, n = polygon.length; i < n; i++) {
+    const a = polygon[i], b = polygon[(i + 1) % n], cross = a.x * b.y - b.x * a.y;
+    area += cross; x += (a.x + b.x) * cross; y += (a.y + b.y) * cross;
+  }
+  if (Math.abs(area) < 1e-9) return averagePoint(polygon);
+  return new Vector(x / (3 * area), y / (3 * area));
+}
+
 export function polygonBounds(polygon) {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const p of polygon) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
@@ -106,12 +118,28 @@ export function offsetPolyline(points, distance) {
   });
 }
 
+// Cuts out the small loops an offset makes on the inside of a bend tighter
+// than the offset distance: where two nearby segments cross, everything
+// between them goes and the crossing joins the line up.
+export function removeLoops(points, window = 24) {
+  const out = points.slice();
+  for (let i = 0; i < out.length - 3; i++) {
+    for (let j = Math.min(out.length - 2, i + window); j >= i + 2; j--) {
+      const hit = segmentIntersection(out[i], out[i + 1], out[j], out[j + 1], -1e-9);
+      if (hit) { out.splice(i + 1, j - i, hit); break; }
+    }
+  }
+  return out;
+}
+// A polyline offset sideways with its inside-bend loops removed
+export function offsetPolylineClean(points, distance) { return removeLoops(offsetPolyline(points, distance)); }
+
 // The area within `width` of a polyline, with flat ends: a river channel or a
 // road surface. Replaces a jsts line buffer with CAP_FLAT.
 export function bufferPolyline(line, width) {
   const points = dedupePolygon(line, 1e-6);
   if (points.length < 2) return [];
-  const left = offsetPolyline(points, width), right = offsetPolyline(points, -width).reverse();
+  const left = offsetPolylineClean(points, width), right = offsetPolylineClean(points, -width).reverse();
   return dedupePolygon(left.concat(right));
 }
 
@@ -123,11 +151,20 @@ export function offsetPolygon(input, distance) {
   let polygon = dedupePolygon(input);
   if (polygon.length < 3) return [];
   if (signedArea(polygon) < 0) polygon = polygon.slice().reverse();
+  return offsetPolygonMapped(polygon, distance)?.points ?? [];
+}
+
+// The same offset for a clean counter-clockwise polygon, also saying which
+// output vertex each input vertex became: source[k] is the index in points of
+// input vertex k. Edges that collapse share their neighbours' vertex, so the
+// map runs round the output in order. Returns null when the shape collapses.
+export function offsetPolygonMapped(polygon, distance) {
   const distanceOf = typeof distance === 'function' ? distance : () => distance;
   const n = polygon.length;
+  if (n < 3) return null;
   // edges[i] runs from vertex i to i + 1; counter-clockwise, so (dy, -dx) points outward
   const edges = polygon.map((a, i) => {
-    const b = polygon[(i + 1) % n], dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy), d = distanceOf(a, b, i);
+    const b = polygon[(i + 1) % n], dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy) || 1e-12, d = distanceOf(a, b, i);
     return { dx: dx / length, dy: dy / length, ox: a.x + dy / length * d, oy: a.y - dx / length * d, d };
   });
   const meet = (e0, e1, near) => {
@@ -139,34 +176,64 @@ export function offsetPolygon(input, distance) {
       const t = ((e1.ox - e0.ox) * e1.dy - (e1.oy - e0.oy) * e1.dx) / cross;
       x = e0.ox + e0.dx * t; y = e0.oy + e0.dy * t;
     }
-    if (Math.hypot(x - near.x, y - near.y) > limit) {
+    // Only where the two offset lines diverge (growing round an outside corner,
+    // shrinking round an inside one) is a far mitre wrong; there it is cut
+    // back. Shrinking round a sharp outside corner the far mitre is the
+    // corner, and cutting it back would leave the edge too close to its road.
+    if ((cross * (e0.d + e1.d) > 0 || Math.abs(cross) < 1e-9) && Math.hypot(x - near.x, y - near.y) > limit) {
       const ax = e0.dy + e1.dy, ay = -e0.dx - e1.dx, al = Math.hypot(ax, ay) || 1, d = (e0.d + e1.d) / 2;
       x = near.x + ax / al * d; y = near.y + ay / al * d;
     }
     return new Vector(x, y);
   };
   let verts = polygon.map((p, i) => meet(edges[(i - 1 + n) % n], edges[i], p)), edgeList = edges.slice();
+  let owners = polygon.map((p, i) => [i]);
   // An edge that now runs backwards has collapsed: its two ends become the one
   // point where its neighbours' offset lines meet.
   for (let guard = 0; guard < n; guard++) {
     const m = verts.length;
-    if (m < 3) return [];
+    if (m < 3) return null;
     let flipped = -1;
     for (let k = 0; k < m; k++) {
       const a = verts[k], b = verts[(k + 1) % m];
       if ((b.x - a.x) * edgeList[k].dx + (b.y - a.y) * edgeList[k].dy < 0) { flipped = k; break; }
     }
     if (flipped < 0) break;
-    if (flipped === m - 1) { verts.push(verts.shift()); edgeList.push(edgeList.shift()); flipped = m - 2; }
+    if (flipped === m - 1) { verts.push(verts.shift()); edgeList.push(edgeList.shift()); owners.push(owners.shift()); flipped = m - 2; }
     const middle = new Vector((verts[flipped].x + verts[flipped + 1].x) / 2, (verts[flipped].y + verts[flipped + 1].y) / 2);
     verts.splice(flipped, 2, meet(edgeList[(flipped - 1 + m) % m], edgeList[(flipped + 1) % m], middle));
+    owners.splice(flipped, 2, owners[flipped].concat(owners[flipped + 1]));
     edgeList.splice(flipped, 1);
   }
-  verts = dedupePolygon(verts, 1e-6);
-  if (verts.length < 3 || signedArea(verts) <= 0 || !isSimple(verts)) return [];
-  return verts;
+  // Merge coincident neighbours, keeping every owner
+  const points = [], merged = [];
+  verts.forEach((v, k) => {
+    if (points.length && Math.hypot(points[points.length - 1].x - v.x, points[points.length - 1].y - v.y) <= 1e-6) merged[merged.length - 1].push(...owners[k]);
+    else { points.push(v); merged.push(owners[k].slice()); }
+  });
+  while (points.length > 1 && Math.hypot(points[0].x - points[points.length - 1].x, points[0].y - points[points.length - 1].y) <= 1e-6) { merged[0].push(...merged.pop()); points.pop(); }
+  if (points.length < 3 || signedArea(points) <= 0 || !isSimple(points)) return null;
+  const source = new Array(n);
+  merged.forEach((list, index) => { for (const k of list) source[k] = index; });
+  return { points, source };
 }
 
+// The biggest rectangle square to the street (along ux, uy) that fits in a
+// polygon: a house on a lot whose own outline is a wedge or an L.
+export function fitRectangle(polygon, ux, uy) {
+  const vx = -uy, vy = ux, centre = averagePoint(polygon);
+  let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+  for (const p of polygon) {
+    const u = (p.x - centre.x) * ux + (p.y - centre.y) * uy, v = (p.x - centre.x) * vx + (p.y - centre.y) * vy;
+    u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v);
+  }
+  const corners = (a, b, c, d) => [[a, c], [b, c], [b, d], [a, d]].map(([u, v]) => ({ x: centre.x + ux * u + vx * v, y: centre.y + uy * u + vy * v }));
+  for (let k = 0; k < 24; k++) {
+    const shrink = 1 - k * .04, rect = corners(u0 * shrink, u1 * shrink, v0 * shrink, v1 * shrink);
+    if (rect.every(p => insidePolygon(p, polygon))) return rect;
+  }
+  return null;
+}
 // Both sides of the polygon cut by the infinite line through p1 and p2.
 export function slicePolygon(polygon, p1, p2) {
   const dx = p2.x - p1.x, dy = p2.y - p1.y, n = polygon.length;
@@ -185,7 +252,8 @@ export function slicePolygon(polygon, p1, p2) {
 }
 
 // Recursively divide a polygon across its longest side until the pieces are
-// between half and twice minArea. Long slivers are dropped by shape index.
+// between half and twice minArea. Final pieces narrower than a 1:4 rectangle
+// are dropped; a long block is still cut across, into lots that fit.
 export function subdividePolygon(p, minArea, random = Math.random) {
   const area = calcPolygonArea(p);
   if (area < .5 * minArea) return [];
@@ -195,9 +263,11 @@ export function subdividePolygon(p, minArea, random = Math.random) {
     perimeter += sideLength;
     if (sideLength > longestSideLength) { longestSideLength = sideLength; longestSide = [a, b]; }
   }
-  // Shape index: reject anything narrower than a 1:4 rectangle
-  if (area / (perimeter * perimeter) < .04) return [];
-  if (area < 2 * minArea) return [p];
+  // Shape index: nothing narrower than a 1:4 rectangle is a lot, and a strip
+  // narrower than about 1:20 is not worth cutting at all
+  const shape = area / (perimeter * perimeter);
+  if (shape < .012) return [];
+  if (area < 2 * minArea) return shape < .04 ? [] : [p];
   // Between 0.4 and 0.6 of the way along the longest side
   const deviation = random() * .2 + .4;
   const cut = longestSide[0].clone().add(longestSide[1].clone().sub(longestSide[0]).multiplyScalar(deviation));
@@ -312,3 +382,32 @@ export function splitPolygonByPolyline(polygon, line) {
   }
   return [best.concat(forward), best.concat(backward)].map(piece => dedupePolygon(piece)).filter(piece => piece.length >= 3);
 }
+
+// A point well inside a polygon, however it bends: the middles of the spans
+// along a few horizontal lines, and of those the one furthest from an edge.
+// (A centroid can fall outside a U-shaped polygon.)
+export function interiorPoint(polygon, lines = 11) {
+  const n = polygon.length, bounds = polygonBounds(polygon);
+  let best = null, bestDistance = -1;
+  for (let k = 0; k < lines; k++) {
+    const y = bounds.minY + (bounds.maxY - bounds.minY) * (k + .5) / lines, crossings = [];
+    for (let i = 0; i < n; i++) {
+      const a = polygon[i], b = polygon[(i + 1) % n];
+      if ((a.y > y) !== (b.y > y)) crossings.push(a.x + (y - a.y) * (b.x - a.x) / (b.y - a.y));
+    }
+    crossings.sort((p, q) => p - q);
+    for (let i = 0; i + 1 < crossings.length; i += 2) {
+      const p = new Vector((crossings[i] + crossings[i + 1]) / 2, y);
+      let distance = Infinity;
+      for (let j = 0; j < n; j++) distance = Math.min(distance, pointSegmentDistance(p, polygon[j], polygon[(j + 1) % n]));
+      if (distance > bestDistance) { bestDistance = distance; best = p; }
+    }
+  }
+  return best ?? averagePoint(polygon);
+}
+function pointSegmentDistance(p, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y, length = dx * dx + dy * dy;
+  const t = length ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / length)) : 0;
+  return Math.hypot(p.x - a.x - dx * t, p.y - a.y - dy * t);
+}
+

@@ -3,21 +3,25 @@
 Taxi driving game built with [Three.js](https://threejs.org/). This is
 [Citydriver](https://github.com/jarvisar/citydriver) with its endless grid
 replaced by a city generated from a tensor field: a coastline, a river,
-neighbourhoods laid out on their own grids, curving avenues, parks with winding
-paths, and blocks cut into lots. The layout comes from a port of
+neighbourhoods laid out on their own grids, curving avenues, a ring road round
+the edge, parks with winding paths, and blocks cut into street-front lots. The
+layout comes from a port of
 [MapGenerator](https://github.com/ProbableTrain/MapGenerator) by ProbableTrain
 (`src/mapgen/`, LGPL-3.0); the driving, cars, garage, weather, audio, menus and
 taxi shift are Citydriver's.
 
-![The main menu over the downtown waterfront](docs/images/downtown.png)
+![The main menu over the generated city](docs/images/downtown.png)
 
-Blocks are cut into lots and every building takes the shape of its lot, so
-facades bend with the streets, big lots become perimeter blocks round a
-courtyard, and no two blocks are alike.
+Each block is platted into a strip of lots round a shared yard, and every
+building takes the shape of its lot, so facades bend with the streets, corner
+buildings wrap their corners and the street walls run unbroken. Each
+neighbourhood has its own character, from narrow old-town terraces to houses
+with gardens and warehouses, and the places passengers ask for are landmarks of
+their own.
 
-| Perimeter blocks and houses | On the street |
+| Street-front blocks round their yards | On the street |
 | --- | --- |
-| ![Courtyard blocks seen from above](docs/images/courtyards.png) | ![Driving down a tree-lined street](docs/images/street.png) |
+| ![Blocks of terraces round green yards, seen from above](docs/images/courtyards.png) | ![Driving down a tree-lined street](docs/images/street.png) |
 
 ## How to play
 

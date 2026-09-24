@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { CitydriverWorld } from '../src/world/citydriver-world.js';
-import { cityCell } from '../src/world/city.js';
-import { journeyStart, PAVEMENT_LEVEL } from '../src/world/city-route.js';
+import { cityCell, CITY } from '../src/world/city.js';
+import { journeyStart, PAVEMENT_LEVEL, roadAt } from '../src/world/city-route.js';
+import { insidePolygon, distanceToPolyline } from '../src/mapgen/polygon-util.js';
 import { collideScenery } from '../src/collision.js';
 import { DrivingController } from '../src/vehicle.js';
 import { citydriverRoute } from '../src/world/city-route.js';
@@ -31,7 +32,9 @@ test('the world streams detailed chunks around the car and keeps the skyline eve
     assert.ok(colliders > 100 && lamps > 10 && walkers > 10, `${colliders} colliders, ${lamps} lamps, ${walkers} walkers`);
     assert.ok(scene.getObjectByName('citydriver-roads') && scene.getObjectByName('citydriver-ground') && scene.getObjectByName('citydriver-water'));
     // Moving far away frees the old detail and streams new chunks within a frame budget
-    const far = { s: start.s + 800, u: start.u - 600 }, cell = cityCell(far.s, far.u);
+    // Well across the city, to a built-up street about 750 m away
+    const far = CITY.lots.map(lot => ({ s: lot[0].y, u: lot[0].x })).sort((a, b) => Math.abs(Math.hypot(a.s - start.s, a.u - start.u) - 750) - Math.abs(Math.hypot(b.s - start.s, b.u - start.u) - 750))[0];
+    const cell = cityCell(far.s, far.u);
     const before = world.chunks.size;
     world.update(far.s, far.u, { budgetMs: 2 });
     for (const chunk of world.chunks.values()) {
@@ -57,18 +60,38 @@ test('buildings block the car and the parks and water stay open', () => {
   try {
     car.toggleFreeDriving();
     world.update(car.s, car.u); while (world.pending.length) world.update(car.s, car.u);
-    // Aim the car at the nearest building footprint and drive into it
-    const target = [...world.chunks.values()].flatMap(c => c.features.colliders).filter(c => c.corners && c.corners.length >= 4 && c.reach > 6)
-      .sort((a, b) => Math.hypot(a.x - car.u, a.z + car.s) - Math.hypot(b.x - car.u, b.z + car.s))[0];
+    // Stand the car on the pavement a few metres in front of the nearest
+    // building with nothing else in the way, facing it, and drive into it
+    const colliders = [...world.chunks.values()].flatMap(c => c.features.colliders);
+    const footprint = c => c.corners.map(p => ({ x: p.x, y: -p.z }));
+    const near = (o, p, margin) => o.corners
+      ? insidePolygon(p, footprint(o)) || distanceToPolyline(p, [...footprint(o), footprint(o)[0]]) < margin
+      : Math.hypot(o.x - p.x, -o.z - p.y) < (o.radius ?? .5) + margin;
+    let target = null, spot = null;
+    for (const building of colliders.filter(c => c.corners && c.corners.length >= 4 && c.reach > 6)
+      .sort((a, b) => Math.hypot(a.x - car.u, a.z + car.s) - Math.hypot(b.x - car.u, b.z + car.s))) {
+      const centre = { x: building.x, y: -building.z }, road = roadAt(centre.y, centre.x, 80);
+      if (!road) continue;
+      // Out of the footprint toward the street, then a little further
+      const dx = road.x - centre.x, dy = road.y - centre.y, length = Math.hypot(dx, dy) || 1, outline = footprint(building);
+      let d = 0;
+      while (d < length && insidePolygon({ x: centre.x + dx / length * d, y: centre.y + dy / length * d }, outline)) d += .25;
+      const p = { x: centre.x + dx / length * (d + 3), y: centre.y + dy / length * (d + 3) };
+      if (colliders.some(o => o !== building && near(o, p, 2.5))) continue;
+      target = building; spot = p; break;
+    }
     assert.ok(target, 'a building near the start');
-    car.heading = Math.atan2(target.x - car.u, -target.z - car.s);
-    let closest = Infinity;
-    for (let i = 0; i < 60 * 12; i++) {
+    const outline = footprint(target);
+    car.u = spot.x; car.s = spot.y; car.heading = Math.atan2(target.x - spot.x, -target.z - spot.y); car.speed = 0; car.update(0, {});
+    let entered = false, closest = Infinity;
+    for (let i = 0; i < 60 * 4; i++) {
       car.update(1 / 60, { forward: true });
       collideScenery(car, world.chunks, 1 / 60);
-      closest = Math.min(closest, Math.hypot(target.x - car.u, -target.z - car.s));
+      const p = { x: car.u, y: car.s };
+      if (insidePolygon(p, outline)) entered = true;
+      closest = Math.min(closest, distanceToPolyline(p, [...outline, outline[0]]));
     }
-    assert.ok(closest > 1, `the car stopped ${closest} m from the building centre`);
-    assert.ok(closest < target.reach + 6, 'the car reached the building');
+    assert.ok(!entered, 'the car drove into the building');
+    assert.ok(closest < 3, `the car reached the building (${closest.toFixed(1)} m)`);
   } finally { world.dispose(); car.disposeModel(); }
 });

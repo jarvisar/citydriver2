@@ -5,6 +5,7 @@ import { venueBrand } from './world/city-businesses.js';
 import { navGraph, routeDistance } from './world/nav-graph.js';
 import { randomAt } from './world/route.js';
 import { averagePoint, calcPolygonArea, polygonBounds } from './mapgen/polygon-util.js';
+import { landmarkSite } from './world/landmark-site.js';
 export { routeDistance } from './world/nav-graph.js';
 
 // Places worth a taxi ride: one venue in every 300 m of the city, on its
@@ -26,7 +27,11 @@ function buildPlaces() {
     const [cx, cz] = key.split(',').map(Number);
     const type = count === 0 ? 'cityhall' : REPEATING_LANDMARK_TYPES[Math.floor(randomAt(cx, cz + 7202, CITY.seed) * REPEATING_LANDMARK_TYPES.length)];
     const variant = Math.floor(randomAt(cx, cz + 7203, CITY.seed) * (SPACE_NAMES[type]?.length ?? 1));
-    const entrance = nearestLanePose(centre.y, centre.x, 0, 120);
+    // The drop-off is in the kerbside lane of the street the landmark faces,
+    // running so the building is on the driver's right
+    const site = landmarkSite({ polygon: lot, edges: CITY.lotEdges?.[index] });
+    const entrance = site ? nearestLanePose(site.centre.y - site.ny * (site.depth / 2 + 10), site.centre.x - site.nx * (site.depth / 2 + 10), Math.atan2(-site.tx, -site.ty), 60)
+      : nearestLanePose(centre.y, centre.x, 0, 120);
     out.push({ id: `lot:${index}`, type, variant, ...CITY_PLACES[type], design: SPACE_NAMES[type]?.[variant] ?? CITY_PLACES[type].name,
       name: venueBrand(type, variant)?.name ?? CITY_PLACES[type].name, district: cityDistrict(centre.y, centre.x),
       s: centre.y, u: centre.x, entrance: { s: entrance.s, u: entrance.u, heading: entrance.heading }, lot: index });
@@ -43,7 +48,11 @@ function buildPlaces() {
   return out;
 }
 export function cityPlaces() { return places ??= buildPlaces(); }
-export function placeForLot(index) { return cityPlaces().find(place => place.lot === index) ?? null; }
+let byLot = null;
+export function placeForLot(index) {
+  byLot ??= new Map(cityPlaces().filter(place => place.lot !== undefined).map(place => [place.lot, place]));
+  return byLot.get(index) ?? null;
+}
 export function nearbyPlaces(s, u, radius = 8) {
   const reach = radius * 112;
   return cityPlaces().filter(place => Math.hypot(place.s - s, place.u - u) <= reach)

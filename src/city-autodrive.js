@@ -1,11 +1,13 @@
 import { navGraph } from './world/nav-graph.js';
 import { onRoadAt } from './world/city-route.js';
 import { junctionSpeed } from './city-junctions.js';
+import { turnPath, approachSpeed, wayOn } from './world/lane-paths.js';
 export { cityGreen } from './city-junctions.js';
 
 // Cruise along whichever street the driver is on, in the direction they are
 // facing, turning at random junctions. Lane following is local to the nav
-// graph edge, so enabling cruise never aims across a block.
+// graph edge and the turn curve onto the next one (the same curves the
+// traffic drives), so enabling cruise never aims across a block.
 export class CityAutodrive {
   constructor({ random = Math.random } = {}) { this.random = random; this.enabled = false; this.reset(); }
   reset() { this.path = null; this.next = null; this.stopKey = null; this.stopWait = 0; this.stopReleased = false; }
@@ -30,20 +32,22 @@ export class CityAutodrive {
       path.along = path.direction > 0 ? hit.along : hit.edge.length - hit.along;
     }
     const remaining = path.edge.length - path.along;
-    if (remaining < 45 && !this.next) {
-      const choices = nav.choices(path.edge, path.direction).filter(choice => choice.edge.kind !== 'path' || path.edge.kind === 'path');
-      const options = choices.length ? choices : nav.choices(path.edge, path.direction);
-      if (options.length) {
-        const roll = this.random(), straight = options[0];
-        this.next = Math.abs(straight.turn) < .5 && roll < .6 ? straight : options[Math.floor(roll * options.length)];
-      }
+    if (remaining < 70 && !this.next) {
+      const roll = this.random();
+      const pick = options => Math.abs(options[0].turn) < .5 && roll < .6 ? options[0] : options[Math.floor(roll * options.length)];
+      this.next = wayOn(nav, path.edge, path.direction, pick, next => next.edge.kind !== 'path' || path.edge.kind === 'path');
     }
-    const lookahead = Math.max(7, Math.abs(player.speed ?? 0) * .7);
-    let aim;
-    if (path.along + lookahead <= path.edge.length || !this.next) aim = nav.pose(path.edge, Math.min(path.edge.length, path.along + lookahead), path.direction, path.edge.profile.lane);
-    else aim = nav.pose(this.next.edge, path.along + lookahead - path.edge.length, this.next.direction, this.next.edge.profile.lane);
-    let turnSpeed = Infinity;
-    if (this.next && Math.abs(this.next.turn) > .4) turnSpeed = Math.sqrt(36 + 14 * Math.max(0, remaining - 4));
+    const lookahead = Math.max(7, Math.abs(player.speed ?? 0) * .7), ahead = path.along + lookahead;
+    let aim, turnSpeed = Infinity;
+    const turn = this.next ? turnPath(nav, path.edge, path.direction, this.next) : null;
+    if (!turn) aim = nav.pose(path.edge, Math.min(path.edge.length, ahead), path.direction, path.edge.profile.lane);
+    else {
+      if (ahead <= turn.start) aim = nav.pose(path.edge, ahead, path.direction, path.edge.profile.lane);
+      else if (ahead <= turn.start + turn.length) aim = turn.pose(ahead - turn.start);
+      else aim = nav.pose(this.next.edge, turn.end + ahead - turn.start - turn.length, this.next.direction, this.next.edge.profile.lane);
+      // A player's car corners a little harder than the traffic
+      turnSpeed = approachSpeed(turn, turn.start - path.along, 4.5) * 1.15;
+    }
     const ds = aim.s - player.s, du = aim.u - player.u, length = Math.hypot(ds, du);
     const along = ds / Math.max(.001, length), across = du / Math.max(.001, length);
     const cruiseSpeed = player.carId === 'formula' ? player.stats.topSpeed : path.edge.profile.speed * 1.15;

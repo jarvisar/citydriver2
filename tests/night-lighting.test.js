@@ -27,7 +27,9 @@ test('night lighting has a fixed budget, switches off by day, and survives rebas
     const after = new THREE.Matrix4(); lighting.pools.getMatrixAt(0, after);
     assert.ok(Math.abs(after.elements[14] - before.elements[14] - 1024) < .001);
     const headlights = new THREE.Matrix4(); lighting.beams.getMatrixAt(0, headlights);
-    assert.ok(headlights.elements[14] < player.car.position.z, 'player beam points forward');
+    // Ahead of the car, whichever way it faces (x east, z south)
+    const ahead = (headlights.elements[12] - player.car.position.x) * Math.sin(player.heading) - (headlights.elements[14] - player.car.position.z) * Math.cos(player.heading);
+    assert.ok(ahead > 0, 'player beam points forward');
     traffic.setEnabled(false, player); lighting.update(world, player, traffic, 1);
     assert.equal(lighting.beams.count, 1);
     player.setCar('formula'); lighting.update(world, player, traffic, 1);
