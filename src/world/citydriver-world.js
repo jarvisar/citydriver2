@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { CITY, cityCell, CITY_CELL } from './city.js';
 import { ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL, roadAt, waterAt } from './city-route.js';
-import { cityAssets, cityTrees } from './city-assets.js';
+import { cityAssets, cityTrees, LANTERN_HEIGHT, SIGNAL_LENSES, MAST_HEIGHT, parkedCars, PARKED_PAINTS } from './city-assets.js';
+import { TRAFFIC_MODELS } from '../traffic-models.js';
 import { seededRandom, randomAt } from './route.js';
 import { residentWindow } from './resident.js';
 import { buildCityBuildingSteps } from './city-buildings.js';
@@ -18,8 +19,7 @@ import { navGraph } from './nav-graph.js';
 import { cityGreen } from '../city-junctions.js';
 import { signalLens } from './city-detail-assets.js';
 import { basinRim, basinWater } from './city-public-space-geometry.js';
-import { buildStreetSurfaces, placeStreetFurniture, findBridges, countryside } from './city-streets.js';
-import { buildCoast } from './city-coast.js';
+import { buildStreetSurfaces, placeStreetFurniture, findBridges } from './city-streets.js';
 import { offsetPolygon, calcPolygonArea, averagePoint } from '../mapgen/polygon-util.js';
 
 const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
@@ -322,7 +322,7 @@ export class CityChunk {
   post(x, s, radius) { if (!this.distant) this.features.colliders.push({ x: this.east + x, z: -this.start - s, reach: radius, anchor: this.layoutAnchor, frame: this.layoutPlacement }); }
   prop(name, x, s, yaw = 0, y = PAVEMENT_LEVEL) {
     if (this.distant) return;
-    this.item(name, cityAssets[name], this.materials.props, [x, y, -s], [1, 1, 1], '#ffffff', yaw, 0, ['shelter', 'tank', 'kiosk'].includes(name));
+    this.item(name, cityAssets[name], this.materials.props, [x, y, -s], [1, 1, 1], '#ffffff', yaw, 0, ['shelter', 'tank', 'kiosk', 'bandstand'].includes(name));
   }
   tree(x, s, scale = 7) {
     const index = this.random() < .28 ? 1 : 0, variant = cityTrees[index], p = [x, PAVEMENT_LEVEL, -s];
@@ -338,6 +338,8 @@ export class CityChunk {
     for (const piece of this.furniture) {
       const x = piece.u - this.east, s = piece.s - this.start;
       if (piece.kind === 'lamp') { this.prop('lamp', x, s, piece.yaw); this.post(x, s, .25); }
+      // Two lamps back to back on one column, an arm over each carriageway
+      else if (piece.kind === 'median-lamp') { for (const yaw of [piece.yaw, piece.yaw + Math.PI]) this.prop('lamp', x, s, yaw); this.post(x, s, .25); }
       else if (piece.kind === 'tree') this.tree(x, s, piece.scale);
       else if (piece.kind === 'bench') { this.prop('bench', x, s, piece.yaw); this.rigid(x, s, () => this.solid(x, s, .7, 2), itemFrame(piece.s, piece.u, piece.yaw)); }
       else if (piece.kind === 'bin') { this.prop('bin', x, s); this.post(x, s, .36); }
@@ -346,24 +348,52 @@ export class CityChunk {
       else if (piece.kind === 'sign') this.sign(discoverySignFor(piece.type, piece.variant), x, PAVEMENT_LEVEL + 2.9, s, piece.yaw, 4.2);
       else if (piece.kind === 'stop') { this.prop('stop', x, s, piece.yaw); this.post(x, s, .12); }
       else if (piece.kind === 'signal') {
-        this.prop('signal', x, s, piece.yaw); this.post(x, s, .15);
-        if (this.distant) continue;
-        const indices = [];
-        for (const y of [4.92, 4.6, 4.28]) {
-          this.item('signal-lens', signalLens, this.materials.lit, [x + Math.sin(piece.yaw) * .215, PAVEMENT_LEVEL + y, -s + Math.cos(piece.yaw) * .215], [.105, .105, 1], '#293538', piece.yaw);
-          indices.push(this.batches.get('signal-lens').items.length - 1);
+        const yaw = piece.yaw, cos = Math.cos(yaw), sin = Math.sin(yaw);
+        // A head `along` metres out along local -x from the pole, its middle lamp `height` up
+        const head = (along, height) => {
+          if (this.distant) return;
+          const hx = x - along * cos, hs = s - along * sin, indices = [];
+          for (const dy of SIGNAL_LENSES) {
+            this.item('signal-lens', signalLens, this.materials.lit, [hx + sin * .215, PAVEMENT_LEVEL + height + dy, -hs + cos * .215], [.105, .105, 1], '#293538', yaw);
+            indices.push(this.batches.get('signal-lens').items.length - 1);
+          }
+          this.features.signals.push({ axis: piece.axis, indices });
+        };
+        if (piece.mast) {
+          // A tall pole with its arm out over the lanes and a head above each
+          const length = Math.max(...piece.mast) + .6;
+          this.prop('signal-mast', x, s, yaw);
+          if (!this.distant) this.box(x - length / 2 * cos, PAVEMENT_LEVEL + MAST_HEIGHT - .2, s - length / 2 * sin, length, .2, .2, '#3d4246', 'solid', yaw);
+          for (const along of piece.mast) {
+            if (!this.distant) this.item('signal-head', cityAssets['signal-head'], this.materials.props, [x - along * cos, PAVEMENT_LEVEL + MAST_HEIGHT - .95, -(s - along * sin)], [1, 1, 1], '#ffffff', yaw);
+            head(along, MAST_HEIGHT - .95);
+          }
+          this.post(x, s, .3);
+        } else {
+          this.prop('signal', x, s, yaw); this.post(x, s, .15);
+          head(0, 4.6);
         }
-        this.features.signals.push({ axis: piece.axis, indices });
       }
       else if (piece.kind === 'shelter') { this.prop('shelter', x, s, piece.yaw); this.rigid(x, s, () => this.solid(x + .5, s, .6, 4), itemFrame(piece.s, piece.u, piece.yaw)); }
       else if (piece.kind === 'fountain') {
-        this.item('basin-rim', basinRim, this.materials.solid, [x, PAVEMENT_LEVEL + .4, -s], [3.4, .8, 3.4], '#d7ccb3');
-        this.item('basin-water', basinWater, this.materials.glass, [x, PAVEMENT_LEVEL + .62, -s], [3.2, 1, 3.2], '#4f93a0');
-        this.box(x, PAVEMENT_LEVEL + 1.3, s, .7, 2.2, .7, '#d7ccb3');
-        this.box(x, PAVEMENT_LEVEL + 2.5, s, 1.6, .25, 1.6, '#d7ccb3');
-        this.post(x, s, 3.5);
+        const k = piece.size ?? 1;
+        this.item('basin-rim', basinRim, this.materials.solid, [x, PAVEMENT_LEVEL + .4, -s], [3.4 * k, .8, 3.4 * k], '#d7ccb3');
+        this.item('basin-water', basinWater, this.materials.glass, [x, PAVEMENT_LEVEL + .62, -s], [3.2 * k, 1, 3.2 * k], '#4f93a0');
+        this.box(x, PAVEMENT_LEVEL + 1.3 * Math.sqrt(k), s, .7 * k, 2.2 * Math.sqrt(k), .7 * k, '#d7ccb3');
+        this.box(x, PAVEMENT_LEVEL + 2.5 * Math.sqrt(k), s, 1.6 * k, .25, 1.6 * k, '#d7ccb3');
+        this.post(x, s, 3.5 * k);
       }
-      else if (piece.kind === 'hedge') { this.box(x, PAVEMENT_LEVEL + .55, s, 1.6, 1.1, piece.length, '#4f7a46', 'solid', piece.yaw); this.rigid(x, s, () => this.solid(x, s, 1.6, piece.length), itemFrame(piece.s, piece.u, piece.yaw)); }
+      else if (piece.kind === 'lantern') { this.prop('lantern', x, s); this.post(x, s, .2); }
+      else if (piece.kind === 'parked') {
+        const model = parkedCars[piece.model], spec = TRAFFIC_MODELS.find(m => m.name === piece.model);
+        if (!this.distant) {
+          this.item(`parked-paint-${piece.model}`, model.paint, this.materials.solid, [x, ROAD_LEVEL + .13, -s], [1, 1, 1], PARKED_PAINTS[piece.colour % PARKED_PAINTS.length], piece.yaw);
+          this.item(`parked-trim-${piece.model}`, model.trim, this.materials.props, [x, ROAD_LEVEL + .13, -s], [1, 1, 1], '#ffffff', piece.yaw);
+        }
+        this.rigid(x, s, () => this.solid(x, s, spec.width, spec.length), itemFrame(piece.s, piece.u, piece.yaw));
+      }
+      else if (piece.kind === 'bandstand') { this.prop('bandstand', x, s, piece.yaw); this.post(x, s, 5.4); }
+      else if (piece.kind === 'rim') this.post(x, s, piece.radius);
     }
   }
   // Residents walk the pavement round their block; pairs stroll together.
@@ -437,11 +467,13 @@ export class CityChunk {
   }
   finish() { for (const _ of this.finishSteps()) { /* synchronous tools/startup */ } }
   *finishSteps() {
-    this.features.lamps = (this.batches.get('lamp')?.items ?? []).map(item => {
+    // Street lamps light the road below their heads, lanterns the walk round them
+    const lights = (key, head, drop) => (this.batches.get(key)?.items ?? []).map(item => {
       const matrix = cityItemMatrix(item, this.east, this.start, transform.matrix);
-      const point = new THREE.Vector3(-1.75, 7.36, 0).applyMatrix4(matrix);
-      return { x: point.x + this.east, y: point.y, z: point.z - this.start, yaw: Math.atan2(matrix.elements[8], matrix.elements[10]) };
+      const point = head.clone().applyMatrix4(matrix);
+      return { kind: key, x: point.x + this.east, y: point.y, z: point.z - this.start, ground: point.y - drop, yaw: Math.atan2(matrix.elements[8], matrix.elements[10]) };
     });
+    this.features.lamps = [...lights('lamp', new THREE.Vector3(-1.75, 7.36, 0), 7.36), ...lights('lantern', new THREE.Vector3(0, LANTERN_HEIGHT, 0), LANTERN_HEIGHT)];
     // The cell's building bodies are one flat-shaded mesh
     if (!this.bodies.empty) {
       const mesh = new THREE.Mesh(this.bodies.build(), this.materials['merged-solid']);
@@ -542,9 +574,9 @@ export class CitydriverWorld {
     }
     return this.neighbourCache.get(key);
   }
-  // Lamps, trees, signs and signals, railings, the hedge round the city and the
-  // parks' trees and benches: placed once (see city-streets.js) and handed to
-  // whichever chunk they fall in.
+  // Lamps, trees, signs and signals, railings and the parks' trees and
+  // benches: placed once (see city-streets.js) and handed to whichever chunk
+  // they fall in.
   placeFurniture() {
     this.furnitureByChunk = new Map();
     placeStreetFurniture(this.nav, this.bridges, piece => {
@@ -554,7 +586,7 @@ export class CitydriverWorld {
     });
   }
   buildStatic() {
-    const ground = new Surface(), roads = new Surface(), paths = new Surface(), water = new Surface(), walls = new Surface(), glow = new Surface();
+    const ground = new Surface(), roads = new Surface(), paths = new Surface(), water = new Surface(), walls = new Surface();
     const add = (surface, material, { castShadow = false, receiveShadow = true, ambientOcclusion = true, name = 'static' } = {}) => {
       if (surface.empty) return null;
       const mesh = new THREE.Mesh(surface.build(), material);
@@ -565,43 +597,11 @@ export class CitydriverWorld {
       return mesh;
     };
     buildStreetSurfaces({ ground, roads, paths, water, walls }, this.nav, this.bridges);
-    // Beaches, rocks and the lighthouse round the island
-    this.lighthouse = buildCoast({ ground, walls, glow });
-    // The country: fields over the land, and its trees as two instanced meshes
-    const country = countryside();
-    for (const field of country.fields) ground.polygon(field.polygon, ROAD_LEVEL - .05, field.colour);
-    if (country.trees.length) {
-      const random = seededRandom(CITY.seed ^ 0x5eed);
-      // One pair of meshes per 400 m tile, so the camera and the sun's shadow
-      // only draw the country trees near them
-      const tiles = new Map();
-      country.trees.forEach((tree, i) => {
-        const key = `${Math.floor(tree.x / 400)},${Math.floor(tree.y / 400)},${i % 4 === 0 ? 1 : 0}`;
-        if (!tiles.has(key)) tiles.set(key, []);
-        tiles.get(key).push(tree);
-      });
-      for (const [key, trees] of tiles) {
-        const variant = cityTrees[Number(key.split(',')[2])];
-        const trunks = new THREE.InstancedMesh(variant.bark, this.materials.bark, trees.length), crowns = new THREE.InstancedMesh(variant.leaves, this.materials.leaves, trees.length);
-        trees.forEach((tree, i) => {
-          const width = tree.scale * (.82 + random() * .24);
-          transform.position.set(tree.x, PAVEMENT_LEVEL - .1, -tree.y); transform.rotation.set(0, random() * Math.PI * 2, 0); transform.scale.set(width, tree.scale, width); transform.updateMatrix();
-          trunks.setMatrixAt(i, transform.matrix); crowns.setMatrixAt(i, transform.matrix);
-          trunks.setColorAt(i, tint.set('#ffffff')); crowns.setColorAt(i, tint.set(pick(GREENS, random)).multiplyScalar(.9));
-        });
-        for (const mesh of [trunks, crowns]) {
-          mesh.name = 'citydriver-country-trees'; mesh.castShadow = true; mesh.receiveShadow = true;
-          mesh.computeBoundingSphere(); mesh.matrixAutoUpdate = false; mesh.updateMatrix();
-          this.staticGroup.add(mesh);
-        }
-      }
-    }
     this.groundMesh = add(ground, this.materials.ground, { name: 'ground' });
     this.roadMesh = add(roads, this.materials.road, { name: 'roads' });
     add(paths, this.materials.ground, { name: 'paths' });
     this.waterMesh = add(water, this.materials.water, { name: 'water', ambientOcclusion: false });
     add(walls, this.materials.ground, { name: 'walls', castShadow: true });
-    add(glow, this.materials.clock, { name: 'lantern', receiveShadow: false, ambientOcclusion: false });
   }
   update(s, u, { budgetMs = Infinity } = {}) {
     const deadline = performance.now() + budgetMs;

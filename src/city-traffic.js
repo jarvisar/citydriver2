@@ -59,7 +59,7 @@ export class CityTraffic {
       if (distance < (initial ? 25 : SPAWN_CLEARANCE) || distance > LOCAL_RADIUS) continue;
       if (!initial && this.lookAhead && ds * this.travelS + du * this.travelU < 60) continue;
       if (this.vehicles.some(other => other !== car && Math.hypot(pose.s - other.s, pose.u - other.u) < 14)) continue;
-      Object.assign(car, { edge, direction, along, lane: edge.profile.lane, next: null, turn: null, waiting: 0, stopKey: null, stopWait: 0, stopReleased: false });
+      Object.assign(car, { edge, direction, along, lane: edge.profile.lane, next: null, turn: null, after: null, waiting: 0, stopKey: null, stopWait: 0, stopReleased: false });
       // Each driver keeps their own pace, a share of every street's speed
       car.pace = .75 + r(4) * .25; car.cruiseSpeed = edge.profile.speed * car.pace; car.speed = car.cruiseSpeed;
       // Knowing its way on from the start, a car is never placed past a turn it
@@ -67,7 +67,7 @@ export class CityTraffic {
       this.choose(car);
       // and never part-way round it
       if (car.along > car.turn.start - 2) car.along = Math.max(0, car.turn.start - 2);
-      car.speed = Math.min(car.speed, approachSpeed(car.turn, car.turn.start - car.along), bendSpeed(this.nav, edge, direction, along, car.lane));
+      car.speed = Math.min(car.speed, approachSpeed(car.turn, car.turn.start - car.along), bendSpeed(this.nav, edge, direction, along, car.lane), this.afterSpeed(car));
       this.pose(car); car.previousPosition.copy(car.position); car.previousQuaternion.copy(car.quaternion);
       car.car.visible = true;
       return true;
@@ -86,11 +86,32 @@ export class CityTraffic {
   // Which way on at the end of this edge, and the curve that takes it there.
   // Straight on is likelier; a dead end turns the car round.
   choose(car) {
-    // No paths unless already on one; straight on is likelier
-    const roll = this.random(car, 30 + car.edge.id);
-    const pick = options => Math.abs(options[0].turn) < .5 && roll < .55 ? options[0] : options[Math.floor(roll * options.length)];
-    const choice = wayOn(this.nav, car.edge, car.direction, pick, next => next.edge.kind !== 'path' || car.edge.kind === 'path');
-    car.next = choice; car.turn = turnPath(this.nav, car.edge, car.direction, choice);
+    // Planned already, if the street before this one was short
+    if (car.after && car.after.edge === car.edge && car.after.direction === car.direction) ({ next: car.next, turn: car.turn } = car.after);
+    else ({ next: car.next, turn: car.turn } = this.plan(car, car.edge, car.direction));
+    car.after = null;
+  }
+  // The way on from the end of any edge, as this driver would choose it: no
+  // paths unless already on one, and straight on likelier
+  plan(car, edge, direction) {
+    const roll = this.random(car, 30 + edge.id);
+    // The driver's choice, unless no car could make that turn and another way on is open
+    const pick = options => {
+      const preferred = Math.abs(options[0].turn) < .5 && roll < .55 ? options[0] : options[Math.floor(roll * options.length)];
+      if (options.length < 2 || preferred.via || turnPath(this.nav, edge, direction, preferred).radius >= 3) return preferred;
+      return options.find(option => !option.via && turnPath(this.nav, edge, direction, option).radius >= 3) ?? preferred;
+    };
+    const next = wayOn(this.nav, edge, direction, pick, option => option.edge.kind !== 'path' || edge.kind === 'path');
+    return { edge, direction, next, turn: turnPath(this.nav, edge, direction, next) };
+  }
+  // The most a car may carry now to take the turn after next, when the street
+  // between is too short to slow down on
+  afterSpeed(car) {
+    const next = car.next;
+    if (!car.turn || !next || next.edge.length > 60 || next.edge === car.edge) return Infinity;
+    car.after ??= this.plan(car, next.edge, next.direction);
+    const distance = car.turn.start - car.along + car.turn.length + Math.max(0, car.after.turn.start - car.turn.end);
+    return approachSpeed(car.after.turn, distance);
   }
   // Onto the next edge once through the turn
   advance(car) {
@@ -133,6 +154,7 @@ export class CityTraffic {
       if (car.turn) target = Math.min(target, approachSpeed(car.turn, car.turn.start - car.along));
       // and slow for the street's own bends before the turn
       if (!car.turn || car.along < car.turn.start) target = Math.min(target, bendSpeed(this.nav, car.edge, car.direction, car.along, car.lane));
+      target = Math.min(target, this.afterSpeed(car));
       // Basic following: brake for whatever is ahead in this lane, the player included
       const cos = Math.cos(car.heading), sin = Math.sin(car.heading);
       for (let i = 0; i <= this.vehicles.length; i++) {

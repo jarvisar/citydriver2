@@ -1,4 +1,5 @@
 import { CITY, cityCell, cityDistrict } from './city.js';
+import { medianAt, MEDIAN_KERB } from './city-medians.js';
 export { cityCell, cityDistrict } from './city.js';
 
 // The route the car drives: a flat plane with s pointing north and u east,
@@ -21,17 +22,21 @@ export function onRoadAt(s, u) {
 }
 export const cityRoadDistance = (s, u) => { const road = roadAt(s, u, 60); return road ? road.distance - road.road.profile.halfWidth : Infinity; };
 export const waterAt = (s, u) => CITY.mask.at(u, s);
-// What the ground is at a point: 'pavement', 'road' or 'water'. Roads carried
-// over the water are bridges, so the carriageway wins there.
+// What the ground is at a point: 'pavement', 'median' (the raised strip down a
+// boulevard), 'road' or 'water'. Roads carried over the water are bridges, so
+// the carriageway wins there.
 export function surfaceAt(s, u) {
   if (CITY.pavement.find(u, s)) return 'pavement';
+  if (medianAt(u, s)) return 'median';
   if (waterAt(s, u)) return onRoadAt(s, u) ? 'road' : 'water';
   return 'road';
 }
 export function cityHeight(s, u) {
   const surface = surfaceAt(s, u);
-  return surface === 'pavement' ? PAVEMENT_LEVEL : surface === 'water' ? WATER_LEVEL : ROAD_LEVEL;
+  return surface === 'pavement' ? PAVEMENT_LEVEL : surface === 'median' ? ROAD_LEVEL + MEDIAN_KERB : surface === 'water' ? WATER_LEVEL : ROAD_LEVEL;
 }
+// How loose the ground is under a tyre: kerbed paving, the grass of a median
+const LOOSENESS = { pavement: .3, median: .45 };
 // A pose in the lane of the nearest road, facing the way the heading points.
 export function nearestLanePose(s, u, heading = 0, radius = 200) {
   const road = roadAt(s, u, radius);
@@ -87,7 +92,7 @@ export const citydriverRoute = {
   position: (s, u, y = cityHeight(s, u)) => ({ x: u, y, z: -s }),
   height: cityHeight,
   bounds: () => [-Infinity, Infinity],
-  looseness: (s, u) => (surfaceAt(s, u) === 'pavement' ? .3 : 0),
+  looseness: (s, u) => LOOSENESS[surfaceAt(s, u)] ?? 0,
   water: (s, u) => surfaceAt(s, u) === 'water',
   nearestLane: nearestLanePose,
   start: journeyStart,

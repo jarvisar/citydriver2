@@ -80,7 +80,7 @@ export class NightLighting {
     if (uploadStreet) for (let i = 0; i < this.selected.length; i++) {
       const { lamp } = this.selected[i];
       const fade = 1 - THREE.MathUtils.smoothstep(Math.hypot(lamp.x - x, lamp.z - z), 95, RANGE);
-      t.position.set(lamp.x, lamp.y - 7.36 + .025, lamp.z + origin);
+      t.position.set(lamp.x, (lamp.ground ?? lamp.y - 7.36) + .025, lamp.z + origin);
       t.rotation.set(0, lamp.yaw, 0); t.scale.set(12, 1, 10); t.updateMatrix();
       this.pools.setMatrixAt(i, t.matrix); this.pools.setColorAt(i, this.color.setScalar(fade));
       t.position.y = lamp.y; t.scale.setScalar(1); t.updateMatrix();

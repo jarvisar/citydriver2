@@ -70,11 +70,14 @@ test('merged furniture reproduces every instance exactly as the instancing shade
 test('merging cuts each block\'s draws without growing its memory much', () => {
   const world = new CitydriverWorld(new THREE.Scene());
   try {
+    let saved = 0;
     for (const [ix, iz] of [[0, 0], [1, 0], [-2, -3]]) {
       const { chunk, batches } = buildWithBatches(ix, iz, world);
       const batchCount = [...batches.values()].filter(batch => batch.items.length).length;
-      // At least one draw saved; how many more the vertex budget allows depends on how busy the block is
-      if (batchCount >= 6) assert.ok(chunk.group.children.length < batchCount, `merging saves draws (${chunk.group.children.length} of ${batchCount})`);
+      // Never more draws than batches. How many merge depends on the block: a
+      // park of trees is one batch too big to merge, a busy corner hits the budget
+      assert.ok(chunk.group.children.length <= batchCount, `merging adds draws (${chunk.group.children.length} of ${batchCount})`);
+      saved += batchCount - chunk.group.children.length;
       let bytes = 0;
       for (const mesh of chunk.group.children) if (!mesh.isInstancedMesh && !mesh.userData.bodies) {
         for (const attribute of Object.values(mesh.geometry.attributes)) bytes += attribute.array.byteLength;
@@ -83,5 +86,6 @@ test('merging cuts each block\'s draws without growing its memory much', () => {
       assert.ok(bytes < 640 * 1024, `merged geometry stays small (${Math.round(bytes / 1024)} KB)`);
       chunk.dispose();
     }
+    assert.ok(saved >= 2, `merging saves draws (${saved})`);
   } finally { world.dispose(); }
 });

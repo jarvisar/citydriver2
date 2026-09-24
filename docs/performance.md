@@ -8,7 +8,7 @@ Distant scenery uses fixed 2×2 tiles, instanced by geometry and material. Tiles
 
 Detailed blocks instance each batch of scenery. Batches of up to 32 instances that share a material, draw order and shadow settings merge into one mesh per block, with instance transforms and colours baked into 16-bit normals and colours. These are trees, lamps, benches, bins, signals, stops and small roof parts. A block bakes at most 18,000 vertices: the cheapest groups merge first, and a group too big for what is left merges its cheapest batches, so a busy street corner stays instanced rather than growing the block's memory.
 
-The country beyond the ring road is part of the static layer, its trees instanced in 400 m tiles so only the tiles near the camera and the sun's shadow are drawn. Walkers, signal lenses, boats and water change after building and stay instanced. `blockBatches()` lists a block's batches either way.
+Parked cars share the traffic fleet's bodies with plain six-sided tyres, about 470 triangles each. Walkers, signal lenses, boats and water change after building and stay instanced. `blockBatches()` lists a block's batches either way.
 
 Static matrices are cached. Offscreen residents skip uploads and catch up when visible again; traffic signals keep updating. XR updates all residents. Collision bounds skip irrelevant blocks before checking individual colliders.
 

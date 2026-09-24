@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import Vector from '../src/mapgen/vector.js';
 import Graph from '../src/mapgen/graph.js';
-import { generateCityMap } from '../src/mapgen/generate.js';
+import { generateCityMap, carriagewayScore } from '../src/mapgen/generate.js';
 import { filletPolyline, clipInside, cleanNetwork, pruneNetwork } from '../src/mapgen/road-network.js';
 import { frontageLots, chamferAcute } from '../src/mapgen/lots.js';
 import { offsetPolygonMapped, removeLoops, offsetPolyline, calcPolygonArea, isSimple, insidePolygon, signedArea, polygonCentroid } from '../src/mapgen/polygon-util.js';
@@ -122,7 +122,8 @@ for (const seed of [4817, 42, 2024]) test(`generated city ${seed}: a closed netw
     const [next] = node.neighbors;
     assert.ok(node.value.distanceTo(next.value) < 1, `dead end at ${node.value.x.toFixed(0)},${node.value.y.toFixed(0)}`);
   }
-  const clear = p => { const hit = city.roadIndex.nearest(p.x, p.y, 25, (s, d) => d - s.road.profile.halfWidth); return hit ? hit.score : Infinity; };
+  // A carriageway ends square across its road's ends
+  const clear = p => { const hit = city.roadIndex.nearest(p.x, p.y, 25, carriagewayScore); return hit ? hit.score : Infinity; };
   const byBlock = new Map();
   city.lots.forEach((lot, i) => {
     assert.ok(lot.every(p => clear(p) > 2.5), 'a lot keeps its pavement');

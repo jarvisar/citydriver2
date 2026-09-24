@@ -2,10 +2,11 @@
 
 Taxi driving game built with [Three.js](https://threejs.org/). This is
 [Citydriver](https://github.com/jarvisar/citydriver) with its endless grid
-replaced by a city generated from a tensor field: a coastline, a river,
-neighbourhoods laid out on their own grids, curving avenues, a ring road round
-the edge, parks with winding paths, and blocks cut into street-front lots. The
-layout comes from a port of
+replaced by an island city generated from a tensor field: a harbour, a river,
+neighbourhoods laid out on their own grids, tree-lined boulevards and curving
+avenues, a parkway round the edge with a promenade over the sea, parks laid
+out with walks, ponds and bandstands, and blocks cut into street-front lots.
+The layout comes from a port of
 [MapGenerator](https://github.com/ProbableTrain/MapGenerator) by ProbableTrain
 (`src/mapgen/`, LGPL-3.0); the driving, cars, garage, weather, audio, menus and
 taxi shift are Citydriver's.
@@ -21,7 +22,11 @@ their own.
 
 | Street-front blocks round their yards | On the street |
 | --- | --- |
-| ![Blocks of terraces round green yards, seen from above](docs/images/courtyards.png) | ![Driving down a tree-lined street](docs/images/street.png) |
+| ![Blocks of terraces round green yards, seen from above](docs/images/courtyards.png) | ![Driving down a street lined with parked cars](docs/images/street.png) |
+
+| A park laid out round its bandstand | A boulevard |
+| --- | --- |
+| ![Walks crossing a park's lawns to a bandstand, seen from above](docs/images/park.png) | ![Driving down a boulevard with a planted median](docs/images/boulevard.png) |
 
 ## How to play
 

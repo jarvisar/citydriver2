@@ -6,6 +6,21 @@ import { RoadIndex } from '../mapgen/road-index.js';
 // road's polyline, class and profile. Built from the generator's node graph.
 const STUB = 14;  // Dead ends shorter than this are the overshoot past a T-junction
 const JOIN = 5;   // Junctions closer than this along a street are one junction
+const TANGENT = 1.5;  // Half the stretch of centre line a heading is taken across
+
+// The point `distance` along a polyline with cumulative lengths
+function pointAlong(points, cumulative, distance) {
+  let i = 0, hi = points.length - 2;
+  while (i < hi) { const mid = (i + hi + 1) >> 1; if (cumulative[mid] <= distance) i = mid; else hi = mid - 1; }
+  const a = points[i], b = points[i + 1], t = Math.max(0, Math.min(1, (distance - cumulative[i]) / (cumulative[i + 1] - cumulative[i] || 1)));
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+}
+
+function remeasure(edge) {
+  edge.cumulative = [0];
+  for (let i = 1; i < edge.points.length; i++) edge.cumulative.push(edge.cumulative[i - 1] + Math.hypot(edge.points[i].x - edge.points[i - 1].x, edge.points[i].y - edge.points[i - 1].y));
+  edge.length = edge.cumulative[edge.cumulative.length - 1];
+}
 
 export class NavGraph {
   constructor(city = CITY) {
@@ -41,13 +56,14 @@ export class NavGraph {
     this.joinCloseJunctions();
     // Joining junctions can leave a stub of its own
     this.pruneStubs();
+    this.mergeThrough();
     this.index = new RoadIndex(this.edges.map(edge => ({ points: edge.points.map(p => ({ x: p.x, y: p.y })), edge, profile: edge.profile })), 48);
   }
   addEdge(a, b, points, roadIndex) {
     const road = CITY.roads[roadIndex] ?? null, kind = road?.kind ?? 'minor';
     const cumulative = [0];
     for (let i = 1; i < points.length; i++) cumulative.push(cumulative[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y));
-    const edge = { id: this.edges.length, a, b, points: points.map(p => ({ x: p.x, y: p.y })), cumulative, length: cumulative[cumulative.length - 1], kind, profile: profileOf(kind), roadIndex };
+    const edge = { id: this.edges.length, a, b, points: points.map(p => ({ x: p.x, y: p.y })), cumulative, length: cumulative[cumulative.length - 1], kind, profile: road?.profile ?? profileOf(kind), roadIndex };
     if (edge.length < 1e-6) return;
     this.edges.push(edge); this.nodes[a].edges.push(edge); if (b !== a) this.nodes[b].edges.push(edge);
   }
@@ -61,15 +77,28 @@ export class NavGraph {
     this.edges = this.edges.filter(edge => !edge.pruned);
     this.edges.forEach((edge, id) => { edge.id = id; });
   }
+  // Two streets of a kind meeting end to end with nothing else there are one
+  // street: split, the piece nearer a junction could leave a car no room to turn
+  mergeThrough() {
+    for (const node of this.nodes) {
+      if (node.edges.length !== 2) continue;
+      const [first, second] = node.edges;
+      if (first === second || first.a === first.b || second.a === second.b || first.kind !== second.kind) continue;
+      const into = first.b === node.id ? first.points : first.points.slice().reverse(), from = first.b === node.id ? first.a : first.b;
+      const out = second.a === node.id ? second.points : second.points.slice().reverse(), to = second.a === node.id ? second.b : second.a;
+      if (from === to) continue;
+      first.a = from; first.b = to; first.points = [...into, ...out.slice(1)];
+      remeasure(first);
+      second.pruned = true; node.edges = [];
+      this.nodes[to].edges = this.nodes[to].edges.map(edge => edge === second ? first : edge);
+    }
+    this.edges = this.edges.filter(edge => !edge.pruned);
+    this.edges.forEach((edge, id) => { edge.id = id; });
+  }
   // Two roads crossing a third a couple of metres apart make two junctions
   // joined by a sliver of street no car could turn through: they are one
   // junction, at the middle of the sliver.
   joinCloseJunctions() {
-    const remeasure = edge => {
-      edge.cumulative = [0];
-      for (let i = 1; i < edge.points.length; i++) edge.cumulative.push(edge.cumulative[i - 1] + Math.hypot(edge.points[i].x - edge.points[i - 1].x, edge.points[i].y - edge.points[i - 1].y));
-      edge.length = edge.cumulative[edge.cumulative.length - 1];
-    };
     for (const edge of this.edges.slice().sort((p, q) => p.length - q.length)) {
       if (edge.pruned || edge.length >= JOIN || edge.a === edge.b) continue;
       const keep = this.nodes[edge.a], gone = this.nodes[edge.b];
@@ -103,15 +132,13 @@ export class NavGraph {
     while (i < hi) { const mid = (i + hi + 1) >> 1; if (cumulative[mid] <= clamped) i = mid; else hi = mid - 1; }
     const a = points[i], b = points[i + 1], span = cumulative[i + 1] - cumulative[i] || 1;
     const t = Math.max(0, Math.min(1, (clamped - cumulative[i]) / span));
-    let tx = (b.x - a.x) / span, ty = (b.y - a.y) / span;
-    // Blend toward the neighbouring segment over each half, so the heading and
-    // the lane beside the centre line turn smoothly through every vertex
-    const neighbour = t > .5 ? i + 1 : i - 1, weight = Math.abs(t - .5);
-    if (neighbour >= 0 && neighbour < points.length - 1) {
-      const p = points[neighbour], q = points[neighbour + 1], length = cumulative[neighbour + 1] - cumulative[neighbour] || 1;
-      tx = tx * (1 - weight) + (q.x - p.x) / length * weight; ty = ty * (1 - weight) + (q.y - p.y) / length * weight;
-      const norm = Math.hypot(tx, ty) || 1; tx /= norm; ty /= norm;
-    }
+    // The heading is the chord across a few metres of the centre line, so the
+    // heading and the lane beside it turn smoothly through every vertex
+    // however short the segments round it
+    const behind = pointAlong(points, cumulative, Math.max(0, clamped - TANGENT)), ahead = pointAlong(points, cumulative, Math.min(edge.length, clamped + TANGENT));
+    let tx = ahead.x - behind.x, ty = ahead.y - behind.y;
+    const norm = Math.hypot(tx, ty);
+    if (norm > 1e-9) { tx /= norm; ty /= norm; } else { tx = (b.x - a.x) / span; ty = (b.y - a.y) / span; }
     if (direction < 0) { tx = -tx; ty = -ty; }
     const x = a.x + (b.x - a.x) * t + ty * lane, y = a.y + (b.y - a.y) * t - tx * lane;
     return { s: y, u: x, heading: Math.atan2(tx, ty), tx, ty, segment: i };

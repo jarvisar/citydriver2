@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { vehicleGeometry, TRAFFIC_MODELS } from '../traffic-models.js';
+import { vehicleGeometry, TRAFFIC_MODELS, WHEEL } from '../traffic-models.js';
 import { compactGeometry } from './compact-geometry.js';
 
 // Small merged, flat-shaded street furniture with its colours baked into
@@ -71,6 +71,31 @@ function trafficSignal() {
     p.add(hood, [0, y, .25], darkIron, [Math.PI / 2, 0, 0]);
   }
   p.box([0, 5.16, .08], [.44, .06, .5], darkIron);
+  return p.finish();
+}
+// A signal head on its own, to hang from a mast arm: three lamps in hoods on
+// a backplate, centred on the middle lamp, lamps at SIGNAL_LENSES above it
+export const SIGNAL_LENSES = [.32, 0, -.32];
+function signalHead() {
+  const p = new Parts();
+  p.box([0, 0, 0], [.34, 1.05, .3], darkIron);
+  p.box([0, 0, -.12], [.62, 1.28, .04], '#262c2f');
+  p.box([0, .62, 0], [.08, .2, .08], darkIron);
+  for (const y of SIGNAL_LENSES) {
+    p.cylinder([0, y, .17], .125, .125, .06, '#1e282b', 12, [Math.PI / 2, 0, 0]);
+    const hood = new THREE.CylinderGeometry(.14, .14, .22, 8, 1, true, Math.PI / 2, Math.PI);
+    p.add(hood, [0, y, .25], darkIron, [Math.PI / 2, 0, 0]);
+  }
+  return p.finish();
+}
+// The pole of a mast-arm signal, taller than a pedestal's; the arm itself is
+// laid along local -x to whatever length the road needs
+export const MAST_HEIGHT = 6.7;
+function signalMast() {
+  const p = new Parts();
+  p.cylinder([0, .25, 0], .26, .3, .5, darkIron, 8);
+  p.cylinder([0, MAST_HEIGHT / 2, 0], .1, .15, MAST_HEIGHT, iron, 8);
+  p.cylinder([0, MAST_HEIGHT + .12, 0], .12, .1, .24, darkIron, 8);
   return p.finish();
 }
 function stopSign() {
@@ -176,6 +201,38 @@ function litterBin() {
   return p.finish();
 }
 
+// A park lantern: a slim post with a glass box on top, lit at LANTERN_HEIGHT
+export const LANTERN_HEIGHT = 4.05;
+function parkLantern() {
+  const p = new Parts();
+  p.cylinder([0, .15, 0], .15, .19, .3, darkIron, 6);
+  p.cylinder([0, 1.95, 0], .055, .08, 3.6, iron, 6);
+  p.cylinder([0, 3.8, 0], .13, .07, .14, darkIron, 6);
+  p.box([0, 4.07, 0], [.34, .44, .34], '#efe3b8');
+  for (const [x, z] of [[-.17, -.17], [.17, -.17], [.17, .17], [-.17, .17]]) p.box([x, 4.07, z], [.04, .46, .04], darkIron);
+  p.cone([0, 4.44, 0], .3, .3, darkIron, 4);
+  return p.finish();
+}
+// A park bandstand: an octagonal stone platform, white columns and railings,
+// and a copper-green roof. About 5.4 m round; the gap in the rail faces +z.
+function bandstand() {
+  const p = new Parts(), white = '#eee8da', stone = '#cdc4ae';
+  p.cylinder([0, .3, 0], 5.2, 5.5, .6, stone, 8);
+  p.cylinder([0, .64, 0], 5, 5, .08, '#b8ad96', 8);
+  const post = k => { const a = k / 8 * Math.PI * 2; return [Math.sin(a) * 4.5, Math.cos(a) * 4.5]; };
+  for (let k = 0; k < 8; k++) {
+    const [x, z] = post(k), [nx, nz] = post(k + 1);
+    p.cylinder([x, 2.3, z], .14, .16, 3.3, white, 6);
+    // A rail between the columns, open to the front
+    if (k !== 0 && k !== 7) for (const y of [1.05, 1.6]) p.beam([x, y, z], [nx, y, nz], .045, white, 4);
+  }
+  p.cylinder([0, 4.05, 0], 5.5, 5.5, .3, white, 8);
+  p.cone([0, 5.3, 0], 5.9, 2.2, '#557f6b', 8);
+  p.cylinder([0, 6.6, 0], .07, .07, .6, darkIron, 5);
+  p.cone([0, 7, 0], .22, .35, '#b89a55', 6);
+  return p.finish();
+}
+
 // Pruned street trees: the same faceted geometry as the other routes, with a
 // narrower, upright crown that fits between the shopfronts and the kerb.
 function streetTree(variant) {
@@ -196,19 +253,24 @@ function streetTree(variant) {
 }
 
 export const cityTrees = [streetTree(0), streetTree(1)];
-export const cityAssets = { lamp: lampPost(), signal: trafficSignal(), stop: stopSign(), bench: bench(), shelter: busShelter(), railing: railing(), bollard: bollard(), manhole: manhole(), tank: waterTank(), kiosk: kiosk(), bin: litterBin() };
+export const cityAssets = { lamp: lampPost(), signal: trafficSignal(), stop: stopSign(), bench: bench(), shelter: busShelter(), railing: railing(), bollard: bollard(), manhole: manhole(), tank: waterTank(), kiosk: kiosk(), bin: litterBin(), lantern: parkLantern(), bandstand: bandstand(), 'signal-head': signalHead(), 'signal-mast': signalMast() };
 
 // Parked cars reuse the traffic fleet's bodies: the paint shell carries a
 // per-instance colour and everything else keeps its own baked colours.
+function tint(g, color) {
+  const c = new THREE.Color(color), colors = new Float32Array(g.attributes.position.count * 3);
+  for (let i = 0; i < colors.length; i += 3) { colors[i] = c.r; colors[i + 1] = c.g; colors[i + 2] = c.b; }
+  g.setAttribute('color', new THREE.BufferAttribute(colors, 3)); return g;
+}
+// A parked car's wheels are plain six-sided tyres: hundreds line the streets.
 function parkedCar(spec) {
-  const { paint, details, headlights, taillights } = vehicleGeometry(spec);
-  const tint = (g, color) => {
-    const c = new THREE.Color(color), colors = new Float32Array(g.attributes.position.count * 3);
-    for (let i = 0; i < colors.length; i += 3) { colors[i] = c.r; colors[i + 1] = c.g; colors[i + 2] = c.b; }
-    g.setAttribute('color', new THREE.BufferAttribute(colors, 3)); return g;
-  };
-  const trim = mergeGeometries([details, tint(headlights, '#d8d4c2'), tint(taillights, '#8a3a30')]);
-  for (const g of [details, headlights, taillights]) g.dispose();
+  const { paint, details, headlights, taillights, wheels } = vehicleGeometry(spec, { separateWheels: true });
+  const tyres = wheels.map(({ x, y, z }) => {
+    const tyre = new THREE.CylinderGeometry(WHEEL.radius, WHEEL.radius, WHEEL.width, 6); tyre.rotateZ(Math.PI / 2); tyre.translate(x, y, z); tyre.deleteAttribute('uv');
+    return tint(tyre, '#2b3434');
+  });
+  const trim = mergeGeometries([details, tint(headlights, '#d8d4c2'), tint(taillights, '#8a3a30'), ...tyres]);
+  for (const g of [details, headlights, taillights, ...tyres]) g.dispose();
   paint.computeBoundingSphere(); trim.computeBoundingSphere();
   return { paint, trim };
 }

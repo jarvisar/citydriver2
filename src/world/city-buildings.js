@@ -7,6 +7,7 @@ import { grassArea } from './city-grass.js';
 import { placeForLot } from '../city-exploration.js';
 import { buildLandmark } from './city-landmarks.js';
 import { averagePoint, insidePolygon, polygonBounds, offsetPolygon, offsetPolygonMapped, calcPolygonArea, signedArea, distanceToPolyline, dedupePolygon, isSimple, fitRectangle } from '../mapgen/polygon-util.js';
+import { union, intersection } from '../mapgen/booleans.js';
 export { SHOP_NAMES } from './city-signs.js';
 
 // Buildings follow their lots. A lot is one plot of a block's frontage strip
@@ -83,6 +84,81 @@ function streetEdges(polygon, block) {
   }
   return kinds;
 }
+// The interior angle at each corner of an anticlockwise polygon
+const cornerAngle = (polygon, i) => {
+  const n = polygon.length, a = polygon[(i - 1 + n) % n], p = polygon[i], b = polygon[(i + 1) % n];
+  const ux = a.x - p.x, uy = a.y - p.y, vx = b.x - p.x, vy = b.y - p.y;
+  const angle = Math.acos(Math.max(-1, Math.min(1, (ux * vx + uy * vy) / ((Math.hypot(ux, uy) * Math.hypot(vx, vy)) || 1))));
+  return (p.x - a.x) * (b.y - p.y) - (p.y - a.y) * (b.x - p.x) >= 0 ? angle : Math.PI * 2 - angle;
+};
+const SHARP = 70 * Math.PI / 180;
+
+// How a building sits on an awkward lot. Real buildings are wings a room or
+// two deep along their streets, whatever the lot's shape: so the building
+// is the lot, stepped in, cut to a strip `depth` deep behind each street
+// wall, and the odd shape left over behind it is yard. A fan-shaped lot keeps
+// its front and loses its tail; a corner lot becomes an L of two wings. Any
+// corner still sharper than SHARP gets a blunt corner facade, a flatiron's
+// nose, rather than a knife edge. Returns the footprint and its wall kinds
+// (street, side or rear), or null to keep the one given.
+function massBuilding(footprint, wallKinds, depth) {
+  const n = footprint.length, streets = wallKinds.map((kind, i) => kind === 'street' ? i : -1).filter(i => i >= 0);
+  if (!streets.length) return null;
+  // Already a building's shape: no sharp corner, and no deeper than a wing
+  const sharp = footprint.some((p, i) => cornerAngle(footprint, i) < SHARP);
+  const inward = i => {
+    const a = footprint[i], b = footprint[(i + 1) % n], length = edgeLength(footprint, i) || 1;
+    return { a, b, tx: (b.x - a.x) / length, ty: (b.y - a.y) / length, nx: -(b.y - a.y) / length, ny: (b.x - a.x) / length };
+  };
+  const reach = Math.max(...footprint.map(p => Math.min(...streets.map(i => { const w = inward(i); return (p.x - w.a.x) * w.nx + (p.y - w.a.y) * w.ny; }))));
+  if (!sharp && reach <= depth * 1.15) return null;
+  // Wings: a strip behind each street wall, run on past its ends to meet the next
+  const wings = streets.map(i => {
+    const { a, b, tx, ty, nx, ny } = inward(i), run = depth;
+    return [{ x: a.x - tx * run, y: a.y - ty * run }, { x: b.x + tx * run, y: b.y + ty * run }, { x: b.x + tx * run + nx * depth, y: b.y + ty * run + ny * depth }, { x: a.x - tx * run + nx * depth, y: a.y - ty * run + ny * depth }];
+  });
+  let best = null;
+  for (const piece of intersection([footprint], union(wings).flatMap(p => [p.outer, ...p.holes]))) {
+    if (!best || calcPolygonArea(piece.outer) > calcPolygonArea(best)) best = piece.outer;
+  }
+  if (!best) return null;
+  // Blunt the sharp corners: a facade about as wide as a wing is deep
+  let shape = best;
+  for (let pass = 0; pass < 2; pass++) {
+    const out = [];
+    shape.forEach((p, i) => {
+      const angle = cornerAngle(shape, i);
+      if (angle >= SHARP) { out.push(p); return; }
+      const m = shape.length, a = shape[(i - 1 + m) % m], b = shape[(i + 1) % m], la = Math.hypot(a.x - p.x, a.y - p.y), lb = Math.hypot(b.x - p.x, b.y - p.y);
+      const cut = Math.min(Math.min(6, depth * .5) / 2 / Math.sin(Math.max(.05, angle / 2)), la * .45, lb * .45);
+      out.push({ x: p.x + (a.x - p.x) / la * cut, y: p.y + (a.y - p.y) / la * cut }, { x: p.x + (b.x - p.x) / lb * cut, y: p.y + (b.y - p.y) / lb * cut });
+    });
+    shape = out;
+  }
+  // Tidy: no slivers of wall, no corners that are not corners
+  shape = dedupePolygon(shape, .6);
+  shape = shape.filter((p, i) => { const angle = cornerAngle(shape, i); return Math.abs(angle - Math.PI) > .05; });
+  if (shape.length < 3 || !isSimple(shape) || calcPolygonArea(shape) < 45) return null;
+  if (signedArea(shape) < 0) shape.reverse();
+  // Each wall is what it stands on: along a street wall of the stepped-in lot
+  // it is a street front, along a side a party wall; a wall across a street
+  // corner is a corner facade; anything else looks onto the yard
+  const kinds = shape.map((p, i) => {
+    const q = shape[(i + 1) % shape.length], m = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
+    let nearest = -1, nearestDistance = Infinity;
+    for (let j = 0; j < n; j++) {
+      const d = distanceToPolyline(m, [footprint[j], footprint[(j + 1) % n]]);
+      if (d < nearestDistance) { nearestDistance = d; nearest = j; }
+    }
+    if (nearestDistance < .5) return wallKinds[nearest];
+    // Between two street fronts: the corner facade
+    const near = j => distanceToPolyline(p, [footprint[j], footprint[(j + 1) % n]]) < .5 || distanceToPolyline(q, [footprint[j], footprint[(j + 1) % n]]) < .5;
+    const touching = footprint.map((_, j) => j).filter(near);
+    return touching.length && touching.every(j => wallKinds[j] === 'street') ? 'street' : 'rear';
+  });
+  return { footprint: shape, wallKinds: kinds };
+}
+
 const convex = polygon => polygon.every((p, i) => {
   const a = polygon[(i - 1 + polygon.length) % polygon.length], b = polygon[(i + 1) % polygon.length];
   return (p.x - a.x) * (b.y - p.y) - (p.y - a.y) * (b.x - p.x) >= -1e-6;
@@ -139,9 +215,13 @@ export function planLot(c, lot) {
     if (k0 !== k1 && (k0 + 1) % footprint.length === k1) wallKinds[k0] = kinds[j];
   }
   // A detached house on a wedge or L-shaped lot is a plain rectangle, square
-  // to its longest street
+  // to its longest street; a terrace follows its streets in wings
   let footprintOut = footprint;
-  if (insets.side > 1.5 && (!convex(footprint) || footprint.length > 5)) {
+  if (insets.side <= 1.5) {
+    const massed = massBuilding(footprint, wallKinds, depth);
+    if (massed) { footprintOut = massed.footprint; wallKinds.length = 0; wallKinds.push(...massed.wallKinds); }
+  }
+  if (insets.side > 1.5 && (!convex(footprint) || footprint.length > 5 || footprint.some((p, i) => cornerAngle(footprint, i) < SHARP))) {
     let best = -1;
     for (let j = 0; j < n; j++) if (kinds[j] === 'street' && (best < 0 || edgeLength(polygon, j) > edgeLength(polygon, best))) best = j;
     const a = polygon[best], b = polygon[(best + 1) % n], length = edgeLength(polygon, best) || 1;
@@ -163,12 +243,15 @@ export function planLot(c, lot) {
       }
     }
   }
+  // A house that could only be a wedge is a garden instead
+  if (insets.side > 1.5 && footprintOut === footprint && footprint.some((p, i) => cornerAngle(footprint, i) < SHARP)) return { kind: 'garden', lot };
   const street = wallKinds.map(kind => kind === 'street');
   if (!street.some(Boolean)) street[0] = true;
+  const massedArea = calcPolygonArea(footprintOut);
   const frontage = footprintOut.reduce((sum, p, i) => sum + (street[i] ? edgeLength(footprintOut, i) : 0), 0);
   const downtown = Math.hypot(lot.centre.x - CITY.downtown.u, lot.centre.y - CITY.downtown.s) / Math.max(1, CITY.downtown.radius);
   let type = pick(frontage < 16 ? style.narrow : style.wide, random);
-  if (area < 150 && ['office', 'atrium', 'deco', 'warehouse'].includes(type)) type = pick(['shop', 'townhouse', 'brick'], random);
+  if (massedArea < 150 && ['office', 'atrium', 'deco', 'warehouse'].includes(type)) type = pick(['shop', 'townhouse', 'brick'], random);
   const [low, high] = HEIGHTS[type];
   let floors = Math.max(low, Math.min(high, blockFloors(lot.block, style) + integer(random, -1, 1)));
   // The skyline rises toward downtown, with the odd tower above it
@@ -177,27 +260,27 @@ export function planLot(c, lot) {
   const breadth = Math.sqrt(calcPolygonArea(footprintOut));
   // No slender towers on small footprints
   floors = Math.max(Math.min(low, 2), Math.min(floors, Math.round(breadth * .9)));
-  const house = footprintOut.length === 4 && area < 330 && ['townhouse', 'pavilion', 'shop', 'brick'].includes(type) && random() < (district === 'Garden quarter' ? .9 : insets.side > .5 ? .5 : .12);
+  const house = footprintOut.length === 4 && massedArea < 330 && ['townhouse', 'pavilion', 'shop', 'brick'].includes(type) && random() < (district === 'Garden quarter' ? .9 : insets.side > .5 ? .5 : .12);
   // A big lot becomes a perimeter block round a courtyard; a huge one that
   // cannot is a low hall.
   let court = [];
-  if (area > 2600 && !house && type !== 'warehouse') {
+  if (massedArea > 2600 && !house && type !== 'warehouse') {
     const inner = offsetPolygon(footprintOut, -Math.min(18, Math.max(11, breadth * .3)));
     if (inner.length >= 3 && calcPolygonArea(inner) > 160 && isSimple(inner)) court = inner;
   }
   if (court.length) {
     if (!['apartment', 'brick', 'deco', 'office'].includes(type)) type = pick(['apartment', 'brick', 'deco', 'office'], random);
     floors = Math.max(3, Math.min(floors, 8));
-  } else if (area > 5000) { type = pick(['warehouse', 'pavilion'], random); floors = integer(random, 1, 2); }
-  const stepped = !house && !court.length && floors >= 6 && area > 260 && (type === 'deco' || type === 'office' || type === 'atrium' || (type === 'apartment' && random() < .38));
+  } else if (massedArea > 5000) { type = pick(['warehouse', 'pavilion'], random); floors = integer(random, 1, 2); }
+  const stepped = !house && !court.length && floors >= 6 && massedArea > 260 && (type === 'deco' || type === 'office' || type === 'atrium' || (type === 'apartment' && random() < .38));
   const shopfront = type !== 'warehouse' && type !== 'pavilion' && random() < style.shops;
   // Windows on the street, on the yard when there is room behind, and on the
   // sides only where there is a gap to look out of
-  const windows = wallKinds.map((kind, i) => street[i] || (kind === 'rear' && rear > 2.4) || (kind === 'side' && insets.side > 1.5));
-  return { kind: 'building', lot, district, footprint: local(footprintOut, c), lotLocal: local(polygon, c), court: local(court, c), street, windows, type, floors, area, breadth,
+  const windows = wallKinds.map((kind, i) => street[i] || (kind === 'rear' && (rear > 2.4 || footprintOut !== footprint)) || (kind === 'side' && insets.side > 1.5));
+  return { kind: 'building', lot, district, footprint: local(footprintOut, c), lotLocal: local(polygon, c), court: local(court, c), street, windows, type, floors, area: massedArea, breadth,
     wall: pick(style.walls, random), accent: pick(ACCENTS, random), roof: pick(ROOFS, random), roofType: house ? 'hip' : stepped ? 'terrace' : 'flat',
     setbackFloors: stepped ? Math.max(2, Math.floor(floors * .57)) : floors, seed: (lot.seed + 9973) >>> 0, variation: integer(random, 0, 3),
-    shop: pick(SHOP_NAMES, random), shopfront, lawn: insets.lawn, rearWindows: rear > 2.4 };
+    shop: pick(SHOP_NAMES, random), shopfront, lawn: insets.lawn, rearWindows: rear > 2.4 || footprintOut !== footprint };
 }
 
 export function edgeWindows(c, b, f, bottom, floors, random) {

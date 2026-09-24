@@ -88,8 +88,8 @@ export function ringRoad(origin, dimensions, { inset = 45, radius = 220, wander 
 }
 
 // Every place two roads cross, as distances along each road. Endpoints that
-// touch another road's end or run count too: that is where a road split at
-// a park edge carries on as a path.
+// touch another road's end count too: that is where one road carries on as
+// another.
 function crossings(roads) {
   const segments = [];
   const cumulative = roads.map(road => {
@@ -584,71 +584,6 @@ export function joinCorners(roads, { near = 24, radiusOf = () => 35, minTurn = .
     if (!changed) break;
   }
   return list;
-}
-
-// A park path that meets a street a few metres from a junction splits that
-// street into a sliver no car can turn from, and puts its entrance in the
-// junction's corner. Each such end slides along the street to `near` metres
-// from the junction; where the street is too short for that, the path is cut
-// back to where it last crosses another park path, so the entrance goes
-// without leaving a dead end (a path that crosses none goes altogether).
-export function easePathEnds(roads, { near = 24, touch = 1.5, overshoot = .6 } = {}) {
-  const list = roads.map(road => ({ ...road, points: road.points.map(p => p.clone()) }));
-  const { hits, cumulative } = crossings(list);
-  const pointAt = (points, d) => { const slice = slicePolyline(points, 0, d); return slice[slice.length - 1]; };
-  // How far along a polyline its nearest point to p is, and how far p is from it
-  const project = (points, cumulative, p) => {
-    let best = { d: 0, distance: Infinity };
-    for (let i = 0; i < points.length - 1; i++) {
-      const a = points[i], b = points[i + 1], dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1;
-      const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2)), distance = Math.hypot(p.x - a.x - dx * t, p.y - a.y - dy * t);
-      if (distance < best.distance) best = { d: cumulative[i] + Math.sqrt(l2) * t, distance };
-    }
-    return best;
-  };
-  const drop = new Set();
-  list.forEach((path, r) => {
-    if (path.kind !== 'path') return;
-    const originalLength = cumulative[r][path.points.length - 1];
-    for (const atStart of [true, false]) {
-      if (drop.has(r)) break;
-      const endPoint = atStart ? path.points[0] : path.points[path.points.length - 1];
-      // The street this end of the path meets
-      let street = -1, at = null;
-      list.forEach((road, k) => {
-        if (road.kind === 'path') return;
-        const hit = project(road.points, cumulative[k], endPoint);
-        if (hit.distance < touch && (!at || hit.distance < at.distance)) { street = k; at = hit; }
-      });
-      if (street < 0) continue;
-      const road = list[street], streetLength = cumulative[street][road.points.length - 1];
-      const junctions = hits[street].filter(h => list[h.other].kind !== 'path').map(h => h.d);
-      const nearest = junctions.reduce((best, d) => Math.abs(d - at.d) < Math.abs(best - at.d) ? d : best, Infinity);
-      if (Math.abs(nearest - at.d) >= near) continue;
-      // Between the junctions either side: `near` from the closer one, or halfway
-      // if the gap is short, but never closer than half of `near` to either
-      const lo = Math.max(0, ...junctions.filter(d => d <= at.d)), hi = Math.min(streetLength, ...junctions.filter(d => d > at.d)), middle = (lo + hi) / 2;
-      const target = at.d < middle ? Math.min(lo + near, middle) : Math.max(hi - near, middle);
-      const points = atStart ? path.points.slice().reverse() : path.points, length = lengthOf(points);
-      if (Math.min(target - lo, hi - target) < near * .75) {
-        // How far from this end the path last crosses another path
-        const back = hits[r].filter(h => list[h.other].kind === 'path').map(h => atStart ? h.d : originalLength - h.d).filter(d => d > 2);
-        if (!back.length) { drop.add(r); break; }
-        const kept = slicePolyline(points, 0, length - Math.min(...back) + overshoot);
-        if (kept.length > 1) path.points = atStart ? kept.reverse() : kept;
-        continue;
-      }
-      const onStreet = pointAt(road.points, target);
-      // The path as far as a few metres short of the street, then on to the new entrance
-      const kept = slicePolyline(points, 0, Math.max(0, length - 6));
-      if (kept.length < 2) continue;
-      const heading = onStreet.clone().sub(kept[kept.length - 1]);
-      if (heading.length() < 2) continue;
-      const moved = [...kept, onStreet.clone(), onStreet.clone().add(heading.normalize().multiplyScalar(overshoot))];
-      path.points = atStart ? moved.reverse() : moved;
-    }
-  });
-  return list.filter((road, r) => !drop.has(r));
 }
 
 // A kink in the middle of a street, tighter than any street bends (where

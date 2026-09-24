@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { CITY, cityDistrict, cityCell } from '../src/world/city.js';
 import { citydriverRoute, journeyStart, nearestLanePose, roadAt, onRoadAt, cityHeight, waterAt, surfaceAt, ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL } from '../src/world/city-route.js';
 import { insidePolygon } from '../src/mapgen/polygon-util.js';
+import { MEDIAN_KERB } from '../src/world/city-medians.js';
 import { DrivingController } from '../src/vehicle.js';
 
 test('the drive starts in a lane of a wide road near the middle of the city, facing along it', () => {
@@ -18,13 +19,15 @@ test('the drive starts in a lane of a wide road near the middle of the city, fac
 });
 
 test('heights come from the kerbs, the roadway and the water, and bridges stay dry', () => {
-  let roadPoints = 0, pavementPoints = 0, waterPoints = 0, bridgePoints = 0;
+  let roadPoints = 0, pavementPoints = 0, waterPoints = 0, bridgePoints = 0, medianPoints = 0;
   for (let s = -800; s <= 800; s += 23) for (let u = -1100; u <= 1100; u += 29) {
     const height = cityHeight(s, u), surface = surfaceAt(s, u);
     // Inside a block's kerb is pavement, and a kerb never reaches onto a carriageway
     const kerbed = CITY.blocks.some(block => block.kerb.length >= 3 && insidePolygon({ x: u, y: s }, block.kerb));
     if (kerbed) { assert.equal(surface, 'pavement'); assert.ok(!onRoadAt(s, u) || roadAt(s, u).distance > roadAt(s, u).road.profile.halfWidth - .6, 'pavement on a road'); }
     if (surface === 'pavement') { pavementPoints++; assert.equal(height, PAVEMENT_LEVEL); }
+    // A boulevard's median stands a kerb above its carriageway, down its middle
+    else if (surface === 'median') { medianPoints++; assert.equal(height, ROAD_LEVEL + MEDIAN_KERB); assert.ok(roadAt(s, u).distance < roadAt(s, u).road.profile.median + .01); }
     else if (surface === 'water') { waterPoints++; assert.equal(height, WATER_LEVEL); assert.equal(citydriverRoute.water(s, u), true); assert.ok(!onRoadAt(s, u)); }
     else {
       assert.equal(height, ROAD_LEVEL);
@@ -35,6 +38,7 @@ test('heights come from the kerbs, the roadway and the water, and bridges stay d
   assert.ok(roadPoints > 100 && pavementPoints > 500, `${roadPoints} road, ${pavementPoints} pavement`);
   assert.ok(waterPoints > 20, `${waterPoints} water points`);
   assert.ok(bridgePoints > 0, 'no road crosses the water');
+  assert.ok(medianPoints > 0, 'no boulevard has a median');
 });
 
 test('the nearest lane pose faces the way the car was heading and every district has a name', () => {

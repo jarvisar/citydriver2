@@ -33,6 +33,13 @@ export const LOT_STYLES = {
   'Civic quarter': { depth: 25, frontage: [18, 26], corner: [12, 18] },
   Midtown: { depth: 30, frontage: [22, 34], corner: [15, 22] },
 };
+// How each district's side streets are laid out (see mapgen/road-hierarchy.js):
+// narrow lanes in the old town, parking bays where there are houses with
+// gardens, vans at the warehouses or shoppers downtown
+export const STREET_STYLES = {
+  'Old town': 'lane', 'Garden quarter': 'parking', 'Warehouse district': 'parking',
+  'Market district': 'side', 'Civic quarter': 'side', Midtown: 'parking',
+};
 const DOWNTOWN = .62;
 
 function districtNames(seed) {
@@ -143,12 +150,13 @@ export function buildCity(seed = SEED) {
   const names = districtNames(seed);
   const styleName = (grid, downtown) => downtown < DOWNTOWN ? 'Midtown' : names[grid] ?? 'Market district';
   const map = generateCityMap({ seed, width: CITY_WIDTH, height: CITY_HEIGHT,
-    lots: { style: (centre, grid, downtown) => ({ ...LOT_STYLES[styleName(grid, downtown)] }) } });
+    lots: { style: (centre, grid, downtown) => ({ ...LOT_STYLES[styleName(grid, downtown)] }) },
+    streets: { style: (point, grid, downtown) => STREET_STYLES[styleName(grid, downtown)] } });
   const margin = CITY_MARGIN;
   const minX = -CITY_WIDTH / 2 - margin, minY = -CITY_HEIGHT / 2 - margin, maxX = CITY_WIDTH / 2 + margin, maxY = CITY_HEIGHT / 2 + margin;
   // Land and water come from the generator's shore model, which tiles the
-  // world between them exactly: the island's country and city, the river
-  // through it and the sea all round (see mapgen/shore.js)
+  // world between them exactly: the island, the river through it and the sea
+  // all round (see mapgen/shore.js)
   const shore = map.shore;
   const land = shore.land, seaWater = shore.sea, riverWater = shore.river, quays = [];
   const riverCentre = shore.riverCentre;
@@ -170,13 +178,9 @@ export function buildCity(seed = SEED) {
       quays.push({ points: offsetPolylineClean(road.points, side * (bankProfile.halfWidth + width)), halfWidth: width, road });
     }
   }
-  // Where land meets water, water on the right: quay walls in the city,
-  // beaches on the open sea and grassy banks where the river runs through
-  // the country
-  const ringLoop = map.ring ? map.ring.slice(0, -1) : null, cityReach = ROAD_PROFILES.ring.halfWidth + SIDEWALK + 3;
-  const inCity = p => !ringLoop || insidePolygon(p, ringLoop) || distanceToPolyline(p, map.ring) < cityReach;
-  const shores = shoreRuns(land, { inCity, inRiver });
-  const walls = shores.filter(run => run.kind === 'quay').map(run => run.points);
+  // Where land meets water, water on the right: a quay wall all round
+  const shores = shoreRuns(land);
+  const walls = shores.map(run => run.points);
   const mask = new WaterMask(minX, minY, maxX, maxY);
   for (const piece of land) mask.fillLand([piece.outer, ...piece.holes]);
   const radial = map.field.getBasisFields().find(field => field.FIELD_TYPE === 0);
@@ -212,12 +216,9 @@ export function buildCity(seed = SEED) {
     if (kerb.length >= 3) pavement.add(kerb, { kind: 'park', park: index });
     return { ...info, index, kerb, lawn: kerb.length >= 3 ? offsetPolygon(kerb, -SIDEWALK * .6) : [] };
   });
-  // The ring road's outer pavement, where the city stops and the country begins
-  const edges = [];
+  // The promenade outside the ring road, where the city stops at the sea
   for (const road of map.roads) {
-    if (road.kind !== 'ring') continue;
-    quays.push({ points: offsetPolylineClean(road.points, -(road.profile.halfWidth + SIDEWALK / 2)), halfWidth: SIDEWALK / 2, road, edge: true });
-    edges.push(offsetPolylineClean(road.points, -(road.profile.halfWidth + SIDEWALK)));
+    if (road.kind === 'ring') quays.push({ points: offsetPolylineClean(road.points, -(road.profile.halfWidth + QUAY / 2)), halfWidth: QUAY / 2, road });
   }
   // Walks along one side of a road stop wherever another road crosses them
   // and never onto a carriageway, however the offset bends: every road they
@@ -231,11 +232,11 @@ export function buildCity(seed = SEED) {
     });
     return difference([polygon], [...roads].map(carriageway)).filter(piece => calcPolygonArea(piece.outer) > 4).map(piece => ({ ...quay, points, polygon: piece.outer }));
   }));
-  for (const walk of walks) pavement.add(walk.polygon, { kind: walk.edge ? 'edge' : 'quay' });
+  for (const walk of walks) pavement.add(walk.polygon, { kind: 'quay' });
   return {
     ...map, minX, minY, maxX, maxY, margin,
     land, seaWater, riverWater, riverCentre, shores, walls, quays: walks, mask, downtown, inRiver, parks: map.parks, parkPlans: parks,
-    pavement, cornerPatches, edges, districtNames: names, styleName,
+    pavement, cornerPatches, districtNames: names, styleName,
     cell: CITY_CELL,
     ix0: Math.floor(-CITY_WIDTH / 2 / CITY_CELL), ix1: Math.floor((CITY_WIDTH / 2 - 1e-6) / CITY_CELL),
     iz0: Math.floor(-CITY_HEIGHT / 2 / CITY_CELL), iz1: Math.floor((CITY_HEIGHT / 2 - 1e-6) / CITY_CELL),

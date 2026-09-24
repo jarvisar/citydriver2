@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { NightLighting } from '../src/night-lighting.js';
 import { CityChunk, CitydriverWorld, blockBatches } from '../src/world/citydriver-world.js';
+import { LANTERN_HEIGHT } from '../src/world/city-assets.js';
 import { DrivingController } from '../src/vehicle.js';
 import { citydriverRoute, journeyStart } from '../src/world/city-route.js';
 import { CityTraffic } from '../src/city-traffic.js';
@@ -47,18 +48,21 @@ test('lamp light sources match rendered lenses on curved streets and bridges', (
     let lit = 0;
     for (const [ix, iz] of [[0, 0], [3, 0], [-2, -3], [1, 1], [-1, 2]]) {
       const chunk = new CityChunk(world, ix, iz);
-      const lamps = [...blockBatches(chunk.group)].find(batch => batch.name === 'lamp');
-      if (!lamps) { assert.equal(chunk.features.lamps.length, 0); chunk.dispose(); continue; }
-      lit++;
-      assert.equal(chunk.features.lamps.length, lamps.count);
-      for (let i = 0; i < lamps.count; i++) {
-        const matrix = new THREE.Matrix4(); lamps.matrixAt(i, matrix);
-        const point = new THREE.Vector3(-1.75, 7.36, 0).applyMatrix4(matrix);
-        const source = chunk.features.lamps[i];
-        assert.ok(Math.abs(point.x + chunk.east - source.x) < .0001);
-        assert.ok(Math.abs(point.y - source.y) < .0001);
-        assert.ok(Math.abs(point.z - chunk.start - source.z) < .0001);
+      // Street lamps light from the head of their arm, park lanterns from their glass
+      for (const [name, head] of [['lamp', new THREE.Vector3(-1.75, 7.36, 0)], ['lantern', new THREE.Vector3(0, LANTERN_HEIGHT, 0)]]) {
+        const lamps = [...blockBatches(chunk.group)].find(batch => batch.name === name), sources = chunk.features.lamps.filter(lamp => lamp.kind === name);
+        if (!lamps) { assert.equal(sources.length, 0); continue; }
+        if (name === 'lamp') lit++;
+        assert.equal(sources.length, lamps.count);
+        for (let i = 0; i < lamps.count; i++) {
+          const matrix = new THREE.Matrix4(); lamps.matrixAt(i, matrix);
+          const point = head.clone().applyMatrix4(matrix), source = sources[i];
+          assert.ok(Math.abs(point.x + chunk.east - source.x) < .0001);
+          assert.ok(Math.abs(point.y - source.y) < .0001);
+          assert.ok(Math.abs(point.z - chunk.start - source.z) < .0001);
+        }
       }
+      assert.equal(chunk.features.lamps.length, chunk.features.lamps.filter(lamp => lamp.kind === 'lamp' || lamp.kind === 'lantern').length);
       chunk.dispose();
     }
     assert.ok(lit > 0, 'some chunk has lamps');

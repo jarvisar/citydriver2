@@ -22,9 +22,17 @@ const side = yaw => ({ x: Math.cos(yaw), y: Math.sin(yaw) });
 test('lamps, trees, signs and signals stand on the pavement, never on a carriageway or in a junction', () => {
   const nav = navGraph(), geometry = junctionGeometry(nav);
   const kinds = new Set(furniture.map(piece => piece.kind));
-  for (const kind of ['lamp', 'tree', 'stop', 'signal', 'shelter', 'bin', 'hedge', 'railing']) assert.ok(kinds.has(kind), `${kind} placed`);
+  for (const kind of ['lamp', 'median-lamp', 'lantern', 'tree', 'stop', 'signal', 'shelter', 'bin', 'railing', 'bench', 'parked']) assert.ok(kinds.has(kind), `${kind} placed`);
   for (const piece of furniture) {
-    if (piece.kind === 'railing' || piece.kind === 'hedge') continue;
+    if (piece.kind === 'railing' || piece.kind === 'rim') continue;
+    // A parked car stands in a parking bay, between the traffic lane and the kerb
+    if (piece.kind === 'parked') {
+      const road = onRoadAt(piece.s, piece.u);
+      assert.ok(road?.road.profile.parking && road.distance > road.road.profile.parking - .2 && road.distance < road.road.profile.halfWidth, `parked car off its bay at ${piece.u.toFixed(1)},${piece.s.toFixed(1)}`);
+      continue;
+    }
+    // A boulevard's trees and lamps stand on its median
+    if (piece.kind === 'median-lamp' || piece.median) { assert.equal(surfaceAt(piece.s, piece.u), 'median', `${piece.kind} off the median at ${piece.u.toFixed(1)},${piece.s.toFixed(1)}`); continue; }
     if (piece.kind === 'tree' && !CITY.pavement.find(piece.u, piece.s)) continue;  // park trees stand on lawns
     assert.equal(surfaceAt(piece.s, piece.u), 'pavement', `${piece.kind} at ${piece.u.toFixed(1)},${piece.s.toFixed(1)}`);
     assert.ok(!onRoadAt(piece.s, piece.u), `${piece.kind} on a road`);
@@ -33,7 +41,7 @@ test('lamps, trees, signs and signals stand on the pavement, never on a carriage
   for (const shape of geometry.values()) {
     const radius = Math.min(...shape.arms.map(arm => arm.clear));
     for (const piece of furniture) {
-      if (['stop', 'signal', 'railing', 'hedge'].includes(piece.kind)) continue;
+      if (['stop', 'signal', 'railing', 'rim'].includes(piece.kind)) continue;
       assert.ok(Math.hypot(piece.u - shape.node.x, piece.s - shape.node.y) > radius - .5, `${piece.kind} in the junction at ${shape.node.x.toFixed(0)},${shape.node.y.toFixed(0)}`);
     }
   }

@@ -29,11 +29,18 @@ Changes from the original TypeScript:
   strip.
 - The river's banks and channel are offsets of one smoothed centre line, and
   its bank roads meet the coast road.
-- The city is an island (`shore.js`): land, river and sea are polygon
-  booleans (`booleans.js`, with Clipper) over the island's outline, the
-  harbour and the river's channel, so they tile the world exactly.
+- The city is an island (`shore.js`) ending at a promenade outside its ring
+  road: land, river and sea are polygon booleans (`booleans.js`, with
+  Clipper) over the island's outline, the harbour and the river's channel,
+  so they tile the world exactly.
 - Two roads meeting end to end at an angle are joined at the nearby junction
-  or rounded, and park paths meet their streets clear of the junctions.
+  or rounded.
+- Every road takes a street profile, the longest avenues are promoted to
+  boulevards and side streets follow their district (`road-hierarchy.js`).
+- A park is laid out rather than grown from streamlines: gates on its
+  streets, a loop walk and walks to a plaza or a pond (`park-paths.js`).
+- A block whose kerb reaches onto a carriageway has the carriageway cut out
+  of it rather than being dropped.
 - A face is dry land if a point well inside it is, not its centroid.
 
 This directory is distributed under the GNU Lesser General Public License

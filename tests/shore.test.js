@@ -40,10 +40,8 @@ test('the city stands on land: lots and kerbs never in the water, roads only ove
   }
 });
 
-test('quay walls stand in the city with the water on their right; the country meets the water in beaches and banks', () => {
-  const kinds = new Set(CITY.shores.map(run => run.kind));
-  assert.ok(kinds.has('quay') && kinds.has('beach'));
-  const ring = CITY.ring.slice(0, -1);
+test('the city meets the water in quay walls all round, with the water on their right', () => {
+  assert.ok(CITY.shores.length && CITY.shores.every(run => run.kind === 'quay'));
   for (const run of CITY.shores) {
     for (let i = 0; i + 1 < run.points.length; i += 3) {
       const a = run.points[i], b = run.points[i + 1], dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy);
@@ -51,20 +49,27 @@ test('quay walls stand in the city with the water on their right; the country me
       const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       const right = { x: mid.x + dy / length * 1.5, y: mid.y - dx / length * 1.5 }, left = { x: mid.x - dy / length * 1.5, y: mid.y + dx / length * 1.5 };
       assert.ok(!CITY.land.some(piece => inPiece(right, piece)) && CITY.land.some(piece => inPiece(left, piece)), 'water on the right of a shore');
-      if (run.kind === 'quay') assert.ok(insidePolygon(mid, ring) || distanceToPolyline(mid, CITY.ring) < 20, 'quay in the city');
-      else assert.ok(!insidePolygon(mid, ring), `${run.kind} in the city`);
     }
   }
 });
 
-test('the island shore is one simple ring round the ring road', () => {
+test('the island ends at the promenade outside the ring road', () => {
   const ring = ringRoad(new Vector(-1200, -900), new Vector(2400, 1800), { noise: (x, y) => Math.sin(x * 3.1) * Math.cos(y * 2.3) });
-  const outline = islandOutline(ring, { noise: (x, y) => Math.sin(x * 2.7 + y), reach: [60, 300] });
-  for (const p of ring) assert.ok(insidePolygon(p, outline), 'ring inside the shore');
+  const outline = islandOutline(ring, 17);
+  for (const p of ring) {
+    assert.ok(insidePolygon(p, outline), 'ring inside the shore');
+    assert.ok(Math.abs(distanceToPolyline(p, [...outline, outline[0]]) - 17) < 1, 'shore a promenade beyond the ring');
+  }
   const n = outline.length;
   for (let i = 0; i < n; i++) for (let j = i + 2; j < n; j++) {
     if (i === 0 && j === n - 1) continue;
     assert.equal(segmentIntersection(outline[i], outline[(i + 1) % n], outline[j], outline[(j + 1) % n]), null, 'shore crosses itself');
+  }
+  // In the generated city every stretch of the ring road has its promenade before the water
+  for (const road of CITY.roads.filter(road => road.kind === 'ring')) for (const p of road.points) {
+    if (nearEdge(p, CITY.riverWater, 30)) continue;
+    const q = { x: p.x, y: p.y };
+    assert.ok(!waterAt(q.y, q.x), 'ring road over the sea');
   }
 });
 

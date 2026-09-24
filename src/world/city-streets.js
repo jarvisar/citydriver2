@@ -2,9 +2,11 @@ import { CITY, SIDEWALK } from './city.js';
 import { ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL, waterAt, onRoadAt } from './city-route.js';
 import { junctionGeometry, CROSSWALK, stopLineDistance } from './junction-geometry.js';
 import { junctionControls } from '../city-junctions.js';
+import { cityMedians, MEDIAN_KERB } from './city-medians.js';
+import { cityParks, parkClear, pondShore, SQUARE_WALK } from './city-parks.js';
 import { faceYaw, alongYaw } from './city-layout-render.js';
 import { randomAt, seededRandom } from './route.js';
-import { offsetPolyline, offsetPolylineClean, offsetPolygon, insidePolygon, polygonBounds, calcPolygonArea, signedArea } from '../mapgen/polygon-util.js';
+import { offsetPolyline, offsetPolylineClean, offsetPolygon, insidePolygon, polygonBounds, calcPolygonArea, signedArea, distanceToPolyline } from '../mapgen/polygon-util.js';
 import { cityPlaces } from '../city-exploration.js';
 import { clipInside } from '../mapgen/road-network.js';
 
@@ -16,11 +18,19 @@ import { clipInside } from '../mapgen/road-network.js';
 // lamp or tree only ever stands on a pavement.
 
 const LAMP_SPACING = 27, TREE_SPACING = 19;
+// What stands in the parking bays, commonest first
+const PARKED_MODELS = ['sedan', 'hatchback', 'wagon', 'sedan', 'hatchback', 'pickup', 'van'];
+// A parking bay's length along the kerb
+export const PARKING_BAY = 6.5;
 export const COLOURS = {
   road: '#666c70', marking: '#d8bd80', line: '#d7d8c9', stripe: '#deddd0', stop: '#e1dfce',
   pavement: '#acafa8', kerb: '#9a9d98', lawn: '#79a05a', median: '#779757', medianKerb: '#c3bfab',
-  quay: '#b3aea0', country: '#8e9b6a', path: '#b9ad8e', plaza: '#c2b9a3',
+  quay: '#b3aea0', land: '#8e9b6a', path: '#b9ad8e', plaza: '#c2b9a3', flags: '#b1a78f', coping: '#c9c1ad',
 };
+// A park pond's water, a little below its lawn and clear of the ground under
+// it however its waves move
+const POND_LEVEL = ROAD_LEVEL + .08;
+const circle = (x, y, r, count = 24) => Array.from({ length: count }, (_, k) => ({ x: x + Math.cos(k / count * Math.PI * 2) * r, y: y + Math.sin(k / count * Math.PI * 2) * r }));
 
 // Points every `step` metres along a polyline, with the unit tangent
 export function alongPolyline(points, step, offset = 0) {
@@ -75,8 +85,8 @@ function approachPoint(nav, edge, node, distance) {
 // darkens), paths, water and walls.
 export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav, bridges) {
   const geometry = junctionGeometry(nav), controls = junctionControls(nav);
-  // The island under everything (its coast is city-coast.js)
-  for (const piece of CITY.land) ground.polygon(piece.outer, ROAD_LEVEL - .06, COLOURS.country, null, true, piece.holes);
+  // The island under everything
+  for (const piece of CITY.land) ground.polygon(piece.outer, ROAD_LEVEL - .06, COLOURS.land, null, true, piece.holes);
   // Carriageways, and the corners the rounded kerbs hand back to them
   const parkKerbs = CITY.parkPlans.filter(park => park.kerb.length >= 3).map(park => park.kerb);
   for (const road of CITY.roads) {
@@ -87,32 +97,44 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
   for (const patch of CITY.cornerPatches) roads.polygon(patch, ROAD_LEVEL, COLOURS.road);
   // Markings along each street between its junctions
   const markings = ground;
+  const dashed = (line, every, length, width, colour, offset = 0) => {
+    for (const p of alongPolyline(line, every, offset)) {
+      const dash = slicePolyline(line, p.distance, p.distance + length);
+      if (dash.length > 1) markings.ribbon(dash, width, ROAD_LEVEL + .012, colour);
+    }
+  };
   for (const edge of nav.edges) {
     if (edge.kind === 'path') continue;
     const profile = edge.profile, [from, to] = markedSpan(nav, edge, geometry);
     if (to - from < 4) continue;
     const span = slicePolyline(edge.points, from, to);
     if (profile.kind === 'boulevard') {
-      // A planted median with kerbs, and a white line along each edge
-      const median = profile.median;
-      ground.ribbon(span, median, ROAD_LEVEL + .22, COLOURS.medianKerb);
-      ground.ribbon(span, median - .2, ROAD_LEVEL + .28, COLOURS.median);
-      // Walls face the right of travel: run the left kerb backwards so both face out
-      ground.wall(offsetPolyline(span, median).reverse(), ROAD_LEVEL + .22, ROAD_LEVEL, COLOURS.medianKerb);
-      ground.wall(offsetPolyline(span, -median), ROAD_LEVEL + .22, ROAD_LEVEL, COLOURS.medianKerb);
+      // Two lanes each way either side of the median, and a line along each edge
       for (const side of [-1, 1]) {
-        for (const p of alongPolyline(span, 9, 2)) {
-          const dash = slicePolyline(span, p.distance, p.distance + 4.5);
-          if (dash.length > 1) markings.ribbon(offsetPolyline(dash, side * (median + 2.9)), .11, ROAD_LEVEL + .012, COLOURS.line);
-        }
+        dashed(offsetPolyline(span, side * profile.divider), 9, 4.5, .11, COLOURS.line, 2);
         markings.ribbon(offsetPolyline(span, side * (profile.halfWidth - .6)), .12, ROAD_LEVEL + .012, COLOURS.line);
       }
-    } else if (profile.kind === 'avenue') {
-      for (const p of alongPolyline(span, 10, 3)) {
-        const dash = slicePolyline(span, p.distance, p.distance + 4);
-        if (dash.length > 1) markings.ribbon(dash, .12, ROAD_LEVEL + .012, COLOURS.marking);
+    } else if (profile.kind === 'avenue') dashed(span, 10, 4, .12, COLOURS.marking, 3);
+    if (profile.parking) {
+      // Parking bays along both kerbs: a line along their outside, and a tick between bays
+      for (const side of [-1, 1]) {
+        markings.ribbon(offsetPolyline(span, side * profile.parking), .07, ROAD_LEVEL + .012, COLOURS.line);
+        for (const p of alongPolyline(span, PARKING_BAY, PARKING_BAY / 2)) {
+          const nx = -p.ty * side, ny = p.tx * side, a = profile.parking, b = profile.halfWidth - .3;
+          markings.polygon([{ x: p.x + nx * a - p.tx * .05, y: p.y + ny * a - p.ty * .05 }, { x: p.x + nx * b - p.tx * .05, y: p.y + ny * b - p.ty * .05 },
+            { x: p.x + nx * b + p.tx * .05, y: p.y + ny * b + p.ty * .05 }, { x: p.x + nx * a + p.tx * .05, y: p.y + ny * a + p.ty * .05 }], ROAD_LEVEL + .012, COLOURS.line);
+        }
       }
     }
+  }
+  // Raised medians down the boulevards and the ring's parkway, kerbed, with
+  // grass in them (see city-medians.js)
+  for (const median of cityMedians(nav).list) {
+    const top = ROAD_LEVEL + MEDIAN_KERB;
+    ground.polygon(median.polygon, top, COLOURS.medianKerb);
+    const lawn = offsetPolygon(median.polygon, -.3);
+    if (lawn.length >= 3) ground.polygon(lawn, top + .015, COLOURS.median);
+    ground.wall(clockwise(median.polygon), top, ROAD_LEVEL - .02, COLOURS.medianKerb, true);
   }
   // Crosswalks where each road leaves a junction, stop lines behind them
   for (const [node, control] of controls) {
@@ -131,6 +153,16 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
       markings.polygon([at(line, inner), at(line, halfWidth - .4), at(back, halfWidth - .4), at(back, inner)], ROAD_LEVEL + .014, COLOURS.stop);
     }
   }
+  // A zebra crossing over the street at each park gate (a median stops either side of it)
+  for (const layout of CITY.parkLayouts ?? []) for (const gate of layout.gates) {
+    const { street, profile } = gate, nx = gate.x - street.x, ny = gate.y - street.y, length = Math.hypot(nx, ny);
+    if (length < 1) continue;
+    const n = { x: nx / length, y: ny / length }, t = { x: -n.y, y: n.x }, half = CROSSWALK / 2;
+    const at = (across, along) => ({ x: street.x + n.x * across + t.x * along, y: street.y + n.y * across + t.y * along });
+    for (let across = -profile.halfWidth + .8; across < profile.halfWidth - .5; across += 1.6) {
+      markings.polygon([at(across, -half), at(across + .85, -half), at(across + .85, half), at(across, half)], ROAD_LEVEL + .014, COLOURS.stripe);
+    }
+  }
   // Pavements with kerbs, the parks and squares, and the ground inside each block
   for (const block of CITY.blocks) {
     if (block.kerb.length < 3) continue;
@@ -140,16 +172,32 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
     ground.polygon(block.inner, PAVEMENT_LEVEL + .02, blockGround(block));
     if (block.yard?.length >= 3) ground.polygon(block.yard, PAVEMENT_LEVEL + .035, yardGround(block));
   }
-  for (const park of CITY.parkPlans) {
+  for (const entry of cityParks()) {
+    const park = entry.park, holes = entry.pond ? [pondShore(entry.pond)] : [];
     if (park.kerb.length >= 3 && !park.square) {
-      ground.polygon(park.kerb, PAVEMENT_LEVEL, COLOURS.pavement);
+      ground.polygon(park.kerb, PAVEMENT_LEVEL, COLOURS.pavement, null, true, holes);
       ground.wall(clockwise(park.kerb), PAVEMENT_LEVEL, ROAD_LEVEL - .02, COLOURS.kerb, true);
     }
-    if (park.lawn.length >= 3) ground.polygon(park.lawn, PAVEMENT_LEVEL + .02, park.square && squarePaved(park) ? COLOURS.plaza : COLOURS.lawn);
+    const paved = park.square && squarePaved(park);
+    if (park.lawn.length >= 3) ground.polygon(park.lawn, PAVEMENT_LEVEL + .02, paved ? COLOURS.plaza : COLOURS.lawn, null, true, holes);
+    // The plaza in the middle, paved out to the walk round it
+    if (entry.plaza) {
+      const reach = park.square ? entry.plaza.radius + SQUARE_WALK * 2 + .6 : entry.plaza.radius + 4.4;
+      ground.polygon(circle(entry.plaza.x, entry.plaza.y, reach, 28), PAVEMENT_LEVEL + .03, paved ? COLOURS.flags : COLOURS.plaza);
+    }
+    // A square's own walks
+    for (const walk of entry.walks) paths.ribbon(walk, SQUARE_WALK, PAVEMENT_LEVEL + .035, paved ? COLOURS.flags : COLOURS.path);
+    // A pond: water a little below the lawn, inside a low stone coping
+    if (entry.pond) {
+      const shore = pondShore(entry.pond), ring = [...shore, shore[0]];
+      water.polygon(shore, POND_LEVEL, '#3f7f86', () => [1, 0]);
+      walls.wall(signedArea(shore) > 0 ? ring.slice().reverse() : ring, PAVEMENT_LEVEL + .3, POND_LEVEL - .4, COLOURS.coping);
+      walls.ribbon(offsetPolyline(signedArea(shore) > 0 ? ring : ring.slice().reverse(), -.35), .38, PAVEMENT_LEVEL + .3, COLOURS.coping);
+    }
   }
-  // Quays and the city's outer pavement: raised, with a kerb on the road side
+  // Quays and promenades: raised, with a kerb on the road side
   for (const walk of CITY.quays) {
-    ground.polygon(walk.polygon, PAVEMENT_LEVEL, walk.edge ? COLOURS.pavement : COLOURS.quay);
+    ground.polygon(walk.polygon, PAVEMENT_LEVEL, COLOURS.quay);
     ground.wall(clockwise(walk.polygon), PAVEMENT_LEVEL, ROAD_LEVEL - .02, COLOURS.kerb, true);
   }
   // Water and the quay walls that hold the city above it
@@ -184,6 +232,8 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
 const clockwise = polygon => signedArea(polygon) > 0 ? polygon.slice().reverse() : polygon;
 // What the ground inside a block is: gardens where the district has them, paving elsewhere
 const GARDEN_STYLES = new Set(['Garden quarter', 'Civic quarter']);
+// Where the back yards have trees in them
+const YARD_TREES = new Set(['Garden quarter', 'Civic quarter', 'Old town', 'Market district']);
 export const blockGround = block => GARDEN_STYLES.has(block.style) ? '#86a263' : block.style === 'Warehouse district' ? '#a8a598' : '#b3b2a5';
 export const yardGround = block => block.style === 'Warehouse district' ? '#9e9b8e' : block.style === 'Midtown' ? '#a9a99d' : '#83a05e';
 export const squarePaved = park => park.square && randomAt(park.index, 7401, CITY.seed) < .5;
@@ -220,11 +270,13 @@ export function placeStreetFurniture(nav, bridges, add) {
     if (!zoneIndex.has(key)) zoneIndex.set(key, []);
     zoneIndex.get(key).push(zone);
   }
-  // Junction corners and crosswalks, and wherever a road or park path crosses a pavement
-  const inZone = (x, y) => {
+  // Junction corners and crosswalks, and wherever a road or park path crosses
+  // a pavement (a median stands in its own road, so asks only of junctions)
+  const inZone = (x, y, junctionsOnly = false) => {
     for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
       for (const zone of zoneIndex.get(`${Math.floor(x / 60) + dx},${Math.floor(y / 60) + dy}`) ?? []) if (Math.hypot(zone.x - x, zone.y - y) < zone.r) return true;
     }
+    if (junctionsOnly) return false;
     const road = CITY.roadIndex.nearest(x, y, 12, (segment, distance) => distance - segment.road.profile.halfWidth);
     return Boolean(road && (road.score < 0 || road.road.kind === 'path' && road.score < 1.5));
   };
@@ -236,6 +288,8 @@ export function placeStreetFurniture(nav, bridges, add) {
     }
     return true;
   };
+  // Bus stops, which the parked cars leave clear
+  const stops = [], onPlaced = (x, y, kind, radius) => kind === 'shelter' && stops.some(stop => Math.hypot(stop.x - x, stop.y - y) < radius);
   // Street furniture stands on a pavement, whatever placed it
   const PAVED = new Set(['lamp', 'bin', 'shelter', 'stop', 'signal', 'sign']);
   const put = (piece, radius = 1.5) => {
@@ -261,7 +315,12 @@ export function placeStreetFurniture(nav, bridges, add) {
         const reach = edge.profile.halfWidth + 1.1, u = p.x + p.rx * reach, y = p.y + p.ry * reach;
         if (waterAt(y, u)) continue;
         const yaw = faceYaw(p.tx, p.ty);
-        if (put(approach.kind === 'signal' ? { kind: 'signal', u, s: y, yaw, axis: approach.axis } : { kind: 'stop', u, s: y, yaw }, 1)) break;
+        // On a wide road the signal hangs over the lanes from a mast arm, a
+        // head above each lane the approach's traffic can take
+        const lanes = edge.profile.divider ? [(edge.profile.median + edge.profile.divider) / 2, (edge.profile.divider + edge.profile.halfWidth - .6) / 2]
+          : [edge.profile.halfWidth / 2 - .5];
+        const mast = edge.profile.halfWidth >= 8 ? lanes.map(lane => reach - lane) : null;
+        if (put(approach.kind === 'signal' ? { kind: 'signal', u, s: y, yaw, axis: approach.axis, mast } : { kind: 'stop', u, s: y, yaw }, 1)) break;
       }
     }
   }
@@ -283,7 +342,7 @@ export function placeStreetFurniture(nav, bridges, add) {
       const nx = -p.ty, ny = p.tx, x = p.x + nx * 1.7, y = p.y + ny * 1.7;
       const road = CITY.roadIndex.nearest(p.x, p.y, 16);
       if (sinceShelter < 240 || !road || !['main', 'major', 'ring'].includes(road.road.kind) || inZone(x, y)) continue;
-      if (put({ kind: 'shelter', u: x, s: y, yaw: alongYaw(nx, ny) }, 6)) sinceShelter = 0;
+      if (put({ kind: 'shelter', u: x, s: y, yaw: alongYaw(nx, ny) }, 6)) { sinceShelter = 0; stops.push({ x, y }); }
     }
     let lamps = 0;
     for (const p of alongPolyline(loop, LAMP_SPACING, lampStart)) {
@@ -300,16 +359,24 @@ export function placeStreetFurniture(nav, bridges, add) {
       put({ kind: 'tree', u: x, s: y, scale: 7.2 + randomAt(Math.round(x), Math.round(y) + 31, CITY.seed) * 2.4 }, 3);
     }
   }
-  // Lamps and a few trees along the quays and the city's outer pavement
+  // Down each median: trees on a boulevard's, and now and then a lamp with an
+  // arm over each carriageway; the parkway's grass has only the lamps
+  for (const median of cityMedians(nav).list) {
+    alongPolyline(median.points, 13, 6.5).forEach((p, i) => {
+      if (waterAt(p.y, p.x) || inZone(p.x, p.y, true)) return;
+      if (i % 3 === 1) put({ kind: 'median-lamp', u: p.x, s: p.y, yaw: alongYaw(-p.ty, p.tx) }, 3);
+      else if (median.planted) put({ kind: 'tree', u: p.x, s: p.y, scale: 6.2 + randomAt(Math.round(p.x), Math.round(p.y) + 7405, CITY.seed) * 1.8, median: true }, 3);
+    });
+  }
+  // Lamps along the quays and promenades
   for (const walk of CITY.quays) {
-    const side = walk.edge ? 1 : 1;
     for (const p of alongPolyline(walk.points, LAMP_SPACING, 8)) {
       if (inZone(p.x, p.y)) continue;
       // The lamp stands on the road side of the walk, its arm over the road
       const road = CITY.roadIndex.nearest(p.x, p.y, 20);
       if (!road) continue;
       const ax = p.x - road.x, ay = p.y - road.y, l = Math.hypot(ax, ay) || 1, x = road.x + ax / l * (road.road.profile.halfWidth + .7), y = road.y + ay / l * (road.road.profile.halfWidth + .7);
-      put({ kind: 'lamp', u: x, s: y, yaw: alongYaw(ax / l * side, ay / l * side) }, 4);
+      put({ kind: 'lamp', u: x, s: y, yaw: alongYaw(ax / l, ay / l) }, 4);
     }
   }
   // Railings along the quay walls, with a gap wherever a road meets the water
@@ -329,51 +396,99 @@ export function placeStreetFurniture(nav, bridges, add) {
       for (const p of alongPolyline(edge, 4, 2)) add({ kind: 'railing', u: p.x, s: p.y, yaw: faceYaw(p.tx, p.ty), y: ROAD_LEVEL });
     }
   }
-  // A hedge beyond the city's outer pavement, carried on to the water's edge
-  for (const edge of CITY.edges) {
-    const line = offsetPolylineClean(edge, -.9);
-    for (const p of alongPolyline(line, 6, 3)) {
-      if (waterAt(p.y, p.x)) continue;
-      add({ kind: 'hedge', u: p.x, s: p.y, yaw: faceYaw(p.tx, p.ty), length: 6.2 });
-    }
-  }
-  // Parks: trees scattered over the lawns, clear of the paths, and benches beside the paths
-  CITY.parkPlans.forEach((park, index) => {
-    const lawn = park.lawn;
-    if (lawn.length < 3) return;
-    const random = seededRandom(CITY.seed + index * 7919), bounds = polygonBounds(lawn), area = calcPolygonArea(lawn);
-    const paved = squarePaved(park), wanted = Math.min(400, Math.floor(area / (paved ? 420 : 230)));
-    for (let attempt = 0, count = 0; attempt < wanted * 6 && count < wanted; attempt++) {
-      const x = bounds.minX + random() * (bounds.maxX - bounds.minX), y = bounds.minY + random() * (bounds.maxY - bounds.minY);
-      if (!insidePolygon({ x, y }, lawn)) continue;
-      const road = CITY.roadIndex.nearest(x, y, 30, (segment, distance) => distance - segment.road.profile.halfWidth);
-      if (road && road.score < 3.5 || inZone(x, y)) continue;
-      if (put({ kind: 'tree', u: x, s: y, scale: 7 + random() * 4.5 }, 8)) count++;
-    }
-    for (const road of CITY.roads) {
-      if (road.kind !== 'path') continue;
-      alongPolyline(road.points, 44, 22).forEach((p, i) => {
-        const side = i % 2 ? 1 : -1, nx = -p.ty * side, ny = p.tx * side, x = p.x + nx * 5.3, y = p.y + ny * 5.3;
-        if (!insidePolygon({ x, y }, lawn) || inZone(x, y)) return;
-        // The seat faces its local -x: turn +x away from the path
-        put({ kind: 'bench', u: x, s: y, yaw: alongYaw(nx, ny) }, 2);
-      });
-    }
-    // A square gets a fountain in the middle and benches round its edge, facing in
-    if (park.square) {
-      const centre = lawn.reduce((sum, p) => ({ x: sum.x + p.x / lawn.length, y: sum.y + p.y / lawn.length }), { x: 0, y: 0 });
-      if (insidePolygon(centre, offsetPolygon(lawn, -5)) && !inZone(centre.x, centre.y)) put({ kind: 'fountain', u: centre.x, s: centre.y }, 7);
-      const inner = offsetPolygon(lawn, -2.2);
-      if (inner.length >= 3) {
-        const loop = [...inner, inner[0]];
-        for (const p of alongPolyline(loop, 16, 6)) {
-          const nx = -p.ty, ny = p.tx;
-          if (inZone(p.x, p.y)) continue;
-          put({ kind: 'bench', u: p.x, s: p.y, yaw: alongYaw(-nx, -ny) }, 2);
-        }
+  // Parks and squares: the fountain or bandstand in the middle, lanterns and
+  // benches along the walks, a ring of benches round the plaza, and trees in
+  // groves over the lawns, down both sides of a park's loop walk and clear of
+  // every walk, plaza and pond
+  const pathClear = (x, y) => { const road = CITY.roadIndex.nearest(x, y, 30, (segment, distance) => distance - segment.road.profile.halfWidth); return road ? road.score : Infinity; };
+  for (const entry of cityParks()) {
+    const park = entry.park, lawn = park.lawn;
+    if (lawn.length < 3) continue;
+    const random = seededRandom(CITY.seed + entry.index * 7919), bounds = polygonBounds(lawn), area = calcPolygonArea(lawn);
+    const paved = squarePaved(park), onLawn = (x, y) => insidePolygon({ x, y }, lawn) && !inZone(x, y);
+    const plaza = entry.plaza;
+    if (plaza) {
+      if (plaza.kind === 'bandstand') put({ kind: 'bandstand', u: plaza.x, s: plaza.y, yaw: random() * Math.PI * 2 }, 7);
+      else put({ kind: 'fountain', u: plaza.x, s: plaza.y, size: Math.max(.8, Math.min(1.5, (plaza.radius - 1) / 3.4)) }, 7);
+      // Benches facing in round the outside of the plaza's walk, where no walk leaves it
+      const reach = park.square ? plaza.radius + SQUARE_WALK * 2 + .2 : plaza.radius + 4.9;
+      for (const p of circle(plaza.x, plaza.y, reach, Math.max(6, Math.round(reach * Math.PI * 2 / 7)))) {
+        const nx = (plaza.x - p.x) / reach, ny = (plaza.y - p.y) / reach;
+        if (!onLawn(p.x, p.y) || pathClear(p.x, p.y) < 1 || entry.walks.some(walk => walk.length === 2 && distanceToPolyline(p, walk) < SQUARE_WALK + 1.2)) continue;
+        put({ kind: 'bench', u: p.x, s: p.y, yaw: alongYaw(-nx, -ny) }, 2);
       }
     }
-  });
+    if (entry.pond) {
+      // The pond's coping is solid all round
+      const shore = pondShore(entry.pond);
+      for (const p of alongPolyline([...shore, shore[0]], 1.6)) add({ kind: 'rim', u: p.x, s: p.y, radius: .8 });
+    }
+    // Lanterns and benches beside the walks, on alternate sides
+    const walks = park.square ? entry.walks.map(points => ({ points, halfWidth: SQUARE_WALK })) : CITY.roads.filter(road => road.kind === 'path').map(road => ({ points: road.points, halfWidth: road.profile.halfWidth }));
+    for (const { points, halfWidth } of walks) {
+      alongPolyline(points, 26, 9).forEach((p, i) => {
+        const side = i % 2 ? 1 : -1, nx = -p.ty * side, ny = p.tx * side, x = p.x + nx * (halfWidth + 1.8), y = p.y + ny * (halfWidth + 1.8);
+        if (onLawn(x, y) && pathClear(x, y) > 1.6 && parkClear(entry, x, y, .5)) put({ kind: 'lantern', u: x, s: y }, 3);
+      });
+      alongPolyline(points, 40, 22).forEach((p, i) => {
+        const side = i % 2 ? -1 : 1, nx = -p.ty * side, ny = p.tx * side, x = p.x + nx * (halfWidth + 2), y = p.y + ny * (halfWidth + 2);
+        if (!onLawn(x, y) || pathClear(x, y) < 1.6 || !parkClear(entry, x, y, .5)) return;
+        // The seat faces its local -x: turn +x away from the walk
+        if (put({ kind: 'bench', u: x, s: y, yaw: alongYaw(nx, ny) }, 2) && i % 3 === 0) put({ kind: 'bin', u: x + p.tx * 1.5, s: y + p.ty * 1.5 }, 1);
+      });
+    }
+    // An avenue of trees down both sides of the loop walk
+    if (entry.loop) for (const p of alongPolyline(entry.loop, 15, 7)) for (const side of [-1, 1]) {
+      const x = p.x - p.ty * side * 7.5, y = p.y + p.tx * side * 7.5;
+      if (onLawn(x, y) && pathClear(x, y) > 3 && parkClear(entry, x, y)) put({ kind: 'tree', u: x, s: y, scale: 8 + random() * 2 }, 6);
+    }
+    // Groves: trees gather where the noise is high and leave open lawns elsewhere
+    const wanted = Math.min(420, Math.floor(area / (paved ? 380 : park.square ? 260 : 170)));
+    const grove = (x, y) => CITY.field.noise2D(x / 75 + entry.index * 13, y / 75 - entry.index * 7);
+    for (let attempt = 0, count = 0; attempt < wanted * 8 && count < wanted; attempt++) {
+      const x = bounds.minX + random() * (bounds.maxX - bounds.minX), y = bounds.minY + random() * (bounds.maxY - bounds.minY);
+      const g = grove(x, y);
+      if (!park.square && random() > (g > .15 ? .95 : g > -.15 ? .3 : .04)) continue;
+      if (!onLawn(x, y) || pathClear(x, y) < 3.5 || !parkClear(entry, x, y)) continue;
+      if (put({ kind: 'tree', u: x, s: y, scale: 7 + random() * 4.5 }, park.square ? 8 : 6.5)) count++;
+    }
+  }
+  // A few trees in the back yards where the houses have gardens
+  for (const block of CITY.blocks) {
+    if (!YARD_TREES.has(block.style) || !(block.yard?.length >= 3)) continue;
+    const yard = block.yard, area = calcPolygonArea(yard), bounds = polygonBounds(yard), random = seededRandom(CITY.seed * 31 + block.index * 7717);
+    const ring = [...yard, yard[0]], wanted = Math.floor(area / 650);
+    for (let attempt = 0, count = 0; attempt < wanted * 6 && count < wanted; attempt++) {
+      const x = bounds.minX + random() * (bounds.maxX - bounds.minX), y = bounds.minY + random() * (bounds.maxY - bounds.minY);
+      if (!insidePolygon({ x, y }, yard) || distanceToPolyline({ x, y }, ring) < 4) continue;
+      if (put({ kind: 'tree', u: x, s: y, scale: 6 + random() * 3.5 }, 7)) count++;
+    }
+  }
+  // Cars parked in two bays in five along a street with parking, clear of
+  // the crosswalks, the park gates, bus stops and the venues' doors
+  const entrances = cityPlaces().map(place => place.entrance);
+  for (const edge of nav.edges) {
+    const profile = edge.profile;
+    if (!profile.parking || edge.kind === 'path') continue;
+    const [from, to] = markedSpan(nav, edge, geometry);
+    for (let d = from + PARKING_BAY; d + PARKING_BAY / 2 < to; d += PARKING_BAY) for (const side of [-1, 1]) {
+      const salt = edge.id * 131 + Math.round(d) * 2 + (side > 0 ? 1 : 0);
+      if (randomAt(salt, 7406, CITY.seed) > .42) continue;
+      const p = nav.pose(edge, d, 1), across = (profile.parking + profile.halfWidth) / 2, own = CITY.roadIndex.nearest(p.u, p.s, 2)?.road;
+      const x = p.u + p.ty * side * across, y = p.s - p.tx * side * across;
+      if (waterAt(y, x) || entrances.some(e => Math.hypot(e.u - x, e.s - y) < 16)) continue;
+      const path = CITY.roadIndex.nearest(x, y, 12, segment => segment.road.kind === 'path' ? 0 : Infinity);
+      if (path && Math.hypot(path.x - x, path.y - y) < 8) continue;
+      // and well clear of any other road's carriageway, where a street meets another at a slant
+      const other = CITY.roadIndex.nearest(x, y, 24, (segment, distance) => segment.road === own || segment.road.kind === 'path' ? Infinity : distance - segment.road.profile.halfWidth);
+      if (other && other.score < 3.5) continue;
+      if (onPlaced(x, y, 'shelter', 9)) continue;
+      // Cars face the way their side's traffic goes
+      const heading = side > 0 ? Math.atan2(p.tx, p.ty) : Math.atan2(-p.tx, -p.ty);
+      const model = PARKED_MODELS[Math.floor(randomAt(salt, 7407, CITY.seed) * PARKED_MODELS.length)];
+      add({ kind: 'parked', u: x, s: y, yaw: -heading, model, colour: Math.floor(randomAt(salt, 7408, CITY.seed) * 1e6) });
+    }
+  }
   // A sign board on the pavement at every venue's entrance, square to the street
   for (const place of cityPlaces()) {
     const road = CITY.roadIndex.nearest(place.entrance.u, place.entrance.s, 40);
@@ -383,53 +498,4 @@ export function placeStreetFurniture(nav, bridges, add) {
     if (waterAt(y, u) || !CITY.pavement.find(u, y) || inZone(u, y)) continue;
     put({ kind: 'sign', type: place.type, variant: place.variant, u, s: y, yaw: faceYaw(du, ds) }, 3);
   }
-}
-
-// The country beyond the ring road: fields in a loose patchwork, hedgerow
-// trees along their edges and a belt of woodland just outside the city hedge,
-// so the edge of town reads as the edge of town rather than of the world.
-const FIELDS = ['#8e9b6a', '#9aa56c', '#a9a672', '#7f9462', '#b4a978', '#8aa06a'];
-export function countryside() {
-  const fields = [], trees = [];
-  if (!CITY.ring) return { fields, trees };
-  const ring = CITY.ring, reach = SIDEWALK + 12;
-  const outside = (x, y, margin) => {
-    if (insidePolygon({ x, y }, ring)) return false;
-    const road = CITY.roadIndex.nearest(x, y, margin + 12, (segment, distance) => distance - segment.road.profile.halfWidth);
-    return !road || road.score > margin;
-  };
-  // Dry and clear of the beach
-  const dry = (x, y) => !waterAt(y, x) && [[1, 1], [1, -1], [-1, 1], [-1, -1]].every(([dx, dy]) => !waterAt(y + dy * 9, x + dx * 9));
-  // Only as far out as the fog lets anyone see
-  const cell = 80, rows = 60, bounds = polygonBounds(ring), far = 420;
-  for (let x = Math.max(CITY.minX, bounds.minX - far); x < Math.min(CITY.maxX, bounds.maxX + far); x += cell) for (let y = Math.max(CITY.minY, bounds.minY - far); y < Math.min(CITY.maxY, bounds.maxY + far); y += rows) {
-    const corners = [[x, y], [x + cell, y], [x + cell, y + rows], [x, y + rows]];
-    if (!corners.every(([cx, cy]) => outside(cx, cy, reach) && dry(cx, cy))) continue;
-    const colour = FIELDS[Math.floor(randomAt(Math.round(x), Math.round(y) + 7501, CITY.seed) * FIELDS.length)];
-    fields.push({ polygon: [{ x: x + 1, y: y + 1 }, { x: x + cell - 1, y: y + 1 }, { x: x + cell - 1, y: y + rows - 1 }, { x: x + 1, y: y + rows - 1 }], colour });
-    // Hedgerow trees along one long side of about half the fields
-    if (randomAt(Math.round(x), Math.round(y) + 7502, CITY.seed) < .35) {
-      for (let k = 0; k < 5; k++) {
-        const tx = x + (k + .3 + randomAt(k, Math.round(x + y), CITY.seed) * .4) * cell / 5, ty = y + (randomAt(Math.round(x), k + 7503, CITY.seed) - .5) * 3;
-        if (randomAt(k, Math.round(x * 3 + y), CITY.seed) < .6) trees.push({ x: tx, y: ty, scale: 7 + randomAt(k, Math.round(x - y), CITY.seed) * 5 });
-      }
-    }
-  }
-  // Copses just beyond the hedge, thinning with distance, with meadows
-  // between them where the road looks out over the sea
-  const copse = (x, y) => CITY.field.noise2D(x / 260, y / 260) + CITY.field.noise2D(x / 90 + 31, y / 90 - 17) * .3;
-  for (const edge of CITY.edges) {
-    for (const p of alongPolyline(edge, 6.5, 2)) {
-      if (copse(p.x, p.y) < -.05) continue;
-      for (let row = 0; row < 5; row++) {
-        const chance = .8 - row * .14;
-        if (randomAt(Math.round(p.x * 7 + row), Math.round(p.y * 5), CITY.seed) > chance) continue;
-        const depth = 5 + row * 7 + randomAt(Math.round(p.x), Math.round(p.y) + row, CITY.seed) * 5;
-        const x = p.x + p.ty * depth, y = p.y - p.tx * depth;
-        if (!outside(x, y, reach - 6) || !dry(x, y)) continue;
-        trees.push({ x, y, scale: 8 + randomAt(Math.round(y), Math.round(x) + row, CITY.seed) * 6 });
-      }
-    }
-  }
-  return { fields, trees };
 }

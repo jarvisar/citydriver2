@@ -1,9 +1,9 @@
 import Vector from './vector.js';
-import { insidePolygon, offsetPolylineClean, distanceToPolyline } from './polygon-util.js';
+import { insidePolygon, offsetPolylineClean, offsetPolygon } from './polygon-util.js';
 import { union, difference, intersection, region } from './booleans.js';
 
-// Where the land ends. The city is an island: the ring road is ringed by a
-// strip of country whose shore wanders in bays and headlands, the harbour
+// Where the land ends. The city is an island with a harbour's edge all
+// round: the shore follows the promenade outside the ring road, the harbour
 // side is cut by the promenade along the coast road, and the river runs
 // through it from shore to shore. Land and water are computed with polygon
 // booleans from those few shapes, so together they cover the whole world
@@ -20,40 +20,12 @@ export function densify(points, step) {
   return out;
 }
 
-// The shore round the ring road: the ring pushed out by `reach`, more in the
-// headlands and less in the bays, as seen from the centre. The ring is star
-// shaped about its centre, and so is this, so it is always one simple ring.
-// Near the harbour the shore closes in on the ring road (`hug` metres out, by
-// `fade` metres from the harbour's water), so the two coasts meet cleanly
-// rather than leaving a spit of country between them. seaDistance(p) is how
-// far a point stands from the harbour's water, 0 in it.
-export function islandOutline(ring, { reach = [60, 300], hug = 24, fade = 380, seaDistance = null, noise, samples = 900, scale = 1.7, smooth = 3 } = {}) {
+// The shore round the ring road: the ring pushed out by `reach`, the outer
+// edge of its promenade. The ring is round-cornered and star shaped, so this
+// is one simple ring.
+export function islandOutline(ring, reach) {
   const loop = ring[0].distanceTo(ring[ring.length - 1]) < 1e-6 ? ring.slice(0, -1) : ring.slice();
-  const centre = loop.reduce((sum, p) => sum.add(p), new Vector(0, 0)).divideScalar(loop.length);
-  const radii = [];
-  for (let k = 0; k < samples; k++) {
-    const angle = k / samples * Math.PI * 2, dx = Math.cos(angle), dy = Math.sin(angle);
-    // Furthest crossing of the ray with the ring
-    let far = 0;
-    for (let i = 0; i < loop.length; i++) {
-      const a = loop[i], b = loop[(i + 1) % loop.length], ex = b.x - a.x, ey = b.y - a.y, denominator = dx * ey - dy * ex;
-      if (Math.abs(denominator) < 1e-12) continue;
-      const ax = a.x - centre.x, ay = a.y - centre.y, t = (ax * ey - ay * ex) / denominator, u = (ax * dy - ay * dx) / denominator;
-      if (t > 0 && u >= 0 && u <= 1) far = Math.max(far, t);
-    }
-    // Noise round a circle, so the shore closes on itself
-    const n = noise ? noise(dx * scale, dy * scale) + noise(dx * scale * 3.1 + 17, dy * scale * 3.1 - 9) * .35 : 0;
-    const t = Math.min(1, Math.max(0, .5 + .5 * n / 1.2));
-    let out = reach[0] + (reach[1] - reach[0]) * t * t;
-    if (seaDistance) {
-      const d = Math.min(1, seaDistance(new Vector(centre.x + dx * far, centre.y + dy * far)) / fade), blend = d * d * (3 - 2 * d);
-      out = hug + (out - hug) * blend;
-    }
-    radii.push(far + out);
-  }
-  let smoothed = radii;
-  for (let pass = 0; pass < smooth; pass++) smoothed = smoothed.map((r, k) => (smoothed[(k - 1 + samples) % samples] + r * 2 + smoothed[(k + 1) % samples]) / 4);
-  return smoothed.map((r, k) => { const angle = k / samples * Math.PI * 2; return new Vector(centre.x + Math.cos(angle) * r, centre.y + Math.sin(angle) * r); });
+  return offsetPolygon(loop, reach);
 }
 
 // The sea side of a line that crosses the world: the line carried far out at
@@ -168,34 +140,14 @@ function bluntTips(pieces, { maxAngle = 90 * Math.PI / 180, width = 8, reach = 4
   return pieces.map(piece => ({ outer: blunt(piece.outer), holes: piece.holes.map(blunt) }));
 }
 
-// The edges between land and water as runs of one kind, water on the right:
-// 'quay' where the city meets the water, and outside it 'beach' on the sea
-// and 'bank' on the river. inCity(p) and inRiver(p) say which is which.
-export function shoreRuns(land, { inCity, inRiver, step = 6 }) {
+// The edges between land and water as runs, water on the right: every one a
+// quay wall, the city's edge being a harbour all round.
+export function shoreRuns(land, { step = 6 } = {}) {
   const runs = [];
   for (const piece of land) for (const ring of [piece.outer, ...piece.holes]) {
     if (ring.length < 3) continue;
     const points = densify([...ring, ring[0]], step);
-    points.pop();
-    const n = points.length;
-    const kindAt = i => {
-      const a = points[i], b = points[(i + 1) % n], dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy) || 1;
-      const mid = new Vector((a.x + b.x) / 2, (a.y + b.y) / 2), water = new Vector(mid.x + dy / length * 3, mid.y - dx / length * 3);
-      return inCity(mid) ? 'quay' : inRiver(water) ? 'bank' : 'beach';
-    };
-    const kinds = points.map((_, i) => kindAt(i));
-    // Start the walk where the kind changes, so a run never wraps
-    let start = kinds.findIndex((kind, i) => kind !== kinds[(i - 1 + n) % n]);
-    const closed = start < 0;
-    if (closed) start = 0;
-    let run = [points[start]], kind = kinds[start];
-    for (let k = 1; k <= n; k++) {
-      const i = (start + k) % n;
-      run.push(points[i]);
-      if (k === n || kinds[i] !== kind) { if (run.length > 1) runs.push({ kind, points: run, closed: closed && k === n }); run = [points[i]]; kind = kinds[i]; }
-    }
+    runs.push({ kind: 'quay', points, closed: true });
   }
   return runs;
 }
-
-export { distanceToPolyline };
