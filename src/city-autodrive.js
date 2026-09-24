@@ -1,6 +1,6 @@
 import { navGraph } from './world/nav-graph.js';
 import { onRoadAt } from './world/city-route.js';
-import { junctionSpeed } from './city-junctions.js';
+
 import { turnPath, approachSpeed, wayOn } from './world/lane-paths.js';
 export { cityGreen } from './city-junctions.js';
 
@@ -10,7 +10,9 @@ export { cityGreen } from './city-junctions.js';
 // traffic drives), so enabling cruise never aims across a block.
 export class CityAutodrive {
   constructor({ random = Math.random } = {}) { this.random = random; this.enabled = false; this.reset(); }
-  reset() { this.path = null; this.next = null; this.stopKey = null; this.stopWait = 0; this.stopReleased = false; }
+  // The autodrive drives like the traffic: it claims its way through each
+  // junction with theirs (see city-junctions.js), as this driver
+  reset() { this.path = null; this.next = null; this.driver = { claim: null, leaving: null, stopWait: 0 }; }
   toggle() { this.enabled = !this.enabled; this.reset(); return this.enabled; }
   canStart(player) { return Boolean(onRoadAt(player.s, player.u)); }
   update(player, traffic, speedLimit = player.stats.topSpeed, dt = 1 / 60) {
@@ -28,7 +30,7 @@ export class CityAutodrive {
     const hit = nav.nearest(player.s, player.u, 40);
     if (hit && hit.edge === path.edge) path.along = path.direction > 0 ? hit.along : hit.edge.length - hit.along;
     else if (hit && this.next && hit.edge === this.next.edge) {
-      path.edge = this.next.edge; path.direction = this.next.direction; this.next = null; this.stopKey = null; this.stopWait = 0; this.stopReleased = false;
+      path.edge = this.next.edge; path.direction = this.next.direction; this.next = null; this.driver.stopWait = 0;
       path.along = path.direction > 0 ? hit.along : hit.edge.length - hit.along;
     }
     const remaining = path.edge.length - path.along;
@@ -52,7 +54,10 @@ export class CityAutodrive {
     const along = ds / Math.max(.001, length), across = du / Math.max(.001, length);
     const cruiseSpeed = player.carId === 'formula' ? player.stats.topSpeed : path.edge.profile.speed * 1.15;
     let speed = Math.min(cruiseSpeed, speedLimit, player.stats.topSpeed, turnSpeed);
-    if (traffic.enabled) speed = Math.min(speed, junctionSpeed(this, traffic, nav, path.edge, path.direction, path.along, player.speed ?? 0, dt));
+    if (traffic.enabled && traffic.junctions) {
+      Object.assign(this.driver, { edge: path.edge, direction: path.direction, along: path.along, speed: Math.abs(player.speed ?? 0), next: this.next, turn, s: player.s, u: player.u, spec: player.spec });
+      speed = Math.min(speed, traffic.junctions.limit(this.driver, traffic.vehicles, null, dt));
+    }
     for (const car of traffic.enabled ? traffic.vehicles : []) {
       const dx = car.u - player.u, dz = car.s - player.s, heading = Math.atan2(across, along);
       const ahead = dz * Math.cos(heading) + dx * Math.sin(heading);

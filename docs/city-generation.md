@@ -203,6 +203,27 @@ brake so they enter each turn at its own speed (a comfortable 2.8 m/s²
 sideways), and slow in the same way for the street's own bends; they avoid
 hairpins when there is another way on. The autodrive follows the same curves.
 
+`city-junctions.js` decides who may cross a junction and when. Before a car
+crosses the stop line it claims its way through (from its lane, round its
+turn, into the first metres of the lane beyond) and holds the claim until its
+tail is out of the box. A claim is refused while anyone else holds one whose
+path comes within a car's width of it, so two cars never cross paths in a
+junction; cars in one lane share the junction and follow each other. The
+right of way decides who asks first. A green light, or a road that does not
+stop, lets its cars ask about 2.5 seconds out. A stop sign makes them stop at
+the line first, and at a four-way stop the car that has waited longest goes
+first. A car gives way to anyone on a crossing path with the better right of
+way who is less than 4.5 seconds from their line: the main road over the side
+street, and straight on over turning right over turning left. Nobody enters a
+junction whose way out is backed up. Where the street beyond is too short to
+stop on before the next junction (inside a junction complex), that junction
+is claimed at the same time. The player's car, whose way nobody knows, is
+given any junction it is in or heading into. Between junctions a car brakes
+for whatever is on its own path ahead: along its lane, round its turn and
+into the next street. That includes a car crossing in front of it and the
+player, where the player will be a second from now if they are crossing or
+coming the other way. The traffic and the autodrive share one set of claims.
+
 `city-medians.js` lays out the raised medians down the boulevards and the
 parkway, one per street between its junctions with rounded noses short of
 the crosswalks; the renderer draws them, the furniture plants them and the

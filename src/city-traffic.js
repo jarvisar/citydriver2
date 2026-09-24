@@ -4,25 +4,26 @@ import { navGraph } from './world/nav-graph.js';
 import { createTrafficModels, TRAFFIC_MODELS, TRAFFIC_COLORS } from './traffic-models.js';
 import { trafficContact } from './traffic.js';
 import { collisionImpulse, contactPoint } from './impact.js';
-import { junctionSpeed } from './city-junctions.js';
+import { JunctionTraffic, approachControl } from './city-junctions.js';
 import { turnPath, approachSpeed, wayOn, bendSpeed } from './world/lane-paths.js';
 const up = new THREE.Vector3(0, 1, 0);
 const SPAWN_CLEARANCE = 150, RECYCLE_BEHIND = 190, LOCAL_RADIUS = 380;
-// A junction is reserved for a few seconds by whichever car reaches it first;
-// everyone else stops at the line until it is free.
-const JUNCTION_BOX = 11, STOP_LINE = 9, RESERVATION_SECONDS = 4.5;
+// Following: braking for what is in the way, and the room left behind it
+const FOLLOW_DECEL = 5, FOLLOW_GAP = 2.2;
 
 // A bounded fleet driving the generated streets: each car follows a nav
 // graph edge in its lane, picks a way on before each junction and turns onto
-// it along a curve (see world/lane-paths.js), keeps its distance from the car
-// ahead, yields at junctions and recycles beyond the local view. A car's
-// `along` runs on past the start of its turn, through the curve, until it
-// joins the next edge.
+// it along a curve (see world/lane-paths.js), claims its way through each
+// junction before crossing it (see city-junctions.js), brakes for whatever is
+// on its path ahead, the player included, and recycles beyond the local view.
+// A car's `along` runs on past the start of its turn, through the curve,
+// until it joins the next edge.
 export class CityTraffic {
   constructor(scene, route, s, journey = 'city', u = 0) {
     this.route = route; this.enabled = true; this.time = 0; this.nav = navGraph();
     this.group = new THREE.Group(); this.group.name = 'city-traffic'; scene.add(this.group);
     this.models = createTrafficModels();
+    this.junctions = new JunctionTraffic(this.nav);
     this.vehicles = Array.from({ length: 24 }, (_, index) => {
       const model = this.models.create(index % TRAFFIC_MODELS.length, TRAFFIC_COLORS[index % TRAFFIC_COLORS.length]);
       this.group.add(model.car);
@@ -33,8 +34,8 @@ export class CityTraffic {
   reset(route, s, journey = 'city', u = 0) {
     this.route = route; this.journey = journey; this.time = 0; this.lastS = s; this.lastU = u;
     this.travelS = 0; this.travelU = 0; this.lookAhead = 0;
-    this.junctionReservations = new Map();
-    for (const car of this.vehicles) this.spawn(car, s, u, true);
+    this.junctions.reset();
+    for (const car of this.vehicles) { car.claim = car.leaving = car.pending = null; this.spawn(car, s, u, true); }
   }
   setEnabled(enabled, player) {
     this.enabled = enabled; this.group.visible = enabled;
@@ -43,6 +44,7 @@ export class CityTraffic {
   random(car, salt) { return randomAt(car.index + car.generation * 97, 8100 + salt); }
   spawn(car, s, u, initial = false) {
     car.generation++;
+    this.junctions.release(car);
     const r = salt => this.random(car, salt);
     const centreS = s + this.travelS * this.lookAhead, centreU = u + this.travelU * this.lookAhead;
     // Only the streets around the car are worth trying
@@ -59,7 +61,10 @@ export class CityTraffic {
       if (distance < (initial ? 25 : SPAWN_CLEARANCE) || distance > LOCAL_RADIUS) continue;
       if (!initial && this.lookAhead && ds * this.travelS + du * this.travelU < 60) continue;
       if (this.vehicles.some(other => other !== car && Math.hypot(pose.s - other.s, pose.u - other.u) < 14)) continue;
-      Object.assign(car, { edge, direction, along, lane: edge.profile.lane, next: null, turn: null, after: null, waiting: 0, stopKey: null, stopWait: 0, stopReleased: false });
+      // and never over a stop line, in a junction it has not claimed
+      const control = approachControl(this.nav, edge, direction);
+      if (control?.kind && edge.length - along < control.stopDistance + 6) continue;
+      Object.assign(car, { edge, direction, along, lane: edge.profile.lane, next: null, turn: null, after: null, stopWait: 0 });
       // Each driver keeps their own pace, a share of every street's speed
       car.pace = .75 + r(4) * .25; car.cruiseSpeed = edge.profile.speed * car.pace; car.speed = car.cruiseSpeed;
       // Knowing its way on from the start, a car is never placed past a turn it
@@ -119,19 +124,71 @@ export class CityTraffic {
     const turn = car.turn, choice = car.next;
     car.along = Math.max(0, turn.end + car.along - turn.start - turn.length);
     car.edge = choice.edge; car.direction = choice.direction; car.lane = choice.edge.profile.lane; car.next = null; car.turn = null;
-    car.stopKey = null; car.stopWait = 0; car.stopReleased = false; car.cruiseSpeed = car.edge.profile.speed * (car.pace ?? 1);
+    car.stopWait = 0; car.cruiseSpeed = car.edge.profile.speed * (car.pace ?? 1);
     // The next turn is known on joining a street, so there is all of it to slow down in
     this.choose(car);
   }
-  // How fast a car may go into the junction ahead of it: the shared signal
-  // cycle, a stop and give way, or straight through on a priority road. The
-  // player counts as traffic in the box.
-  junctionSpeed(car, player, dt) {
-    const remaining = car.edge.length - car.along;
-    if (remaining > 50) return Infinity;
-    const node = this.nav.endNode(car.edge, car.direction);
-    if (Math.hypot(player.s - node.y, player.u - node.x) < car.edge.profile.halfWidth + 8 && remaining > 8) return Math.sqrt(14 * Math.max(0, remaining - car.edge.profile.halfWidth - 6));
-    return junctionSpeed(car, this, this.nav, car.edge, car.direction, car.along, car.speed, dt);
+  // Where a car will be `d` metres on from where it is: along its lane,
+  // round its turn and into the street beyond (null past the end of that)
+  ahead(car, d) {
+    const x = car.along + d, turn = car.turn;
+    if (turn && x > turn.start) {
+      if (x <= turn.start + turn.length) return turn.pose(x - turn.start);
+      const beyond = turn.end + x - turn.start - turn.length;
+      return beyond > car.next.edge.length ? null : this.nav.pose(car.next.edge, beyond, car.next.direction, car.next.edge.profile.lane);
+    }
+    return x > car.edge.length ? null : this.nav.pose(car.edge, x, car.direction, car.lane);
+  }
+  // How fast a car may go for whatever stands on its path in the next few
+  // seconds: a car ahead in its lane, one crossing in front of it, or the
+  // player. Each other car is three discs down its length. A car waiting at
+  // the line of a junction this one is crossing is not in its way, whatever
+  // the corner makes it look like, and nor are two cars crossing a junction
+  // on paths that do not meet.
+  following(car, player) {
+    const reach = Math.min(70, car.speed * car.speed / (2 * FOLLOW_DECEL) + 18), path = [];
+    for (let d = 1.5; d <= reach; d += 1.5) { const p = this.ahead(car, d); if (!p) break; path.push(d, p.u, p.s); }
+    const crossing = new Set([...(car.claim?.nodes ?? []), ...(car.leaving?.nodes ?? [])]);
+    let limit = Infinity;
+    for (let i = 0; i <= this.vehicles.length; i++) {
+      const other = i === this.vehicles.length ? player : this.vehicles[i];
+      if (other === car || (other !== player && !other.edge) || !Number.isFinite(other.heading)) continue;
+      if (Math.abs(other.s - car.s) > reach + 6 || Math.abs(other.u - car.u) > reach + 6) continue;
+      if (other !== player && crossing.size && this.passes(car, other, crossing)) continue;
+      const length = other.spec?.length ?? 4.4, reachAlong = length / 2 * .62, clear = (car.spec.width + (other.spec?.width ?? 2)) / 2 + .2;
+      const hx = Math.sin(other.heading) * reachAlong, hy = Math.cos(other.heading) * reachAlong;
+      const discs = [other.u, other.s, other.u + hx, other.s + hy, other.u - hx, other.s - hy];
+      // The player's car, crossing or coming the other way, also where it will be in the next second
+      const speed = other === player ? player.speed ?? 0 : 0, dx = Math.sin(other.heading), dy = Math.cos(other.heading);
+      if (Math.abs(speed) > 3 && Math.sign(speed) * (dx * Math.sin(car.heading) + dy * Math.cos(car.heading)) < .7) {
+        for (const t of [.5, 1]) discs.push(other.u + dx * speed * t, other.s + dy * speed * t);
+      }
+      for (let k = 0; k < path.length; k += 3) {
+        const px = path[k + 1], py = path[k + 2];
+        let hit = false;
+        for (let j = 0; j < discs.length && !hit; j += 2) hit = Math.hypot(px - discs[j], py - discs[j + 1]) < clear;
+        if (hit) {
+          limit = Math.min(limit, Math.sqrt(2 * FOLLOW_DECEL * Math.max(0, path[k] - car.spec.length / 2 - FOLLOW_GAP)));
+          break;
+        }
+      }
+    }
+    return limit;
+  }
+  // Whether `other` can be left out of `car`'s way while `car` crosses the
+  // junctions `crossing`: waiting at another line there, or crossing on a path
+  // that does not meet this one. A car ahead in its own lane is always in its way.
+  passes(car, other, crossing) {
+    if (other.edge === car.edge && other.direction === car.direction) return false;
+    // Crossing the same junction: compare the two ways through it
+    for (const theirs of [other.claim, other.leaving]) {
+      const mine = theirs && [car.claim, car.leaving].find(claim => claim?.nodes.some(node => theirs.nodes.includes(node)));
+      if (!mine) continue;
+      return mine.movement.edge !== theirs.movement.edge && !(mine.movement.out === theirs.movement.out && mine.movement.outDirection === theirs.movement.outDirection)
+        && !this.junctions.conflict(mine.movement, theirs.movement);
+    }
+    const control = approachControl(this.nav, other.edge, other.direction);
+    return Boolean(control?.kind && crossing.has(control.node) && other.speed < 1 && other.edge.length - other.along > control.stopDistance - 1);
   }
   update(dt, player) {
     if (!this.enabled) return;
@@ -141,29 +198,25 @@ export class CityTraffic {
     this.travelS = speed > 2 ? ds / moved : 0; this.travelU = speed > 2 ? du / moved : 0;
     this.lookAhead = Math.min(180, speed > 2 ? speed * 3.5 : 0);
     this.lastS = player.s; this.lastU = player.u; this.time += dt;
-    for (const car of this.vehicles) {
+    this.junctions.tick(this.time);
+    // Whoever has waited longest at a stop line asks for the junction first
+    const order = this.vehicles.slice().sort((a, b) => (b.stopWait ?? 0) - (a.stopWait ?? 0) || a.index - b.index);
+    for (const car of order) {
       if (!car.edge && !this.spawn(car, player.s, player.u)) { car.targetSpeed = 0; continue; }
       const ds = car.s - player.s, du = car.u - player.u;
       const behind = ds * this.travelS + du * this.travelU < -RECYCLE_BEHIND;
       const beside = Math.abs(du * this.travelS - ds * this.travelU) > 260;
       if (Math.hypot(ds, du) > LOCAL_RADIUS || behind || beside) this.spawn(car, player.s, player.u);
       car.previousPosition.copy(car.position); car.previousQuaternion.copy(car.quaternion);
-      let target = Math.min(car.cruiseSpeed, this.junctionSpeed(car, player, dt));
       // Choose the way on in good time, and arrive at the turn at its own speed
       if (!car.turn && car.edge.length - car.along < 70) this.choose(car);
+      // (the plan beyond a short street is made first: the junctions ask for it)
+      const after = this.afterSpeed(car);
+      let target = Math.min(car.cruiseSpeed, this.junctions.limit(car, this.vehicles, player, dt));
       if (car.turn) target = Math.min(target, approachSpeed(car.turn, car.turn.start - car.along));
       // and slow for the street's own bends before the turn
       if (!car.turn || car.along < car.turn.start) target = Math.min(target, bendSpeed(this.nav, car.edge, car.direction, car.along, car.lane));
-      target = Math.min(target, this.afterSpeed(car));
-      // Basic following: brake for whatever is ahead in this lane, the player included
-      const cos = Math.cos(car.heading), sin = Math.sin(car.heading);
-      for (let i = 0; i <= this.vehicles.length; i++) {
-        const other = i === this.vehicles.length ? player : this.vehicles[i];
-        if (other === car) continue;
-        const ds = other.s - car.s, du = other.u - car.u;
-        const ahead = ds * cos + du * sin, beside = Math.abs(du * cos - ds * sin);
-        if (ahead > 0 && ahead < 70 && beside < 2.9) target = Math.min(target, Math.sqrt(2 * 8 * Math.max(0, ahead - 9)));
-      }
+      target = Math.min(target, after, this.following(car, player));
       car.targetSpeed = target;
     }
     for (const car of this.vehicles) {
