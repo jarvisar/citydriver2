@@ -73,7 +73,9 @@ export default class WaterGenerator extends StreamlineGenerator {
       if (!this.reachesEdges(riverStreamline)) continue;
       const smooth = filletPolyline(simplify(riverStreamline, 3), this.params.riverRadius ?? 90);
       centre = oldSea.length >= 3 ? clipInside(smooth, oldSea, .6, false).sort((a, b) => polylineLength(b) - polylineLength(a))[0] ?? null : smooth;
-      if (centre && polylineLength(centre) >= (this.params.riverMinLength ?? 600)) { reached = true; break; }
+      // Nor is one that runs along the edge of the city, beside the ring road:
+      // it would leave the ring on a causeway two roads wide between river and sea
+      if (centre && polylineLength(centre) >= (this.params.riverMinLength ?? 600) && this.alongEdge(centre) <= (this.params.riverEdgeRun ?? 150)) { reached = true; break; }
     }
     this.tensorField.sea = oldSea;
     this.tensorField.disableGlobalNoise();
@@ -114,6 +116,19 @@ export default class WaterGenerator extends StreamlineGenerator {
     return withSecondary;
   }
   getSeaPolygon(polyline) { return lineRectanglePolygon(this.origin, this.worldDimensions, polyline); }
+  // How far a line runs within `riverEdge` metres of the domain's edge, away
+  // from its ends (where a river leaves the city it crosses the edge anyway)
+  alongEdge(line, { margin = this.params.riverEdge ?? 170, mouth = 250 } = {}) {
+    const total = polylineLength(line), x0 = this.origin.x, y0 = this.origin.y, x1 = x0 + this.worldDimensions.x, y1 = y0 + this.worldDimensions.y;
+    let along = 0, near = 0;
+    for (let i = 1; i < line.length; i++) {
+      const p = line[i], step = p.distanceTo(line[i - 1]);
+      along += step;
+      if (along < mouth || total - along < mouth) continue;
+      if (Math.min(p.x - x0, x1 - p.x, p.y - y0, y1 - p.y) < margin) near += step;
+    }
+    return near;
+  }
   // Insert samples until neighbours are at most dstep apart
   complexifyStreamline(s) {
     const out = [];

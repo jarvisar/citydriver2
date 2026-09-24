@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { CITY, cityDistrict, cityCell } from '../src/world/city.js';
 import { citydriverRoute, journeyStart, nearestLanePose, roadAt, onRoadAt, cityHeight, waterAt, surfaceAt, ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL } from '../src/world/city-route.js';
 import { insidePolygon } from '../src/mapgen/polygon-util.js';
+import { carriagewayScore } from '../src/mapgen/generate.js';
 import { MEDIAN_KERB } from '../src/world/city-medians.js';
 import { DrivingController } from '../src/vehicle.js';
 
@@ -20,11 +21,13 @@ test('the drive starts in a lane of a wide road near the middle of the city, fac
 
 test('heights come from the kerbs, the roadway and the water, and bridges stay dry', () => {
   let roadPoints = 0, pavementPoints = 0, waterPoints = 0, bridgePoints = 0, medianPoints = 0;
-  for (let s = -800; s <= 800; s += 23) for (let u = -1100; u <= 1100; u += 29) {
+  // All over the city, out to the ring road
+  for (let s = -CITY.height / 2; s <= CITY.height / 2; s += 23) for (let u = -CITY.width / 2; u <= CITY.width / 2; u += 29) {
     const height = cityHeight(s, u), surface = surfaceAt(s, u);
     // Inside a block's kerb is pavement, and a kerb never reaches onto a carriageway
     const kerbed = CITY.blocks.some(block => block.kerb.length >= 3 && insidePolygon({ x: u, y: s }, block.kerb));
-    if (kerbed) { assert.equal(surface, 'pavement'); assert.ok(!onRoadAt(s, u) || roadAt(s, u).distance > roadAt(s, u).road.profile.halfWidth - .6, 'pavement on a road'); }
+    // (a carriageway ending square across its road's end, as it is drawn)
+    if (kerbed) { assert.equal(surface, 'pavement'); const road = CITY.roadIndex.nearest(u, s, 26, carriagewayScore); assert.ok(!road || road.score > -.6, `pavement on a road at ${u},${s}`); }
     if (surface === 'pavement') { pavementPoints++; assert.equal(height, PAVEMENT_LEVEL); }
     // A boulevard's median stands a kerb above its carriageway, down its middle
     else if (surface === 'median') { medianPoints++; assert.equal(height, ROAD_LEVEL + MEDIAN_KERB); assert.ok(roadAt(s, u).distance < roadAt(s, u).road.profile.median + .01); }

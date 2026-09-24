@@ -31,7 +31,10 @@ export class NavGraph {
       if (!nodeIds.has(i)) { nodeIds.set(i, this.nodes.length); this.nodes.push({ id: this.nodes.length, x: raw[i].x, y: raw[i].y, edges: [] }); }
       return nodeIds.get(i);
     };
-    const isJunction = i => raw[i].adj.length !== 2;
+    // A street ends where another carries on from it with a different profile
+    // (an avenue into a boulevard), so each edge is marked as its own road
+    const profileOf = r => CITY.roads[r]?.profile ?? null;
+    const isJunction = i => raw[i].adj.length !== 2 || profileOf(raw[i].roads[0]) !== profileOf(raw[i].roads[1]);
     const seen = new Set(), key = (a, b) => (a < b ? `${a}:${b}` : `${b}:${a}`);
     const walk = (start, first, road) => {
       let previous = start, current = first;
@@ -83,7 +86,7 @@ export class NavGraph {
     for (const node of this.nodes) {
       if (node.edges.length !== 2) continue;
       const [first, second] = node.edges;
-      if (first === second || first.a === first.b || second.a === second.b || first.kind !== second.kind) continue;
+      if (first === second || first.a === first.b || second.a === second.b || first.kind !== second.kind || first.profile !== second.profile) continue;
       const into = first.b === node.id ? first.points : first.points.slice().reverse(), from = first.b === node.id ? first.a : first.b;
       const out = second.a === node.id ? second.points : second.points.slice().reverse(), to = second.a === node.id ? second.b : second.a;
       if (from === to) continue;

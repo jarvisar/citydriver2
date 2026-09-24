@@ -32,6 +32,44 @@ export const COLOURS = {
 const POND_LEVEL = ROAD_LEVEL + .08;
 const circle = (x, y, r, count = 24) => Array.from({ length: count }, (_, k) => ({ x: x + Math.cos(k / count * Math.PI * 2) * r, y: y + Math.sin(k / count * Math.PI * 2) * r }));
 
+// The paved yards behind the offices and warehouses are car parks: rows of
+// bays square to the yard's longest side, back to back across aisles, a few
+// more than half of them taken. Laid out once per block, for the markings and
+// the cars alike.
+const PARKED_YARDS = new Set(['Midtown', 'Warehouse district']);
+export const YARD_BAY = { width: 2.7, depth: 5.2, aisle: 6.4, margin: 1.4 };
+const yardBays = new Map();
+export function yardParking(block) {
+  if (yardBays.has(block)) return yardBays.get(block);
+  const bays = [];
+  yardBays.set(block, bays);
+  if (!PARKED_YARDS.has(block.style) || !(block.yard?.length >= 3) || calcPolygonArea(block.yard) < 450) return bays;
+  const lot = offsetPolygon(block.yard, -YARD_BAY.margin);
+  if (lot.length < 3) return bays;
+  let longest = 0;
+  for (let i = 1; i < lot.length; i++) if (Math.hypot(lot[(i + 1) % lot.length].x - lot[i].x, lot[(i + 1) % lot.length].y - lot[i].y) > Math.hypot(lot[(longest + 1) % lot.length].x - lot[longest].x, lot[(longest + 1) % lot.length].y - lot[longest].y)) longest = i;
+  const a = lot[longest], b = lot[(longest + 1) % lot.length], length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  const ux = (b.x - a.x) / length, uy = (b.y - a.y) / length, vx = -uy, vy = ux;
+  const us = lot.map(p => p.x * ux + p.y * uy), vs = lot.map(p => p.x * vx + p.y * vy);
+  const u0 = Math.min(...us), u1 = Math.max(...us), v0 = Math.min(...vs), v1 = Math.max(...vs);
+  const { width, depth, aisle } = YARD_BAY, random = seededRandom(CITY.seed * 131 + block.index * 7919);
+  const at = (u, v) => ({ x: u * ux + v * vx, y: u * uy + v * vy });
+  const inside = (u, v) => [[-1, -1], [1, -1], [1, 1], [-1, 1]].every(([su, sv]) => insidePolygon(at(u + su * width / 2, v + sv * depth / 2), lot));
+  // An aisle, two rows of bays back to back, an aisle, and so on across the yard
+  for (let row = 0, v = v0 + aisle + depth / 2; v + depth / 2 <= v1; row++, v += row % 2 ? depth : depth + aisle) {
+    for (let u = u0 + width / 2; u + width / 2 <= u1; u += width) {
+      if (!inside(u, v)) continue;
+      // Each car noses into its bay, away from the aisle it came in by
+      const sign = row % 2 ? 1 : -1, p = at(u, v);
+      bays.push({ x: p.x, y: p.y, ux, uy, vx, vy, heading: Math.atan2(vx * sign, vy * sign), taken: random() < .58,
+        model: PARKED_MODELS[Math.floor(random() * PARKED_MODELS.length)], colour: Math.floor(random() * 1e6) });
+    }
+  }
+  // A handful of bays is not a car park
+  if (bays.length < 6) bays.length = 0;
+  return bays;
+}
+
 // Points every `step` metres along a polyline, with the unit tangent
 export function alongPolyline(points, step, offset = 0) {
   const out = [];
@@ -171,6 +209,14 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
     if (block.park || block.inner.length < 3) continue;
     ground.polygon(block.inner, PAVEMENT_LEVEL + .02, blockGround(block));
     if (block.yard?.length >= 3) ground.polygon(block.yard, PAVEMENT_LEVEL + .035, yardGround(block));
+    // A car park's bays, lined out down each side
+    for (const bay of yardParking(block)) for (const side of [-1, 1]) {
+      const cx = bay.x + bay.ux * side * YARD_BAY.width / 2, cy = bay.y + bay.uy * side * YARD_BAY.width / 2, along = YARD_BAY.depth / 2 - .3;
+      markings.polygon([
+        { x: cx - bay.ux * .05 - bay.vx * along, y: cy - bay.uy * .05 - bay.vy * along }, { x: cx + bay.ux * .05 - bay.vx * along, y: cy + bay.uy * .05 - bay.vy * along },
+        { x: cx + bay.ux * .05 + bay.vx * along, y: cy + bay.uy * .05 + bay.vy * along }, { x: cx - bay.ux * .05 + bay.vx * along, y: cy - bay.uy * .05 + bay.vy * along },
+      ], PAVEMENT_LEVEL + .045, COLOURS.line);
+    }
   }
   for (const entry of cityParks()) {
     const park = entry.park, holes = entry.pond ? [pondShore(entry.pond)] : [];
@@ -463,6 +509,10 @@ export function placeStreetFurniture(nav, bridges, add) {
       if (!insidePolygon({ x, y }, yard) || distanceToPolyline({ x, y }, ring) < 4) continue;
       if (put({ kind: 'tree', u: x, s: y, scale: 6 + random() * 3.5 }, 7)) count++;
     }
+  }
+  // Cars in the car parks behind the offices and warehouses
+  for (const block of CITY.blocks) for (const bay of yardParking(block)) {
+    if (bay.taken) add({ kind: 'parked', u: bay.x, s: bay.y, yaw: -bay.heading, model: bay.model, colour: bay.colour, yard: block.index });
   }
   // Cars parked in two bays in five along a street with parking, clear of
   // the crosswalks, the park gates, bus stops and the venues' doors

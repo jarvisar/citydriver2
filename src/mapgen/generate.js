@@ -9,12 +9,13 @@ import PolygonFinder from './polygon-finder.js';
 import { FIELD_TYPE } from './basis-field.js';
 import { RoadIndex } from './road-index.js';
 import { averagePoint, calcPolygonArea, offsetPolygon, insidePolygon, polygonCentroid, bufferPolyline, polygonBounds } from './polygon-util.js';
-import { filletPolyline, ringRoad, clipInside, cleanNetwork, pruneNetwork, joinCorners, easeKinks } from './road-network.js';
+import { filletPolyline, ringRoad, clipInside, weldEnds, circuses, cleanNetwork, spreadJunctions, pruneNetwork, joinCorners, easeKinks, endJoints } from './road-network.js';
 import { frontageLots, throughLots, chamferAcute } from './lots.js';
 import { islandOutline, landAndWater } from './shore.js';
-import { insetPolygon, difference } from './booleans.js';
+import { insetPolygon, difference, solids } from './booleans.js';
 import { CLASS_PROFILES, PROFILES, assignProfiles } from './road-hierarchy.js';
-import { parkLayout } from './park-paths.js';
+import { parkLayout, deepestPoint } from './park-paths.js';
+import { infillStreets } from './infill.js';
 
 // The whole MapGenerator pipeline in metres, seeded: a tensor field of four
 // grids and a radial, a coastline and river, main, major and minor roads,
@@ -29,7 +30,7 @@ export const SIDEWALK = 4.2;
 const BEND_RADIUS = { main: 80, major: 60, minor: 35, path: 14 };
 
 export const DEFAULT_OPTIONS = {
-  seed: 1, width: 2400, height: 1800,
+  seed: 1, width: 2880, height: 2160,
   minor: { dsep: 90, dtest: 60, dstep: 4, dlookahead: 160, dcirclejoin: 20, joinangle: .1, pathIterations: 900, seedTries: 300, simplifyTolerance: 2, collideEarly: 0 },
   major: { dsep: 400, dtest: 140, dlookahead: 700 },
   main: { dsep: 1400, dtest: 600, dlookahead: 1800 },
@@ -39,7 +40,7 @@ export const DEFAULT_OPTIONS = {
   // A big park is a face of the main and major roads no bigger than maxArea,
   // chosen before the minor roads so their paths wind through it. Small
   // parks are finished blocks between smallArea[0] and [1], picked last.
-  parks: { big: 1, small: 4, clusterBig: false, maxLength: 80, minArea: 2000, maxArea: 280000, bigArea: 110000, smallArea: [4500, 30000], spacing: 320 },
+  parks: { big: 1, small: 6, clusterBig: false, maxLength: 80, minArea: 2000, maxArea: 280000, bigArea: 110000, smallArea: [4500, 30000], spacing: 320 },
   // Lots in a strip round each block (see lots.js); style(centre, district,
   // downtown) may give each block its own depth and frontages. Thin blocks
   // are cut across into lots between minArea and twice that. A few blocks
@@ -56,7 +57,7 @@ export const DEFAULT_OPTIONS = {
   // Metres of boulevard every city has (the longest avenues through the
   // middle are promoted), and style(point, district, downtown), the profile
   // name for a side street there (see road-hierarchy.js)
-  streets: { boulevards: 2200, style: null },
+  streets: { boulevards: 2700, style: null },
   coast: true, river: true, closed: true,
 };
 
@@ -103,6 +104,11 @@ export function generateCityMap(options = {}) {
     const ringPolygon = ring.slice(0, -1), onShore = p => !insidePolygon(p, water.seaPolygon), start = Math.max(0, ringPolygon.findIndex(onShore));
     const loop = [...ringPolygon.slice(start), ...ringPolygon.slice(0, start + 1)];
     ringRuns = water.seaPolygon.length >= 3 ? clipInside(loop, water.seaPolygon, .6, false) : [loop];
+    // The runs either side of where the loop began are one road
+    const first = ringRuns[0], last = ringRuns[ringRuns.length - 1];
+    if (ringRuns.length > 1 && first[0].distanceTo(loop[0]) < 1e-6 && last[last.length - 1].distanceTo(loop[loop.length - 1]) < 1e-6) {
+      ringRuns = [[...last, ...first.slice(1)], ...ringRuns.slice(1, -1)];
+    }
   }
   lap('water');
   const radial = field.basisFields.find(basis => basis.FIELD_TYPE === FIELD_TYPE.Radial);
@@ -175,17 +181,48 @@ export function generateCityMap(options = {}) {
     roadList = roadList.flatMap(road => clipInside(road.points, ringPolygon).map(points => ({ ...road, points })));
     for (const points of ringRuns) if (points.length > 1) roadList.push({ kind: 'ring', points });
   }
+  // The ring and the waterside roads meet where each was clipped by the other
+  roadList = weldEnds(roadList);
+  // Loops too small for a block become circuses round a garden
+  let circusList;
+  ({ roads: roadList, circuses: circusList } = circuses(roadList, { canPlace: p => field.onLand(p) && insideRing(p) && !field.inParks(p) }));
   // Trim overshoots, carry dead ends on to the next street, drop orphans
   roadList = cleanNetwork(roadList, { ...o.network, halfWidthOf: kind => (ROAD_PROFILES[kind] ?? ROAD_PROFILES.minor).halfWidth,
     canCross: (p, road) => field.onLand(p) && insideRing(p) && (road.kind === 'path') === field.inParks(p) });
+  // Streets stopping on a road a few metres apart meet it in one place, or one gives way
+  roadList = spreadJunctions(roadList);
   roadList = pruneNetwork(roadList, { stub: o.network.stub, Graph });
   // Roads meeting end to end at an angle: a dog-leg by a junction goes, any other corner is rounded
   roadList = joinCorners(roadList, { radiusOf: kind => BEND_RADIUS[kind] ?? BEND_RADIUS.minor });
   // and kinks between junctions are eased into curves
   roadList = easeKinks(roadList);
+  // A block much wider than the streamlines' spacing gets the street they missed
+  roadList = infillStreets(roadList, {
+    faces: roads => {
+      const graph = new Graph(roads.map(road => road.points), minorParams.dstep, true), faces = new PolygonFinder(graph.nodes, { maxLength: o.lots.maxLength }, field);
+      faces.findPolygons();
+      return faces.polygons;
+    },
+    directions: p => { const tensor = field.samplePoint(p); return [tensor.getMajor(), tensor.getMinor()]; },
+    canPlace: p => field.onLand(p) && insideRing(p) && !field.inParks(p),
+  });
   // Boulevards, the ring's parkway, avenues, and each district's side streets
   assignProfiles(roadList, { downtownDistance, boulevards: o.streets.boulevards,
     streetStyle: p => o.streets.style?.(p, districtAt(p.x, p.y), downtownDistance(p)) ?? 'side' });
+  // The streets round a big park can have moved since it was chosen (one cut
+  // back where it met the ring at a slant, say, leaving the park open to the
+  // block beside it): each park is the face of the finished streets its
+  // middle is in, so long as that is still a park's size
+  if (bigParks.length) {
+    const graph = new Graph(roadList.filter(road => road.kind !== 'path').map(road => road.points), minorParams.dstep, true);
+    const faces = new PolygonFinder(graph.nodes, { maxLength: 2000 }, { onLand: p => field.onLand(p), inParks: () => false });
+    faces.findPolygons();
+    bigParks.forEach((park, i) => {
+      const middle = deepestPoint(park)?.point, face = middle && faces.polygons.find(polygon => insidePolygon(middle, polygon));
+      if (face && calcPolygonArea(face) <= o.parks.maxArea) bigParks[i] = face;
+    });
+    field.parks = bigParks.slice();
+  }
   // Each big park's walks: gates on its streets, a loop round it and walks
   // across the lawn to a plaza or a pond (see park-paths.js)
   const streetIndex = new RoadIndex(roadList);
@@ -197,23 +234,6 @@ export function generateCityMap(options = {}) {
   }));
   for (const layout of parkLayouts) for (const points of layout.paths) roadList.push({ kind: 'path', points, profile: PROFILES.path });
   lap('network');
-  // Land and water for the whole world, from the ring road's promenade, the
-  // coast road's and the river's channel
-  let shore = null;
-  if (ring) {
-    let coast = null;
-    if (coastLine && water.seaPolygon.length >= 3) {
-      const probe = coastLine[Math.floor(coastLine.length / 2)], next = coastLine[Math.floor(coastLine.length / 2) + 1] ?? coastLine[coastLine.length - 2];
-      const dx = next.x - probe.x, dy = next.y - probe.y, length = Math.hypot(dx, dy) || 1;
-      const left = new Vector(probe.x - dy / length * 30, probe.y + dx / length * 30);
-      coast = { line: coastLine, reach: ROAD_PROFILES.coast.halfWidth + o.shore.quay, seaSide: insidePolygon(left, water.seaPolygon) ? 1 : -1 };
-    }
-    const island = islandOutline(ring, CLASS_PROFILES.ring.halfWidth + o.shore.quay);
-    const river = water.hasRiver && water.riverCentre?.length > 1 ? { centre: water.riverCentre, halfWidth: waterParams.riverSize - waterParams.riverBankSize } : null;
-    const bounds = { minX: origin.x - o.shore.sea, minY: origin.y - o.shore.sea, maxX: origin.x + width + o.shore.sea, maxY: origin.y + height + o.shore.sea };
-    shore = { island, coast, ...landAndWater({ island, coast, river, bounds }), bounds };
-  }
-  lap('shore');
   const roadIndex = new RoadIndex(roadList);
   const streamlines = roadList.map(road => road.points);
   // The navigation graph keeps dead ends; the lot graph drops them
@@ -258,11 +278,40 @@ export function generateCityMap(options = {}) {
     if (kept && kept.every(p => clearOfRoads(p) >= -.75)) { block.sidewalk = kept; block.repaired = true; }
     else { block.sidewalk = []; block.broken = true; }
   }
+  // Land and water for the whole world, from the ring road's promenade, the
+  // coast road's and the river's channel. The city stands on its blocks and
+  // its roads with their promenades: bare land on the shore past them (where
+  // the ring and the coast road round a corner) is sea.
+  let shore = null;
+  if (ring) {
+    let coast = null;
+    if (coastLine && water.seaPolygon.length >= 3) {
+      const probe = coastLine[Math.floor(coastLine.length / 2)], next = coastLine[Math.floor(coastLine.length / 2) + 1] ?? coastLine[coastLine.length - 2];
+      const dx = next.x - probe.x, dy = next.y - probe.y, length = Math.hypot(dx, dy) || 1;
+      const left = new Vector(probe.x - dy / length * 30, probe.y + dx / length * 30);
+      coast = { line: coastLine, reach: ROAD_PROFILES.coast.halfWidth + o.shore.quay, seaSide: insidePolygon(left, water.seaPolygon) ? 1 : -1 };
+    }
+    const island = islandOutline(ring, CLASS_PROFILES.ring.halfWidth + o.shore.quay);
+    const river = water.hasRiver && water.riverCentre?.length > 1 ? { centre: water.riverCentre, halfWidth: waterParams.riverSize - waterParams.riverBankSize } : null;
+    const bounds = { minX: origin.x - o.shore.sea, minY: origin.y - o.shore.sea, maxX: origin.x + width + o.shore.sea, maxY: origin.y + height + o.shore.sea };
+    shore = { island, coast, ...landAndWater({ island, coast, river, bounds,
+      keep: [...finder.polygons, ...bigParks, ...endJoints(roadList, road => road.profile.halfWidth + o.shore.quay + .5, { round: true }),
+        ...roadList.filter(road => road.kind !== 'path').map(road => bufferPolyline(road.points, road.profile.halfWidth + o.shore.quay + .5))] }), bounds };
+  }
+  lap('shore');
   // Small parks and squares: whole blocks, well apart, away from the water
   const parks = bigParks.map((polygon, i) => ({ polygon, kind: 'park', block: -1, layout: parkLayouts[i] }));
+  // The garden in the middle of each circus
+  for (const circus of circusList) {
+    const index = blocks.findIndex(block => !block.park && calcPolygonArea(block.polygon) < Math.PI * circus.radius ** 2 && insidePolygon(circus.centre, block.polygon));
+    if (index < 0) continue;
+    blocks[index].park = true;
+    parks.push({ polygon: blocks[index].polygon, kind: 'square', block: index, circus: true });
+  }
+  const squares = o.parks.small + parks.length - bigParks.length;
   const candidates = blocks.map((block, index) => ({ block, index, area: calcPolygonArea(block.polygon), centre: polygonCentroid(block.polygon) }))
-    .filter(({ block, area }) => area >= o.parks.smallArea[0] && area <= o.parks.smallArea[1] && block.polygon.every(p => insideRing(p) && field.onLand(p)));
-  for (let tries = 0; tries < 60 && parks.length < bigParks.length + o.parks.small && candidates.length; tries++) {
+    .filter(({ block, area }) => !block.park && area >= o.parks.smallArea[0] && area <= o.parks.smallArea[1] && block.polygon.every(p => insideRing(p) && field.onLand(p)));
+  for (let tries = 0; tries < 60 && parks.length < bigParks.length + squares && candidates.length; tries++) {
     const pick = candidates[Math.floor(random() * candidates.length)];
     if (parks.some(park => polygonCentroid(park.polygon).distanceTo(pick.centre) < o.parks.spacing)) continue;
     pick.block.park = true;
@@ -293,7 +342,10 @@ export function generateCityMap(options = {}) {
     if (!result?.lots.length) result = frontageLots(inner, style, random) ?? frontageLots(inner, { ...style, depth: style.depth * .65 }, random);
     if (result?.yard) block.yard = result.yard;
     // Every lot keeps its pavement between it and the street
-    const pieces = (result?.lots ?? throughLots(inner, style.minArea, random)).filter(lot => lot.polygon.every(p => clearOfRoads(p) > SIDEWALK * .7));
+    // (A block cut across keeps only the lots on its streets: any in its
+    // middle, which a big winding block can leave, are its yard)
+    const pieces = (result?.lots ?? throughLots(inner, style.minArea, random).filter(lot => lot.edges.includes('street')))
+      .filter(lot => lot.polygon.every(p => clearOfRoads(p) > SIDEWALK * .7));
     for (const lot of pieces) { lots.push(lot.polygon); lotBlocks.push(index); lotEdges.push(lot.edges); lotDepths.push(lot.depth ?? 0); }
   });
   lap('lots');
@@ -314,7 +366,7 @@ export function generateCityMap(options = {}) {
     coastline: water.coastline, coastLine, sea: water.seaPolygon, river: water.riverPolygon, riverStreamline: water.riverStreamline, riverCentre: water.riverCentre ?? null,
     riverWidth: waterParams.riverSize - waterParams.riverBankSize, shore,
     hasCoast: water.hasCoast, hasRiver: water.hasRiver,
-    parks: parks.map(park => park.polygon), parkInfo: parks, parkLayouts, blocks, lots, lotBlocks, lotEdges, lotDepths, nav, field,
+    parks: parks.map(park => park.polygon), parkInfo: parks, parkLayouts, blocks, lots, lotBlocks, lotEdges, lotDepths, nav, field, joints: endJoints(roadList),
     districts: field.basisFields.map((basis, index) => ({ index, radial: basis.FIELD_TYPE === FIELD_TYPE.Radial, centre: basis.centre, size: basis._size })),
     districtAt, downtownDistance,
     sampleDirection: (x, y) => field.samplePoint(new Vector(x, y)).getMajor(),
@@ -323,10 +375,11 @@ export function generateCityMap(options = {}) {
 }
 
 // How far a point is outside a road segment's carriageway, which ends square
-// across the road's own ends: beyond the end of a road is not on it, nor is
-// the few centimetres a road is carried past the one it meets.
+// across the road's own ends, as the carriageway is drawn: beyond the end of
+// a road is not on it, however its last few metres bend, nor is the few
+// centimetres a road is carried past the one it meets. (x, y) is the point.
 const carriagewaySpans = new WeakMap();
-export function carriagewayScore(segment, distance, t) {
+export function carriagewayScore(segment, distance, t, x, y) {
   const road = segment.road;
   let span = carriagewaySpans.get(road);
   if (!span) {
@@ -336,11 +389,21 @@ export function carriagewayScore(segment, distance, t) {
     while (first < last && (run += points[first].distanceTo(points[first + 1])) < 2) first++;
     run = 0;
     while (last > first && (run += points[last].distanceTo(points[last + 1])) < 2) last--;
-    span = { first, last };
+    // Each end, square across the road, and which segments are near enough to it to reach past it
+    const along = [0];
+    for (let i = 1; i < n; i++) along.push(along[i - 1] + points[i].distanceTo(points[i - 1]));
+    const closed = points[0].distanceTo(points[n - 1]) < 1e-6, reach = road.profile.halfWidth * 2;
+    const end = (at, towards) => { const d = points[at].clone().sub(points[towards]), l = d.length() || 1; return { x: points[at].x, y: points[at].y, dx: d.x / l, dy: d.y / l }; };
+    span = { first, last, along, closed, reach, start: end(first, first + 1), end: end(last + 1, last) };
     carriagewaySpans.set(road, span);
   }
   if (segment.index < span.first || segment.index > span.last) return Infinity;
   if ((t <= 0 && segment.index === span.first) || (t >= 1 && segment.index === span.last)) return Infinity;
+  if (x !== undefined && !span.closed) {
+    const { along, start, end, reach } = span;
+    if (along[segment.index] - along[span.first] < reach && (x - start.x) * start.dx + (y - start.y) * start.dy > 0) return Infinity;
+    if (along[span.last + 1] - along[segment.index + 1] < reach && (x - end.x) * end.dx + (y - end.y) * end.dy > 0) return Infinity;
+  }
   return distance - road.profile.halfWidth;
 }
 
@@ -366,7 +429,7 @@ function clearOfCarriageways(polygon, roadIndex, graze = .3) {
   }
   const area = calcPolygonArea(polygon);
   let best = null;
-  for (const piece of difference([polygon], cuts.filter(cut => cut.length >= 3))) {
+  for (const piece of difference([polygon], solids(cuts))) {
     const pieceArea = calcPolygonArea(piece.outer);
     if (!best || pieceArea > best.area) best = { ...piece, area: pieceArea };
   }

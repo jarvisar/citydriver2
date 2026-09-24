@@ -25,6 +25,11 @@ test('lamps, trees, signs and signals stand on the pavement, never on a carriage
   for (const kind of ['lamp', 'median-lamp', 'lantern', 'tree', 'stop', 'signal', 'shelter', 'bin', 'railing', 'bench', 'parked']) assert.ok(kinds.has(kind), `${kind} placed`);
   for (const piece of furniture) {
     if (piece.kind === 'railing' || piece.kind === 'rim') continue;
+    // A car in a yard's car park stands in its block's yard, off every road
+    if (piece.kind === 'parked' && piece.yard !== undefined) {
+      assert.ok(insidePolygon({ x: piece.u, y: piece.s }, CITY.blocks[piece.yard].yard) && !onRoadAt(piece.s, piece.u), `yard car off its yard at ${piece.u.toFixed(1)},${piece.s.toFixed(1)}`);
+      continue;
+    }
     // A parked car stands in a parking bay, between the traffic lane and the kerb
     if (piece.kind === 'parked') {
       const road = onRoadAt(piece.s, piece.u);

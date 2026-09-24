@@ -1,6 +1,6 @@
 import Vector from './vector.js';
 import { findIntersections } from './graph.js';
-import { insidePolygon, segmentIntersection } from './polygon-util.js';
+import { insidePolygon, segmentIntersection, signedArea, polygonCentroid } from './polygon-util.js';
 import { RoadIndex } from './road-index.js';
 
 // The streamlines MapGenerator integrates are a sketch of a street network:
@@ -13,6 +13,10 @@ import { RoadIndex } from './road-index.js';
 // blocks, the lots, the junctions, the traffic) relies on it being clean.
 
 const lengthOf = points => { let d = 0; for (let i = 1; i < points.length; i++) d += points[i].distanceTo(points[i - 1]); return d; };
+// A street that comes back round to where it began (round a circus, say)
+const isLoop = points => points.length > 3 && points[0].distanceTo(points[points.length - 1]) <= .5 && lengthOf(points) >= 5;
+// Roads the cleanup never cuts: the ring, the waterside roads, and each circus
+const held = (fixed, road) => fixed.has(road.kind) || road.circus === true;
 
 // Replaces each bend of a polyline with a circular arc tangent to both of its
 // segments, as large as the segments allow up to maxRadius. Straight runs stay
@@ -89,7 +93,7 @@ export function ringRoad(origin, dimensions, { inset = 45, radius = 220, wander 
 
 // Every place two roads cross, as distances along each road. Endpoints that
 // touch another road's end count too: that is where one road carries on as
-// another.
+// another, or, for a loop (a street round a circus), as itself.
 function crossings(roads) {
   const segments = [];
   const cumulative = roads.map(road => {
@@ -102,8 +106,10 @@ function crossings(roads) {
   });
   const hits = roads.map(() => []);
   const along = (segment, point) => cumulative[segment.road][segment.i] + segment.from.distanceTo(point);
+  // A loop's first and last segments are neighbours too, across its closure
+  const last = roads.map(road => isLoop(road.points) ? road.points.length - 2 : -1);
   for (const { point, segments: [a, b] } of findIntersections(segments)) {
-    if (a.road === b.road && Math.abs(a.i - b.i) < 2) continue;
+    if (a.road === b.road && (Math.abs(a.i - b.i) < 2 || Math.abs(a.i - b.i) === last[a.road])) continue;
     hits[a.road].push({ d: along(a, point), point, other: b.road });
     hits[b.road].push({ d: along(b, point), point, other: a.road });
   }
@@ -114,12 +120,17 @@ function crossings(roads) {
     ends.push({ r, p: road.points[0], d: 0 }, { r, p: road.points[road.points.length - 1], d: cumulative[r][road.points.length - 1] });
   });
   for (const a of ends) for (const b of ends) {
-    if (a.r === b.r || a.p.distanceTo(b.p) > .5) continue;
+    if (a === b || (a.r === b.r && (a.d === b.d || cumulative[a.r][roads[a.r].points.length - 1] < 5)) || a.p.distanceTo(b.p) > .5) continue;
     hits[a.r].push({ d: a.d, point: a.p, other: b.r, endToEnd: true });
   }
   for (const list of hits) list.sort((p, q) => p.d - q.d);
   return { hits, cumulative };
 }
+
+// A scrap: a road that touches the rest in one place and runs only a stub's
+// length either side of it. It is no street, and left, it would pass for a
+// junction at the end of a dead end. mine: its crossings.
+const isScrap = (mine, length, stub) => mine.length > 0 && mine[0].d <= stub && length - mine[mine.length - 1].d <= stub && mine.every(hit => hit.point.distanceTo(mine[0].point) < 1);
 
 // The part of a polyline between two distances along it
 export function slicePolyline(points, from, to) {
@@ -211,16 +222,22 @@ class SegmentGrid {
 }
 
 // A streamline can follow the field alongside the road it set out from,
-// inside that road's own carriageway. Wherever the lesser of two roads runs
-// within their combined half widths of the other, nearly parallel to it, for
-// more than a few metres, that stretch of it is cut out.
-function unhug(roads, { fixed, halfWidthOf, step = 2, minRun = 8, maxAngle = .45 } = {}) {
-  const index = new RoadIndex(roads), sin = Math.sin(maxAngle);
-  const rank = road => fixed.has(road.kind) ? 9 : RANK[road.kind] ?? 1;
+// inside that road's own carriageway, or just beside it with no room for a
+// block between them: two carriageways kerb to kerb, or a strip of pavement
+// where the houses should be. Wherever the lesser of two roads runs within
+// their combined half widths of the other, nearly parallel to it, for more
+// than a few metres, or within `crowd` metres of its kerb for more than
+// `crowdRun`, that stretch of it is cut out. The ends left are marked, so
+// the stretch is not carried straight back alongside the other road.
+const CROWD = { gap: 14, angle: .3, run: 30 };
+function unhug(roads, { fixed, halfWidthOf, step = 2, minRun = 8, maxAngle = .45, crowd = CROWD } = {}) {
+  const index = new RoadIndex(roads), sin = Math.sin(maxAngle), crowdSin = Math.sin(crowd.angle);
+  const rank = road => held(fixed, road) ? 9 : RANK[road.kind] ?? 1;
   return roads.flatMap((road, r) => {
-    if (fixed.has(road.kind) || road.kind === 'path') return [road];
-    const own = halfWidthOf(road.kind), runs = [];
-    let run = null, travelled = 0;
+    if (held(fixed, road) || road.kind === 'path') return [road];
+    const own = halfWidthOf(road.kind), hugs = [], crowds = [];
+    let hug = null, crowded = null, travelled = 0;
+    const close = (run, list, least) => { if (run && run[1] - run[0] >= least) list.push(run); return null; };
     const points = road.points;
     for (let i = 0; i < points.length - 1; i++) {
       const a = points[i], b = points[i + 1], dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy);
@@ -228,26 +245,31 @@ function unhug(roads, { fixed, halfWidthOf, step = 2, minRun = 8, maxAngle = .45
       const tx = dx / length, ty = dy / length;
       for (let d = (step - travelled % step) % step; d <= length; d += step) {
         const x = a.x + tx * d, y = a.y + ty * d;
-        let hugging = false;
-        index.each(x, y, own + 12, (segment, distance) => {
+        let hugging = false, crowding = false;
+        index.each(x, y, own + 12 + crowd.gap, (segment, distance) => {
           if (hugging || segment.roadIndex === r) return;
           const other = segment.road;
           if (other.kind === 'path' || rank(other) < rank(road) || (rank(other) === rank(road) && segment.roadIndex > r)) return;
-          if (distance < (own + halfWidthOf(other.kind)) * .9 && Math.abs(tx * segment.dy - ty * segment.dx) / segment.length < sin) hugging = true;
+          const across = Math.abs(tx * segment.dy - ty * segment.dx) / segment.length, both = own + halfWidthOf(other.kind);
+          if (distance < both * .9 && across < sin) hugging = true;
+          else if (distance < both + crowd.gap && across < crowdSin) crowding = true;
         });
         const at = travelled + d;
-        if (hugging) { run ??= [at, at]; run[1] = at; }
-        else if (run) { if (run[1] - run[0] >= minRun) runs.push(run); run = null; }
+        if (hugging) { hug ??= [at, at]; hug[1] = at; } else hug = close(hug, hugs, minRun);
+        if (hugging || crowding) { crowded ??= [at, at]; crowded[1] = at; } else crowded = close(crowded, crowds, crowd.run);
       }
       travelled += length;
     }
-    if (run && run[1] - run[0] >= minRun) runs.push(run);
+    close(hug, hugs, minRun); close(crowded, crowds, crowd.run);
+    const runs = [...hugs, ...crowds].sort((p, q) => p[0] - q[0]);
     if (!runs.length) return [road];
     const pieces = [];
     let from = 0;
-    for (const [a, b] of runs) { if (a - from > 1) pieces.push([from, a]); from = b; }
+    for (const [a, b] of runs) { if (a - from > 1) pieces.push([from, a]); from = Math.max(from, b); }
     if (travelled - from > 1) pieces.push([from, travelled]);
-    return pieces.map(([a, b]) => ({ ...road, points: slicePolyline(points, a, b) })).filter(piece => piece.points.length > 1);
+    // What is left between two cuts is a street only if it is long enough for one
+    return pieces.filter(([a, b]) => a === 0 || b === travelled || b - a >= 20).map(([a, b]) => ({ ...road, points: slicePolyline(points, a, b), cutStart: a > 0 || road.cutStart, cutEnd: b < travelled || road.cutEnd }))
+      .filter(piece => piece.points.length > 1);
   });
 }
 
@@ -259,12 +281,12 @@ const RANK = { path: 0, minor: 1, major: 2, main: 3 };
 function unlens(roads, { fixed, overshoot, span = 40 } = {}) {
   const { hits, cumulative } = crossings(roads), cuts = new Map();
   roads.forEach((road, r) => {
-    if (fixed.has(road.kind)) return;
+    if (held(fixed, road)) return;
     const mine = hits[r];
     for (let k = 0; k + 1 < mine.length; k++) {
       const a = mine[k], b = mine[k + 1], other = roads[a.other];
       if (a.other !== b.other || a.endToEnd || b.endToEnd || b.d - a.d > span || b.d - a.d < 1e-3) continue;
-      const mineRank = RANK[road.kind] ?? 1, theirRank = fixed.has(other.kind) ? 9 : RANK[other.kind] ?? 1;
+      const mineRank = RANK[road.kind] ?? 1, theirRank = held(fixed, other) ? 9 : RANK[other.kind] ?? 1;
       if (mineRank > theirRank || (mineRank === theirRank && a.other < r)) continue;
       if (!cuts.has(r)) cuts.set(r, []);
       cuts.get(r).push([a.d + overshoot, b.d - overshoot]);
@@ -295,7 +317,7 @@ function unshallow(roads, { fixed, overshoot, stub, minAngle = .45, end = 2 } = 
     return b[b.length - 1].clone().sub(a[a.length - 1]);
   };
   roads.forEach((road, r) => {
-    if (fixed.has(road.kind) || road.kind === 'path') return;
+    if (held(fixed, road) || road.kind === 'path') return;
     const length = cumulative[r][road.points.length - 1], mine = hits[r];
     for (const atStart of [true, false]) {
       const join = atStart ? mine[0] : mine[mine.length - 1];
@@ -328,7 +350,8 @@ function unshallow(roads, { fixed, overshoot, stub, minAngle = .45, end = 2 } = 
 // or cut back, like any other.
 function unswerve(roads, { fixed, reach = 35, window = 3, minRadius = 20 } = {}) {
   return roads.map(road => {
-    if (fixed.has(road.kind) || road.kind === 'path') return road;
+    // A loop has no ends to swerve
+    if (held(fixed, road) || road.kind === 'path' || isLoop(road.points)) return road;
     let points = road.points;
     for (const atStart of [false, true]) {
       const line = atStart ? points.slice().reverse() : points, total = lengthOf(line);
@@ -350,6 +373,100 @@ function unswerve(roads, { fixed, reach = 35, window = 3, minRadius = 20 } = {})
   });
 }
 
+// The ring and the waterside roads are clipped against each other's lines,
+// and where they meet at a sharp angle the few centimetres each is carried
+// past the other can miss: two ends a hair apart that never touch, a gap no
+// car can cross. Ends of different roads of `kinds` within `reach` of each
+// other that do not already cross are moved to meet halfway, so the roads
+// meet end to end (and joinCorners rounds the corner).
+export function weldEnds(roads, { reach = 2, carry = 15, kinds = new Set(['coast', 'riverbank', 'ring']) } = {}) {
+  const list = roads.map(road => kinds.has(road.kind) ? { ...road, points: road.points.map(p => p.clone()) } : road), ends = [];
+  list.forEach((road, r) => {
+    if (!kinds.has(road.kind) || road.points.length < 2 || isLoop(road.points)) return;
+    ends.push({ r, start: true }, { r, start: false });
+  });
+  // Where an end is now, and the last few segments of its road there
+  const at = end => end.start ? 0 : list[end.r].points.length - 1;
+  const tail = end => { const points = list[end.r].points; return end.start ? points.slice(0, 4) : points.slice(-4); };
+  const cross = (a, b) => { for (let i = 0; i + 1 < a.length; i++) for (let j = 0; j + 1 < b.length; j++) if (segmentIntersection(a[i], a[i + 1], b[j], b[j + 1])) return true; return false; };
+  const used = new Set();
+  for (const a of ends) for (const b of ends) {
+    if (a.r >= b.r || used.has(a) || used.has(b)) continue;
+    const p = list[a.r].points[at(a)], q = list[b.r].points[at(b)], gap = p.distanceTo(q);
+    if (gap < 1e-6 || gap > reach || cross(tail(a), tail(b))) continue;
+    const middle = p.clone().add(q).multiplyScalar(.5);
+    list[a.r].points[at(a)] = middle; list[b.r].points[at(b)] = middle.clone();
+    used.add(a); used.add(b);
+  }
+  // An end that stops short of the others altogether (a bank road clipped by
+  // the coast line where it runs out to the domain's corner) is carried on to
+  // the nearest of them within `carry`
+  const index = new RoadIndex(list.filter(road => kinds.has(road.kind)));
+  for (const end of ends) {
+    if (used.has(end)) continue;
+    const road = list[end.r], p = road.points[at(end)], inner = road.points[end.start ? 1 : at(end) - 1];
+    if (index.nearest(p.x, p.y, 1, segment => segment.road === road ? Infinity : 0)) continue;
+    const hit = index.nearest(p.x, p.y, carry, (segment, distance) => segment.road === road ? Infinity : distance);
+    if (!hit) continue;
+    const target = new Vector(hit.x, hit.y), heading = target.clone().sub(p), towards = p.clone().sub(inner);
+    if (heading.length() < 1e-6 || heading.x * towards.x + heading.y * towards.y <= 0) continue;
+    const onward = [target, target.clone().add(heading.normalize().multiplyScalar(.6))];
+    road.points = end.start ? [...onward.reverse(), ...road.points] : [...road.points, ...onward];
+  }
+  return list;
+}
+
+// Streamlines wind round the tensor field's degenerate points (the middle of
+// downtown, where the radial field is centred) in loops too small for a
+// block: a ring of road a few metres across, with streets converging on it
+// and sometimes a main road straight through it. Each small, round loop is
+// made a circus: a round street at least `radius` metres across with a
+// garden in the middle, and every street that came inside it ends on it.
+// canPlace(p) says whether the circus may pass through p; fixed roads stay
+// `clearance` metres clear of it. Returns the roads and the circuses.
+export function circuses(roads, { maxRadius = 55, radius = 40, roundness = .7, spacing = 80, clearance = 36, step = 6, kind = 'major',
+  canPlace = () => true, fixed = new Set(['coast', 'riverbank', 'ring']) } = {}) {
+  const found = [], fixedIndex = new RoadIndex(roads.filter(road => held(fixed, road)));
+  for (const road of roads) {
+    if (held(fixed, road) || road.kind === 'path' || !isLoop(road.points)) continue;
+    const ring = road.points.slice(0, -1), area = Math.abs(signedArea(ring)), perimeter = lengthOf(road.points);
+    if (area > Math.PI * maxRadius * maxRadius || 4 * Math.PI * area / (perimeter * perimeter) < roundness) continue;
+    const centre = polygonCentroid(ring), size = Math.max(radius, Math.sqrt(area / Math.PI));
+    if (found.some(c => c.centre.distanceTo(centre) < c.radius + size + spacing)) continue;
+    const count = Math.max(24, Math.ceil(2 * Math.PI * size / step)), circle = [];
+    for (let k = 0; k < count; k++) circle.push(new Vector(centre.x + Math.cos(k / count * Math.PI * 2) * size, centre.y + Math.sin(k / count * Math.PI * 2) * size));
+    circle.push(circle[0].clone());
+    if (!circle.every(p => canPlace(p) && !fixedIndex.nearest(p.x, p.y, clearance))) continue;
+    found.push({ centre, radius: size, road, circle });
+  }
+  if (!found.length) return { roads, circuses: [] };
+  let list = roads.filter(road => !found.some(c => c.road === road));
+  for (const { circle } of found) {
+    const polygon = circle.slice(0, -1);
+    list = list.flatMap(road => held(fixed, road) ? [road] : clipInside(road.points, polygon, .6, false).map(points => ({ ...road, points })));
+  }
+  for (const { circle } of found) list.push({ kind, points: circle, circus: true });
+  return { roads: list, circuses: found.map(({ centre, radius }) => ({ centre, radius })) };
+}
+
+// Every end that runs on less than `stub` past its last crossing is cut back to
+// `overshoot` past it, scraps go, and so does a road that meets no other.
+export function trimEnds(roads, { stub = 18, overshoot = .6, fixed = new Set(['coast', 'riverbank', 'ring']) } = {}) {
+  const { hits, cumulative } = crossings(roads);
+  return roads.flatMap((road, r) => {
+    const length = cumulative[r][road.points.length - 1], mine = hits[r];
+    if (held(fixed, road)) return [road];
+    if (!mine.length || isScrap(mine, length, stub)) return [];
+    let from = 0, to = length;
+    const first = mine[0], last = mine[mine.length - 1];
+    if (!first.endToEnd && first.d > 1e-3 && first.d <= stub) from = Math.max(0, first.d - overshoot);
+    if (!last.endToEnd && length - last.d > 1e-3 && length - last.d <= stub) to = Math.min(length, last.d + overshoot);
+    if (from === 0 && to === length) return [road];
+    const points = slicePolyline(road.points, from, to);
+    return points.length > 1 && to - from > 1 ? [{ ...road, points }] : [];
+  });
+}
+
 // Trims overshoots, joins or removes dead ends, and drops roads left with
 // nothing to connect to. roads: [{ kind, points }]. Returns a new list.
 //  stub: an end this close past its last crossing is an overshoot
@@ -358,20 +475,7 @@ function unswerve(roads, { fixed, reach = 35, window = 3, minRadius = 20 } = {})
 //  canCross(p, road): whether an extension may pass through p
 export function cleanNetwork(roads, { stub = 18, overshoot = .6, reach = 150, keepOver = 90, snap = 12, fixed = new Set(['coast', 'riverbank', 'ring']), extendable = new Set(['main', 'major', 'minor']), canCross = () => true, halfWidthOf = () => 6.5 } = {}) {
   let list = roads.filter(road => road.points.length > 1 && lengthOf(road.points) > 1).map(road => ({ ...road, points: road.points.map(p => p.clone()) }));
-  const trim = () => {
-    const { hits, cumulative } = crossings(list);
-    list = list.flatMap((road, r) => {
-      const length = cumulative[r][road.points.length - 1], list = hits[r];
-      if (!list.length) return fixed.has(road.kind) ? [road] : [];
-      let from = 0, to = length;
-      const first = list[0], last = list[list.length - 1];
-      if (!first.endToEnd && first.d > 1e-3 && first.d <= stub && !fixed.has(road.kind)) from = Math.max(0, first.d - overshoot);
-      if (!last.endToEnd && length - last.d > 1e-3 && length - last.d <= stub && !fixed.has(road.kind)) to = Math.min(length, last.d + overshoot);
-      if (from === 0 && to === length) return [road];
-      const points = slicePolyline(road.points, from, to);
-      return points.length > 1 && to - from > 1 ? [{ ...road, points }] : [];
-    });
-  };
+  const trim = () => { list = trimEnds(list, { stub, overshoot, fixed }); };
   trim();
   list = unhug(list, { fixed, halfWidthOf });
   trim();
@@ -381,8 +485,23 @@ export function cleanNetwork(roads, { stub = 18, overshoot = .6, reach = 150, ke
   list = unswerve(list, { fixed });
   // Carry each dead end on to the next street, or cut it back
   for (let pass = 0; pass < 2; pass++) {
-    const { hits, cumulative } = crossings(list), grid = new SegmentGrid(list);
-    const junctions = hits.map(list => list.map(hit => hit.point));
+    const { hits, cumulative } = crossings(list), grid = new SegmentGrid(list), index = new RoadIndex(list);
+    // (A loop meeting itself where it closes is no junction to aim for)
+    const junctions = hits.map((list, r) => list.filter(hit => hit.other !== r).map(hit => hit.point));
+    // How far an extension would run alongside another road, as unhug would cut it
+    const crowdedFor = (from, heading, span, r, own) => {
+      let crowded = 0;
+      for (let d = 2; d < span - 1; d += 2) {
+        let near = false;
+        index.each(from.x + heading.x * d, from.y + heading.y * d, own + 12 + CROWD.gap, (segment, distance) => {
+          if (near || segment.roadIndex === r || segment.road.kind === 'path') return;
+          const across = Math.abs(heading.x * segment.dy - heading.y * segment.dx) / segment.length;
+          if (across < Math.sin(CROWD.angle) && distance < own + halfWidthOf(segment.road.kind) + CROWD.gap) near = true;
+        });
+        if (near) crowded += 2;
+      }
+      return crowded;
+    };
     const next = [];
     list.forEach((road, r) => {
       const length = cumulative[r][road.points.length - 1], mine = hits[r];
@@ -390,12 +509,13 @@ export function cleanNetwork(roads, { stub = 18, overshoot = .6, reach = 150, ke
       for (const atStart of [true, false]) {
         const nearest = atStart ? mine[0] : mine[mine.length - 1];
         const dangling = nearest ? (atStart ? nearest.d : length - nearest.d) : length;
-        if (dangling <= stub || fixed.has(road.kind)) continue;
+        if (dangling <= stub || held(fixed, road)) continue;
         const end = atStart ? points[0] : points[points.length - 1];
         const inner = atStart ? points[Math.min(points.length - 1, 1)] : points[Math.max(0, points.length - 2)];
         const direction = end.clone().sub(inner).normalize();
         let joined = null;
-        if (extendable.has(road.kind) || road.kind === 'path') {
+        // An end cut where the road ran alongside another is not carried back beside it
+        if ((extendable.has(road.kind) || road.kind === 'path') && !(atStart ? road.cutStart : road.cutEnd)) {
           const limit = road.kind === 'path' ? reach / 3 : reach;
           const far = end.clone().add(direction.clone().multiplyScalar(limit));
           const lastIndex = atStart ? 0 : points.length - 2;
@@ -412,6 +532,7 @@ export function cleanNetwork(roads, { stub = 18, overshoot = .6, reach = 150, ke
             const heading = target.clone().sub(end).normalize(), span = target.distanceTo(end);
             let clear = true;
             for (let d = 2; d < span - 1 && clear; d += 3) clear = canCross(end.clone().add(heading.clone().multiplyScalar(d)), road);
+            if (clear && road.kind !== 'path') clear = crowdedFor(end, heading, span, r, halfWidthOf(road.kind)) < 12;
             if (clear) joined = [target.clone(), target.clone().add(heading.multiplyScalar(overshoot))];
           }
         }
@@ -439,6 +560,137 @@ export function cleanNetwork(roads, { stub = 18, overshoot = .6, reach = 150, ke
   return list;
 }
 
+const pointAt = (points, d) => { const slice = slicePolyline(points, 0, Math.max(1e-6, d)); return slice[slice.length - 1]; };
+
+// Where one road carries on as another (the ring into the coast road round a
+// corner, a boulevard into a side street), each is drawn square across its
+// end, and the two ends leave a wedge between them on the outside of any bend
+// and a step where the widths differ. A patch for each such joint covers
+// both ends: the hull of the two end sections, carried `into` each road a
+// little so its edges never lie exactly along the roads' own (a crack in a
+// union). width(road): the half width the patch spans for that road. With
+// `round`, a disc as wide as the narrower of the two is added, which covers
+// the joint itself however nearly straight on the roads meet.
+export function endJoints(roads, width = road => road.profile.halfWidth, { into = .5, round = false } = {}) {
+  const ends = [];
+  roads.forEach((road, r) => {
+    const points = road.points, n = points.length;
+    if (n < 2 || road.kind === 'path' || isLoop(points)) return;
+    for (const [at, towards] of [[0, 1], [n - 1, n - 2]]) {
+      const p = points[at], q = points[towards], length = p.distanceTo(q);
+      if (length > 1e-6) ends.push({ r, p, dx: (q.x - p.x) / length, dy: (q.y - p.y) / length, w: width(road) });
+    }
+  });
+  // Ends by metre cell, so each is only compared with those beside it
+  const patches = [], cells = new Map(), cell = (x, y) => `${Math.floor(x)},${Math.floor(y)}`;
+  ends.forEach((end, i) => { const key = cell(end.p.x, end.p.y); if (!cells.has(key)) cells.set(key, []); cells.get(key).push(i); });
+  const pairs = [];
+  ends.forEach((a, i) => {
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (const j of cells.get(cell(a.p.x + dx, a.p.y + dy)) ?? []) if (j > i) pairs.push([i, j]);
+  });
+  for (const [i, j] of pairs) {
+    const a = ends[i], b = ends[j];
+    if (a.r === b.r || a.p.distanceTo(b.p) > .5) continue;
+    const corners = [a.p];
+    for (const { p, dx, dy, w } of [a, b]) for (const along of [0, into]) corners.push({ x: p.x + dx * along - dy * w, y: p.y + dy * along + dx * w }, { x: p.x + dx * along + dy * w, y: p.y + dy * along - dx * w });
+    patches.push(hull(corners));
+    if (round) patches.push(Array.from({ length: 24 }, (_, k) => new Vector(a.p.x + Math.cos(k / 24 * Math.PI * 2) * Math.min(a.w, b.w), a.p.y + Math.sin(k / 24 * Math.PI * 2) * Math.min(a.w, b.w))));
+  }
+  return patches;
+}
+// The convex hull of a few points, anticlockwise
+function hull(points) {
+  const sorted = points.map(p => ({ x: p.x, y: p.y })).sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x), lower = [], upper = [];
+  for (const p of sorted) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop(); lower.push(p); }
+  for (const p of sorted.reverse()) { while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop(); upper.push(p); }
+  return lower.slice(0, -1).concat(upper.slice(0, -1)).map(p => new Vector(p.x, p.y));
+}
+
+// Two streets that stop on the same road within a few metres of each other
+// make a knot of junctions no kerb can round. From the same side they are
+// converging on one place: the lesser gives way, cut back to its last
+// junction clear of the knot. From opposite sides they are a crossroads
+// drawn a few metres out of true: the lesser's last stretch swings onto the
+// other's junction, so the two meet the road in one place.
+export function spreadJunctions(roads, { close = 14, clear = 22, swing = 30, maxSwing = .5, end = 2, overshoot = .6, fixed = new Set(['coast', 'riverbank', 'ring']) } = {}) {
+  let list = roads.map(road => ({ ...road, points: road.points.map(p => p.clone()) }));
+  for (let pass = 0; pass < 3; pass++) {
+    const { hits, cumulative } = crossings(list), grid = new SegmentGrid(list);
+    // Each street end that stops on another road: where, from which side, and its last junction clear of it
+    const tees = [];
+    list.forEach((road, r) => {
+      if (held(fixed, road) || road.kind === 'path' || isLoop(road.points)) return;
+      const length = cumulative[r][road.points.length - 1], mine = hits[r];
+      for (const atStart of [true, false]) {
+        const hit = atStart ? mine[0] : mine[mine.length - 1];
+        if (!hit || hit.endToEnd || hit.other === r || (atStart ? hit.d : length - hit.d) > end) continue;
+        const host = list[hit.other], theirs = hits[hit.other].find(h => h.other === r && h.point.distanceTo(hit.point) < 1);
+        if (!theirs || host.kind === 'path') continue;
+        const hostLength = cumulative[hit.other][host.points.length - 1];
+        const tangent = pointAt(host.points, Math.min(hostLength, theirs.d + 3)).clone().sub(pointAt(host.points, Math.max(0, theirs.d - 3)));
+        const back = pointAt(road.points, atStart ? Math.min(length, hit.d + 10) : Math.max(0, hit.d - 10)).clone().sub(hit.point);
+        if (tangent.length() < 1e-6 || back.length() < 1e-6) continue;
+        const junctions = mine.filter(h => h !== hit && !h.endToEnd && h.point.distanceTo(hit.point) > clear);
+        const previous = atStart ? junctions.find(h => h.d > hit.d) : [...junctions].reverse().find(h => h.d < hit.d);
+        const any = mine.filter(h => h !== hit && Math.abs(h.d - hit.d) > 1), last = atStart ? any.find(h => h.d > hit.d) : [...any].reverse().find(h => h.d < hit.d);
+        const angle = Math.abs(Vector.angleBetween(tangent, back));
+        tees.push({ r, atStart, hit, host: hit.other, side: Math.sign(tangent.x * back.y - tangent.y * back.x), previous, last, square: Math.abs(Math.PI / 2 - angle), length });
+      }
+    });
+    const edits = new Map();
+    const worse = (a, b) => {
+      const rank = t => RANK[list[t.r].kind] ?? 1;
+      return rank(a) !== rank(b) ? rank(a) < rank(b) : Math.abs(a.square - b.square) > .1 ? a.square > b.square : a.length < b.length;
+    };
+    // Swing a street's last stretch onto a point on the road it stops on, if
+    // that bends it only a little and crosses nothing on the way
+    const swingOnto = (tee, target, other) => {
+      const road = list[tee.r], from = tee.atStart ? road.points.slice().reverse() : road.points, total = tee.length;
+      const endD = tee.atStart ? total - tee.hit.d : tee.hit.d, lastJunction = tee.last ? (tee.atStart ? total - tee.last.d : tee.last.d) : 0;
+      const pivotD = Math.max(lastJunction + 2, endD - swing);
+      if (endD - pivotD < 10) return false;
+      const pivot = pointAt(from, pivotD);
+      const before = pivot.clone().sub(pointAt(from, Math.max(0, pivotD - 4))), after = target.clone().sub(pivot);
+      if (before.length() < 1e-6 || Math.abs(Vector.angleBetween(before, after)) > maxSwing) return false;
+      const heading = after.clone().normalize();
+      if (grid.cast(pivot.clone().add(heading.clone().multiplyScalar(.5)), target.clone().sub(heading.clone().multiplyScalar(.5)), s => s.road === tee.r || s.road === other)) return false;
+      const tail = [...slicePolyline(from, 0, pivotD), target.clone(), target.clone().add(heading.multiplyScalar(overshoot))];
+      edits.set(tee.r, { points: tee.atStart ? tail.reverse() : tail });
+      return true;
+    };
+    for (let i = 0; i < tees.length; i++) for (let j = i + 1; j < tees.length; j++) {
+      const a = tees[i], b = tees[j];
+      if (a.r === b.r || a.host !== b.host || edits.has(a.r) || edits.has(b.r) || a.hit.point.distanceTo(b.hit.point) > close) continue;
+      const loser = worse(a, b) ? a : b, winner = loser === a ? b : a;
+      // Converging: the lesser gives way at its last junction, or goes.
+      // Out of true: the lesser swings onto the other's junction.
+      if (a.side === b.side) { if (!loser.previous || !edits.has(loser.previous.other)) edits.set(loser.r, { cut: loser }); }
+      else swingOnto(loser, winner.hit.point, winner.r);
+    }
+    // A street stopping a few metres short of where another crosses the same road meets it at the crossing
+    for (const tee of tees) {
+      if (edits.has(tee.r)) continue;
+      const crossing = hits[tee.host].find(h => !h.endToEnd && h.other !== tee.r && h.other !== tee.host && h.point.distanceTo(tee.hit.point) > 1 && h.point.distanceTo(tee.hit.point) < close
+        && !edits.has(h.other) && hits[h.other].some(k => k.other === tee.host && k.point.distanceTo(h.point) < 1 && k.d > close && cumulative[h.other][list[h.other].points.length - 1] - k.d > close));
+      if (crossing) swingOnto(tee, crossing.point, crossing.other);
+    }
+    if (!edits.size) break;
+    list = list.flatMap((road, r) => {
+      const edit = edits.get(r);
+      if (!edit) return [road];
+      if (edit.points) return [{ ...road, points: edit.points }];
+      const { atStart, previous, length } = edit.cut;
+      if (!previous) return [];
+      const points = atStart ? slicePolyline(road.points, Math.max(0, previous.d - overshoot), length) : slicePolyline(road.points, 0, Math.min(length, previous.d + overshoot));
+      return points.length > 1 ? [{ ...road, points }] : [];
+    });
+    // A street that stopped on a stretch cut away now runs a few metres past its last junction
+    list = trimEnds(list, { overshoot, fixed });
+  }
+  return list;
+}
+
 // A second, topological pass over the finished network: every chain that
 // runs from a dead end back to its first junction is cut off at that junction,
 // through however many end-to-end roads it spans (a street split into park
@@ -448,6 +700,8 @@ export function cleanNetwork(roads, { stub = 18, overshoot = .6, reach = 150, ke
 export function pruneNetwork(roads, { stub = 18, overshoot = .6, fixed = new Set(['coast', 'riverbank', 'ring']), Graph } = {}) {
   let list = roads;
   for (let pass = 0; pass < 6; pass++) {
+    const { hits, cumulative } = crossings(list);
+    list = list.filter((road, r) => held(fixed, road) || !isScrap(hits[r], cumulative[r][road.points.length - 1], stub));
     const graph = new Graph(list.map(road => road.points), 4, false), nodes = graph.nodes;
     const roadOf = (a, b) => graph.edgeRoads.get(Graph.edgeKey(a, b));
     // Keep the largest connected network
@@ -462,7 +716,7 @@ export function pruneNetwork(roads, { stub = 18, overshoot = .6, fixed = new Set
       if (size > biggestSize) { biggestSize = size; biggest = id; }
     }
     const drop = new Set(), cuts = new Map();
-    for (const node of nodes) if (component.get(node) !== biggest) for (const next of node.neighbors) { const r = roadOf(node, next); if (r !== undefined && !fixed.has(list[r].kind)) drop.add(r); }
+    for (const node of nodes) if (component.get(node) !== biggest) for (const next of node.neighbors) { const r = roadOf(node, next); if (r !== undefined && !held(fixed, list[r])) drop.add(r); }
     // Chains from each dead end back to the first junction
     for (const node of nodes) {
       if (node.neighbors.size !== 1 || component.get(node) !== biggest) continue;
@@ -473,7 +727,7 @@ export function pruneNetwork(roads, { stub = 18, overshoot = .6, fixed = new Set
         length += current.value.distanceTo(next.value); chain.push(roadOf(current, next));
         previous = current; current = next;
       }
-      if (length <= stub || chain.some(r => r === undefined || fixed.has(list[r].kind))) continue;
+      if (length <= stub || chain.some(r => r === undefined || held(fixed, list[r]))) continue;
       // Every road wholly on the chain goes; the one reaching the junction is cut there
       const onChain = new Set(chain);
       const last = chain[chain.length - 1], junction = current.value;
@@ -526,7 +780,8 @@ export function joinCorners(roads, { near = 24, radiusOf = () => 35, minTurn = .
         const mine = hits[r], corner = atStart ? mine[0] : mine[mine.length - 1];
         if (!corner || (atStart ? corner.d : length - corner.d) > end) continue;
         const o = corner.other, other = list[o];
-        if (o === r || touched.has(o) || touched.has(r)) continue;
+        // A loop's closure is no corner, nor is a road ending where one closes
+        if (o === r || touched.has(o) || touched.has(r) || isLoop(road.points) || isLoop(other.points)) continue;
         // The partner must end there too, and nothing else meet them there
         const oLength = cumulative[o][other.points.length - 1];
         const theirs = hits[o].find(hit => hit.other === r && hit.point.distanceTo(corner.point) < 1);
@@ -548,15 +803,19 @@ export function joinCorners(roads, { near = 24, radiusOf = () => 35, minTurn = .
         };
         const legA = legOf(hits[r], aCorner, atStart, aLength), legB = legOf(hits[o], bCorner, oAtStart, bLength);
         let newA, newB;
-        const dogLeg = [[legA, 'a'], [legB, 'b']].filter(([leg, which]) => leg.junction !== null && leg.d < near && !fixed.has((which === 'a' ? road : other).kind)).sort((x, y) => x[0].d - y[0].d)[0];
+        const dogLeg = [[legA, 'a'], [legB, 'b']].filter(([leg, which]) => leg.junction !== null && leg.d < near && !held(fixed, which === 'a' ? road : other)).sort((x, y) => x[0].d - y[0].d)[0];
         if (dogLeg) {
           // Drop the short leg past its junction; the other road runs on to the junction
           const [leg, which] = dogLeg, short = which === 'a' ? a : b, long = which === 'a' ? b : a, longCorner = which === 'a' ? bCorner : aCorner;
           const junction = pointAt(short, leg.junction);
           const cut = slicePolyline(short, 0, leg.junction + overshoot);
-          const kept = slicePolyline(long, 0, Math.max(0, longCorner - 1e-6));
+          // Only the last stretch of the other road bends to the junction: moving
+          // the end of a long straight segment would swing all of it, away from
+          // every street that meets it
+          const longLeg = which === 'a' ? legB : legA, bend = Math.min(20, longLeg.d * .5);
+          const kept = slicePolyline(long, 0, Math.max(0, longCorner - bend));
           if (kept.length < 2) continue;
-          kept[kept.length - 1] = junction.clone();
+          kept.push(junction.clone());
           const heading = junction.clone().sub(kept[kept.length - 2]);
           if (heading.length() < 1) continue;
           kept.push(junction.clone().add(heading.normalize().multiplyScalar(overshoot)));
@@ -597,7 +856,7 @@ export function easeKinks(roads, { minRadius = 15, window = 3, clear = 2, fixed 
     const { hits, cumulative } = crossings(list);
     let changed = false;
     list.forEach((road, r) => {
-      if (fixed.has(road.kind) || road.kind === 'path') return;
+      if (held(fixed, road) || road.kind === 'path') return;
       const points = road.points, total = cumulative[r][points.length - 1];
       const at = d => { const slice = slicePolyline(points, 0, Math.max(1e-6, Math.min(total, d))); return slice[slice.length - 1]; };
       // The tightest kink along the road

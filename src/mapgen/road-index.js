@@ -41,10 +41,11 @@ export class RoadIndex {
   }
   // The segment with the lowest score within radius; score defaults to the
   // distance, so roads of different widths can pass (distance - halfWidth).
+  // score(segment, distance, t, x, y) also gets the point asked about.
   nearest(x, y, radius = 40, score = null) {
     let best = null, bestScore = Infinity;
     this.each(x, y, radius, (segment, distance, t) => {
-      const value = score ? score(segment, distance, t) : distance;
+      const value = score ? score(segment, distance, t, x, y) : distance;
       if (value < bestScore) { bestScore = value; best = { segment, distance, t, score: value }; }
     });
     if (!best) return null;

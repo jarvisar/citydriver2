@@ -5,7 +5,7 @@ import { generateCityMap } from '../src/mapgen/generate.js';
 import { PROFILES } from '../src/mapgen/road-hierarchy.js';
 import { parkLayout } from '../src/mapgen/park-paths.js';
 import { RoadIndex } from '../src/mapgen/road-index.js';
-import { insidePolygon, offsetPolygon, segmentIntersection } from '../src/mapgen/polygon-util.js';
+import { insidePolygon, segmentIntersection, distanceToPolyline } from '../src/mapgen/polygon-util.js';
 import { mulberry32 } from '../src/mapgen/random.js';
 
 const lengthOf = points => points.slice(1).reduce((sum, p, i) => sum + p.distanceTo(points[i]), 0);
@@ -36,8 +36,8 @@ test('a big park is laid out with gates on its streets, a loop walk and a plaza 
     assert.ok(layout.plaza, 'a plaza or a pond in the middle');
     if (layout.pond) ponds++;
     if (layout.loop) loops++;
-    const reach = offsetPolygon(layout.lawn, 22);
-    for (const path of layout.paths) for (const p of path) assert.ok(insidePolygon(p, reach), `seed ${city.seed}: a walk leaves its park`);
+    const edge = [...layout.lawn, layout.lawn[0]];
+    for (const path of layout.paths) for (const p of path) assert.ok(insidePolygon(p, layout.lawn) || distanceToPolyline(p, edge) < 22, `seed ${city.seed}: a walk leaves its park`);
     // Walks never cross the pond
     if (layout.pond) for (const path of layout.paths) for (const p of path) assert.ok(!insidePolygon(p, layout.pond), 'a walk through the pond');
   }

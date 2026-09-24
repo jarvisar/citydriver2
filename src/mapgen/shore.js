@@ -1,6 +1,6 @@
 import Vector from './vector.js';
-import { insidePolygon, offsetPolylineClean, offsetPolygon } from './polygon-util.js';
-import { union, difference, intersection, region } from './booleans.js';
+import { insidePolygon, offsetPolylineClean, offsetPolygon, signedArea } from './polygon-util.js';
+import { union, difference, intersection, region, solids, clean, grow } from './booleans.js';
 
 // Where the land ends. The city is an island with a harbour's edge all
 // round: the shore follows the promenade outside the ring road, the harbour
@@ -70,13 +70,18 @@ export function harbourWater(coast) {
 //              stands from it; seaSide: +1 if the sea is on its left
 //   river      the river's centre line and its channel's half width
 //   bounds     { minX, minY, maxX, maxY } the sea covers
+//   keep       optional rings the city stands on (its blocks, and each road
+//              with its promenade): land on the shore outside them is a bare
+//              tip past where the roads round a corner, and goes to the sea
 // Returns { land, sea, river } as lists of { outer, holes } (anticlockwise
 // outers), the island's dry land before the river, and the river's centre
 // line as used.
-export function landAndWater({ island, coast = null, river = null, bounds }) {
+export function landAndWater({ island, coast = null, river = null, bounds, keep = null }) {
   const harbour = harbourWater(coast);
   // The island less the harbour
-  const dryPieces = harbour ? difference(region(union([island])), [harbour]) : union([island]), dry = region(dryPieces);
+  let dryPieces = harbour ? difference(region(union([island])), [harbour]) : union([island]);
+  if (keep?.length) dryPieces = withoutTips(dryPieces, keep);
+  const dry = region(dryPieces);
   const onIsland = p => dryPieces.some(piece => insidePolygon(p, piece.outer) && !piece.holes.some(hole => insidePolygon(p, hole)));
   let land = dry, channel = null, riverCentre = null;
   if (river && river.centre.length > 1) {
@@ -94,8 +99,27 @@ export function landAndWater({ island, coast = null, river = null, bounds }) {
   const world = [{ x: minX, y: minY }, { x: maxX, y: minY }, { x: maxX, y: maxY }, { x: minX, y: maxY }];
   const water = region(difference([world], region(landPieces)));
   const riverWater = channel ? intersection(water, region(intersection(channel, dry))) : [];
-  const sea = channel ? difference(water, region(riverWater)) : difference([world], region(landPieces));
+  // (The river's water is grown by a hair first: cut from the water itself,
+  // it shares hundreds of edges with it, and Clipper joins shared edges in
+  // time that grows with the square of them)
+  const sea = channel ? difference(water, region(grow(region(riverWater), .002))) : difference([world], region(landPieces));
   return { land: landPieces, sea, river: riverWater, dry: dryPieces, riverCentre };
+}
+
+// The land less every piece of it outside `keep` that reaches the shore:
+// where the ring road and the coast road meet at a corner and the corner is
+// rounded, the shapes the land is cut from run on to a point the roads no
+// longer reach. Land inside the city that `keep` misses stays land.
+function withoutTips(pieces, keep, { least = 25 } = {}) {
+  const shore = region(pieces), edges = [];
+  for (const ring of shore) for (let i = 0; i < ring.length; i++) edges.push([ring[i], ring[(i + 1) % ring.length]]);
+  const onShore = p => edges.some(([a, b]) => {
+    const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
+    return Math.hypot(p.x - a.x - dx * t, p.y - a.y - dy * t) < .05;
+  });
+  const kept = union(solids(keep));
+  const tips = difference(shore, region(kept)).filter(piece => signedArea(piece.outer) > least && piece.outer.some(onShore));
+  return tips.length ? clean(difference(shore, tips.map(piece => piece.outer))) : pieces;
 }
 
 // Cuts back each sharp tip of land (a left turn sharper than maxAngle, land
@@ -123,9 +147,15 @@ function bluntTips(pieces, { maxAngle = 90 * Math.PI / 180, width = 8, reach = 4
       if (lu < 1e-9 || lv < 1e-9 || (p.x - a.x) * (b.y - p.y) - (p.y - a.y) * (b.x - p.x) <= 0) continue;
       const angle = Math.acos(Math.max(-1, Math.min(1, (ux * vx + uy * vy) / (lu * lv))));
       if (angle >= maxAngle) continue;
-      const distance = Math.min(reach, width / (2 * Math.tan(angle / 2)));
-      const back = walk(i, distance, -1), ahead = walk(i, distance, 1);
-      if (!back || !ahead) continue;
+      // Walk down both sides of the needle together until it is `width`
+      // across: a needle with straight sides is cut where its angle says, and
+      // a spike off an open shore just at its foot, taking no bite of the shore
+      let back = null, ahead = null;
+      for (let distance = .5; distance <= reach; distance += .5) {
+        back = walk(i, distance, -1); ahead = walk(i, distance, 1);
+        if (!back || !ahead || back.point.distanceTo(ahead.point) >= width) break;
+      }
+      if (!back || !ahead || back.point.distanceTo(ahead.point) < width) continue;
       // Every vertex from back.last to ahead.last goes; the two cut points take their place
       const gone = [];
       for (let j = back.last; ; j = (j + 1) % n) { gone.push(j); if (j === ahead.last) break; if (gone.length > n / 3) break; }

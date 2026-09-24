@@ -37,9 +37,22 @@ function run(type, subject, clip = []) {
 
 // The rings of a list of pieces, as a region
 export const region = pieces => pieces.flatMap(piece => [piece.outer, ...piece.holes]);
+// Separate shapes with no holes (carriageways, blocks) as a region: every
+// ring anticlockwise, so where two overlap they add up rather than cancel out
+export const solids = rings => rings.filter(ring => ring.length >= 3).map(ring => signedArea(ring) < 0 ? ring.slice().reverse() : ring);
 export const union = (...regions) => run(ClipperLib.ClipType.ctUnion, regions.flat());
 export const difference = (subject, ...clips) => run(ClipperLib.ClipType.ctDifference, subject, clips.flat());
 export const intersection = (a, b) => run(ClipperLib.ClipType.ctIntersection, a, b);
+// A region grown by `distance` metres (mitred corners)
+export function grow(rings, distance) {
+  const offset = new ClipperLib.ClipperOffset(2, .25), out = new ClipperLib.Paths();
+  offset.AddPaths(rings.filter(ring => ring.length >= 3).map(toPath), ClipperLib.JoinType.jtMiter, ClipperLib.EndType.etClosedPolygon);
+  offset.Execute(out, distance * SCALE);
+  return union(out.map(fromPath));
+}
+// Pieces with their spikes (an edge out and straight back, left where two
+// shapes shared an edge) and near-collinear points within `tolerance` metres gone
+export const clean = (pieces, tolerance = .01) => union(region(pieces).map(ring => fromPath(ClipperLib.Clipper.CleanPolygon(toPath(ring), tolerance * SCALE))));
 
 // A polygon stepped in by a distance per edge, always: where the offset
 // breaks (a waist too narrow for the step, a bend that folds it over) the

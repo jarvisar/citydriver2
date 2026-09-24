@@ -224,7 +224,7 @@ export function planLot(c, lot) {
   if (insets.side > 1.5 && (!convex(footprint) || footprint.length > 5 || footprint.some((p, i) => cornerAngle(footprint, i) < SHARP))) {
     let best = -1;
     for (let j = 0; j < n; j++) if (kinds[j] === 'street' && (best < 0 || edgeLength(polygon, j) > edgeLength(polygon, best))) best = j;
-    const a = polygon[best], b = polygon[(best + 1) % n], length = edgeLength(polygon, best) || 1;
+    const a = polygon[Math.max(0, best)], b = polygon[(Math.max(0, best) + 1) % n], length = edgeLength(polygon, Math.max(0, best)) || 1;
     const rect = best >= 0 ? fitRectangle(footprint, (b.x - a.x) / length, (b.y - a.y) / length) : null;
     if (rect && calcPolygonArea(rect) > 45) {
       footprintOut = signedArea(rect) < 0 ? rect.reverse() : rect;

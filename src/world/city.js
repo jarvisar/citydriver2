@@ -1,9 +1,10 @@
 import Vector from '../mapgen/vector.js';
 import { SEED, randomAt } from './route.js';
-import { generateCityMap, ROAD_PROFILES, SIDEWALK } from '../mapgen/generate.js';
+import { generateCityMap, carriagewayScore, ROAD_PROFILES, SIDEWALK } from '../mapgen/generate.js';
 import { RoadIndex } from '../mapgen/road-index.js';
 import { shoreRuns } from '../mapgen/shore.js';
-import { difference } from '../mapgen/booleans.js';
+import { difference, intersection, region, solids } from '../mapgen/booleans.js';
+import { endJoints, slicePolyline } from '../mapgen/road-network.js';
 import { insidePolygon, offsetPolylineClean, bufferPolyline, averagePoint, calcPolygonArea,
   offsetPolygon, polygonBounds, distanceToPolyline, signedArea, dedupePolygon } from '../mapgen/polygon-util.js';
 
@@ -13,7 +14,7 @@ import { insidePolygon, offsetPolylineClean, bufferPolyline, averagePoint, calcP
 // renderer, the tyres and the street furniture all agree: the water and the
 // quays round it, the kerbs with their rounded corners, the districts and a
 // spatial index that says whether a point is pavement or roadway.
-export const CITY_WIDTH = 2400, CITY_HEIGHT = 1800, CITY_MARGIN = 800, CITY_CELL = 160;
+export const CITY_WIDTH = 2880, CITY_HEIGHT = 2160, CITY_MARGIN = 800, CITY_CELL = 160;
 // Promenade between a waterside road's kerb and the water
 export const QUAY = 6;
 // Kerb corners at junctions are rounded to this radius
@@ -129,7 +130,22 @@ export function roundCorners(input, radius, minTurn = .35) {
   return { polygon: out, patches };
 }
 
-// The runs of a walk beside `own` that no other road crosses
+// A promenade piece's length: four lamps' spacing, so they stay evenly spaced
+const WALK_PIECE = 108;
+// A polyline cut every `length` metres. Each cut falls inside a segment, so
+// the pieces' square ends meet exactly.
+function inPieces(points, length) {
+  const total = points.slice(1).reduce((sum, p, i) => sum + p.distanceTo(points[i]), 0), out = [];
+  for (let from = 0; from < total; from += length) {
+    const to = total - (from + length) < 1 ? total : from + length, piece = slicePolyline(points, from, to);
+    if (piece.length > 1) out.push(piece);
+    if (to === total) break;
+  }
+  return out;
+}
+
+// The runs of a walk beside `own` that no other road crosses. A street ending
+// at `own` ends square across it, so the walk runs on past a T-junction.
 function crossingFree(roadIndex, points, halfWidth, own, step = 2) {
   const runs = [];
   let run = [];
@@ -137,7 +153,7 @@ function crossingFree(roadIndex, points, halfWidth, own, step = 2) {
     const a = points[i], b = points[i + 1], length = a.distanceTo(b), count = Math.max(1, Math.ceil(length / step));
     for (let k = i ? 1 : 0; k <= count; k++) {
       const p = a.clone().add(b.clone().sub(a).multiplyScalar(k / count));
-      const hit = roadIndex.nearest(p.x, p.y, 20, (segment, distance) => segment.road === own ? Infinity : distance - segment.road.profile.halfWidth);
+      const hit = roadIndex.nearest(p.x, p.y, 20, (segment, distance, t, x, y) => segment.road === own ? Infinity : carriagewayScore(segment, distance, t, x, y));
       if (hit && hit.score < halfWidth + 1.2) { if (run.length > 1) runs.push(run); run = []; }
       else run.push(p);
     }
@@ -189,10 +205,6 @@ export function buildCity(seed = SEED) {
   // Kerbs: every block's pavement edge with its junction corners rounded, and
   // the slivers of roadway the rounding gives back to the junction
   const pavement = new PolygonIndex(), cornerPatches = [];
-  const halfWidthNear = (a, b) => {
-    const hit = map.roadIndex.nearest((a.x + b.x) / 2, (a.y + b.y) / 2, 30, (segment, distance) => distance);
-    return hit ? hit.road.profile.halfWidth : ROAD_PROFILES.minor.halfWidth;
-  };
   map.blocks.forEach((block, index) => {
     block.index = index;
     const centre = averagePoint(block.inner.length >= 3 ? block.inner : block.polygon);
@@ -205,17 +217,33 @@ export function buildCity(seed = SEED) {
   });
   // Parks: a big park is ringed by pavement like a block, with its lawn inside;
   // a square is a block left open
+  const carriageways = new Map();
+  const carriageway = road => { if (!carriageways.has(road)) carriageways.set(road, bufferPolyline(road.points, road.profile.halfWidth)); return carriageways.get(road); };
+  // The roads (not park walks) near a polygon
+  const roadsNear = polygon => {
+    const bounds = polygonBounds(polygon), roads = new Set();
+    map.roadIndex.each((bounds.minX + bounds.maxX) / 2, (bounds.minY + bounds.maxY) / 2, Math.hypot(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY) / 2 + 12, segment => {
+      if (segment.road.kind !== 'path') roads.add(segment.road);
+    });
+    return [...roads];
+  };
   const parks = map.parkInfo.map((info, index) => {
     if (info.kind === 'square') {
       const block = map.blocks[info.block];
       return { ...info, index, kerb: block.kerb, lawn: block.inner, square: true };
     }
-    const kerbLine = offsetPolygon(info.polygon, (a, b) => -halfWidthNear(a, b));
+    // The park less the carriageways round it, as they are drawn (square
+    // ended, with their joints), so its kerb follows them however their
+    // widths change round it
+    const kerbLine = difference([info.polygon], solids([...roadsNear(info.polygon).map(carriageway), ...map.joints]))
+      .reduce((best, piece) => !best || calcPolygonArea(piece.outer) > calcPolygonArea(best) ? piece.outer : best, null) ?? [];
     const { polygon: kerb, patches } = kerbLine.length >= 3 ? roundCorners(kerbLine, KERB_RADIUS) : { polygon: [], patches: [] };
     cornerPatches.push(...patches);
     if (kerb.length >= 3) pavement.add(kerb, { kind: 'park', park: index });
     return { ...info, index, kerb, lawn: kerb.length >= 3 ? offsetPolygon(kerb, -SIDEWALK * .6) : [] };
   });
+  // and the joints where one road carries on as another (see endJoints)
+  cornerPatches.push(...map.joints);
   // The promenade outside the ring road, where the city stops at the sea
   for (const road of map.roads) {
     if (road.kind === 'ring') quays.push({ points: offsetPolylineClean(road.points, -(road.profile.halfWidth + QUAY / 2)), halfWidth: QUAY / 2, road });
@@ -223,15 +251,22 @@ export function buildCity(seed = SEED) {
   // Walks along one side of a road stop wherever another road crosses them
   // and never onto a carriageway, however the offset bends: every road they
   // overlap is cut out of them
-  const carriageways = new Map();
-  const carriageway = road => { if (!carriageways.has(road)) carriageways.set(road, bufferPolyline(road.points, road.profile.halfWidth)); return carriageways.get(road); };
-  const walks = quays.flatMap(quay => crossingFree(map.roadIndex, quay.points, quay.halfWidth, quay.road).flatMap(points => {
-    const polygon = bufferPolyline(points, quay.halfWidth), bounds = polygonBounds(polygon), roads = new Set();
-    map.roadIndex.each((bounds.minX + bounds.maxX) / 2, (bounds.minY + bounds.maxY) / 2, Math.hypot(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY) / 2 + 12, segment => {
-      if (segment.road.kind !== 'path') roads.add(segment.road);
-    });
-    return difference([polygon], [...roads].map(carriageway)).filter(piece => calcPolygonArea(piece.outer) > 4).map(piece => ({ ...quay, points, polygon: piece.outer }));
+  // (in pieces of a few lamps' spacing, so asking what is underfoot never
+  // walks a promenade the length of the city)
+  const walks = quays.flatMap(quay => crossingFree(map.roadIndex, quay.points, quay.halfWidth, quay.road).flatMap(run => inPieces(run, WALK_PIECE)).flatMap(points => {
+    const polygon = bufferPolyline(points, quay.halfWidth);
+    return difference([polygon], solids(roadsNear(polygon).map(carriageway))).filter(piece => calcPolygonArea(piece.outer) > 4).map(piece => ({ ...quay, points, polygon: piece.outer }));
   }));
+  // Where the ring and the coast road meet end to end the two promenades end
+  // square: the wedge between them is promenade too
+  const quayRoads = new Set(quays.map(quay => quay.road));
+  for (const joint of endJoints(map.roads.filter(road => quayRoads.has(road)), road => road.profile.halfWidth + QUAY)) {
+    // Not the carriageways, the walks already there or the blocks inland, and only on land
+    const bounds = polygonBounds(joint), near = polygon => { const b = polygonBounds(polygon); return b.maxX > bounds.minX && b.minX < bounds.maxX && b.maxY > bounds.minY && b.minY < bounds.maxY; };
+    const covered = [...roadsNear(joint).map(carriageway), ...map.joints, ...walks.map(walk => walk.polygon).filter(near), ...map.blocks.map(block => block.polygon).filter(near)];
+    const wedge = intersection(region(difference([joint], solids(covered))), region(land));
+    for (const piece of wedge) if (calcPolygonArea(piece.outer) > 1 && !piece.holes.length) walks.push({ points: [], halfWidth: QUAY / 2, polygon: piece.outer, road: null });
+  }
   for (const walk of walks) pavement.add(walk.polygon, { kind: 'quay' });
   return {
     ...map, minX, minY, maxX, maxY, margin,

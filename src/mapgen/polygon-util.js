@@ -264,9 +264,10 @@ export function subdividePolygon(p, minArea, random = Math.random) {
     if (sideLength > longestSideLength) { longestSideLength = sideLength; longestSide = [a, b]; }
   }
   // Shape index: nothing narrower than a 1:4 rectangle is a lot, and a strip
-  // narrower than about 1:20 is not worth cutting at all
+  // narrower than about 1:20 is not worth cutting at all. (A big block with a
+  // long, winding outline has as low an index, and is cut all the same.)
   const shape = area / (perimeter * perimeter);
-  if (shape < .012) return [];
+  if (shape < .012 && area < 12 * minArea) return [];
   if (area < 2 * minArea) return shape < .04 ? [] : [p];
   // Between 0.4 and 0.6 of the way along the longest side
   const deviation = random() * .2 + .4;

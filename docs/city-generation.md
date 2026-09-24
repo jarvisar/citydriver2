@@ -3,7 +3,7 @@
 The city is generated once per visit from the URL seed (`?seed=4817`) by a
 plain JavaScript port of [MapGenerator](https://github.com/ProbableTrain/MapGenerator)
 in `src/mapgen/`, and turned into the world the car drives in by `src/world/`.
-Everything runs in metres on a 2400 × 1800 m domain, x east and y north, and
+Everything runs in metres on a 2880 × 2160 m domain, x east and y north, and
 takes a few hundred milliseconds. The city is an island with a harbour's edge
 all round: a promenade and a quay wall outside the ring road and the coast
 road, and the sea running on past the fog.
@@ -26,7 +26,10 @@ the network first and derives everything else from it, once, in one place.
    (`water.riverCentre`), cut to its longest run on land if the stream wanders
    out to sea and back: its channel, the bank roads either side and the
    water the game draws are all offsets of it, so the quays are the same width
-   all along. Bank roads stop exactly on the coast road and meet it.
+   all along. Bank roads stop exactly on the coast road and meet it. A river
+   that runs along the edge of the city, beside the ring road, would leave
+   the ring on a causeway two roads wide between river and sea, so it is
+   rejected and another tried (`alongEdge`).
 3. **Roads.** Main, major and minor roads are streamlines of the field's major
    and minor eigenvectors, kept apart by `dsep` and `dtest`, as in
    MapGenerator. After simplification every bend is rounded into a circular
@@ -34,27 +37,46 @@ the network first and derives everything else from it, once, in one place.
    so roads bend rather than kink.
 4. **Ring road and cleanup** (`road-network.js`). A rounded ring road inset
    from the domain edge closes every outer block; streets are clipped to it and
-   it stops at the sea. `cleanNetwork` trims the overshoot MapGenerator leaves
-   past a joined road and undoes the ways a streamline can meet a road badly:
-   a stretch that runs alongside another road inside its carriageway is cut
-   out of the lesser road, as is a sliver between two crossings a few metres
-   apart; an end that joins at a shallow angle is cut back to its previous
+   it stops at the sea, as one road from coast to coast. Where the ring and a
+   waterside road were each clipped by the other's line their ends can miss by
+   a hair, so `weldEnds` joins them (or carries a bank road that stops short
+   on to the ring). A loop a streamline winds round the field's degenerate
+   point (the middle of downtown) too small for a block becomes a circus
+   (`circuses`): a round street at least 40 m across with a garden in the
+   middle, every street that came inside it ending on it. `cleanNetwork`
+   trims the overshoot MapGenerator leaves past a joined road and undoes the
+   ways a streamline can meet a road badly: a stretch that runs alongside
+   another road inside its carriageway, or within a pavement's width of its
+   kerb where no block could stand between them, is cut out of the lesser road
+   (and not carried back beside it), as is a sliver between two crossings a
+   few metres apart; an end that joins at a shallow angle is cut back to its previous
    junction; and the swerve a streamline makes in its last few metres to join
    a road is cut off. It then carries each dead end on to the next street
    (snapping to a nearby junction) or cuts it back, and drops orphans.
-   `pruneNetwork` then walks the finished graph from every dead end back to
+   `spreadJunctions` then deals with two streets that stop on the same road
+   a few metres apart, a knot of junctions no kerb can round: converging from
+   the same side, the lesser gives way at its last junction; from opposite
+   sides, a crossroads drawn out of true, its last stretch swings onto the
+   other's junction; and a street stopping just short of a crossing swings
+   onto it. `pruneNetwork` then walks the finished graph from every dead end back to
    its junction and removes the chain, however many end-to-end roads it
    spans, and drops small disconnected islands. `joinCorners` then deals with
    two roads that meet end to end at an angle, a corner no junction rounds: a
-   dog-leg a few metres from a junction is removed and the other road carried
-   on to the junction, and any other corner is rounded into a curve.
-   `easeKinks` eases a kink between junctions (where streamlines turn sharply
-   round the field's degenerate points) into a curve. The result is one
+   dog-leg a few metres from a junction is removed and the other road's last
+   stretch bent on to the junction, and any other corner is rounded into a
+   curve. `easeKinks` eases a kink between junctions (where streamlines turn
+   sharply round the field's degenerate points) into a curve. Last,
+   `infillStreets` (`infill.js`) gives any block much wider than the
+   streamlines' spacing (where they fanned out or one stopped short, leaving
+   a yard the size of a park) the street they missed: traced along the field
+   from its deepest point, meeting the streets either side square and clear
+   of their junctions (or on a junction across the road, as a crossroads),
+   and splitting the block as evenly as it can. The result is one
    connected network whose only loose ends are the sub-metre overshoots at
    T-junctions.
 5. **Street profiles** (`road-hierarchy.js`). Every road takes its class's
    profile, and some take more. The longest avenues through the middle of
-   town are promoted to boulevards until the city has 2.2 km of them, so
+   town are promoted to boulevards until the city has 2.7 km of them, so
    every seed has some however its field fell. The ring road is a parkway.
    Side streets follow their district: narrow lanes in the old town, parking
    bays where the houses have gardens, the warehouses have vans or downtown
@@ -74,7 +96,9 @@ the network first and derives everything else from it, once, in one place.
    promenade outside the ring road. Land is that outline less the harbour
    (the sea side of the coast road's promenade) and less the river's channel,
    carried on until it is out at sea at both ends; sharp needles of land are
-   blunted.
+   blunted. The city stands on its blocks and its roads with their
+   promenades: bare land on the shore beyond them (the tip past where the ring
+   and the coast road round a corner) is sea.
    The sea and the river are whatever the land is not. These are polygon
    booleans in whole millimetres (`booleans.js`, with
    [Clipper](https://www.angusj.com/delphi/clipper.php)), so land, river and
@@ -87,9 +111,12 @@ the network first and derives everything else from it, once, in one place.
    wobbled and rounded; and walks from each gate across the lawn to a round
    plaza at its heart, or, in a big park, round a pond. Every walk joins the
    loop, the plaza and a street, so the walks have no dead end, and they are
-   part of the network (a car can drive them). Four small parks ("squares")
-   are finished blocks, chosen well apart once the network is final, so
-   every park is a face of the network it sits in.
+   part of the network (a car can drive them). Since the streets round the
+   park can move in the cleanup, the park is taken again as the face of the
+   finished streets its middle is in. Six small parks ("squares") are
+   finished blocks, chosen well apart once the network is final, and each
+   circus has a garden in the middle, so every park is a face of the network
+   it sits in.
 8. **Blocks.** The faces of the cleaned graph; a face is dry land if a point
    well inside it is (a U-shaped face's centroid can lie outside it). Each
    face edge is set back by the width of the road it actually runs along (the
@@ -109,8 +136,10 @@ the network first and derives everything else from it, once, in one place.
    Each district plats its blocks its own way (`LOT_STYLES` in
    `world/city.js`: narrow deep plots in the old town, wide ones in the
    warehouse district and downtown). A yard only a few metres across is
-   folded into the lots; a block too thin for a strip is cut across instead,
-   and one block in twenty-five stays whole for a hall or a works. The
+   folded into the lots; a block too thin for a strip is cut across instead
+   (keeping only the lots on its streets: the middle of a big, winding block
+   is its yard), and one block in twenty-five stays whole for a hall or a
+   works. The
    generator checks its own output: where a block's kerb would reach onto a
    carriageway (two roads meeting at a shallow angle, or a road carried a few
    metres past a junction), the carriageways are cut out of the block and the
@@ -135,7 +164,13 @@ tyres and the street furniture agree:
   to 5.5 m, and the slivers of carriageway the rounding hands back to the
   junction;
 - promenades along the waterside roads and outside the ring road, each cut
-  wherever another road crosses it and kept off every carriageway;
+  wherever another road crosses it (a street ending on the road leaves it
+  whole) and kept off every carriageway, in pieces of a few lamps' spacing
+  so a lookup never tests a promenade the length of the city; where the ring
+  and the coast road meet end to end, the carriageway and the promenade are
+  patched across the joint (`endJoints`);
+- each big park's kerb, the park less the carriageways round it as they are
+  drawn, so it follows them however their widths change;
 - a spatial index of all of these, so `surfaceAt(s, u)` in `city-route.js`
   answers `pavement`, `median`, `road` or `water` from exactly what is
   drawn;
@@ -146,7 +181,9 @@ tyres and the street furniture agree:
 
 `nav-graph.js` turns the road graph into edges between junctions (merging
 junctions under 5 m apart into one) for the traffic, the autodrive, the taxi
-and the map route. `junction-geometry.js` gives each junction's approaches
+and the map route. An edge ends where a road carries on as one of another
+profile (an avenue into a boulevard), so each is marked as its own road.
+`junction-geometry.js` gives each junction's approaches
 their clearance: where the road leaves the junction box, from the kerb corners
 it shares with its neighbours round the node. The crosswalk starts there, the
 stop line and the sign or signal stand behind it on the approach's own
@@ -180,7 +217,9 @@ walks and ponds, the ground inside each block and its yard, promenades,
 water, quay walls and bridges) and places the street furniture once: signals
 and stop signs, lamps and trees round every kerb clear of the junctions,
 trees and double-armed lamps down the boulevards' medians, bus shelters on
-the main roads, bins, parked cars in two bays in five, railings on the quays
+the main roads, bins, parked cars in two bays in five, car parks lined out in the paved
+yards behind the offices and warehouses, a little over half full, railings
+on the quays
 and bridges, and in the parks a fountain or a bandstand on the plaza,
 lanterns and benches along the walks, an avenue of trees round the loop,
 groves over the lawns, and a few trees in the back yards where the houses
