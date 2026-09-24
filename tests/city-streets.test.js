@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { CITY } from '../src/world/city.js';
+import { CITY, SIDEWALK } from '../src/world/city.js';
+import { yardDrive } from '../src/world/city-yards.js';
 import { surfaceAt, onRoadAt, citydriverRoute, journeyStart } from '../src/world/city-route.js';
 import { navGraph } from '../src/world/nav-graph.js';
 import { junctionGeometry, stopLineDistance } from '../src/world/junction-geometry.js';
@@ -41,6 +42,8 @@ test('lamps, trees, signs and signals stand on the pavement, never on a carriage
     if (piece.kind === 'median-lamp' || piece.median) { assert.equal(surfaceAt(piece.s, piece.u), 'median', `${piece.kind} off the median at ${piece.u.toFixed(1)},${piece.s.toFixed(1)}`); continue; }
     if (piece.kind === 'tree' && !CITY.pavement.find(piece.u, piece.s)) continue;  // park trees stand on lawns
     assert.equal(surfaceAt(piece.s, piece.u), 'pavement', `${piece.kind} at ${piece.u.toFixed(1)},${piece.s.toFixed(1)}`);
+    // (a bridge's footway lies within its road's width, raised above its lanes)
+    if (piece.bridge) { assert.equal(CITY.pavement.find(piece.u, piece.s)?.kind, 'bridge'); continue; }
     assert.ok(!onRoadAt(piece.s, piece.u), `${piece.kind} on a road`);
   }
   // Nothing but the junction's own signs stands inside a junction's corners
@@ -230,4 +233,38 @@ test('traffic turns through junctions without snapping and never leaves the road
     assert.ok(turns > 20, `${turns} junctions crossed`);
     assert.ok(fastest < 1.6, `heading changed at ${fastest.toFixed(2)} rad/s`);
   } finally { traffic.dispose(); player.disposeModel(); }
+});
+
+test('a car park behind the buildings has a driveway in from the street, kept clear', () => {
+  const drives = CITY.blocks.map(block => yardDrive(block.index)).filter(Boolean);
+  assert.ok(drives.length > 3, `${drives.length} driveways`);
+  const c = { east: 0, start: 0 };
+  for (const drive of drives) {
+    // Its lot builds only beside it
+    const index = drive.lot, polygon = CITY.lots[index];
+    const plan = planLot(c, { polygon, index, block: CITY.lotBlocks[index], edges: CITY.lotEdges[index], depth: CITY.lotDepths[index], centre: averagePoint(polygon), area: calcPolygonArea(polygon), seed: index * 7919 });
+    const inDrive = p => insidePolygon(p, drive.polygon);
+    if (plan.kind === 'building') for (let t = .1; t < 1; t += .2) for (let k = .2; k < 3; k += .6) {
+      const p = { x: drive.mouth.x + drive.nx * k + drive.tx * (t - .5) * drive.width * .8, y: drive.mouth.y + drive.ny * k + drive.ty * (t - .5) * drive.width * .8 };
+      if (inDrive(p)) assert.ok(!insidePolygon(p, plan.footprint), `a building across the driveway at ${p.x.toFixed(0)},${p.y.toFixed(0)}`);
+    }
+    // Nothing stands or parks across its mouth
+    for (const piece of furniture) {
+      if (piece.kind === 'railing' || piece.kind === 'parking-sign' || piece.yard !== undefined) continue;
+      const dx = piece.u - drive.mouth.x, dy = piece.s - drive.mouth.y, out = -(dx * drive.nx + dy * drive.ny), along = Math.abs(dx * drive.tx + dy * drive.ty);
+      assert.ok(!(out > 0 && out < SIDEWALK + 3 && along < drive.width / 2), `${piece.kind} across a driveway at ${piece.u.toFixed(0)},${piece.s.toFixed(0)}`);
+    }
+  }
+});
+
+test('a bridge has a footway along its deck that stops short of the crosswalks at its ends', () => {
+  const walks = cityCrosswalks(navGraph());
+  let footways = 0;
+  for (const bridge of findBridges()) for (const footway of bridge.footways) {
+    footways++;
+    const middle = footway.line[Math.floor(footway.line.length / 2)];
+    assert.equal(surfaceAt(middle.y, middle.x), 'pavement', 'a footway is walked, not driven');
+    for (const walk of walks) assert.ok(!footway.line.some(p => insidePolygon(p, walk.outline)), `a footway across a crosswalk at ${middle.x.toFixed(0)},${middle.y.toFixed(0)}`);
+  }
+  if (findBridges().some(bridge => bridge.road.profile.halfWidth >= 9)) assert.ok(footways > 0, 'the wider bridges have footways');
 });

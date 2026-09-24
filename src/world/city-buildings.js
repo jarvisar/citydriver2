@@ -8,6 +8,8 @@ import { placeForLot, placeForBlock } from '../city-exploration.js';
 import { buildLandmark } from './city-landmarks.js';
 import { averagePoint, insidePolygon, polygonBounds, offsetPolygon, offsetPolygonMapped, calcPolygonArea, signedArea, distanceToPolyline, dedupePolygon, isSimple, fitRectangle } from '../mapgen/polygon-util.js';
 import { union, intersection } from '../mapgen/booleans.js';
+import { itemFrame } from './city-layout-render.js';
+import { lotWithoutDrive } from './city-yards.js';
 export { SHOP_NAMES } from './city-signs.js';
 
 // Buildings follow their lots. A lot is one plot of a block's frontage strip
@@ -237,6 +239,9 @@ export function planLot(c, lot) {
   const place = lot.place ?? (lot.index === undefined ? null : placeForLot(lot.index));
   if (place) return { kind: 'landmark', lot, place };
   if (lot.block !== undefined && lot.block >= 0 && placeForBlock(lot.block)) return { kind: 'none', lot };
+  // A lot that gives up a driveway to the car park behind it builds on the rest
+  const rest = lot.index === undefined ? null : lotWithoutDrive(lot.index, lot.polygon);
+  if (rest?.length >= 3) lot = { ...lot, polygon: rest, edges: null, area: calcPolygonArea(rest) };
   let polygon = dedupePolygon(lot.polygon);
   if (polygon.length < 3) return { kind: 'garden', lot };
   let kinds = lot.edges?.length === polygon.length ? lot.edges : null;
@@ -336,7 +341,7 @@ export function planLot(c, lot) {
   return { kind: 'building', lot, district, footprint: local(footprintOut, c), lotLocal: local(polygon, c), court: local(court, c), street, windows, type, floors, area: massedArea, breadth,
     wall: pick(style.walls, random), accent: pick(ACCENTS, random), roof: pick(pitched ? TILES[district] ?? ROOFS : ROOFS, random), roofType: house ? 'hip' : pitched ? 'gable' : stepped ? 'terrace' : 'flat', eaves,
     setbackFloors: stepped ? Math.max(2, Math.floor(floors * .57)) : floors, seed: (lot.seed + 9973) >>> 0, variation: integer(random, 0, 3),
-    shop: pick(SHOP_NAMES, random), shopfront, domestic, lawn: insets.lawn, side: insets.side, rearWindows: rear > 2.4 || footprintOut !== footprint };
+    shop: pick(SHOP_NAMES, random), shopfront, domestic, lawn: insets.lawn, side: insets.side, lotStreet: kinds.map(kind => kind === 'street'), rearWindows: rear > 2.4 || footprintOut !== footprint };
 }
 
 export function edgeWindows(c, b, f, bottom, floors, random) {
@@ -376,6 +381,18 @@ export function edgeWindows(c, b, f, bottom, floors, random) {
   if (b.type === 'atrium' || b.type === 'pavilion') for (let bay = 0; bay <= bays; bay++) {
     f.add((bay - bays / 2) * spacing, bottom + floors * 1.8, .4, .25, floors * 3.6, .85, b.type === 'pavilion' ? '#bf976c' : '#d5d9bd', 'solid', true);
   }
+}
+
+// How a street wall is entered: the whole of a shopfront, an office's lobby
+// door, a warehouse's loading door, or a front door, in the middle of the
+// main front and to one side of a long secondary one. Null for a wall with no
+// way in. `offset` runs along the wall from its middle.
+function entrance(b, span, primary) {
+  if (b.shopfront && span >= 5) return { shop: true, offset: 0, width: span };
+  if (b.type === 'office' || b.type === 'atrium') return primary ? { offset: 0, width: 3.2 } : null;
+  if (b.type === 'warehouse') return { offset: 0, width: Math.min(8, span * .5) + 1 };
+  if (primary) return { offset: 0, width: 1.6 };
+  return span > 9 ? { offset: span * .3 * (b.variation % 2 ? 1 : -1), width: 1.6 } : null;
 }
 
 // The ground floor along a street: a shopfront with its sign and awnings, a
@@ -421,13 +438,18 @@ function groundFloor(c, b, f, base, primary, random) {
     f.add(0, G + 3.3, .3, Math.min(9, span * .55), .35, .7, b.accent, 'solid', true);
     for (let y = .6; y < 3; y += .4) f.add(0, G + y, .24, Math.min(7.8, span * .49), .06, .05, '#85968f');
   } else {
-    const doorOffset = primary ? 0 : span * .3 * (b.variation % 2 ? 1 : -1);
-    if (primary || span > 9) {
+    const door = entrance(b, span, primary), doorOffset = door ? door.offset : span * .3 * (b.variation % 2 ? 1 : -1);
+    if (door) {
       f.add(doorOffset, G + 1.15, .12, 1.15, 2.3, .12, b.variation % 2 ? '#4d3f36' : b.accent);
       f.add(doorOffset, G + 2.4, .2, 1.7, .22, .4, creamTrim, 'solid', true);
       f.add(doorOffset, G + .04, .5, 1.9, .1, 1.1, '#c7bba3', 'solid', true);
     }
-    if (span > 5.5) for (const offset of [-span * .3, span * .3]) if (Math.abs(offset - doorOffset) > 1.9) {
+    // Windows in bays along the whole front, as on the floors above, clear of the door
+    // (or, where the door takes the only bay, one either side of it)
+    const bays = Math.max(1, Math.floor((span - 1.6) / (b.variation === 1 ? 5.6 : 4.8))), spacing = (span - 1.8) / bays;
+    let offsets = Array.from({ length: bays }, (_, bay) => (bay - (bays - 1) / 2) * spacing).filter(offset => !door || Math.abs(offset - doorOffset) >= 2);
+    if (!offsets.length) offsets = [-span * .3, span * .3].filter(offset => !door || Math.abs(offset - doorOffset) > 1.9);
+    if (span > 5.5) for (const offset of offsets) {
       f.add(offset, G + 2, .075, 1.65, 2.05, .11, '#e0ccab');
       f.add(offset, G + 2, .17, 1.4, 1.8, .08, '#435b65', 'glass');
     }
@@ -492,6 +514,68 @@ function hipRoof(c, b, bodies, ring, top) {
   bodies.slope(quad[l0], y0, quad[(l0 + 1) % 4], y0, ridge[1], y1, colour); bodies.slope(quad[l0], y0, ridge[1], y1, ridge[0], y1, colour);
   bodies.slope(quad[l1], y0, quad[(l1 + 1) % 4], y0, ridge[0], y1, colour); bodies.slope(quad[l1], y0, ridge[0], y1, ridge[1], y1, colour);
   c.box(ridge[0].x + (ridge[1].x - ridge[0].x) * .3, y1 - .3, ridge[0].y + (ridge[1].y - ridge[0].y) * .3, .9, 1.7, .9, '#8c6a5a');
+}
+
+// How far a ray from p along (dx, dy) runs before it leaves a polygon
+export function exitDistance(p, dx, dy, polygon) {
+  let best = Infinity;
+  for (let i = 0; i < polygon.length; i++) {
+    const a = polygon[i], q = polygon[(i + 1) % polygon.length], ex = q.x - a.x, ey = q.y - a.y, den = dx * ey - dy * ex;
+    if (Math.abs(den) < 1e-9) continue;
+    const t = ((a.x - p.x) * ey - (a.y - p.y) * ex) / den, u = ((a.x - p.x) * dy - (a.y - p.y) * dx) / den;
+    if (t > 1e-6 && u >= 0 && u <= 1) best = Math.min(best, t);
+  }
+  return best;
+}
+// The front of a building that stands back behind a garden: a paved path
+// from the pavement to each door, the whole strip before a shop paved as its
+// forecourt, and along the pavement a clipped hedge (in the civic quarter a
+// low stone wall) with a gap where each path comes through, so no door opens
+// onto the lawn and the gardens have an edge to the street.
+const PATH = '#c4baa3', HEDGES = ['#4e7545', '#57804a', '#476c40'];
+function frontGarden(c, b, ring, primary, random) {
+  const lot = b.lotLocal, n = ring.length, gaps = [];
+  let open = false;
+  for (let i = 0; i < n; i++) {
+    const a = ring[i], q = ring[(i + 1) % n], span = edgeLength(ring, i);
+    if (!b.street[i] || span < 2.5) continue;
+    const door = entrance(b, span, i === primary);
+    if (!door) continue;
+    open ||= door.shop;
+    const tx = (q.x - a.x) / span, ty = (q.y - a.y) / span, nx = ty, ny = -tx;
+    const at = (u, v) => ({ x: (a.x + q.x) / 2 + tx * u + nx * v, y: (a.y + q.y) / 2 + ty * u + ny * v });
+    // (to the pavement: the lot's edge straight out from the door, or from
+    // wherever along a shop's front it is furthest)
+    const reach = Math.max(...[-.45, 0, .45].map(k => exitDistance(at(door.offset + k * door.width, .05), nx, ny, lot)));
+    if (!(reach < 14)) continue;
+    const strip = [at(door.offset - door.width / 2, 0), at(door.offset + door.width / 2, 0), at(door.offset + door.width / 2, reach + 1), at(door.offset - door.width / 2, reach + 1)];
+    for (const piece of intersection([strip], [lot])) c.polygon(piece.outer.map(p => [p.x, p.y]), G + .06, .06, PATH);
+    if (!door.shop) gaps.push({ ...at(door.offset, reach), half: door.width / 2 + .45 });
+  }
+  if (open || !b.lotStreet) return;
+  // The hedge, just inside the lot along each of its street edges
+  const civic = b.district === 'Civic quarter', height = civic ? .55 : .8 + random() * .25, depth = civic ? .4 : .7;
+  const colour = civic ? '#cdc3ab' : HEDGES[Math.floor(random() * HEDGES.length)];
+  for (let j = 0; j < lot.length; j++) {
+    if (!b.lotStreet[j]) continue;
+    const a = lot[j], q = lot[(j + 1) % lot.length], length = edgeLength(lot, j);
+    if (length < 2) continue;
+    const tx = (q.x - a.x) / length, ty = (q.y - a.y) / length, inset = depth / 2 + .2;
+    // The runs between the gates
+    const cuts = gaps.map(g => ({ along: (g.x - a.x) * tx + (g.y - a.y) * ty, off: Math.abs((g.x - a.x) * -ty + (g.y - a.y) * tx), half: g.half }))
+      .filter(g => g.off < 1.5 && g.along > -g.half && g.along < length + g.half).sort((p, r) => p.along - r.along);
+    let from = .1;
+    for (const cut of [...cuts, { along: length + 1e9, half: 0 }]) {
+      const to = Math.min(length - .1, cut.along - cut.half);
+      if (to - from > .6) {
+        const mid = (from + to) / 2, x = a.x + tx * mid - ty * inset, y = a.y + ty * mid + tx * inset, yaw = Math.atan2(ty, tx);
+        c.box(x, G + height / 2, y, to - from, height, depth, colour, 'solid', yaw);
+        if (civic) c.box(x, G + height + .04, y, to - from + .06, .08, depth + .1, '#e0d6bf', 'solid', yaw);
+        c.rigid(x, y, () => c.solid(x, y, to - from, depth), itemFrame(c.start + y, c.east + x, yaw));
+      }
+      from = Math.max(from, cut.along + cut.half);
+    }
+  }
 }
 
 // A vertical face in the plane of a wall, turned to look away from `inside`:
@@ -560,6 +644,7 @@ function gableRoof(c, b, bodies, ring, top, random) {
 // on the flats and houses, the odd water tank on old brick and a roof garden
 // on a few blocks of flats.
 const COMMERCIAL = new Set(['office', 'atrium', 'deco']);
+const BASE_STONE = new THREE.Color('#6f6c64');
 const TANK_DISTRICTS = new Set(['Old town', 'Warehouse district', 'Market district']);
 function roofDetails(c, b, deck, top, random, holes = []) {
   const blocked = holes.map(hole => offsetPolygon(hole, 1.8));
@@ -674,7 +759,8 @@ function buildBuilding(c, b) {
     }
   }
   // The body and its ground-floor band, and the courtyard inside a big block
-  const baseColour = b.type === 'office' ? '#839b9e' : b.type === 'warehouse' ? '#8e8a7d' : '#a4a69b';
+  // (stone under shops, and under flats a darker course of the building's own walls)
+  const baseColour = b.type === 'office' ? '#839b9e' : b.type === 'warehouse' ? '#8e8a7d' : b.shopfront || COMMERCIAL.has(b.type) ? '#a4a69b' : `#${new THREE.Color(b.wall).lerp(BASE_STONE, .45).getHexString()}`;
   const court = b.court, courts = court.length ? [court] : [];
   bodies.prism(ring, G, lowerTop, b.wall);
   // (a house stands on a low stone plinth, a string course over its ground floor)
@@ -713,6 +799,7 @@ function buildBuilding(c, b) {
     const garden = b.domestic && b.lawn && !f.street;
     if (b.windows[i]) edgeWindows(c, b, f, garden ? G : G + base, garden ? lower + 1 : lower, random);
   }
+  if (b.lawn && !c.distant) frontGarden(c, b, ring, primary, random);
   if (b.roofType === 'hip') { hipRoof(c, b, bodies, ring, lowerTop); return; }
   if (b.roofType === 'gable') { gableRoof(c, b, bodies, ring, lowerTop, random); return; }
   const trim = b.type === 'office' ? '#b8cccd' : '#d6c9b1';

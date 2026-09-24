@@ -19,6 +19,23 @@ export const CITY_WIDTH = 2880, CITY_HEIGHT = 2160, CITY_MARGIN = 800, CITY_CELL
 export const QUAY = 6;
 // Kerb corners at junctions are rounded to this radius
 export const KERB_RADIUS = 5.5;
+// A bridge's footway, at most, and how far past the kerb corner of a road
+// crossing its end it stops at least (see findBridges, which also stops it
+// short of any crosswalk)
+const BRIDGE_FOOTWAY = 2.6, BRIDGE_CROSSWALK = 2;
+// Points every `step` metres along a polyline, with the unit tangent
+function samplePolyline(points, step) {
+  const out = [];
+  let next = 0, travelled = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i], b = points[i + 1], length = Math.hypot(b.x - a.x, b.y - a.y);
+    if (length < 1e-9) continue;
+    const tx = (b.x - a.x) / length, ty = (b.y - a.y) / length;
+    for (; next <= travelled + length; next += step) out.push({ x: a.x + tx * (next - travelled), y: a.y + ty * (next - travelled), tx, ty });
+    travelled += length;
+  }
+  return out;
+}
 export { SIDEWALK };
 
 // Neighbourhoods follow the tensor field: each grid basis field shapes the
@@ -273,10 +290,58 @@ export function buildCity(seed = SEED) {
     for (const piece of wedge) if (calcPolygonArea(piece.outer) > 1 && !piece.holes.length) walks.push({ points: [], halfWidth: QUAY / 2, polygon: piece.outer, road: null });
   }
   for (const walk of walks) pavement.add(walk.polygon, { kind: 'quay' });
+  // Bridges: each run of a road over the water, carried a few metres onto the
+  // banks, with a raised footway along both edges of its deck (where the road
+  // has room outside its lanes) that meets the promenades and pavements at
+  // either end, so a walk along the quay carries on over the water
+  const bridges = [];
+  for (const road of map.roads) {
+    if (road.kind === 'path') continue;
+    let run = null;
+    const flush = () => { if (run?.length > 2) bridges.push({ road, points: run }); run = null; };
+    for (const p of samplePolyline(road.points, 3)) { if (mask.at(p.x, p.y)) (run ??= []).push(p); else flush(); }
+    flush();
+  }
+  for (const bridge of bridges) {
+    const a = bridge.points[0], b = bridge.points.at(-1), profile = bridge.road.profile;
+    bridge.points = [{ x: a.x - a.tx * 5, y: a.y - a.ty * 5 }, ...bridge.points, { x: b.x + b.tx * 5, y: b.y + b.ty * 5 }];
+    const width = Math.min(BRIDGE_FOOTWAY, profile.halfWidth - profile.lane - 1.9);
+    // Each footway runs over the water and on along the promenade beside the
+    // road at either end, stopping short of any road that crosses it and of
+    // that road's crosswalk, so it meets the quay rather than the traffic
+    // (measured along the bridge: a road meeting it at a slant has its corner
+    // and crosswalk further out)
+    const crossing = p => {
+      const other = map.roadIndex.nearest(p.x, p.y, 45, (segment, distance) => segment.road === bridge.road || segment.road.kind === 'path' ? Infinity : distance - segment.road.profile.halfWidth);
+      if (!other) return false;
+      const slant = Math.max(.35, Math.abs(p.tx * other.ty - p.ty * other.tx));
+      return other.score / slant < KERB_RADIUS + BRIDGE_CROSSWALK;
+    };
+    bridge.footways = width < 1.5 ? [] : [-1, 1].flatMap(side => {
+      const samples = samplePolyline(offsetPolylineClean(bridge.points, side * (profile.halfWidth - width / 2)), 1);
+      const beside = p => { const out = { x: p.x - p.ty * side * (width / 2 + 1.5), y: p.y + p.tx * side * (width / 2 + 1.5) }; return pavement.find(out.x, out.y)?.kind === 'quay' || mask.at(out.x, out.y); };
+      // (a road with its promenade beside it over the water has its footway already)
+      const wet = samples.filter(p => mask.at(p.x, p.y));
+      if (wet.filter(p => { const out = { x: p.x - p.ty * side * (width / 2 + 1.5), y: p.y + p.tx * side * (width / 2 + 1.5) }; return pavement.find(out.x, out.y)?.kind === 'quay'; }).length > wet.length / 2) return [];
+      const keep = samples.map(p => !crossing(p) && (mask.at(p.x, p.y) || beside(p)));
+      // the longest run kept, which is the one over the water
+      let best = null;
+      for (let i = 0; i < keep.length; i++) {
+        if (!keep[i]) continue;
+        let j = i; while (j + 1 < keep.length && keep[j + 1]) j++;
+        if (!best || j - i > best[1] - best[0]) best = [i, j];
+        i = j;
+      }
+      if (!best || best[1] - best[0] < 4) return [];
+      const line = samples.slice(best[0], best[1] + 1), polygon = bufferPolyline(line, width / 2);
+      pavement.add(polygon, { kind: 'bridge' });
+      return [{ side, line, width, polygon }];
+    });
+  }
   return {
     ...map, minX, minY, maxX, maxY, margin,
     land, seaWater, riverWater, riverCentre, shores, walls, quays: walks, mask, downtown, inRiver, parks: map.parks, parkPlans: parks,
-    pavement, cornerPatches, districtNames: names, styleName,
+    pavement, cornerPatches, bridges, districtNames: names, styleName,
     cell: CITY_CELL,
     ix0: Math.floor(-CITY_WIDTH / 2 / CITY_CELL), ix1: Math.floor((CITY_WIDTH / 2 - 1e-6) / CITY_CELL),
     iz0: Math.floor(-CITY_HEIGHT / 2 / CITY_CELL), iz1: Math.floor((CITY_HEIGHT / 2 - 1e-6) / CITY_CELL),

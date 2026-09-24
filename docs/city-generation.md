@@ -308,7 +308,9 @@ detail levels.
 corners, markings, medians, parking bays, crosswalks and stop lines, a zebra
 at each park gate, pavements and kerbs, parks and squares with their plazas,
 walks and ponds, the ground inside each block and its yard, promenades,
-water, quay walls and bridges). A block too small or too pointed for any lot
+water, quay walls and bridges, each bridge with a raised footway along its
+deck wherever its road has room outside its lanes, carrying the promenade on
+over the water and stopping short of the crosswalks at its ends). A block too small or too pointed for any lot
 (a wedge where streets meet at a slant) is a planted island
 (`city-islands.js`): a lawn inside a paved rim, with trees where there is
 room clear of the junctions, and on the bigger ones a flower bed or a small
@@ -320,7 +322,11 @@ lanes, and only some of the warehouse streets planted), every tree no bigger
 than its room to the building line so its crown only brushes the fronts,
 trees and double-armed lamps down the boulevards' medians, bus shelters on
 the main roads, bins, parked cars in two bays in five, car parks lined out in the paved
-yards behind the offices and warehouses, a little over half full, railings
+yards behind the offices and warehouses, a little over half full, each with
+a driveway in from the street between two of the buildings round it
+(`city-yards.js`: the narrowest lot backing onto the yard gives up the
+strip), a dropped kerb and a parking sign at its mouth and nothing parked
+across it, railings
 on the quays and bridges, benches along the wider promenades facing the
 water, in the parks a fountain or a bandstand on the plaza, and in
 the squares what each is for, lanterns and benches along the walks, an
@@ -373,6 +379,10 @@ shops or offices stands on a tall stone base. A lot with no room for a
 building is a garden: one more lawn where the houses have gardens, and in
 the built-up districts (most often the sharp tip where two streets meet at a
 slant) a little public garden inside a paved rim, with trees sized to it.
+Where buildings stand back behind gardens, a paved path runs from the
+pavement to each door, a shop's whole front is paved to the street, and a
+clipped hedge (in the civic quarter a low stone wall) runs along the
+pavement with a gap at each path, so no door opens onto the lawn.
 
 The places a passenger asks for (`city-exploration.js`) are the parks and
 squares and some thirty venues, every kind in the notebook somewhere in
@@ -398,7 +408,8 @@ front, a diner with a giant donut. Its building is fitted square to its
 site's main street (`landmark-site.js`), no bigger than its kind of building
 is and set back behind a forecourt, and the rest of the site is its
 grounds: lawn, the paved forecourt from the street to the door, a path round
-the building, trees along the edges and in the open lawn, and before a civic
+the building (carried on to the pavement wherever it stops a strip of lawn
+short of it), trees along the edges and in the open lawn, and before a civic
 hall flower beds and flags. The name is across the front, fitted between the
 doors and the cornice, or on a stone plinth in the forecourt where a portico
 would hide it. The drop-off is in the kerbside lane of the street it faces,

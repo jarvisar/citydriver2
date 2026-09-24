@@ -350,6 +350,20 @@ export class CityChunk {
       else if (piece.kind === 'railing') { this.prop('railing', x, s, piece.yaw, piece.y ?? PAVEMENT_LEVEL); this.rigid(x, s, () => this.solid(x, s, .24, 4), itemFrame(piece.s, piece.u, piece.yaw)); }
       else if (piece.kind === 'sign') this.sign(discoverySignFor(piece.type, piece.variant), x, PAVEMENT_LEVEL + 2.9, s, piece.yaw, 4.2);
       else if (piece.kind === 'stop' || piece.kind === 'yield') { this.prop(piece.kind, x, s, piece.yaw); this.post(x, s, .12); }
+      else if (piece.kind === 'parking-sign') {
+        // A blue P on a post, read from along the street both ways (yaw lays
+        // the panel across the pavement)
+        this.box(x, PAVEMENT_LEVEL + 1.3, s, .08, 2.6, .08, '#9da3a6');
+        this.box(x, PAVEMENT_LEVEL + 2.6, s, .72, .72, .05, '#2f5f9a', 'solid', piece.yaw);
+        if (!this.distant) for (const side of [-1, 1]) {
+          const letter = (u, v, w, h) => {
+            const across = u * side, px = x + Math.cos(piece.yaw) * across + piece.tx * .03 * side, ps = s + Math.sin(piece.yaw) * across + piece.ty * .03 * side;
+            this.box(px, PAVEMENT_LEVEL + 2.6 + v, ps, w, h, .02, '#f2f0e6', 'solid', piece.yaw);
+          };
+          letter(-.1, 0, .09, .46); letter(.01, .19, .24, .08); letter(.01, .01, .24, .08); letter(.12, .1, .08, .26);
+        }
+        this.post(x, s, .1);
+      }
       else if (piece.kind === 'signal') {
         const yaw = piece.yaw, cos = Math.cos(yaw), sin = Math.sin(yaw);
         // A head `along` metres out along local -x from the pole, its middle lamp `height` up

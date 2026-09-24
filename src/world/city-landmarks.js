@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { seededRandom } from './route.js';
 import { PAVEMENT_LEVEL as G } from './city-route.js';
-import { edgeFacade, edgeWindows, cornice, convexHull } from './city-buildings.js';
+import { edgeFacade, edgeWindows, cornice, convexHull, exitDistance } from './city-buildings.js';
 import { landmarkSite, venueFootprint } from './landmark-site.js';
 export { landmarkSite } from './landmark-site.js';
 import { discoverySignFor } from './city-signs.js';
@@ -97,7 +97,15 @@ export function buildLandmark(c, lot, place) {
     grassArea(c, lotLocal.map(p => [p.x, p.y]), LAWN, G + .08);
     const reach = setback + 8;
     for (const piece of paved(localRing(court, reach, front - reach / 2))) c.polygon(piece, G + .07, .06, PAVING);
-    for (const piece of paved(localRing(W + 3.2, D + 3.2))) c.polygon(piece, G + .07, .06, PAVING);
+    // The path round the building, carried on to the lot's edge wherever it
+    // stops so short of it that only a strip of lawn would be left between
+    const halfW = W / 2 + 1.6, halfD = D / 2 + 1.6, spread = [-.9, -.45, 0, .45, .9];
+    const gap = ([u, v], du, dv) => { const p = at(u, v), q = { x: p.x, y: p.s }; return insidePolygon(q, lotLocal) ? exitDistance(q, tx * du + nx * dv, ty * du + ny * dv, lotLocal) : 0; };
+    const grow = (points, du, dv) => { const gaps = points.map(p => gap(p, du, dv)).filter(Number.isFinite); return gaps.length && Math.min(...gaps) < 3 ? Math.min(8, Math.max(...gaps)) + .5 : 0; };
+    const out = { front: grow(spread.map(k => [k * halfW, -halfD]), 0, -1), back: grow(spread.map(k => [k * halfW, halfD]), 0, 1),
+      left: grow(spread.map(k => [-halfW, k * halfD]), -1, 0), right: grow(spread.map(k => [halfW, k * halfD]), 1, 0) };
+    const around = [at(-halfW - out.left, -halfD - out.front), at(halfW + out.right, -halfD - out.front), at(halfW + out.right, halfD + out.back), at(-halfW - out.left, halfD + out.back)];
+    for (const piece of paved(around.map(p => ({ x: p.x, y: p.s })))) c.polygon(piece, G + .07, .06, PAVING);
     if (c.distant) return;
     // Where a tree may stand: on the lawn, clear of the lot's edge, the
     // building and the forecourt
@@ -106,6 +114,7 @@ export function buildLandmark(c, lot, place) {
     const clear = (p, margin) => {
       const q = local(p);
       if (Math.abs(q.along) < W / 2 + margin && Math.abs(q.into) < D / 2 + margin) return false;
+      if (q.along > -halfW - out.left - 1 && q.along < halfW + out.right + 1 && q.into > -halfD - out.front - 1 && q.into < halfD + out.back + 1) return false;
       if (Math.abs(q.along) < court / 2 + 2.5 && q.into < front + 1) return false;
       return insidePolygon(p, lotLocal) && distanceToPolyline(p, edge) > 2.6;
     };
