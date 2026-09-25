@@ -12,20 +12,24 @@ const MARGIN = 60;
 
 // Where the HUD says Downtown (see cityDistrict)
 const DOWNTOWN = .558;
-// Where to name each neighbourhood: the middle of its blocks, for any big
-// enough to read, and downtown in the middle of its own (its centre can be
-// out in the harbour)
+// Where to name each district: on the block nearest the middle of its
+// blocks (the middle itself can be in the river), for any big enough to
+// read, and downtown the same way. `blocks` counts each one's blocks.
 export function worldMapLabels(city = CITY, minBlocks = 3) {
-  const groups = new Map(), core = { style: 'Midtown', x: 0, y: 0, count: 0 };
+  const groups = new Map(), core = { style: 'Midtown', centres: [] };
   for (const block of city.blocks) {
     if (!block.style || block.sidewalk.length < 3) continue;
     const c = centre(block.sidewalk), index = city.neighbourhoodAt(c.x, c.y);
-    const group = city.downtownDistance(c) < DOWNTOWN ? core : groups.get(index) ?? { style: city.districts[index]?.style ?? block.style, x: 0, y: 0, count: 0 };
-    group.x += c.x; group.y += c.y; group.count++;
+    const group = city.downtownDistance(c) < DOWNTOWN ? core : groups.get(index) ?? { style: city.districts[index]?.style ?? block.style, centres: [] };
+    group.centres.push(c);
     if (group !== core) groups.set(index, group);
   }
-  const labels = [...groups.values()].filter(group => group.count >= minBlocks).map(({ style, x, y, count }) => ({ name: style, style, x: x / count, y: y / count }));
-  if (core.count) labels.push({ name: 'Downtown', style: 'Midtown', x: core.x / core.count, y: core.y / core.count, downtown: true });
+  const place = ({ style, centres }, extra = {}) => {
+    const middle = centre(centres), at = centres.reduce((best, c) => Math.hypot(c.x - middle.x, c.y - middle.y) < Math.hypot(best.x - middle.x, best.y - middle.y) ? c : best);
+    return { name: style, style, x: at.x, y: at.y, blocks: centres.length, ...extra };
+  };
+  const labels = [...groups.values()].filter(group => group.centres.length >= minBlocks).map(group => place(group));
+  if (core.centres.length) labels.push(place(core, { name: 'Downtown', downtown: true }));
   return labels;
 }
 function centre(points) {
@@ -89,14 +93,14 @@ export class WorldMap {
     const small = width < 560, drawn = [];
     for (const label of [...this.labels].sort((a, b) => Number(Boolean(b.downtown)) - Number(Boolean(a.downtown)))) {
       const [x, y] = toCanvas(label.x, label.y), lines = label.downtown ? ['DOWNTOWN'] : label.name.toUpperCase().split(' ');
-      ctx.font = `${label.downtown ? 800 : 700} ${label.downtown ? (small ? 11 : 13) : small ? 8 : 10}px 'Segoe UI', Arial, sans-serif`;
-      const lineHeight = label.downtown ? 14 : small ? 9 : 11, top = y - (lines.length - 1) * lineHeight / 2;
+      ctx.font = `${label.downtown ? 800 : 700} ${label.downtown ? (small ? 11 : 14) : small ? 10 : 13}px 'Segoe UI', Arial, sans-serif`;
+      const lineHeight = label.downtown ? 15 : small ? 11 : 14, top = y - (lines.length - 1) * lineHeight / 2;
       const half = Math.max(...lines.map(line => ctx.measureText(line).width)) / 2 + 2;
       const box = { left: x - half, right: x + half, top: top - lineHeight / 2, bottom: top + (lines.length - .5) * lineHeight };
       if (drawn.some(other => box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top)) continue;
       drawn.push(box);
       lines.forEach((line, i) => {
-        ctx.lineWidth = 3; ctx.strokeStyle = '#17262fd9'; ctx.strokeText(line, x, top + i * lineHeight);
+        ctx.lineWidth = small ? 3 : 4; ctx.strokeStyle = '#17262fd9'; ctx.strokeText(line, x, top + i * lineHeight);
         ctx.fillStyle = label.downtown ? '#ffd238' : '#f5f4e9'; ctx.fillText(line, x, top + i * lineHeight);
       });
     }

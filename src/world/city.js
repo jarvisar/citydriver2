@@ -39,10 +39,18 @@ function samplePolyline(points, step) {
 }
 export { SIDEWALK };
 
-// The city is a patchwork of neighbourhoods a few blocks across, each with
-// one character (see layNeighbourhoods in mapgen/generate.js), and the one
-// round downtown is Midtown, as is downtown itself (the radial field).
+// The city has one district of each character, each a single piece of it
+// (see layDistricts in mapgen/generate.js); Midtown is round downtown, as is
+// downtown itself (the radial field).
 export const DISTRICT_STYLES = ['Old town', 'Garden quarter', 'Warehouse district', 'Market district', 'Civic quarter'];
+// Where each would rather be: near (-) or far from (+) downtown and the water.
+// The old town and the civic quarter grew up by the centre, the warehouses by
+// the water, the garden quarter out where it's quiet.
+const DISTRICT_PREFER = {
+  'Old town': { downtown: -1, water: -.4 }, 'Civic quarter': { downtown: -.8, water: 0 },
+  'Market district': { downtown: -.3, water: -.2 }, 'Warehouse district': { downtown: .4, water: -1 },
+  'Garden quarter': { downtown: 1, water: .5 },
+};
 // How each district plats its blocks: lot depth and frontages (see mapgen/lots.js)
 export const LOT_STYLES = {
   'Old town': { depth: 19, frontage: [10, 15], corner: [8, 12] },
@@ -180,7 +188,7 @@ function crossingFree(roadIndex, points, halfWidth, own, step = 2) {
 export function buildCity(seed = SEED) {
   const styleName = (district, downtown) => downtown < DOWNTOWN ? 'Midtown' : district ?? 'Market district';
   const map = generateCityMap({ seed, width: CITY_WIDTH, height: CITY_HEIGHT,
-    districts: { styles: DISTRICT_STYLES, downtown: 'Midtown', winding: { 'Old town': OLD_TOWN_NOISE } },
+    districts: { styles: DISTRICT_STYLES, downtown: 'Midtown', prefer: DISTRICT_PREFER, winding: { 'Old town': OLD_TOWN_NOISE } },
     lots: { style: (centre, district, downtown) => ({ ...LOT_STYLES[styleName(district, downtown)] }) },
     streets: { style: (point, district, downtown) => STREET_STYLES[styleName(district, downtown)] } });
   const margin = CITY_MARGIN;

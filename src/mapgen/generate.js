@@ -60,70 +60,166 @@ export const DEFAULT_OPTIONS = {
   // middle are promoted), and style(point, district, downtown), the profile
   // name for a side street there (see road-hierarchy.js)
   streets: { boulevards: 2700, style: null },
-  // Neighbourhoods about `spacing` apart over the city's land, their borders
-  // wandering, each with one of `styles`: every style about as often and no
-  // two neighbours alike, except the one nearest downtown, which is
-  // `downtown`. `winding` gives a style rotational noise { angle, size } over
-  // its streets.
-  districts: { spacing: 460, styles: [], downtown: null, winding: {} },
+  // One district of each of `styles`, grown over the city's land from seeds
+  // spread across it (and one of `downtown` round downtown), each a single
+  // piece with wandering borders. A style's `prefer` { downtown, water } says
+  // whether its seed wants to be near (-) or far from (+) downtown and the
+  // water. `winding` gives a style rotational noise { angle, size } over its
+  // streets.
+  districts: { cell: 16, styles: [], downtown: null, prefer: {}, winding: {} },
   coast: true, river: true, closed: true,
 };
 
-// Neighbourhood centres on a jittered grid over the land, and each one's
-// style. A point belongs to the nearest centre after a noise warp, so the
-// borders wander; districtShare(style) gives, from 0 to 1, how much a point is
-// in that style's neighbourhoods, blending over a street or so at the border.
-function layNeighbourhoods(options, origin, dimensions, onLand, downtown, noise2D, random) {
-  const { spacing, styles = [] } = options;
-  const cols = Math.max(1, Math.round(dimensions.x / spacing)), rows = Math.max(1, Math.round(dimensions.y / spacing));
-  const cellX = dimensions.x / cols, cellY = dimensions.y / rows, neighbourhoods = [];
-  for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) {
-    for (let attempt = 0; attempt < 8; attempt++) {
-      const jitter = attempt < 4 ? .35 : .5;
-      const centre = new Vector(origin.x + (col + .5 + (random() * 2 - 1) * jitter) * cellX, origin.y + (row + .5 + (random() * 2 - 1) * jitter) * cellY);
-      if (onLand(centre)) { neighbourhoods.push({ centre, style: null }); break; }
+// A binary heap of (priority, value) pairs in flat arrays
+class Heap {
+  constructor() { this.keys = []; this.values = []; }
+  get size() { return this.keys.length; }
+  push(key, value) {
+    const keys = this.keys, values = this.values;
+    let i = keys.length; keys.push(key); values.push(value);
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (keys[parent] <= key) break;
+      keys[i] = keys[parent]; values[i] = values[parent]; i = parent;
+    }
+    keys[i] = key; values[i] = value;
+  }
+  pop() {
+    const keys = this.keys, values = this.values, top = values[0], lastKey = keys.pop(), lastValue = values.pop();
+    if (keys.length) {
+      let i = 0;
+      for (;;) {
+        let child = 2 * i + 1;
+        if (child >= keys.length) break;
+        if (child + 1 < keys.length && keys[child + 1] < keys[child]) child++;
+        if (keys[child] >= lastKey) break;
+        keys[i] = keys[child]; values[i] = values[child]; i = child;
+      }
+      keys[i] = lastKey; values[i] = lastValue;
+    }
+    return top;
+  }
+}
+
+// The districts, on a raster over the domain. Each grows from its seed at
+// once, claiming the cells it reaches first, so each is one piece. They grow
+// at their own pace (so their sizes differ), slower one way than the other
+// (so some are long), through noise of their own (so the borders wander),
+// and hardly across water, so a river is usually a border. Midtown grows
+// from downtown, slowly; the others' seeds are spread as far apart as the
+// land allows, and each style takes the seed it likes best (see `prefer`).
+function layDistricts(options, origin, dimensions, onLand, downtown, noise2D, random) {
+  const { cell = 16, styles = [], prefer = {} } = options;
+  const cols = Math.ceil(dimensions.x / cell), rows = Math.ceil(dimensions.y / cell), count = cols * rows;
+  const centreOf = i => new Vector(origin.x + (i % cols + .5) * cell, origin.y + (Math.floor(i / cols) + .5) * cell);
+  const land = new Uint8Array(count);
+  for (let i = 0; i < count; i++) land[i] = onLand(centreOf(i)) ? 1 : 0;
+  // How far each cell is from the water, in cells (a chamfer distance)
+  const shore = new Float32Array(count).fill(Infinity);
+  for (let i = 0; i < count; i++) if (!land[i]) shore[i] = 0;
+  const steps = [[-1, 0, 1], [1, 0, 1], [0, -1, 1], [0, 1, 1], [-1, -1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [1, 1, Math.SQRT2]];
+  for (const pass of [0, 1]) {
+    for (let k = 0; k < count; k++) {
+      const i = pass ? count - 1 - k : k, c = i % cols, r = Math.floor(i / cols);
+      for (const [dc, dr, length] of steps) {
+        if ((pass ? dr < 0 || (dr === 0 && dc < 0) : dr > 0 || (dr === 0 && dc > 0))) continue;
+        const nc = c + dc, nr = r + dr;
+        if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;
+        shore[i] = Math.min(shore[i], shore[nr * cols + nc] + length);
+      }
     }
   }
-  if (!neighbourhoods.length) neighbourhoods.push({ centre: origin.clone().add(dimensions.clone().multiplyScalar(.5)), style: null });
-  // Styles: the neighbourhood round downtown first, then the rest in a random
-  // order, each taking the least used style its neighbours haven't
-  const counts = new Map(styles.map(style => [style, 0]));
-  if (options.downtown && downtown) {
-    neighbourhoods.reduce((best, n) => n.centre.distanceTo(downtown) < best.centre.distanceTo(downtown) ? n : best).style = options.downtown;
+  const landCells = [];
+  for (let i = 0; i < count; i++) if (land[i]) landCells.push(i);
+  if (!landCells.length) landCells.push(Math.floor(count / 2));
+  // Seeds: downtown's, then the others far from every seed so far and from the water
+  const seeds = [];
+  const nearestLand = p => landCells.reduce((best, i) => centreOf(i).distanceTo(p) < centreOf(best).distanceTo(p) ? i : best);
+  if (options.downtown && downtown) seeds.push(nearestLand(downtown));
+  const spread = styles.length ? styles.length : 0;
+  for (let k = 0; k < spread; k++) {
+    const scored = landCells.map(i => {
+      const p = centreOf(i), apart = seeds.length ? Math.min(...seeds.map(s => centreOf(s).distanceTo(p))) : 1e9;
+      return [Math.min(apart, shore[i] * cell * 3), i];
+    }).sort((a, b) => b[0] - a[0]);
+    // one of the best few, so the same coast doesn't always give the same seeds
+    const best = scored[0][0], choices = scored.filter(([score]) => score >= best * .85);
+    seeds.push(choices[Math.floor(random() * choices.length)][1]);
   }
-  const order = neighbourhoods.map((n, i) => i);
-  for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
-  for (const index of order) {
-    const here = neighbourhoods[index];
-    if (here.style || !styles.length) continue;
-    const taken = new Set(neighbourhoods.filter(n => n.style && n.centre.distanceTo(here.centre) < spacing * 1.6).map(n => n.style));
-    const free = styles.filter(style => !taken.has(style)), pool = free.length ? free : styles;
-    const least = Math.min(...pool.map(style => counts.get(style)));
-    const choice = pool.filter(style => counts.get(style) === least);
-    here.style = choice[Math.floor(random() * choice.length)];
-    counts.set(here.style, counts.get(here.style) + 1);
+  // Styles to seeds: the arrangement the styles like best, with a little chance
+  const first = options.downtown && downtown ? 1 : 0, own = seeds.slice(first);
+  const size = Math.hypot(dimensions.x, dimensions.y) / 2;
+  const features = own.map(i => ({ downtown: downtown ? centreOf(i).distanceTo(downtown) / size : .5, water: Math.min(1, shore[i] * cell / 300) }));
+  const liking = styles.map(style => features.map(f => (prefer[style]?.downtown ?? 0) * f.downtown + (prefer[style]?.water ?? 0) * f.water + (random() - .5) * .5));
+  let order = styles.map((s, i) => i), bestScore = -Infinity;
+  const permute = (list, at) => {
+    if (at === list.length) {
+      const score = list.reduce((sum, seed, style) => sum + liking[style][seed], 0);
+      if (score > bestScore) { bestScore = score; order = list.slice(); }
+      return;
+    }
+    for (let i = at; i < list.length; i++) { [list[at], list[i]] = [list[i], list[at]]; permute(list, at + 1); [list[at], list[i]] = [list[i], list[at]]; }
+  };
+  if (styles.length <= 7) permute(styles.map((s, i) => i), 0);
+  const districts = seeds.map((seed, index) => {
+    const midtown = index < first, angle = random() * Math.PI;
+    return {
+      centre: centreOf(seed), style: midtown ? options.downtown : styles[order[index - first]] ?? null,
+      pace: midtown ? .62 : .8 + random() * .45, stretch: midtown ? .15 : random() * .8,
+      axis: [Math.cos(angle), Math.sin(angle)], noise: [random() * 200, random() * 200],
+    };
+  });
+  // Grow them all at once
+  const owner = new Int8Array(count).fill(-1), heap = new Heap();
+  districts.forEach((district, index) => heap.push(0, seeds[index] * 8 + index));
+  while (heap.size) {
+    const cost = heap.keys[0], value = heap.pop(), i = Math.floor(value / 8), index = value % 8;
+    if (owner[i] >= 0) continue;
+    owner[i] = index;
+    const d = districts[index], c = i % cols, r = Math.floor(i / cols);
+    for (const [dc, dr, length] of steps) {
+      const nc = c + dc, nr = r + dr, n = nr * cols + nc;
+      if (nc < 0 || nr < 0 || nc >= cols || nr >= rows || owner[n] >= 0) continue;
+      const along = (dc * d.axis[0] + dr * d.axis[1]) / length, x = origin.x + (nc + .5) * cell, y = origin.y + (nr + .5) * cell;
+      const rough = 1 + .55 * noise2D(x / 380 + d.noise[0], y / 380 + d.noise[1]);
+      heap.push(cost + length * (land[n] ? 1 : 12) * rough * (1 + d.stretch * along * along) / d.pace, n * 8 + index);
+    }
   }
-  const warp = (x, y) => [x + noise2D(x / 520 + 7.3, y / 520) * 120, y + noise2D(x / 520, y / 520 - 11.9) * 120];
-  const distances = (x, y) => { const [wx, wy] = warp(x, y); return neighbourhoods.map(n => Math.hypot(wx - n.centre.x, wy - n.centre.y)); };
-  const neighbourhoodAt = (x, y) => { const d = distances(x, y); return d.indexOf(Math.min(...d)); };
-  const districtAt = (x, y) => neighbourhoods[neighbourhoodAt(x, y)].style;
-  // Shares on a raster, looked up bilinearly: the streets ask at every step
-  // they trace
+  // Looked up through a small warp, so a border wanders within a cell or two too
+  const cellAt = (x, y) => {
+    const wx = x + noise2D(x / 150 + 3.1, y / 150) * 14, wy = y + noise2D(x / 150, y / 150 - 5.7) * 14;
+    const c = Math.max(0, Math.min(cols - 1, Math.floor((wx - origin.x) / cell))), r = Math.max(0, Math.min(rows - 1, Math.floor((wy - origin.y) / cell)));
+    return r * cols + c;
+  };
+  const neighbourhoodAt = (x, y) => Math.max(0, owner[cellAt(x, y)]);
+  const districtAt = (x, y) => districts[neighbourhoodAt(x, y)]?.style ?? null;
+  // How much a point is in a style's district, from 0 to 1: its cells,
+  // blurred over a street or so and looked up bilinearly (the streets ask at
+  // every step they trace)
   const districtShare = style => {
-    const cell = 12, cw = Math.ceil(dimensions.x / cell) + 1, ch = Math.ceil(dimensions.y / cell) + 1, grid = new Float32Array(cw * ch);
-    for (let r = 0; r < ch; r++) for (let c = 0; c < cw; c++) {
-      const d = distances(origin.x + c * cell, origin.y + r * cell), least = Math.min(...d);
-      let own = 0, total = 0;
-      d.forEach((value, i) => { const weight = Math.exp((least - value) / 60); total += weight; if (neighbourhoods[i].style === style) own += weight; });
-      grid[r * cw + c] = own / total;
+    let grid = new Float32Array(count);
+    for (let i = 0; i < count; i++) grid[i] = districts[owner[i]]?.style === style ? 1 : 0;
+    const radius = 3;
+    for (const horizontal of [true, false, true, false]) {
+      const out = new Float32Array(count);
+      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+        let sum = 0, n = 0;
+        for (let k = -radius; k <= radius; k++) {
+          const cc = horizontal ? c + k : c, rr = horizontal ? r : r + k;
+          if (cc < 0 || rr < 0 || cc >= cols || rr >= rows) continue;
+          sum += grid[rr * cols + cc]; n++;
+        }
+        out[r * cols + c] = sum / n;
+      }
+      grid = out;
     }
     return point => {
-      const fx = Math.max(0, Math.min(cw - 1.001, (point.x - origin.x) / cell)), fy = Math.max(0, Math.min(ch - 1.001, (point.y - origin.y) / cell));
-      const c = Math.floor(fx), r = Math.floor(fy), tx = fx - c, ty = fy - r, at = (cc, rr) => grid[rr * cw + cc];
+      const fx = Math.max(0, Math.min(cols - 1.001, (point.x - origin.x) / cell - .5)), fy = Math.max(0, Math.min(rows - 1.001, (point.y - origin.y) / cell - .5));
+      const c = Math.floor(fx), r = Math.floor(fy), tx = fx - c, ty = fy - r, at = (cc, rr) => grid[rr * cols + cc];
       return (at(c, r) * (1 - tx) + at(c + 1, r) * tx) * (1 - ty) + (at(c, r + 1) * (1 - tx) + at(c + 1, r + 1) * tx) * ty;
     };
   };
-  return { neighbourhoods, neighbourhoodAt, districtAt, districtShare };
+  return { neighbourhoods: districts, neighbourhoodAt, districtAt, districtShare };
 }
 
 function merge(base, extra) {
@@ -182,7 +278,7 @@ export function generateCityMap(options = {}) {
   // and decays one grid outweighs the rest nearly everywhere, and there are
   // only four). They have their own random numbers, so the streets are the
   // same whatever they are.
-  const { neighbourhoods, neighbourhoodAt, districtAt, districtShare } = layNeighbourhoods(o.districts, origin, dimensions, p => field.onLand(p) && insideRing(p), radial?.centre, field.noise2D, mulberry32(seed ^ 0x2c1b3c6d));
+  const { neighbourhoods, neighbourhoodAt, districtAt, districtShare } = layDistricts(o.districts, origin, dimensions, p => field.onLand(p) && insideRing(p), radial?.centre, field.noise2D, mulberry32(seed ^ 0x2c1b3c6d));
   // The streets of a neighbourhood with noise wind (not the coast or river,
   // which have their own)
   field.districtNoise = Object.entries(o.districts.winding ?? {}).filter(([style]) => neighbourhoods.some(n => n.style === style))

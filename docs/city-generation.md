@@ -21,22 +21,29 @@ the network first and derives everything else from it, once, in one place.
    radial field, with random sizes, decays and angles: MapGenerator's
    recommended field. The radial field's centre is downtown.
 
-   The city is a patchwork of neighbourhoods a few blocks across
-   (`layNeighbourhoods`): centres on a jittered grid about 460 m apart over
-   the land, a point belonging to the nearest centre after a noise warp, so
-   the borders wander (`districtAt`). The one nearest downtown is Midtown;
-   the rest take the least used style their neighbours haven't, so every city
-   has each style three to six times and no two neighbours match. They have
-   their own random numbers, so the streets don't depend on them. (The
-   districts were once the four grid fields, the one weighing most at a
-   point, but with random sizes and decays one grid outweighs the rest nearly
-   everywhere and the whole city was one or two districts.)
+   The city has one district of each kind, each a single piece of it
+   (`layDistricts`). They are grown on a 16 m raster of the land: Midtown
+   from downtown, the other five from seeds spread as far apart (and from the
+   water) as the land allows, all at once, each cell going to the district
+   that reaches it first, so each district is one piece. Each grows at its
+   own pace (so they differ in size, the biggest about a third of the city
+   and the smallest a tenth), slower one way than the other (so some are
+   long), through noise of its own (so the borders wander), and hardly across
+   water, so the river is usually a border. The styles take the seeds they
+   suit best, with a little chance (`prefer` in `city.js`): the old town and
+   the civic quarter by downtown, the warehouses by the water, the garden
+   quarter out where it's quiet. `districtAt` looks a point up on the raster
+   through a small warp. The districts have their own random numbers, so the
+   streets don't depend on them. (They were once the four grid fields, the
+   one weighing most at a point, but with random sizes and decays one grid
+   outweighs the rest nearly everywhere and the whole city was one or two
+   districts; then a patchwork of small neighbourhoods, which repeated every
+   style all over the city.)
 
    Two things are added to MapGenerator's field. The old town's streets wind:
    MapGenerator's rotational noise (30° over about 300 m) is applied only in
-   the old town's neighbourhoods, fading over a street or so at their borders
-   (`districtNoise`), so their lanes curve while the rest of the city keeps
-   its grids. And near the ring road the field
+   the old town, fading over a street or so at its border (`districtNoise`),
+   so its lanes curve while the rest of the city keeps its grids. And near the ring road the field
    turns to run along it or meet it square, fully at the ring and less so out
    to 300 m (`alignWith`), as MapGenerator's author advises for a waterfront;
    otherwise a grid at an angle to the edge meets the ring in a row of sharp
@@ -236,9 +243,8 @@ tyres and the street furniture agree:
 - a spatial index of all of these, so `surfaceAt(s, u)` in `city-route.js`
   answers `pavement`, `median`, `road` or `water` from exactly what is
   drawn;
-- the districts: each neighbourhood is the old town, garden quarter,
-  warehouse district, market district or civic quarter, and downtown and the
-  neighbourhood round it are Midtown. The HUD names the core Downtown and the
+- the districts: one each of the old town, garden quarter, warehouse
+  district, market district and civic quarter, and Midtown round downtown. The HUD names the core Downtown and the
   waterfront Harbour or Riverfront.
 
 `nav-graph.js` turns the road graph into edges between junctions (merging

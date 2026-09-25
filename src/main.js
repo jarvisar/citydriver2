@@ -186,11 +186,12 @@ async function boot() {
       journeyWasPaused = paused; setPaused(true); pauseOverlay.hidden = true;
       if (!worldMap) {
         worldMap = new WorldMap(CITY, cityGuide.mapCache);
-        // The legend: each district this city has, and how many neighbourhoods
-        const counts = new Map();
-        for (const label of worldMap.labels) if (!label.downtown) counts.set(label.style, (counts.get(label.style) ?? 0) + 1);
-        $('#world-map-legend').innerHTML = Object.keys(DISTRICT_COLORS).filter(style => counts.has(style)).map(style =>
-          `<li><span class="world-map-swatch" style="--district-color:${DISTRICT_COLORS[style]}"></span>${style}<small>${counts.get(style)}</small></li>`).join('');
+        // The legend: each district this city has, and its share of the blocks
+        const blocks = new Map();
+        for (const label of worldMap.labels) blocks.set(label.style, (blocks.get(label.style) ?? 0) + label.blocks);
+        const total = [...blocks.values()].reduce((sum, n) => sum + n, 0);
+        $('#world-map-legend').innerHTML = Object.keys(DISTRICT_COLORS).filter(style => blocks.has(style)).map(style =>
+          `<li><span class="world-map-swatch" style="--district-color:${DISTRICT_COLORS[style]}"></span>${style}<small>${Math.round(blocks.get(style) / total * 100)}%</small></li>`).join('');
       }
       worldMapCanvas.style.aspectRatio = String(worldMap.aspect);
       $('#world-map-status').textContent = hereText();

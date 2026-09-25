@@ -932,6 +932,11 @@ export function placeStreetFurniture(nav, bridges, add) {
       const p = nav.pose(edge, d, 1), across = (profile.parking + profile.halfWidth) / 2, own = CITY.roadIndex.nearest(p.u, p.s, 2)?.road;
       const x = p.u + p.ty * side * across, y = p.s - p.tx * side * across;
       if (waterAt(y, x) || entrances.some(e => Math.hypot(e.u - x, e.s - y) < 16)) continue;
+      // (where the lane's curve and the drawn road part a little, the car
+      // must still be in the drawn road's bay, not over its kerb)
+      const kerbside = own && CITY.roadIndex.nearest(x, y, 12, segment => segment.road === own ? 0 : Infinity);
+      const out = kerbside ? Math.hypot(kerbside.x - x, kerbside.y - y) : -1;
+      if (out < profile.parking || out > profile.halfWidth - .3) continue;
       const path = CITY.roadIndex.nearest(x, y, 12, segment => segment.road.kind === 'path' ? 0 : Infinity);
       if (path && Math.hypot(path.x - x, path.y - y) < 8) continue;
       // and well clear of any other road's carriageway, where a street meets another at a slant

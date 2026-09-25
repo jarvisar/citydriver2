@@ -25,9 +25,9 @@ Changes from the original TypeScript:
 - Block edges shrink by the width of the road each one runs along, which the
   road graph records, so lots sit back from wide avenues further than from
   side streets.
-- The city is a patchwork of neighbourhoods a few blocks across, each with a
-  style (`districts` option, `layNeighbourhoods`), and rotational noise can
-  be given to one style's neighbourhoods rather than the whole domain
+- The city has one district of each style, grown over the land from spread
+  seeds so each is one piece (`districts` option, `layDistricts`), and
+  rotational noise can be given to one style's district rather than the whole domain
   (`districtNoise`, each with a `share(point)`), so an old town's streets
   wind while the rest keep their grids.
 - Near the ring road the field turns to run along it or meet it square
