@@ -8,6 +8,7 @@ import { placeForLot, placeForBlock } from '../city-exploration.js';
 import { buildLandmark } from './city-landmarks.js';
 import { averagePoint, insidePolygon, polygonBounds, offsetPolygon, offsetPolygonMapped, calcPolygonArea, signedArea, distanceToPolyline, dedupePolygon, isSimple, fitRectangle } from '../mapgen/polygon-util.js';
 import { union, intersection } from '../mapgen/booleans.js';
+import { simplify } from '../mapgen/simplify.js';
 import { itemFrame } from './city-layout-render.js';
 import { lotWithoutDrive } from './city-yards.js';
 export { SHOP_NAMES } from './city-signs.js';
@@ -156,9 +157,15 @@ function massBuilding(footprint, wallKinds, depth) {
     });
     shape = out;
   }
-  // Tidy: no slivers of wall, no corners that are not corners
+  // Tidy: no slivers of wall, no corners that are not corners. A front round
+  // a curve is a chain of slight corners, so it keeps those that hold it
+  // within a few centimetres of the curve, not one wall straight across it
+  // (from the sharpest corner, which always stays)
   shape = dedupePolygon(shape, .6);
-  shape = shape.filter((p, i) => { const angle = cornerAngle(shape, i); return Math.abs(angle - Math.PI) > .05; });
+  if (shape.length >= 3) {
+    const first = shape.reduce((best, p, i) => Math.abs(cornerAngle(shape, i) - Math.PI) > Math.abs(cornerAngle(shape, best) - Math.PI) ? i : best, 0);
+    shape = simplify([...shape.slice(first), ...shape.slice(0, first + 1)], .1).slice(0, -1).map(p => ({ x: p.x, y: p.y }));
+  }
   if (shape.length < 3 || !isSimple(shape) || calcPolygonArea(shape) < 45) return null;
   if (signedArea(shape) < 0) shape.reverse();
   // Each wall is what it stands on: along a street wall of the stepped-in lot

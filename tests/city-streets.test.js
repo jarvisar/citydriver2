@@ -317,8 +317,8 @@ test('the waterfront is finished: no land left bare, railings off the roads, one
   const covered = solids([...CITY.blocks.map(block => block.kerb), ...CITY.parkPlans.filter(park => !park.square).map(park => park.kerb),
     ...CITY.roads.filter(road => road.kind !== 'path').map(road => bufferPolyline(road.points, road.profile.halfWidth)), ...CITY.cornerPatches, ...CITY.quays.map(quay => quay.polygon)]);
   const bare = difference(CITY.land.map(piece => piece.outer), CITY.land.flatMap(piece => piece.holes), covered)
-    .map(piece => calcPolygonArea(piece.outer)).filter(area => area >= .5).reduce((sum, area) => sum + area, 0);
-  // (slivers of the booleans' rounding aside)
+    .map(piece => calcPolygonArea(piece.outer) - piece.holes.reduce((sum, hole) => sum + calcPolygonArea(hole), 0)).filter(area => area >= .5).reduce((sum, area) => sum + area, 0);
+  // (slivers of the booleans' rounding aside, even one that runs right round a block)
   assert.ok(bare < 1, `${bare.toFixed(1)} m² of bare land`);
   // A quay's railing stands on its walk, never on a road or out over a walk carried on over the water
   for (const piece of furniture) {

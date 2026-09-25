@@ -129,7 +129,11 @@ export class CityAutodrive {
       Object.assign(this.driver, { edge: path.edge, direction: path.direction, along: path.along, speed: Math.abs(player.speed ?? 0), next: this.next, turn, s: player.s, u: player.u, spec: player.spec });
       speed = Math.min(speed, traffic.junctions.limit(this.driver, traffic.vehicles, null, dt));
     }
+    // A car ahead in its lane holds it back; an oncoming one keeps to its own
+    // lane (where the road bends past a junction it can look to be in the way,
+    // and each would wait for the other), and the junctions settle crossings
     for (const car of traffic.enabled ? traffic.vehicles : []) {
+      if (Math.cos(car.heading - player.heading) < -.5) continue;
       const dx = car.u - player.u, dz = car.s - player.s, heading = Math.atan2(across, along);
       const ahead = dz * Math.cos(heading) + dx * Math.sin(heading);
       const beside = Math.abs(dx * Math.cos(heading) - dz * Math.sin(heading));

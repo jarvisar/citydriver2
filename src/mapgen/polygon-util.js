@@ -120,8 +120,9 @@ export function offsetPolyline(points, distance) {
 
 // Cuts out the small loops an offset makes on the inside of a bend tighter
 // than the offset distance: where two nearby segments cross, everything
-// between them goes and the crossing joins the line up.
-export function removeLoops(points, window = 24) {
+// between them goes and the crossing joins the line up. (The window is in
+// segments, and a finely rounded bend has many.)
+export function removeLoops(points, window = 64) {
   const out = points.slice();
   for (let i = 0; i < out.length - 3; i++) {
     for (let j = Math.min(out.length - 2, i + window); j >= i + 2; j--) {

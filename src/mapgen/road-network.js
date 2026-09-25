@@ -21,7 +21,12 @@ const held = (fixed, road) => fixed.has(road.kind) || road.circus === true;
 // Replaces each bend of a polyline with a circular arc tangent to both of its
 // segments, as large as the segments allow up to maxRadius. Straight runs stay
 // straight and the ends stay put, so a road still meets what it met before.
-export function filletPolyline(points, maxRadius, { minTurn = .035, arcStep = .16 } = {}) {
+// A shallow bend (a simplified curve is a chain of them, long chords a few
+// degrees apart) would get only a short arc between long straights, so it is
+// rounded over as much of its segments as keeps the road within `drift` of
+// the corner: the chain becomes one smooth curve again.
+export const ARC_STEP = .045;
+export function filletPolyline(points, maxRadius, { minTurn = .035, arcStep = ARC_STEP, drift = maxRadius / 25, minStraight = 2 } = {}) {
   if (points.length < 3 || maxRadius <= 0) return points.map(p => p.clone());
   const closed = points[0].distanceTo(points[points.length - 1]) < 1e-6;
   const n = points.length, lengths = [];
@@ -36,8 +41,9 @@ export function filletPolyline(points, maxRadius, { minTurn = .035, arcStep = .1
     const turn = Math.atan2(d1.x * d2.y - d1.y * d2.x, d1.x * d2.x + d1.y * d2.y), angle = Math.abs(turn);
     if (angle < minTurn || angle > Math.PI - .05) return [p.clone()];
     const tanHalf = Math.tan(angle / 2);
-    // Each segment lends at most half of itself to the arcs at its two ends
-    const tangent = Math.min(maxRadius * tanHalf, .5 * l1, .5 * l2), radius = tangent / tanHalf;
+    // Each segment lends at most half of itself to the arcs at its two ends.
+    // (An arc `tangent` long each side pulls in tangent * tan(angle / 4) from the corner.)
+    const tangent = Math.min(Math.max(maxRadius * tanHalf, drift / Math.tan(angle / 4)), .5 * l1, .5 * l2), radius = tangent / tanHalf;
     const start = p.clone().sub(d1.clone().multiplyScalar(tangent));
     const normal = turn > 0 ? new Vector(-d1.y, d1.x) : new Vector(d1.y, -d1.x);
     const centre = start.clone().add(normal.clone().multiplyScalar(radius));
@@ -49,12 +55,23 @@ export function filletPolyline(points, maxRadius, { minTurn = .035, arcStep = .1
     }
     return arc;
   };
-  for (let i = 1; i < n - 1; i++) out.push(...bend(i));
+  // Arcs that all but meet share a point: a sliver of straight between them
+  // would turn back on itself when offset inside the bend (a river's banks).
+  // The ends stay put.
+  const add = arc => {
+    const last = out[out.length - 1], first = arc[0];
+    if (last.distanceTo(first) >= minStraight) out.push(first);
+    else if (out.length > 1) out[out.length - 1] = new Vector((last.x + first.x) / 2, (last.y + first.y) / 2);
+    out.push(...arc.slice(1));
+  };
+  for (let i = 1; i < n - 1; i++) add(bend(i));
   if (closed) {
-    const arc = bend(0);
-    out[0] = arc[arc.length - 1];
-    out.push(...arc);
-  } else out.push(points[n - 1].clone());
+    add(bend(0));
+    out[0] = out[out.length - 1].clone();
+  } else {
+    if (out.length > 1 && out[out.length - 1].distanceTo(points[n - 1]) < minStraight) out.pop();
+    out.push(points[n - 1].clone());
+  }
   return dedupe(out);
 }
 // A streamline that closes on itself joins its two integration fronts where
@@ -79,8 +96,10 @@ export function ringRoad(origin, dimensions, { inset = 45, radius = 220, wander 
   const x0 = origin.x + inset, y0 = origin.y + inset, x1 = origin.x + dimensions.x - inset, y1 = origin.y + dimensions.y - inset;
   const r = Math.min(radius, (x1 - x0) / 2, (y1 - y0) / 2), outline = [];
   const corners = [[x1 - r, y0 + r, -Math.PI / 2], [x1 - r, y1 - r, 0], [x0 + r, y1 - r, Math.PI / 2], [x0 + r, y0 + r, Math.PI]];
-  for (const [cx, cy, a0] of corners) for (let k = 0; k <= 8; k++) {
-    const a = a0 + k / 8 * Math.PI / 2;
+  // Each corner in `step` chords, as round as the rest of the ring
+  const arcSteps = Math.max(8, Math.ceil(r * Math.PI / 2 / step));
+  for (const [cx, cy, a0] of corners) for (let k = 0; k <= arcSteps; k++) {
+    const a = a0 + k / arcSteps * Math.PI / 2;
     outline.push(new Vector(cx + Math.cos(a) * r, cy + Math.sin(a) * r));
   }
   outline.push(outline[0].clone());
@@ -443,7 +462,7 @@ export function circuses(roads, { maxRadius = 55, radius = 40, roundness = .7, s
     if (area > Math.PI * maxRadius * maxRadius || 4 * Math.PI * area / (perimeter * perimeter) < roundness) continue;
     const centre = polygonCentroid(ring), size = Math.max(radius, Math.sqrt(area / Math.PI));
     if (found.some(c => c.centre.distanceTo(centre) < c.radius + size + spacing)) continue;
-    const count = Math.max(24, Math.ceil(2 * Math.PI * size / step)), circle = [];
+    const count = Math.max(Math.ceil(2 * Math.PI / ARC_STEP), Math.ceil(2 * Math.PI * size / step)), circle = [];
     for (let k = 0; k < count; k++) circle.push(new Vector(centre.x + Math.cos(k / count * Math.PI * 2) * size, centre.y + Math.sin(k / count * Math.PI * 2) * size));
     circle.push(circle[0].clone());
     if (!circle.every(p => canPlace(p) && !fixedIndex.nearest(p.x, p.y, clearance))) continue;
@@ -834,7 +853,7 @@ export function joinCorners(roads, { near = 24, radiusOf = () => 35, minTurn = .
           // Round the corner: a curve from a point on one leg to a point on the other, tangent to both
           const radius = Math.min(radiusOf(road.kind), radiusOf(other.kind)), tangent = Math.min(radius * Math.tan(turn / 2), legA.d * .45, legB.d * .45);
           if (tangent < 1) continue;
-          const s = pointAt(a, aCorner - tangent), e = pointAt(b, bCorner - tangent), steps = Math.max(4, Math.ceil(turn / .16)), curve = [];
+          const s = pointAt(a, aCorner - tangent), e = pointAt(b, bCorner - tangent), steps = Math.max(4, Math.ceil(turn / ARC_STEP)), curve = [];
           for (let k = 0; k <= steps; k++) {
             const t = k / steps, u = 1 - t;
             curve.push(new Vector(u * u * s.x + 2 * u * t * p.x + t * t * e.x, u * u * s.y + 2 * u * t * p.y + t * t * e.y));

@@ -307,7 +307,16 @@ export function buildCity(seed = SEED) {
   };
   const covered = solids([...map.blocks.map(block => block.kerb), ...parks.filter(park => !park.square).map(park => park.kerb),
     ...map.roads.filter(road => road.kind !== 'path').map(carriageway), ...cornerPatches, ...walks.map(walk => walk.polygon)]);
-  for (const piece of difference(land.map(piece => piece.outer), land.flatMap(piece => piece.holes), covered)) {
+  // (worked out a tile at a time, each against only what reaches it, and the
+  // pieces joined up again: the whole island at once is slow, every kerb
+  // sharing its edges with a carriageway)
+  const bare = [], boxes = covered.map(polygonBounds), landBounds = polygonBounds(land.flatMap(piece => piece.outer)), TILE = 300;
+  for (let x0 = landBounds.minX; x0 < landBounds.maxX; x0 += TILE) for (let y0 = landBounds.minY; y0 < landBounds.maxY; y0 += TILE) {
+    const x1 = x0 + TILE, y1 = y0 + TILE, tile = [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
+    const inTile = intersection(land.map(piece => piece.outer), [tile]);
+    if (inTile.length) bare.push(...difference(region(inTile), land.flatMap(piece => piece.holes), covered.filter((ring, i) => boxes[i].maxX > x0 && boxes[i].minX < x1 && boxes[i].maxY > y0 && boxes[i].minY < y1)));
+  }
+  for (const piece of union(region(bare))) {
     // (a piece round something else would be paved over it; a scrap a few
     // square metres across against a road, the notch where two roads meet
     // end to end at an angle, is carriageway)

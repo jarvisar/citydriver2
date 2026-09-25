@@ -491,7 +491,7 @@ export const findBridges = () => CITY.bridges;
 export function placeStreetFurniture(nav, bridges, add) {
   const geometry = junctionGeometry(nav), controls = junctionControls(nav);
   // Junction zones: nothing stands on a corner or in a crosswalk's path
-  const zones = [...geometry.values()].map(shape => ({ x: shape.node.x, y: shape.node.y, r: shape.arms.reduce((sum, arm) => sum + arm.clear, 0) / shape.arms.length + CROSSWALK + 2.5 }));
+  const zones = [...geometry.values()].map(shape => ({ x: shape.node.x, y: shape.node.y, r: shape.arms.reduce((sum, arm) => sum + arm.clear, 0) / shape.arms.length + CROSSWALK + 2.5, corner: Math.min(...shape.arms.map(arm => arm.clear)) }));
   const zoneIndex = new Map(), zoneCell = (x, y) => Math.floor(x / 60) * 65536 + Math.floor(y / 60);
   for (const zone of zones) {
     const key = zoneCell(zone.x, zone.y);
@@ -504,6 +504,8 @@ export function placeStreetFurniture(nav, bridges, add) {
     for (let cx = Math.floor(b.minX / 60) - 1; cx <= Math.floor(b.maxX / 60) + 1; cx++) for (let cy = Math.floor(b.minY / 60) - 1; cy <= Math.floor(b.maxY / 60) + 1; cy++) near.push(...zoneIndex.get(cx * 65536 + cy) ?? []);
     return near;
   };
+  // Within a junction's corners, where only its own signs stand
+  const inCorner = (x, y) => zonesNear([{ x, y }]).some(zone => Math.hypot(zone.x - x, zone.y - y) < zone.corner);
   // Junction corners and crosswalks, and wherever a road or park path crosses
   // a pavement (a median stands in its own road, so asks only of junctions)
   const inZone = (x, y, junctionsOnly = false) => {
@@ -798,7 +800,7 @@ export function placeStreetFurniture(nav, bridges, add) {
     const random = seededRandom(CITY.seed + entry.index * 7919), bounds = polygonBounds(lawn), area = calcPolygonArea(lawn);
     const paved = entry.paved, onLawn = (x, y) => insidePolygon({ x, y }, lawn) && !inZone(x, y);
     const plaza = entry.plaza;
-    for (const { x, y, ...feature } of entry.features) add({ ...feature, u: x, s: y });
+    for (const { x, y, ...feature } of entry.features) if (!inCorner(x, y)) add({ ...feature, u: x, s: y });
     if (plaza && !park.square) {
       if (plaza.kind === 'bandstand') put({ kind: 'bandstand', u: plaza.x, s: plaza.y, yaw: random() * Math.PI * 2 }, 7);
       else put({ kind: 'fountain', u: plaza.x, s: plaza.y, size: Math.max(.8, Math.min(1.5, (plaza.radius - 1) / 3.4)) }, 7);
