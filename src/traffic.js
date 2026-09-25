@@ -115,7 +115,7 @@ export class Traffic {
   }
   pose(car) {
     const route = this.route, frame = route.frame(car.s), p = route.position(car.s, car.u);
-    car.position.set(p.x, p.y + .13, p.z);
+    car.position.set(p.x, p.y, p.z);
     car.heading = frame.angle + (car.direction < 0 ? Math.PI : 0) + car.yaw;
     const slope = (route.height(car.s + 1.5, car.u) - route.height(car.s - 1.5, car.u)) / (3 * frame.scale);
     const crossSlope = (route.height(car.s, car.u + .7) - route.height(car.s, car.u - .7)) / 1.4;

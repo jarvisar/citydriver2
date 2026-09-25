@@ -107,7 +107,7 @@ export function createClassicCar(entry = carEntry(DEFAULT_CAR)) {
   box(bike, [.34, .04, .04], [0, 3.2, -.2], rubber); box(bike, [.08, .05, .22], [0, 3.22, .3], rubber);
   const wheels = [];
   for (const x of [-1.02, 1.02]) for (const z of [-1.18, 1.21]) {
-    const pivot = new THREE.Group(); pivot.position.set(x, .49, z); car.add(pivot);
+    const pivot = new THREE.Group(); pivot.position.set(x, .48, z); car.add(pivot);
     const wheel = new THREE.Mesh(new THREE.CylinderGeometry(.48, .48, .28, 12), tires); wheel.rotation.z = Math.PI / 2; wheel.castShadow = true; pivot.add(wheel);
     const hub = new THREE.Mesh(new THREE.CylinderGeometry(.23, .23, .295, 10), roof); hub.rotation.z = Math.PI / 2; pivot.add(hub);
     wheels.push({ pivot, wheel, hub, front: z < 0 });
@@ -286,7 +286,7 @@ export class DrivingController {
     this.bodyPitch = clamp(this.bodyPitch - along * .003, -LEAN, LEAN); this.bodyRoll = clamp(this.bodyRoll - across * .006, -LEAN, LEAN);
     this.speed = speed; this.audioTelemetry.speed = speed;
     const p = this.route.position(this.s, this.u);
-    this.groundedPosition.set(p.x, p.y + .13, p.z);
+    this.groundedPosition.set(p.x, p.y, p.z);
     this.currentPose.position.copy(this.groundedPosition); this.currentPose.bodyPitch = this.bodyPitch; this.currentPose.bodyRoll = this.bodyRoll;
     this.render(0);
   }
@@ -318,7 +318,7 @@ export class DrivingController {
     if (!impassable(this.ground(s, u)) || impassable(this.ground(this.s, this.u))) { this.s = s; this.u = u; }
     if (!this.freeDriving) this.u = clamp(this.u, ...this.route.bounds(this.s));
     const placed = this.route.position(this.s, this.u);
-    this.groundedPosition.set(placed.x, placed.y + .13, placed.z);
+    this.groundedPosition.set(placed.x, placed.y, placed.z);
     this.currentPose.position.copy(this.groundedPosition); this.currentPose.bodyPitch = this.bodyPitch;
     this.render(0);
   }
@@ -490,7 +490,8 @@ export class DrivingController {
         this.s = ground.s; this.u = ground.u; this.speed *= ground === from ? 0 : Math.exp(-dt * 4);
       }
     }
-    const p = positionAt(this.s, this.u, ground.height); p.y += .13;
+    // Models put their tyre bottoms at zero; the route already gives the surface height.
+    const p = positionAt(this.s, this.u, ground.height);
     this.groundedPosition.set(p.x, p.y, p.z); this.car.position.copy(this.groundedPosition);
     const { slope, lateralSlope } = ground;
     this.pitch = THREE.MathUtils.damp(this.pitch, Math.atan(slope * Math.cos(difference) + lateralSlope * Math.sin(difference)), 10, dt || 1);

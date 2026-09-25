@@ -15,18 +15,26 @@ test('night lighting has a fixed budget, switches off by day, and survives rebas
   try {
     world.update(player.s, player.u); player.render(0, world.origin); traffic.render(1, world.origin);
     lighting.update(world, player, traffic, 1);
-    assert.equal(lighting.group.children.length, 3);
+    assert.equal(lighting.group.children.length, 4);
     assert.ok(lighting.pools.count > 0 && lighting.pools.count <= 96);
     assert.ok(lighting.beams.count > 0 && lighting.beams.count <= 25);
+    assert.equal(lighting.halos.count, lighting.pools.count);
+    assert.equal(lighting.halos.material.depthTest, true, 'walls occlude lamp glows');
     lighting.group.traverse(object => {
       assert.ok(!object.isLight); assert.ok(!object.castShadow);
       if (object.isMesh) assert.equal(object.userData.ambientOcclusion, false);
     });
     const before = new THREE.Matrix4(); lighting.pools.getMatrixAt(0, before);
+    const haloBefore = new THREE.Matrix4(); lighting.halos.getMatrixAt(0, haloBefore);
+    const version = lighting.halos.instanceMatrix.version;
+    lighting.update(world, player, traffic, .8);
+    assert.equal(lighting.halos.instanceMatrix.version, version, 'weather changes do not upload static lamp matrices');
     world.origin += 1024; player.car.position.z += 1024; traffic.render(1, world.origin);
     lighting.update(world, player, traffic, 1);
     const after = new THREE.Matrix4(); lighting.pools.getMatrixAt(0, after);
     assert.ok(Math.abs(after.elements[14] - before.elements[14] - 1024) < .001);
+    const haloAfter = new THREE.Matrix4(); lighting.halos.getMatrixAt(0, haloAfter);
+    assert.ok(Math.abs(haloAfter.elements[14] - haloBefore.elements[14] - 1024) < .001);
     const headlights = new THREE.Matrix4(); lighting.beams.getMatrixAt(0, headlights);
     // Ahead of the car, whichever way it faces (x east, z south)
     const ahead = (headlights.elements[12] - player.car.position.x) * Math.sin(player.heading) - (headlights.elements[14] - player.car.position.z) * Math.cos(player.heading);
@@ -40,6 +48,17 @@ test('night lighting has a fixed budget, switches off by day, and survives rebas
     assert.ok(lighting.pools.material.opacity > 0 && lighting.pools.material.opacity < .48);
   } finally { lighting.dispose(); traffic.dispose(); world.dispose(); }
   assert.equal(lighting.group.parent, null);
+});
+
+test('lighting prepares every instance-colour shader before the first night', () => {
+  const lighting = new NightLighting(new THREE.Scene());
+  try {
+    assert.equal(lighting.group.visible, false);
+    for (const mesh of lighting.group.children) {
+      assert.ok(mesh.instanceColor, `${mesh.name} can precompile the coloured variant in daylight`);
+      assert.equal(mesh.count, 0);
+    }
+  } finally { lighting.dispose(); }
 });
 
 test('lamp light sources match rendered lenses on curved streets and bridges', () => {

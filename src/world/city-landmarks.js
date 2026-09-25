@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { seededRandom } from './route.js';
 import { PAVEMENT_LEVEL as G } from './city-route.js';
-import { edgeFacade, edgeWindows, cornice, convexHull, exitDistance } from './city-buildings.js';
+import { edgeFacade, edgeWindows, shopAwning, cornice, convexHull, exitDistance } from './city-buildings.js';
 import { landmarkSite, venueFootprint } from './landmark-site.js';
 import { discoverySignFor, signCore } from './city-signs.js';
 import { round, clock, fireEngine } from './city-detail-assets.js';
@@ -118,7 +118,10 @@ export function buildLandmark(c, lot, place) {
     if (!c.distant) for (const side of w > 1.6 ? [-1, 1] : [1]) box(u + side * (w > 1.6 ? .18 : w * .32), G + level + 1.25, wall - .36, .06, .42, .08, '#cfb88a');
   };
   const civic = kind === 'hall' || place.type === 'station';
-  const court = Math.min(W + 2, civic ? Math.max(14, W * .7) : Math.max(8, W * .5));
+  // Loading bays need an apron across all their doors, not a narrow footpath
+  // leaving the outer bays opening onto grass.
+  const service = place.type === 'depot' || place.type === 'firehouse';
+  const court = Math.min(W + 2, service ? W + 1 : civic ? Math.max(14, W * .7) : Math.max(8, W * .5));
   const lotLocal = lot.polygon.map(p => ({ x: p.x - c.east, y: p.y - c.start }));
   // A hall under a portico has its name on a stone plinth on the lawn to one
   // side of its forecourt, facing the street where the flower bed on that side
@@ -313,12 +316,35 @@ export function buildLandmark(c, lot, place) {
     bodies.polygon(body, G + H, '#8d8c80');
     vault(W, rise, D, G + H, place.type === 'station' ? '#7e9aa0' : '#a47460');
     windows(body, G + 1, 1, 'loft');
-    // A glazed entrance, and the name on the gable above it (or, where the
-    // station's clock is, over the entrance)
-    keepClear(front, W * .275 + .35, G + .4, G + 5.9);
-    box(0, G + 3.2, front - .08, W * .55 + .3, 5.3, .12, TRIM);
-    box(0, G + 3.2, front - .2, W * .55, 5, .1, GLASS, 'glass');
-    entrance(0, front - .2, 3.4, place.type === 'market' || place.type === 'farmersmarket' ? 2.65 : 3.5);
+    const market = place.type === 'market' || place.type === 'farmersmarket';
+    const glazed = W * .55;
+    keepClear(front, glazed / 2 + .35, G + .1, G + 5.9);
+    if (place.type === 'depot') {
+      // Two broad workshop doors with a staff entrance between them. Solid
+      // panels, a glazed strip and a few seams read as doors from the road.
+      const width = Math.min(6.5, (glazed - 3) / 2), offset = 1.5 + width / 2;
+      for (const side of [-1, 1]) {
+        const u = side * offset;
+        box(u, G + 2.55, front - .08, width + .3, 4.9, .12, TRIM);
+        box(u, G + 2.5, front - .2, width, 4.8, .1, '#6d807c');
+        box(u, G + 3.65, front - .28, width - .5, .7, .06, '#375563', 'glass');
+        if (!c.distant) for (const height of [1.1, 2.2, 4.25]) box(u, G + height, front - .28, width - .15, .055, .06, '#acb5a9');
+      }
+      entrance(0, front, 1.4, 3.1);
+    } else {
+      // The station's concourse and market windows have a structural rhythm,
+      // rather than one vast unframed dark rectangle behind a tiny doorway.
+      box(0, G + 3.2, front - .08, glazed + .3, 5.3, .12, TRIM);
+      box(0, G + 3.2, front - .2, glazed, 5, .1, GLASS, 'glass');
+      const doorHeight = market ? 2.65 : 3.5, transom = doorHeight + .35;
+      box(0, G + transom, front - .3, glazed, .16, .14, TRIM);
+      const bays = Math.max(1, Math.round((glazed / 2 - 1.85) / 3));
+      for (const side of [-1, 1]) for (let k = 0; k <= bays; k++) {
+        const u = side * (1.85 + k * (glazed / 2 - 1.85) / bays);
+        box(u, G + 3.2, front - .3, .14, 5.1, .14, TRIM);
+      }
+      entrance(0, front - .2, 3.4, doorHeight);
+    }
     if (place.type === 'station') {
       clock(c, at(0, front - .2).x, G + H + rise * .45, at(0, front - .2).s, Math.min(3.4, rise * .7), facing);
       nameBoard(G + 5.9, G + H - .3, W * .5);
@@ -327,9 +353,13 @@ export function buildLandmark(c, lot, place) {
       const a = W / 2 - .1, b = rise - .1;
       nameBoard(G + H + .3, G + H + rise * .7, W * .45, front + .08, (w, top) => w / 2 + .4 <= a * Math.sqrt(Math.max(0, 1 - ((top - G - H) / b) ** 2)));
     }
-    if (place.type === 'market' || place.type === 'farmersmarket') {
-      // Striped stall awnings along the front
-      for (let k = -2; k <= 2; k++) box(k * W * .17, G + 3, front - 1.6, W * .15, .3, 3, k % 2 ? colour : '#f1e6cc');
+    if (market) {
+      // The market uses the same sloping fabric as the shops, with a clear
+      // gap at the central doorway instead of alternating horizontal slabs.
+      const f = edgeFacade(c, body[0], body[1]);
+      for (const side of [-1, 1]) shopAwning(c, f, side * (glazed + 4.2) / 4, (glazed - 4.2) / 2, colour, 0);
+    } else if (place.type === 'station') {
+      box(0, G + 4.2, front - 1.45, Math.min(glazed, 11), .22, 2.9, COPPER);
     }
     top = G + H + rise;
   } else if (kind === 'marquee') {

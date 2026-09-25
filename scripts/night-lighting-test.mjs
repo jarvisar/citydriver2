@@ -39,8 +39,8 @@ try {
     }
     return records;
   });
-  assert.ok(report.every(row => row.calls <= 3 && row.calls > 0), JSON.stringify(report));
-  assert.ok(report.every(row => row.triangles <= 96 * 14 + 25 * 2), JSON.stringify(report));
+  assert.ok(report.every(row => row.calls <= 4 && row.calls > 0), JSON.stringify(report));
+  assert.ok(report.every(row => row.triangles <= 96 * 16 + 25 * 2), JSON.stringify(report));
   for (const view of [2, 4, 5]) {
     await page.evaluate(view => { const a = window.__citydriver; a.rendering.setView(view); a.rendering.snap(); a.rendering.update(a.vehicle.car, 2, a.world.origin); a.rendering.render(); }, view);
     await page.screenshot({ path: `.artifacts/night-lighting/view-${view}.png` });

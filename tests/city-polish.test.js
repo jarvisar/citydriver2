@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { wallHasOutlook, edgeFacade, edgeWindows, shopAwning } from '../src/world/city-buildings.js';
+import { wallHasOutlook, edgeFacade, edgeWindows, shopAwning, shopFront } from '../src/world/city-buildings.js';
 import { CityChunk } from '../src/world/citydriver-world.js';
 import { seededRandom } from '../src/world/route.js';
 import { Surface } from '../src/world/surface.js';
 import { PAVEMENT_LEVEL } from '../src/world/city-route.js';
 import { CITY } from '../src/world/city.js';
 import { cityMedians } from '../src/world/city-medians.js';
-import { calcPolygonArea } from '../src/mapgen/polygon-util.js';
+import { calcPolygonArea, insidePolygon } from '../src/mapgen/polygon-util.js';
 import { intersection, region } from '../src/mapgen/booleans.js';
 import { buildLandmark } from '../src/world/city-landmarks.js';
 import { cityPlaces } from '../src/city-exploration.js';
@@ -77,6 +77,33 @@ test('stacked balconies have doors meeting their decks and leave ordinary window
   }
 });
 
+test('shop entrances, glazing, awnings and signs fit narrow, wide and mirrored frontages', () => {
+  for (const span of [5, 7.5, 11.9, 12, 18, 32, 55]) for (const variation of [0, 1, 2, 3]) for (const distant of [false, true]) {
+    const boxes = [], signs = [], c = { distant, bodies: new Surface(), materials: { glass: {} },
+      box(x, y, s, w, h, d, colour, kind) { boxes.push({ x, y, s, w, h, d, colour, kind }); },
+      item(key, geometry, material, p, scale, colour) { boxes.push({ x: p[0], y: p[1], s: -p[2], w: scale[0], h: scale[1], colour, kind: 'glass' }); },
+      signFace(key, sign, x, y, s, yaw, w, h) { signs.push({ x, y, s, w, h }); } };
+    const f = edgeFacade(c, { x: 13, y: 27 }, { x: 13 + span * .6, y: 27 + span * .8 });
+    shopFront(c, { type: 'apartment', variation, accent: '#386f73', shop: 'CAFE', seed: 41 }, f, 5.4, true);
+    const local = boxes.map(p => ({ ...p, offset: f.local(p.x, p.s).offset }));
+    const doors = local.filter(p => p.kind === 'glass' && p.y - p.h / 2 < PAVEMENT_LEVEL + .25);
+    assert.equal(doors.length, span >= 12 ? 2 : 1, 'one shop door, plus an upstairs entrance where there is room');
+    for (const p of local) {
+      assert.ok(p.w > 0 && p.h > 0 && Math.abs(p.offset) + p.w / 2 < span / 2 + 1e-8, 'all facade pieces fit');
+    }
+    for (const door of doors) {
+      assert.ok(!local.some(p => p !== door && p.y < PAVEMENT_LEVEL + .75 && Math.abs(p.offset - door.offset) < (p.w + door.w) / 2), 'no display sill crosses a doorway');
+    }
+    const fascia = local.find(p => p.h > 1 && p.y - p.h / 2 > PAVEMENT_LEVEL + 3.6);
+    for (const sign of signs) assert.ok(Math.abs(f.local(sign.x, sign.s).offset - fascia.offset) + sign.w / 2 <= fascia.w / 2, 'the name stays over the shop');
+    const p = c.bodies.positions;
+    for (let i = 0; i < p.length; i += 3) {
+      const offset = f.local(p[i], -p[i + 2]).offset;
+      assert.ok(Math.abs(offset - fascia.offset) <= fascia.w / 2 && p[i + 1] < fascia.y - fascia.h / 2, 'fabric stays below its own fascia, clear of the upstairs entrance');
+    }
+  }
+});
+
 test('median lawns stay on land while bridge separators retain their raised footprint', () => {
   const area = pieces => pieces.reduce((sum, p) => sum + calcPolygonArea(p.outer) - p.holes.reduce((n, h) => n + calcPolygonArea(h), 0), 0);
   const water = region([...CITY.seaWater, ...CITY.riverWater]), medians = cityMedians().list;
@@ -91,16 +118,21 @@ test('median lawns stay on land while bridge separators retain their raised foot
   assert.ok(grass > 1000, 'the avenues still have lawns');
 });
 
-test('every enclosed venue has a doorway on its actual front down to the forecourt or landing', () => {
+test('every enclosed venue has a doorway and vehicle bays open onto a paved apron', () => {
   for (const place of cityPlaces().filter(p => p.footprint && !['clock', 'art'].includes(p.type))) for (const distant of [false, true]) {
-    const boxes = [], c = { east: 0, start: 0, distant, bodies: new Surface(), materials: { solid: {}, glass: {} }, features: { buildings: [] },
+    const boxes = [], paving = [], c = { east: 0, start: 0, distant, bodies: new Surface(), materials: { solid: {}, glass: {} }, features: { buildings: [] },
       box(x, y, s, w, h, d, colour, kind) { boxes.push({ x, y, s, w, h, d, colour, kind }); },
-      polygon() {}, polygonSolid() {},
+      polygon(points, y, depth, colour) { if (colour === '#c9bfa9') paving.push(points.map(([x, y]) => ({ x, y }))); }, polygonSolid() {},
       item(key, geometry, material, p, scale, colour) { if (key === 'distant-glass') boxes.push({ x: p[0], y: p[1], s: -p[2], w: scale[0], h: scale[1], colour, kind: 'glass' }); },
       tree() {}, post() {}, signFace() {}, standingSign() {}, solid() {}, rigid(x, s, fn) { fn(); } };
     buildLandmark(c, { polygon: place.polygon, seed: 123 }, place);
     const site = place.footprint, D = site.depth;
     const front = place.type === 'sports' ? D / 2 - Math.max(7, D * .32) : -D / 2 + (place.type === 'observatory' ? D * .1 : place.type === 'garden' ? D * .15 : 0);
+    if (['depot', 'firehouse'].includes(place.type)) for (const side of [-1, 1]) {
+      const into = front - Math.max(2, site.setback * .6), along = side * site.width * .4;
+      const p = { x: site.centre.x + site.tx * along + site.nx * into, y: site.centre.y + site.ty * along + site.ny * into };
+      if (insidePolygon(p, place.polygon)) assert.ok(paving.some(ring => insidePolygon(p, ring)), `${place.name}: the outer loading bays need paving too`);
+    }
     const doors = boxes.filter(p => p.kind === 'glass' && p.colour === '#375563' && p.h > 2.5);
     assert.ok(doors.length, `${place.name} needs a door at ${distant ? 'distant' : 'close'} range`);
     for (const door of doors) {

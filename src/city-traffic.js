@@ -85,7 +85,7 @@ export class CityTraffic {
     const pose = car.turn && car.along > car.turn.start ? car.turn.pose(car.along - car.turn.start) : this.nav.pose(car.edge, car.along, car.direction, car.lane);
     car.s = pose.s; car.u = pose.u; car.heading = pose.heading;
     const p = this.route.position(car.s, car.u);
-    car.position.set(p.x, p.y + .13, p.z);
+    car.position.set(p.x, p.y, p.z);
     car.quaternion.setFromAxisAngle(up, -car.heading);
   }
   // Which way on at the end of this edge, and the curve that takes it there.

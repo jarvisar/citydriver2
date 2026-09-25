@@ -542,10 +542,29 @@ export function placeStreetFurniture(nav, bridges, add) {
     const dx = x - d.mouth.x, dy = y - d.mouth.y, out = -(dx * d.nx + dy * d.ny);
     return out > -1 && out < reach && Math.abs(dx * d.tx + dy * d.ty) < d.width / 2 + margin;
   });
+  // A venue's forecourt continues across the pavement to its drop-off. Keep
+  // the central approach open (the full apron for vehicle bays), including
+  // tree crowns that would hide the doorway from the road. Traffic controls
+  // still take their required positions at junctions.
+  const places = cityPlaces(), gates = places.filter(p => p.footprint).map(p => {
+    const f = p.footprint, service = p.type === 'depot' || p.type === 'firehouse';
+    const reach = -((p.entrance.u - f.front.x) * f.nx + (p.entrance.s - f.front.y) * f.ny);
+    return { ...f, reach, half: service ? (f.width + 1) / 2 : Math.min(3.5, f.width * .12) };
+  });
+  const approachKinds = new Set(['tree', 'lamp', 'lantern', 'shelter', 'bench', 'bin', 'bollard', 'parking-sign']);
+  const acrossEntrance = piece => {
+    if (piece.median || !approachKinds.has(piece.kind)) return false;
+    const margin = piece.kind === 'tree' ? TREE_CROWN * piece.scale : piece.kind === 'shelter' ? 2.4 : .6;
+    return gates.some(f => {
+      const dx = piece.u - f.front.x, dy = piece.s - f.front.y, out = -(dx * f.nx + dy * f.ny);
+      return out > -margin && out < f.reach && Math.abs(dx * f.tx + dy * f.ty) < f.half + margin;
+    });
+  };
   const put = (piece, radius = 1.5) => {
     // on a pavement, and not where a road or park path runs across it
     if ((PAVED.has(piece.kind) || piece.street) && (!CITY.pavement.find(piece.u, piece.s) || onRoadAt(piece.s, piece.u))) return false;
     if (piece.kind !== 'parking-sign' && acrossDrive(piece.u, piece.s, SIDEWALK + .5, .6)) return false;
+    if (acrossEntrance(piece)) return false;
     const crown = piece.kind === 'tree' ? TREE_CROWN * piece.scale : 0, kind = piece.street ? 'street-lantern' : piece.kind;
     if (!free(piece.u, piece.s, Math.min(radius, 10), kind, crown)) return false;
     remember(piece.u, piece.s, kind, crown);
@@ -587,7 +606,7 @@ export function placeStreetFurniture(nav, bridges, add) {
   // passer-by reads it at. A venue's name is on its own building or on a
   // plinth in its grounds (see city-landmarks.js).
   const parkEntries = new Map(cityParks().map(entry => [entry.index, entry]));
-  for (const place of cityPlaces()) {
+  for (const place of places) {
     const entry = place.park === undefined ? null : parkEntries.get(place.park), lawn = entry?.park.lawn;
     if (!(lawn?.length >= 3)) continue;
     const e = place.entrance;

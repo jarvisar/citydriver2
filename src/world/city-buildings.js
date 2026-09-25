@@ -526,41 +526,69 @@ export function shopAwning(c, f, offset, width, accent, variation) {
   }
 }
 
+// One business per frontage, with display bays and a single shop door. A
+// broad mixed-use front also has a separate way up to the flats or offices.
+export function shopFront(c, b, facade, base, primary) {
+  const side = b.variation % 2 ? -1 : 1;
+  const lobby = primary && facade.span >= 12 && !['shop', 'warehouse', 'pavilion'].includes(b.type) ? 2.8 : 0;
+  if (lobby) {
+    const at = side * (facade.span / 2 - lobby / 2);
+    facade.add(at, G + 1.65, .075, 1.7, 3.1, .11, creamTrim, 'solid', true);
+    facade.add(at, G + 1.43, .17, 1.35, 2.66, .1, '#344e58', 'glass');
+    facade.add(at, G + 2.97, .17, 1.35, .36, .1, '#63818a', 'glass');
+    facade.add(at + side * .43, G + 1.35, .29, .06, .4, .08, '#d7c3a0');
+    facade.add(at, G + 3.3, .22, 1.95, .16, .5, creamTrim, 'solid', true);
+  }
+  // Work in the shop's own span so its fascia, sign and awnings all end at
+  // the lobby pier. The obstruction lookup uses these coordinates too.
+  const shift = -side * lobby / 2, span = facade.span - lobby;
+  const f = { ...facade, span,
+    add: (offset, ...args) => facade.add(offset + shift, ...args),
+    position: (offset, ...args) => facade.position(offset + shift, ...args),
+    local(x, s) { const p = facade.local(x, s); return { ...p, offset: p.offset - shift }; } };
+  const signBottom = 3.65, signTop = base - .18, signY = (signBottom + signTop) / 2;
+  f.add(0, G + signY, .13, span - .5, signTop - signBottom, .28, b.accent, 'solid', true);
+  const units = Math.max(1, Math.round((span - 1.6) / 5.5)), spacing = (span - 1.6) / units;
+  const doorBay = side > 0 ? units - 1 : 0;
+  for (let i = 0; i < units; i++) {
+    const offset = (i - (units - 1) / 2) * spacing;
+    const width = spacing - .45, door = i === doorBay && (primary || facade.shopSign) ? Math.min(1.25, width * .32) : 0;
+    const gap = door ? .16 : 0, doorOffset = offset + side * (width - door) / 2;
+    const display = width - door - gap, displayOffset = offset - side * (door + gap) / 2;
+    f.add(offset, G + 1.73, .075, width + .24, 3.36, .11, b.accent);
+    f.add(displayOffset, G + 1.69, .17, display, 2.03, .1, '#456971', 'glass');
+    f.add(displayOffset, G + 3.04, .17, display, .57, .1, '#729299', 'glass');
+    // A sill and the occasional mullion give large panes a readable scale.
+    f.add(displayOffset, G + .6, .22, display + .14, .12, .32, b.accent);
+    if (display > 3.1) f.add(displayOffset, G + 1.69, .24, .08, 2.03, .08, b.accent);
+    if (door) {
+      f.add(doorOffset, G + 1.73, .17, door, 3.1, .1, '#345660', 'glass');
+      f.add(doorOffset - side * door * .32, G + 1.35, .3, .06, .4, .08, '#e5d0a0');
+    }
+    f.add(offset, G + 2.75, .24, width + .1, .1, .1, '#bbd2c8');
+    if ((b.variation + i) % 3 !== 0 && b.type !== 'office') {
+      shopAwning(c, f, offset, spacing - .3, b.accent, b.variation);
+    }
+  }
+  if (!c.distant && (primary || facade.shopSign)) {
+    // The shop's name on its fascia board, high enough that the awnings
+    // below it hide none of it from across the street
+    const sign = shopSignFor(b), full = Math.min(1.15, signTop - signBottom - .3, span * .65 / sign.aspect, 6.2 / sign.aspect);
+    const centres = Array.from({ length: units }, (_, i) => (i - (units - 1) / 2) * spacing).flatMap(offset => [offset, offset + spacing * .25]);
+    const { offset, scale } = signPlace(c, f, full * sign.aspect, centres), h = full * scale, w = h * sign.aspect;
+    const y = Math.min(signTop - .1 - h / 2, Math.max(signY, 3.92 + h / 2)), p = f.position(offset, G + y, .34);
+    c.signFace('shop-signs', sign, p[0], p[1], -p[2], f.yaw, w, h, .05, .05);
+  }
+}
+
 // The ground floor along a street: a shopfront with its sign and awnings, a
 // loading bay, or a front door with windows either side.
 function groundFloor(c, b, f, base, primary, random) {
   const { span } = f;
   f.add(0, G + .08, .3, span + .4, .16, .8, '#d5c19e', 'solid', true);
   f.add(0, G + .24, .06, span + .12, .48, .16, '#939b98', 'solid', true);
-  if (b.shopfront && span >= 5) {
-    const signBottom = 3.65, signTop = base - .18, signY = (signBottom + signTop) / 2;
-    f.add(0, G + signY, .13, span - .5, signTop - signBottom, .28, b.accent, 'solid', true);
-    const units = Math.max(1, Math.floor(span / 8)), spacing = (span - 1.6) / units;
-    for (let i = 0; i < units; i++) {
-      const offset = (i - (units - 1) / 2) * spacing;
-      // A display window above a low stall riser, and a narrower door that
-      // reaches the threshold. Mirroring the door gives shops a quieter rhythm.
-      const width = spacing - 1.1, side = b.variation % 2 ? -1 : 1, door = Math.min(1.25, width * .3);
-      const doorOffset = offset + side * (width - door) / 2, display = width - door - .16, displayOffset = offset - side * (door + .16) / 2;
-      f.add(offset, G + 1.73, .075, width + .24, 3.36, .11, b.accent);
-      f.add(displayOffset, G + 2, .17, display, 2.65, .1, '#456971', 'glass');
-      f.add(doorOffset, G + 1.73, .17, door, 3.1, .1, '#345660', 'glass');
-      f.add(offset, G + 2.75, .24, width + .1, .1, .1, '#bbd2c8');
-      f.add(doorOffset - side * door * .32, G + 1.35, .3, .06, .4, .08, '#e5d0a0');
-      if ((b.variation + i) % 3 !== 0 && b.type !== 'office') {
-        shopAwning(c, f, offset, spacing - .7, b.accent, b.variation);
-      }
-    }
-    if (!c.distant && primary) {
-      // The shop's name on its fascia board, high enough that the awnings
-      // below it hide none of it from across the street
-      const sign = shopSignFor(b), full = Math.min(1.15, signTop - signBottom - .3, span * .65 / sign.aspect, 6.2 / sign.aspect);
-      const centres = Array.from({ length: units }, (_, i) => (i - (units - 1) / 2) * spacing).flatMap(offset => [offset, offset + spacing * .25]);
-      const { offset, scale } = signPlace(c, f, full * sign.aspect, centres), h = full * scale, w = h * sign.aspect;
-      const y = Math.min(signTop - .1 - h / 2, Math.max(signY, 3.92 + h / 2)), p = f.position(offset, G + y, .34);
-      c.signFace('shop-signs', sign, p[0], p[1], -p[2], f.yaw, w, h, .05, .05);
-    }
-  } else if (b.type === 'office' || b.type === 'atrium') {
+  if (b.shopfront && span >= 5) shopFront(c, b, f, base, primary);
+  else if (b.type === 'office' || b.type === 'atrium') {
     // A glazed lobby with its mullions, a double door and a canopy
     const bays = Math.max(1, Math.floor((span - 1.2) / 3.2)), spacing = (span - 1.2) / bays;
     f.add(0, G + base / 2 + .1, .1, span - .3, base - .6, .12, '#5e8a9a', 'glass');
@@ -963,9 +991,22 @@ function buildBuilding(c, b) {
   // Facades, wall by wall: the longest street wall carries the door or the sign
   let primary = -1;
   for (let i = 0; i < n; i++) if (b.street[i] && (primary < 0 || edgeLength(ring, i) > edgeLength(ring, primary))) primary = i;
+  // A corner business also names its other street, once. Small bevels and
+  // the almost parallel segments of a curved frontage are not extra shops.
+  let secondary = -1;
+  if (b.shopfront && primary >= 0) {
+    const front = edgeFacade(c, ring[primary], ring[(primary + 1) % n]);
+    for (let i = 0; i < n; i++) {
+      if (!b.street[i] || i === primary || edgeLength(ring, i) < Math.max(6, front.span * .35)) continue;
+      const f = edgeFacade(c, ring[i], ring[(i + 1) % n]);
+      if (f.normal.x * front.normal.x + f.normal.y * front.normal.y > .8) continue;
+      if (secondary < 0 || f.span > edgeLength(ring, secondary)) secondary = i;
+    }
+  }
   for (let i = 0; i < n; i++) {
     const f = edgeFacade(c, ring[i], ring[(i + 1) % n]);
     f.street = b.street[i];
+    f.shopSign = i === secondary;
     if (f.span < 2.5) continue;
     if (f.street) groundFloor(c, b, f, base, i === primary, random);
     else if (b.windows[i] && (b.type === 'office' || b.type === 'atrium')) groundFloor(c, { ...b, shopfront: false }, f, base, false, random);

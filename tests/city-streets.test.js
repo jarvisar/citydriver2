@@ -23,6 +23,24 @@ const furniture = (() => { const pieces = []; placeStreetFurniture(navGraph(), f
 const front = yaw => ({ x: Math.sin(yaw), y: -Math.cos(yaw) });
 const side = yaw => ({ x: Math.cos(yaw), y: Math.sin(yaw) });
 
+test('landmark approaches stay clear of street furniture and overhanging tree crowns', () => {
+  const obstacles = furniture.filter(p => !p.median && ['tree', 'lamp', 'lantern', 'shelter', 'bench', 'bin', 'bollard', 'parking-sign'].includes(p.kind));
+  for (const place of cityPlaces().filter(p => p.footprint)) {
+    const f = place.footprint;
+    // The central pedestrian approach and, for service buildings, every bay
+    // must be reachable from the pavement. Sample the route to the drop-off.
+    const reach = -((place.entrance.u - f.front.x) * f.nx + (place.entrance.s - f.front.y) * f.ny);
+    const half = ['depot', 'firehouse'].includes(place.type) ? f.width / 2 : 2;
+    for (const piece of obstacles) {
+      const dx = piece.u - f.front.x, dy = piece.s - f.front.y;
+      const out = -(dx * f.nx + dy * f.ny), along = Math.abs(dx * f.tx + dy * f.ty);
+      const crown = piece.kind === 'tree' ? piece.scale * .5 : .3;
+      if (out <= 0 || out >= reach) continue;
+      assert.ok(along >= half + crown, `${place.name}: ${piece.kind} blocks its approach`);
+    }
+  }
+});
+
 test('paved tree openings stay within the kerb and out of building lots and lawns', () => {
   const pits = furniture.filter(p => p.kind === 'tree' && p.pit);
   assert.ok(pits.length > 1000, 'street trees have soil openings');

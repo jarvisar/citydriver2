@@ -49,7 +49,8 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   const drivingFog = new THREE.Fog('#c2e2db', 460, 860);
   const sky = new THREE.HemisphereLight('#e4f2f5', '#617149', 1.45); scene.add(sky);
   const sun = new THREE.DirectionalLight('#fff1db', 2.5); sun.castShadow = true;
-  sun.shadow.camera.near = 1; sun.shadow.camera.far = 650; sun.shadow.normalBias = .65; sun.shadow.bias = -.0003; sun.shadow.radius = 2;
+  // Small offsets suppress self-shadow acne without lifting tyre shadows off the road.
+  sun.shadow.camera.near = 1; sun.shadow.camera.far = 650; sun.shadow.normalBias = .12; sun.shadow.bias = -.00005; sun.shadow.radius = 2;
   scene.add(sun); scene.add(sun.target);
   // Whatever can leave out whole groups of meshes (the city's chunks) does so
   // here, inside every render of the scene: after its matrices are updated and

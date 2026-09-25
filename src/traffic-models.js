@@ -16,7 +16,7 @@ export const SPORTS_MODEL = { name: 'sports', width: 1.94, length: 4.2, cabin: [
 
 export const TRAFFIC_COLORS = ['#d8c7a0', '#e9e5d9', '#577f96', '#829789', '#b34e43', '#d2a345', '#58636a', '#b7c4c9', '#796c8c', '#397e7b'];
 
-export const WHEEL = { radius: .43, width: .25, hubRadius: .21, hubWidth: .26, y: .44 };
+export const WHEEL = { radius: .43, width: .25, hubRadius: .21, hubWidth: .26, y: .43 };
 
 // Build one body shape as four merged geometries. Traffic bakes its wheels into
 // the details mesh; a driven car asks for them separately so they can turn.
@@ -90,7 +90,9 @@ export function vehicleGeometry(spec, { separateWheels = false } = {}) {
     box([.3, .2, .04], [side * w * .35, 1.01, l / 2 + .022], 'taillights');
     for (const z of [-l * .3, l * .3]) {
       if (separateWheels) { wheels.push({ x: side * w / 2, y: WHEEL.y, z, front: z < 0 }); continue; }
-      const tire = new THREE.CylinderGeometry(WHEEL.radius, WHEEL.radius, WHEEL.width, 10); tire.rotateZ(Math.PI / 2);
+      const tire = new THREE.CylinderGeometry(WHEEL.radius, WHEEL.radius, WHEEL.width, 10);
+      // A vertex at the bottom keeps the faceted, unanimated tyre on the road.
+      tire.rotateY(Math.PI / 2); tire.rotateZ(Math.PI / 2);
       add(tire, [side * w / 2, WHEEL.y, z], 'details', '#2b3434');
       const hub = new THREE.CylinderGeometry(WHEEL.hubRadius, WHEEL.hubRadius, WHEEL.hubWidth, 8); hub.rotateZ(Math.PI / 2);
       add(hub, [side * w / 2, WHEEL.y, z], 'details', '#bfc4b9');

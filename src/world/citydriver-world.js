@@ -456,8 +456,8 @@ export class CityChunk {
       else if (piece.kind === 'parked') {
         const model = parkedCars[piece.model], spec = TRAFFIC_MODELS.find(m => m.name === piece.model);
         if (!this.distant) {
-          this.item(`parked-paint-${piece.model}`, model.paint, this.materials.solid, [x, ROAD_LEVEL + .13, -s], [1, 1, 1], PARKED_PAINTS[piece.colour % PARKED_PAINTS.length], piece.yaw);
-          this.item(`parked-trim-${piece.model}`, model.trim, this.materials.props, [x, ROAD_LEVEL + .13, -s], [1, 1, 1], '#ffffff', piece.yaw);
+          this.item(`parked-paint-${piece.model}`, model.paint, this.materials.solid, [x, ROAD_LEVEL, -s], [1, 1, 1], PARKED_PAINTS[piece.colour % PARKED_PAINTS.length], piece.yaw);
+          this.item(`parked-trim-${piece.model}`, model.trim, this.materials.props, [x, ROAD_LEVEL, -s], [1, 1, 1], '#ffffff', piece.yaw);
         }
         this.rigid(x, s, () => this.solid(x, s, spec.width, spec.length), itemFrame(piece.s, piece.u, piece.yaw));
       }

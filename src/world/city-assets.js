@@ -290,7 +290,9 @@ function tint(g, color) {
 function parkedCar(spec) {
   const { paint, details, headlights, taillights, wheels } = vehicleGeometry(spec, { separateWheels: true });
   const tyres = wheels.map(({ x, y, z }) => {
-    const tyre = new THREE.CylinderGeometry(WHEEL.radius, WHEEL.radius, WHEEL.width, 6); tyre.rotateZ(Math.PI / 2); tyre.translate(x, y, z); tyre.deleteAttribute('uv');
+    const tyre = new THREE.CylinderGeometry(WHEEL.radius, WHEEL.radius, WHEEL.width, 6);
+    // Put a vertex at road level; a six-sided tyre's flat would leave a visible gap.
+    tyre.rotateY(Math.PI / 2); tyre.rotateZ(Math.PI / 2); tyre.translate(x, y, z); tyre.deleteAttribute('uv');
     return tint(tyre, '#2b3434');
   });
   const trim = mergeGeometries([details, tint(headlights, '#d8d4c2'), tint(taillights, '#8a3a30'), ...tyres]);
