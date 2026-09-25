@@ -253,12 +253,11 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
     }
   }
   // Raised medians down the boulevards and the ring's parkway, kerbed, with
-  // grass in them (see city-medians.js)
+  // grass on land and stone across the bridges (see city-medians.js)
   for (const median of cityMedians(nav).list) {
     const top = ROAD_LEVEL + MEDIAN_KERB;
     ground.polygon(median.polygon, top, COLOURS.medianKerb);
-    const lawn = offsetPolygon(median.polygon, -.3);
-    if (lawn.length >= 3) ground.polygon(lawn, top + .015, COLOURS.median);
+    for (const lawn of median.lawns) ground.polygon(lawn.outer, top + .015, COLOURS.median, null, true, lawn.holes);
     ground.wall(clockwise(median.polygon), top, ROAD_LEVEL - .02, COLOURS.medianKerb, true);
   }
   // Crosswalks where each road leaves a junction, stop lines behind them

@@ -20,7 +20,7 @@ export const ROUTE_PAINT = { coast: '#d96143', desert: '#78977b', snow: '#9fc4d5
 // the formula racer is quicker again by the same margin over it, and each of
 // the specials trades one thing away to be the best in the garage at another.
 //
-//   topSpeed            metres per second, the speed the throttle tops out at
+//   topSpeed            metres per second, the speed ceiling (drag may limit it first)
 //   offRoad             the same off the tarmac: two thirds or so of topSpeed,
 //                       and the car eases down to it rather than snapping
 //   acceleration        metres per second squared under full throttle
@@ -125,7 +125,7 @@ export const CARS = {
   },
   formula: {
     name: 'Formula', mass: .8, kind: 'formula', paint: '#d8452f', shape: FORMULA_SHAPE,
-    // 112 mph, with enough power to overcome air drag at that speed.
+    // 100 m/s ceiling; air drag balances full throttle near 79 m/s (177 mph).
     stats: { topSpeed: 100, acceleration: 60, braking: 30, grip: 2.25, offRoad: 20, turnRadius: 3.6 },
   },
 };

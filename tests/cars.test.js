@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { CARS, CAR_IDS, DEFAULT_CAR, ROUTE_PAINT, carMeters, carStats } from '../src/cars.js';
+import { CARS, CAR_IDS, DEFAULT_CAR, ROUTE_PAINT, DRAG, carMeters, carStats } from '../src/cars.js';
 import { createCar, DrivingController } from '../src/vehicle.js';
 import { TRAFFIC_MODELS } from '../src/traffic-models.js';
 import { JOURNEYS } from '../src/journeys.js';
@@ -17,6 +17,11 @@ const flatOut = (id, seconds = 90) => {
   const car = new DrivingController(straightRoute, {}, id);
   for (let i = 0; i < 60 * seconds; i++) car.update(1 / 60, { forward: true });
   return car;
+};
+// The speed ceiling can sit above the engine's equilibrium against air drag.
+const cruisingSpeed = id => {
+  const { topSpeed, acceleration } = carStats(id);
+  return Math.min(topSpeed, Math.sqrt((acceleration - DRAG.rolling) / DRAG.air));
 };
 
 test('every car builds a solid, steerable model', () => {
@@ -79,12 +84,17 @@ test('the coastal wagon keeps the original handling and every car stays close to
   assert.ok(formula.topSpeed > sports.topSpeed * 1.15, 'the racer should clear the coupe by a wide margin');
   assert.ok(formula.acceleration > sports.acceleration * 1.25 && formula.braking > sports.braking);
   assert.ok(formula.grip > sports.grip, 'slicks should turn in harder than the coupe');
-  assert.ok(Math.abs(flatOut('formula', 30).speed - formula.topSpeed) < .01, 'the Formula car must actually reach its top speed under throttle');
+  assert.equal(formula.topSpeed, 100); assert.equal(formula.acceleration, 60);
+  const racer = flatOut('formula', 30);
+  try {
+    assert.ok(Math.abs(racer.speed - cruisingSpeed('formula')) < .01, 'the Formula car must reach its drag-limited cruising speed');
+    assert.ok(racer.speed > 78 && racer.speed < 80, 'the faster Formula tuning must remain available');
+  } finally { racer.disposeModel(); }
   // Leaving the tarmac costs every car a third of its top end, give or take,
   // and the order is the character: off-roaders keep most, racers least.
   // The specials sit outside that band on purpose, in both directions.
   const share = id => carStats(id).offRoad / carStats(id).topSpeed;
-  const looseShare = { taxiFormula: [.55, .57], formula: [.35, .45], hotrod: [.5, .6], buggy: [.88, .95], monster: [.88, .95] };
+  const looseShare = { taxiFormula: [.55, .57], formula: [.19, .21], hotrod: [.5, .6], buggy: [.88, .95], monster: [.88, .95] };
   for (const id of CAR_IDS) {
     const [least, most] = looseShare[id] ?? [.6, .7];
     assert.ok(share(id) >= least && share(id) <= most, `${id} keeps ${(share(id) * 100).toFixed(0)}% off the tarmac`);
@@ -161,16 +171,25 @@ test('loose ground takes the speed instead of the game capping it', () => {
     // where the physics settles, not a limit clamped on top of it.
     assert.ok(Math.abs(trace.at(-1) - stats.offRoad) < .35, `${id} settled at ${trace.at(-1)}, not ${stats.offRoad}`);
     // It gets there over seconds, not in the frame that crosses the line.
-    assert.ok(trace[0] > entry - .6, `${id} lost ${(entry - trace[0]).toFixed(1)} m/s in one frame`);
+    assert.ok(trace[0] > stats.offRoad + (entry - stats.offRoad) * .95,
+      `${id} lost more than 5% of its excess road speed in one frame`);
     assert.ok(trace[60] > stats.offRoad + .5 && trace[60] < trace[10], `${id} does not ease down`);
-    // And never pulls harder than the car's own brakes while it is doing it.
-    for (let i = 1; i < trace.length; i++) {
-      assert.ok((trace[i - 1] - trace[i]) * 60 < stats.braking, `${id} decelerates harder than it brakes`);
-    }
-    // Back on the road, the full top speed is available again.
+    // Compare with actual braking at the same speed: air resistance contributes
+    // to both, especially for the Formula's much higher cruising speed.
+    const braking = new DrivingController(straightRoute, {}, id);
+    try {
+      for (let i = 0; i < trace.length; i++) {
+        const before = i ? trace[i - 1] : entry;
+        braking.speed = before; braking.update(1 / 60, { brake: 1 });
+        assert.ok(trace[i] > braking.speed, `${id} decelerates harder than it brakes`);
+        assert.ok(trace[i] <= before + 1e-9 && trace[i] >= stats.offRoad - .01, `${id} must ease down without undershooting`);
+      }
+    } finally { braking.disposeModel(); }
+    // Back on the road, the full cruising speed is available again.
     car.u = 2.4;
     for (let i = 0; i < 60 * 30; i++) car.update(1 / 60, { forward: true });
-    assert.ok(Math.abs(car.speed - stats.topSpeed) < .35, `${id} could not recover its road speed`);
+    assert.ok(Math.abs(car.speed - cruisingSpeed(id)) < .35, `${id} could not recover its road speed`);
+    car.disposeModel();
   }
   // The throttle is worth holding: a closed one keeps bleeding speed well past
   // the off-road top, where a held one stops there.

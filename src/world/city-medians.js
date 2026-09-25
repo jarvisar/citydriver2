@@ -1,7 +1,8 @@
-import { PolygonIndex } from './city.js';
+import { CITY, PolygonIndex } from './city.js';
 import { navGraph } from './nav-graph.js';
 import { junctionGeometry, CROSSWALK } from './junction-geometry.js';
-import { offsetPolyline } from '../mapgen/polygon-util.js';
+import { offsetPolyline, offsetPolygon } from '../mapgen/polygon-util.js';
+import { intersection, region } from '../mapgen/booleans.js';
 
 // The raised medians down the middle of the boulevards and the ring's
 // parkway: one strip along each street between its junctions, its rounded
@@ -58,7 +59,11 @@ export function cityMedians(nav = navGraph()) {
     const points = slice(edge.points, from, to);
     if (points.length < 2) continue;
     const polygon = roundedStrip(points, profile.median);
-    const median = { edge, points, polygon, halfWidth: profile.median, planted: Boolean(profile.trees) };
+    // Grass stops at the abutments; over water the same raised separator is
+    // stone. Clip the whole lawn, including where one edge crosses a bank.
+    const lawn = offsetPolygon(polygon, -.3);
+    const lawns = lawn.length >= 3 ? intersection([lawn], region(CITY.land)) : [];
+    const median = { edge, points, polygon, lawns, halfWidth: profile.median, planted: Boolean(profile.trees) };
     list.push(median);
     index.add(polygon, median);
   }

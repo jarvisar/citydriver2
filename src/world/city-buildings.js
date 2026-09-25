@@ -428,22 +428,26 @@ export function edgeWindows(c, b, f, bottom, floors, random) {
     if (b.type === 'deco' && floor === floors - 1) f.add(0, y + 1.55, .2, span + .4, .35, .5, '#ded2b8', 'solid', true);
     for (let bay = 0; bay < bays; bay++) {
       const offset = (bay - (bays - 1) / 2) * spacing, lit = random() < .1;
+      // Balconies stack over one another, with a glazed door down to the
+      // deck. The other bays keep their ordinary windows and sills.
+      const balcony = b.type === 'apartment' && f.street && bay % 3 === b.variation % 3;
+      const height = balcony ? 2.58 : h, centre = balcony ? y - .19 : y;
       // (no window, sill or balcony behind a sign)
       if (f.clear.length && f.blocked(offset, y - .3, windowWidth + 1.2, h + 1.2)) continue;
-      f.add(offset, y, .075, windowWidth + .25, h + .25, .11, frame);
-      f.add(offset, y, .17, windowWidth, h, .09, lit ? '#e3c38d' : modern ? '#5e8a9a' : '#3e5663', lit ? 'lit' : 'glass');
+      f.add(offset, centre, .075, windowWidth + .25, height + .25, .11, frame);
+      f.add(offset, centre, .17, windowWidth, height, .09, lit ? '#e3c38d' : modern ? '#5e8a9a' : '#3e5663', lit ? 'lit' : 'glass');
       if (loft || b.variation === 1) f.add(offset, y, .25, .09, h, .07, frame);
-      if (!modern) f.add(offset, y - h / 2 - .14, .25, windowWidth + .44, .14, .48, frame);
+      if (!modern && !balcony) f.add(offset, y - h / 2 - .14, .25, windowWidth + .44, .14, .48, frame);
       if (b.type === 'townhouse') {
         for (const sign of [-1, 1]) f.add(offset + sign * (windowWidth / 2 + .4), y, .2, .5, h, .15, b.accent, 'solid', true);
         f.add(offset, y, .265, windowWidth, .12, .1, creamTrim);
       }
       if (b.type === 'loft') f.add(offset, y, .265, windowWidth, .12, .1, '#c8bda8');
-      if (b.type === 'apartment' && f.street && floor % 2 === b.variation % 2 && bay % 2 === 0) {
-        f.add(offset, y - 1.35, .68, windowWidth + 1.1, .2, 1.5, '#d1c9b5', 'solid', true);
-        f.add(offset, y - .825, 1.36, windowWidth + 1.1, .85, .12, b.accent, 'solid', true);
-        for (const edge of [-1, 1]) f.add(offset + edge * (windowWidth + .95) / 2, y - .825, .65, .1, .85, 1.3, b.accent);
-        if (bay % 3 === 0) f.add(offset, y - .52, 1.13, windowWidth * .7, .28, .38, '#6e8856');
+      if (balcony) {
+        f.add(offset, y - 1.58, .68, windowWidth + 1.1, .2, 1.5, '#d1c9b5', 'solid', true);
+        f.add(offset, y - 1.03, 1.36, windowWidth + 1.1, .9, .12, b.accent, 'solid', true);
+        for (const edge of [-1, 1]) f.add(offset + edge * (windowWidth + .95) / 2, y - 1.03, .65, .1, .9, 1.3, b.accent);
+        if ((floor + bay + b.variation) % 3 === 0) f.add(offset, y - .58, 1.13, windowWidth * .7, .24, .38, '#6e8856');
       }
     }
   }
@@ -500,6 +504,28 @@ function signPlace(c, f, w, centres) {
   return best;
 }
 
+// Thin fabric, falling away from the fascia to a short valance. Both sides
+// are faces in the building's existing mesh: even a striped awning uses a
+// third of the triangles of the old pair of boxes per stripe.
+export function shopAwning(c, f, offset, width, accent, variation) {
+  const stripes = !c.distant && variation % 2 === 0 ? 8 : 1;
+  const reach = 1.4 + variation * .16, back = G + 3.52, front = G + 3.04;
+  const quad = (a, b, d, e, colour) => {
+    c.bodies.face(...a, ...b, ...d, colour); c.bodies.face(...a, ...d, ...e, colour);
+    c.bodies.face(...d, ...b, ...a, colour); c.bodies.face(...e, ...d, ...a, colour);
+  };
+  // At a distance a cream-striped canopy keeps its average colour.
+  const plain = c.distant && variation % 2 === 0 ? new THREE.Color(accent).lerp(new THREE.Color('#e6d8b8'), .5) : accent;
+  for (let stripe = 0; stripe < stripes; stripe++) {
+    const left = offset + (stripe / stripes - .5) * width, right = left + width / stripes;
+    const colour = stripes > 1 && stripe % 2 === 0 ? '#e6d8b8' : plain;
+    const a = f.position(left, back, .2), b = f.position(right, back, .2);
+    const d = f.position(right, front, reach), e = f.position(left, front, reach);
+    quad(a, b, d, e, colour);
+    quad(e, d, f.position(right, front - .2, reach), f.position(left, front - .2, reach), colour);
+  }
+}
+
 // The ground floor along a street: a shopfront with its sign and awnings, a
 // loading bay, or a front door with windows either side.
 function groundFloor(c, b, f, base, primary, random) {
@@ -512,17 +538,17 @@ function groundFloor(c, b, f, base, primary, random) {
     const units = Math.max(1, Math.floor(span / 8)), spacing = (span - 1.6) / units;
     for (let i = 0; i < units; i++) {
       const offset = (i - (units - 1) / 2) * spacing;
-      f.add(offset, G + 1.95, .17, spacing - 1.1, 2.8, .1, '#345963', 'glass');
-      f.add(offset + spacing * .25, G + 1.95, .24, .13, 2.9, .1, '#bbd2c8');
-      f.add(offset + spacing * .25 + .45, G + 1.8, .3, .06, .45, .08, '#e5d0a0');
+      // A display window above a low stall riser, and a narrower door that
+      // reaches the threshold. Mirroring the door gives shops a quieter rhythm.
+      const width = spacing - 1.1, side = b.variation % 2 ? -1 : 1, door = Math.min(1.25, width * .3);
+      const doorOffset = offset + side * (width - door) / 2, display = width - door - .16, displayOffset = offset - side * (door + .16) / 2;
+      f.add(offset, G + 1.73, .075, width + .24, 3.36, .11, b.accent);
+      f.add(displayOffset, G + 2, .17, display, 2.65, .1, '#456971', 'glass');
+      f.add(doorOffset, G + 1.73, .17, door, 3.1, .1, '#345660', 'glass');
+      f.add(offset, G + 2.75, .24, width + .1, .1, .1, '#bbd2c8');
+      f.add(doorOffset - side * door * .32, G + 1.35, .3, .06, .4, .08, '#e5d0a0');
       if ((b.variation + i) % 3 !== 0 && b.type !== 'office') {
-        const canopyWidth = spacing - .7, stripes = !c.distant && b.variation % 2 === 0 ? 8 : 1;
-        for (let stripe = 0; stripe < stripes; stripe++) {
-          const along = offset + ((stripe + .5) / stripes - .5) * canopyWidth;
-          const color = stripes > 1 && stripe % 2 === 0 ? '#e6d8b8' : b.accent;
-          f.add(along, G + 3.4, 1.02, canopyWidth / stripes, .22, 2, color, 'solid', true);
-          f.add(along, G + 3.1, 1.96, canopyWidth / stripes, .38, .12, color, 'solid', true);
-        }
+        shopAwning(c, f, offset, spacing - .7, b.accent, b.variation);
       }
     }
     if (!c.distant && primary) {

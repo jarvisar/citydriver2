@@ -85,8 +85,10 @@ test('upgrades actually cover a block faster, brake harder and turn tighter at e
       assert.ok(results[i].radius < results[i - 1].radius);
     }
   }
-  assert.equal(CARS.taxiFormula.stats.topSpeed, CARS.formula.stats.topSpeed);
-  assert.equal(CARS.taxiFormula.stats.acceleration, CARS.formula.stats.acceleration);
+  // The passenger-carrying Formula keeps its own tuning, independently of the
+  // faster chooser-only racer.
+  assert.equal(CARS.taxiFormula.stats.topSpeed, 50);
+  assert.equal(CARS.taxiFormula.stats.acceleration, 40);
   assert.ok(CARS.taxi.stats.topSpeed >= 42 * .95, 'starter keeps at least 95% of its old speed');
   assert.ok(CARS.taxi.stats.acceleration >= 22 * .95);
 });
