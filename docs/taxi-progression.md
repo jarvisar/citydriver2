@@ -1,12 +1,19 @@
-# Progression and balance
+# Taxi Progression and Balance
 
-Taxi runs borrow Crazy Taxi's shape, a shift clock fed by fares, without copying its numbers. This note records how the clock, the fare offers and the progression layers are tuned, and why.
+Taxi runs work like Crazy Taxi: a shift clock that fares add time to. The numbers are tuned for this game and aren't copied from Crazy Taxi.
 
-## The shift clock
+## Fares
 
-A shift starts at 90 seconds and holds at most 180. Boarding adds 6 seconds plus 2 per extra rider. Finishing a fare adds a second for every 24 m of its route plus the rating bonus (Speedy +5, Normal +2, Slow 0) and up to 5 seconds for a Speedy streak.
+- Passengers waiting for a ride are never navigation targets. Stop in any pickup ring to pick them up. The destination and route only show up after they get in. Dropping them off, missing the fare or restarting clears the navigation.
+- Boarding and drop-off need the cab to be stopped for 0.45 seconds.
+- Holding a continuous drift for 0.65 seconds earns tips. Separate taps don't add up.
+- A crash resets the stunt combo but keeps the tips already earned. Stunts don't score again until the cab has been clear of impacts for 0.8 seconds.
 
-The target is that pace decides how long a shift lasts:
+## The Shift Clock
+
+A shift starts at 90 seconds and holds at most 180. Boarding adds 6 seconds, plus 2 for each extra rider. Finishing a fare adds a second for every 24 m of its route, plus a rating bonus (Speedy +5, Normal +2, Slow 0) and up to 5 seconds for a Speedy streak.
+
+The goal is for driving speed to decide how long a shift lasts:
 
 | Route pace | Shift |
 | --- | --- |
@@ -15,28 +22,46 @@ The target is that pace decides how long a shift lasts:
 | 24 m/s (Speedy arrivals with a streak) | the clock holds, 15 minutes or more |
 | 28 m/s | the clock grows until it caps |
 
-The model behind the table counts 150 m to the next ring and 4 seconds at every stop. Before this tuning the distance paid a second per 33 m and the streak topped out at 3 seconds, which needed a 28 m/s average just to break even: a driver rated Speedy on every fare still bled time, so skill changed the score but hardly ever the length of a shift.
+These numbers assume 150 m to the next ring and 4 seconds at every stop. Before this tuning, each second of time needed 33 m of route and the streak bonus topped out at 3 seconds. A driver needed a 28 m/s average just to break even, so even a driver rated Speedy on every fare ran out of time.
 
-Group fares pay their route time at the last stop and only a small rating bonus at each earlier one. A four-rider party is a little kinder on the clock than four solo fares, pays about 60% more per metre plus the group bonus, and multiplies stunt tips by everyone aboard, but pays nothing if anyone is still aboard when a rider's clock or the shift runs out.
+Group fares add their route time at the last stop and only a small rating bonus at each stop before that. A four-rider group is slightly easier on the clock than four single fares. It pays about 60% more per metre plus a group bonus, and stunt tips are multiplied by the number of riders. But it pays nothing if anyone is still in the cab when a rider's clock or the shift runs out.
 
-## Group routes
+## Group Routes
 
-A party's stops are grown one hop at a time from the places near the rider who just got out. Candidates are ranked by distance plus penalties, in metres, before any street is traced: 320 for a stop on the same east–west street as the previous one, 140 for a hop that carries straight on, and 200 for a second place of a kind the party already visits. The nearest legal stop still wins when it is the only one, so the hop limits, detour and turn rules are unchanged.
+A group's stops are picked one at a time from the places near the previous stop. Candidates are ranked by distance plus penalties, in metres:
 
-Sampled over about 200 seeded group offers, parties with every stop on one street fell from 15% to 4%, fully straight chains from 21% to 11%, and parties repeating a destination type from 16% to 6%. Party sizes and ring colour shares did not move.
+- 320 for a stop on the same east–west street as the previous one
+- 140 for a stop straight ahead
+- 200 for a type of place the group is already visiting
 
-## Shift goals
+The nearest stop still wins if it's the only option. Over about 200 sampled group fares, groups with every stop on one street went from 15% to 4%, routes that went straight the whole way from 21% to 11%, and groups repeating a destination type from 16% to 6%.
 
-Every shift draws three goals from a pool of eleven (fares, riders, groups, Speedy arrivals, Speedy streak, combo, tips, near misses, Crazy stops, long rides, a full cab). The draw is seeded by the shift number, so a restart keeps its goals. Targets come in three tiers by driver rank: Rookie and Cabbie draw tier one, Regular and Pro tier two, Veteran and above tier three. The third goal is always one tier harder than the others.
+## Shift Goals
 
-A goal completes the moment its statistic is reached and banks its bonus ($150–$600) with the fleet. Bonuses never touch the run score, so licences still measure fare money alone. Goals show in **Pause → Shift goals** with live progress, on the map card, as a toast when completed, and on the results screen.
+Every shift picks three goals from a list of eleven: fares, riders, groups, Speedy arrivals, Speedy streak, combo, tips, near misses, Crazy stops, long rides and a full cab. The goals are seeded by the shift number, so restarting keeps the same goals.
 
-## Career, ranks and records
+Goal targets come in three tiers by driver rank. Rookie and Cabbie get tier one, Regular and Pro get tier two, and Veteran and above get tier three. The third goal is always one tier harder than the other two.
 
-The career saves lifetime shifts, fares, riders, groups, earnings, tips and goal bonuses under `citydriver-taxi-career`. Career earnings set the driver rank: Rookie, Cabbie ($2,000), Regular ($6,000), Pro ($15,000), Veteran ($35,000), Ace ($75,000) and City Legend ($150,000). Each rank unlocks a livery in the fleet dialog.
+Completing a goal adds its bonus ($150–$600) to the fleet balance. Bonuses don't count toward the run score, so licences are still based on fare money only. Goals are shown in **Pause → Shift goals**, on the map card, as a popup when completed, and on the results screen.
 
-Records are kept for fares in a shift, best combo, longest Speedy streak, tips in a shift and shift length. The results screen turns a tile gold when the shift just beat that record; the first shift sets records without marking them. Best cash stays with the licence and its own `citydriver-taxi-best` key.
+## Career, Ranks and Records
+
+The career saves lifetime shifts, fares, riders, groups, earnings, tips and goal bonuses under `citydriver-taxi-career`. Career earnings set the driver rank:
+
+| Rank | Career earnings |
+| --- | ---: |
+| Rookie | $0 |
+| Cabbie | $2,000 |
+| Regular | $6,000 |
+| Pro | $15,000 |
+| Veteran | $35,000 |
+| Ace | $75,000 |
+| City Legend | $150,000 |
+
+Each rank unlocks a livery in the taxi fleet.
+
+Records are kept for most fares in a shift, best combo, longest Speedy streak, most tips in a shift and longest shift. On the results screen, a tile turns gold when that shift beat the record. The first shift sets the records without marking them. The best cash score is saved separately with the licence under `citydriver-taxi-best`.
 
 ## Tests
 
-`npm test` covers the goal draw, goal completion and banking, career totals, records, promotions, livery unlocks and the group route penalties. With a dev server, `npm run test:fleet` exercises the results screen, the fleet dialog and goal banking in the browser.
+`npm test` covers the goal selection, goal completion, career totals, records, promotions, livery unlocks and group route penalties. With the dev server running, `npm run test:fleet` tests the results screen, the fleet dialog and goal bonuses in the browser.

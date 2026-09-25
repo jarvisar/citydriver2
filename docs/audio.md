@@ -1,9 +1,9 @@
 # Audio
 
-Sound starts off. Turn it on in the pause menu.
+Sound is off by default. Turn it on from the pause menu.
 
-**Audio settings** has volume controls for master, engine, tires/wind, environment, traffic, and music. Choose Balanced, Scenic, or Night drive as a preset. Balanced has music off. **Soften loud sounds** adds compression. Settings save locally.
+**Audio settings** has volume sliders for master, engine, tires/wind, environment, traffic and music. There are three presets: Balanced, Scenic and Night drive. Balanced has music turned off. **Soften loud sounds** adds compression. Settings are saved locally.
 
-Audio is generated with Web Audio. Engine sounds follow the car, speed, and load; traffic uses stereo panning. Pause and focus loss fade and suspend audio.
+All sounds are generated with the Web Audio API. The engine sound follows the car's speed and load, and traffic is panned in stereo. Audio fades out and suspends when the game is paused or loses focus.
 
-Code: [src/audio.js](../src/audio.js) and [src/audio/](../src/audio/). Tests run with `npm test`.
+The code is in [src/audio.js](../src/audio.js) and [src/audio/](../src/audio/). Tests run with `npm test`.

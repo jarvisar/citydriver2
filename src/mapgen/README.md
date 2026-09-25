@@ -1,66 +1,32 @@
-# City map generator
+# City Map Generator
 
-Plain JavaScript port of the road, water, block and lot generation from
-[MapGenerator](https://github.com/ProbableTrain/MapGenerator) by Keir
-(ProbableTrain) and contributors. The algorithm follows the paper
-*Interactive Procedural Street Modeling*: a tensor field made of grid and
-radial basis fields is integrated into streamlines that become the main, major
-and minor roads; a coastline and a river are integrated the same way with
-rotational noise; a planar graph of the roads yields blocks, which are shrunk
-and subdivided into lots.
+JavaScript port of the road, water, block and lot generation from [MapGenerator](https://github.com/ProbableTrain/MapGenerator) by Keir (ProbableTrain) and contributors. It is based on the paper *Interactive Procedural Street Modeling*.
 
-Changes from the original TypeScript:
+A tensor field made of grid and radial fields is traced into streamlines, which become the main, major and minor roads. The coastline and river are traced the same way with added noise. The roads form a graph, the faces of the graph become blocks, and the blocks are split into lots.
 
-- Every `Math.random` call takes a seeded generator, so `?seed=` reproduces a city.
-- Two quirks are fixed. Basis fields add as weighted (the original doubled
-  everything before each new field, so the first of five weighed sixteen
-  times the last). The Runge-Kutta step samples along the way the streamline
-  is going, each sample turned to agree with the first (the original sampled
-  at a fixed diagonal offset and added the samples whichever way they faced).
-- Works in metres on a fixed domain rather than screen pixels with a zoom.
-- `jsts`, `isect`, `polyk`, `d3-quadtree`, `simplify-js` and `simplex-noise`
-  are replaced by the small implementations in `polygon-util.js`, `graph.js`,
-  `simplify.js` and `simplex-noise.js`.
+## Changes from the Original
+
+- Every `Math.random` call uses a seeded generator, so `?seed=` loads the same city.
+- Two bugs are fixed. Basis fields now add by their weights (the original doubled everything before adding each new field, so the first of five weighed sixteen times the last). The Runge-Kutta step now samples along the direction the streamline is going and turns each sample to match the first (the original sampled at a fixed diagonal offset).
+- Works in metres on a fixed area instead of screen pixels with a zoom.
+- `jsts`, `isect`, `polyk`, `d3-quadtree`, `simplify-js` and `simplex-noise` are replaced by smaller versions in `polygon-util.js`, `graph.js`, `simplify.js` and `simplex-noise.js`.
 - No drawing, GUI or export code. Each generator runs synchronously.
-- Block edges shrink by the width of the road each one runs along, which the
-  road graph records, so lots sit back from wide avenues further than from
-  side streets.
-- The city has one district of each style, grown over the land from spread
-  seeds so each is one piece (`districts` option, `layDistricts`), and
-  rotational noise can be given to one style's district rather than the whole domain
-  (`districtNoise`, each with a `share(point)`), so an old town's streets
-  wind while the rest keep their grids.
-- Near the ring road the field turns to run along it or meet it square
-  (`alignWith`), and for the minor roads the ring is an existing streamline of
-  the family running along it, as MapGenerator treats its coast.
-- A streamline that closes on itself is cut back past the join and closed
-  straight across, so its two fronts never leave a hook (`closeLoop`).
-- Bends are rounded into arcs, a ring road closes the city, and the network is
-  cleaned before blocks are found: overshoots trimmed, dead ends joined to the
-  next street or removed, orphans dropped (`road-network.js`).
-- Faces are not limited to twenty vertices, so curved blocks are kept.
-- Blocks are platted into a strip of street-front lots round a shared yard
-  (`lots.js`), with MapGenerator's subdivision kept for blocks too thin for a
-  strip.
-- The river's banks and channel are offsets of one smoothed centre line, and
-  its bank roads meet the coast road.
-- A coast that would give more than `water.seaMax` of the domain to the sea
-  is tried again, so every city has room.
-- The city is an island (`shore.js`) ending at a promenade outside its ring
-  road: land, river and sea are polygon booleans (`booleans.js`, with
-  Clipper) over the island's outline, the harbour and the river's channel,
-  so they tile the world exactly.
-- Two roads meeting end to end at an angle are joined at the nearby junction
-  or rounded.
-- Every road takes a street profile with a rank, the longest avenues are
-  promoted to boulevards, long side streets between the avenues become
-  collectors, and the other side streets follow their district
-  (`road-hierarchy.js`).
-- A park is laid out rather than grown from streamlines: gates on its
-  streets, a loop walk and walks to a plaza or a pond (`park-paths.js`).
-- A block whose kerb reaches onto a carriageway has the carriageway cut out
-  of it rather than being dropped.
-- A face is dry land if a point well inside it is, not its centroid.
+- Each block edge is set back by the width of its road, so lots sit further back from wide avenues than from side streets.
+- The city has one district of each style, grown from seeds spread over the land so each district is one piece (`districts` option, `layDistricts`). Rotational noise can be limited to one district (`districtNoise`), so the old town's streets curve while the rest keep their grids.
+- Near the ring road, the field turns to run along it or meet it square (`alignWith`). For minor roads, the ring counts as an existing streamline, the same way MapGenerator treats its coast.
+- A streamline that loops back on itself is cut back past the join and closed with a straight line (`closeLoop`).
+- Bends are rounded into arcs, a ring road closes off the city, and the network is cleaned up before blocks are found: overshoots are trimmed, dead ends are joined to the next street or removed, and disconnected roads are dropped (`road-network.js`).
+- Faces aren't limited to twenty vertices, so curved blocks are kept.
+- Blocks are split into a strip of lots facing the street with a shared yard behind (`lots.js`). MapGenerator's subdivision is still used for blocks too thin for a strip.
+- The river's banks and channel are offsets of one smoothed centre line, and the bank roads meet the coast road.
+- If a coast would leave more than `water.seaMax` of the area to the sea, it is generated again.
+- The city is an island (`shore.js`) with a promenade outside its ring road. Land, river and sea are polygon booleans (`booleans.js`, using Clipper), so they fit together exactly.
+- Two roads meeting end to end at an angle are joined at a nearby junction or rounded.
+- Every road gets a street profile with a rank. The longest avenues become boulevards, long side streets between the avenues become collectors, and the other side streets depend on their district (`road-hierarchy.js`).
+- Parks are laid out with gates, a loop walk and walks to a plaza or pond (`park-paths.js`) instead of being filled with streamlines.
+- If a block's kerb overlaps a carriageway, the carriageway is cut out of the block instead of the whole block being dropped.
+- A face counts as land if a point well inside it is on land, instead of checking its centroid.
 
-This directory is distributed under the GNU Lesser General Public License
-version 3, like the original. See `COPYING` and `COPYING.LESSER`.
+## License
+
+This directory is licensed under the GNU Lesser General Public License v3, like the original. See `COPYING` and `COPYING.LESSER`.

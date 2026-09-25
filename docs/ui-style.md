@@ -1,6 +1,6 @@
-# UI styles
+# UI Styles
 
-`src/city-theme.css` loads after component styles. It owns colors, typography, borders, and interaction states. Component styles own positioning, responsive layout, and visibility.
+`src/city-theme.css` loads after the component styles. It sets colors, fonts, borders and hover/focus states. The component styles handle positioning, layout and visibility.
 
 ## Theme
 
@@ -12,14 +12,14 @@
 | Hover | `--city-hover`: `#3b5662` |
 | Recessed content | `--city-recessed`: `#1b2d36` |
 | Primary text | `--city-text`: `#f5f4e9` |
-| Supporting text | `--city-muted`: `#c4d3d8` |
+| Secondary text | `--city-muted`: `#c4d3d8` |
 | Primary action/selection | `--city-accent`: `#ffd238` with dark text |
 | Section label/focus | `--city-gold`: `#f3d899` |
 | Panel/control corners | 16px / 10px |
 | Font | Segoe UI, Arial, sans-serif |
 
-Use slate for secondary actions and yellow for primary actions or selections. Use the muted text color directly; don't stack low opacity on translucent panels. Urgency and arrival use red/green.
+Use slate for secondary actions and yellow for primary actions and selections. Use the muted text color as is instead of lowering the opacity on translucent panels. Red and green are used for urgent deadlines and arrivals.
 
-The action bar matches the district/compass panel's background, border, radius, font, and height. Circular compass, steering, and switch controls keep their shapes.
+The action bar matches the district/compass panel's background, border, corners, font and height. The compass, steering stick and switches stay circular.
 
-The district panel must shrink and truncate before touching the action bar. Run `node scripts/hud-test.mjs` after changing touch sizes or layout; it checks header overlap, expanded maps, and controller layouts.
+The district panel should shrink and cut off its text before it touches the action bar. Run `node scripts/hud-test.mjs` after changing touch sizes or layout. It checks for overlap in the header, expanded maps and controller layouts.

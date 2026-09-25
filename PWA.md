@@ -1,32 +1,32 @@
-# Offline installation
+# Offline Installation
 
-Open the pause menu and choose **Install Citydriver**. If your browser can't show an install prompt, the button displays instructions. On iPhone or iPad, use Safari's **Share → Add to Home Screen**.
+To install the game, open the pause menu and choose **Install Citydriver**. If your browser can't show an install prompt, the button shows instructions instead. On iPhone or iPad, use **Share → Add to Home Screen** in Safari.
 
-Load the game fully while online before playing offline. Hosting requires HTTPS; localhost also works.
+Let the game load fully while online before playing offline. Hosting requires HTTPS, but localhost also works for testing.
 
-## Test locally
+## Testing Locally
 
 ```sh
 npm run build
 npm run preview
 ```
 
-Open the preview URL and wait for the city to load before disconnecting. City generation, the garage, audio, and rendering work offline.
+Open the preview URL and wait for the city to load before going offline. City generation, the garage, audio and rendering all work offline.
 
-`npm run dev` shows install help but doesn't register a service worker.
+`npm run dev` shows the install help but doesn't register a service worker.
 
-## Updates and hosting
+## Updates and Hosting
 
-Close all game tabs to let a downloaded update take effect. Old Citydriver caches are removed within the same scope.
+Close all game tabs for a downloaded update to take effect. Old Citydriver caches in the same scope are removed.
 
-The build supports subdirectories. To match GitHub Pages:
+The build works from a subdirectory. To match GitHub Pages:
 
 ```sh
 npm run build -- --base=/citydriver2/
 npm run preview
 ```
 
-## Assets and tests
+## Icons, Screenshots and Tests
 
 ```sh
 npm run pwa:icons
@@ -34,4 +34,4 @@ npm run pwa:screenshots
 npm run test:pwa
 ```
 
-These commands generate icons, capture desktop/mobile screenshots, and test installation, offline driving, and cache updates at root and subdirectory URLs. Set `CHROME_PATH` if Chrome is outside the default location.
+These generate the icons, capture desktop and mobile screenshots, and test installing, offline driving and cache updates from both the root and a subdirectory. Set `CHROME_PATH` if Chrome isn't in the default location.
