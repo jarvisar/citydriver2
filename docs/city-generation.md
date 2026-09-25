@@ -60,14 +60,17 @@ the network first and derives everything else from it, once, in one place.
    field turned; the samples now lie along the way the streamline is going
    and are turned to agree.
 2. **Water.** A coastline and a river are integrated through the field with
-   rotational noise. The river is one smoothed centre line
-   (`water.riverCentre`), cut to its longest run on land if the stream wanders
-   out to sea and back: its channel, the bank roads either side and the
-   water the game draws are all offsets of it, so the quays are the same width
-   all along. Bank roads stop exactly on the coast road and meet it. A river
-   that runs along the edge of the city, beside the ring road, would leave
-   the ring on a causeway two roads wide between river and sea, so it is
-   rejected and another tried (`alongEdge`).
+   rotational noise. The sea is the smaller side of the coastline; a coast
+   that would leave more than `water.seaMax` (15%) of the domain to the sea
+   is tried again (else the one with the least sea is kept), so a coast
+   across the middle never halves the city. The river is one smoothed
+   centre line (`water.riverCentre`), cut to its longest run on land if the
+   stream wanders out to sea and back: its channel, the bank roads either
+   side and the water the game draws are all offsets of it, so the quays are
+   the same width all along. Bank roads stop exactly on the coast road and
+   meet it. A river that runs along the edge of the city, beside the ring
+   road, would leave the ring on a causeway two roads wide between river and
+   sea, so it is rejected and another tried (`alongEdge`).
 3. **Roads.** Main, major and minor roads are streamlines of the field's major
    and minor eigenvectors, kept apart by `dsep` and `dtest`, as in
    MapGenerator. For the side streets the ring road is an existing
@@ -116,9 +119,10 @@ the network first and derives everything else from it, once, in one place.
    a yard the size of a park) the street they missed: traced along the field
    from its deepest point, meeting the streets either side square and clear
    of their junctions (or on a junction across the road, as a crossroads),
-   and splitting the block as evenly as it can. The result is one
-   connected network whose only loose ends are the sub-metre overshoots at
-   T-junctions.
+   and splitting the block as evenly as it can (each half, split again, is
+   cut by the street as built, so a street across it ends on that street).
+   The result is one connected network whose only loose ends are the
+   sub-metre overshoots at T-junctions.
 5. **Street profiles** (`road-hierarchy.js`). Every road takes its class's
    profile, and some take more. The longest avenues through the middle of
    town are promoted to boulevards until the city has 2.7 km of them (less

@@ -36,7 +36,9 @@ export const DEFAULT_OPTIONS = {
   major: { dsep: 400, dtest: 140, dlookahead: 700 },
   main: { dsep: 1400, dtest: 600, dlookahead: 1800 },
   water: { coastNoise: { noiseEnabled: true, noiseSize: 150, noiseAngle: 20 }, riverNoise: { noiseEnabled: true, noiseSize: 150, noiseAngle: 20 },
-    riverBankSize: 14, riverSize: 58, pathIterations: 10000, simplifyTolerance: 5, coastRadius: 70, riverRadius: 90 },
+    riverBankSize: 14, riverSize: 58, pathIterations: 10000, simplifyTolerance: 5, coastRadius: 70, riverRadius: 90,
+    // The most of the domain the sea may take, so every city has room
+    seaMax: .15 },
   noise: { globalNoise: false, noiseSizePark: 80, noiseAnglePark: 90, noiseSizeGlobal: 150, noiseAngleGlobal: 20 },
   // A big park is a face of the main and major roads no bigger than maxArea,
   // chosen before the minor roads so their paths wind through it. Small

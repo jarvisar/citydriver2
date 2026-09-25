@@ -67,7 +67,11 @@ export function infillStreets(roads, { faces, directions, canPlace = () => true,
       points.push(c.clone().add(c.clone().sub(d).setLength(overshoot)));
       added.push({ kind, points, infill: true });
       indices[1] = new RoadIndex(added);
-      if (level + 1 < most) for (const half of best.halves) split(half, level + 1);
+      // Split by the street as built, not as traced: simplified and rounded it
+      // can lie a metre off, and a street ending on the traced line would
+      // stop short of it
+      const built = splitPolygonByPolyline(polygon, points);
+      if (level + 1 < most) for (const half of built.length === 2 ? built : best.halves) split(half, level + 1);
   };
   for (const polygon of faces(roads)) split(polygon, 0);
   return added.length ? roads.concat(added) : roads;

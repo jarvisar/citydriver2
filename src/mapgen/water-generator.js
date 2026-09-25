@@ -1,5 +1,5 @@
 import StreamlineGenerator from './streamlines.js';
-import { bufferPolyline, insidePolygon, lineRectanglePolygon, offsetPolylineClean, extendPolyline } from './polygon-util.js';
+import { bufferPolyline, calcPolygonArea, insidePolygon, lineRectanglePolygon, offsetPolylineClean, extendPolyline } from './polygon-util.js';
 import { filletPolyline, clipInside } from './road-network.js';
 import { simplify } from './simplify.js';
 
@@ -28,21 +28,29 @@ export default class WaterGenerator extends StreamlineGenerator {
   createCoast() {
     let coastStreamline, major;
     if (this.params.coastNoise.noiseEnabled) this.tensorField.enableGlobalNoise(this.params.coastNoise.noiseAngle, this.params.coastNoise.noiseSize);
-    let reached = false;
+    // A coast across the middle would drown up to half the city, so one that
+    // takes more than seaMax of the domain is tried again; failing that, the
+    // coast with the least sea is kept
+    const domain = this.worldDimensions.x * this.worldDimensions.y, seaMax = this.params.seaMax ?? 1;
+    let best = null;
     for (let i = 0; i < this.TRIES; i++) {
       major = this.random() < .5;
       const seed = this.getSeed(major);
       if (seed === null) break;
       coastStreamline = this.extendStreamline(this.integrateStreamline(seed, major));
-      if (this.reachesEdges(coastStreamline)) { reached = true; break; }
+      if (!this.reachesEdges(coastStreamline)) continue;
+      // The promenade bends smoothly; the sea is cut by the same line
+      const road = filletPolyline(this.simplifyStreamline(coastStreamline), this.params.coastRadius ?? 70), sea = this.getSeaPolygon(road);
+      const share = calcPolygonArea(sea) / domain;
+      if (!best || share < best.share) best = { streamline: coastStreamline, major, road, sea, share };
+      if (share <= seaMax) break;
     }
     this.tensorField.disableGlobalNoise();
-    if (!reached) return false;
-    this._coastline = coastStreamline;
-    this.coastlineMajor = major;
-    // The promenade bends smoothly; the sea is cut by the same line
-    const road = filletPolyline(this.simplifyStreamline(coastStreamline), this.params.coastRadius ?? 70);
-    this._seaPolygon = this.getSeaPolygon(road);
+    if (!best) return false;
+    const road = best.road;
+    this._coastline = best.streamline;
+    this.coastlineMajor = major = best.major;
+    this._seaPolygon = best.sea;
     this.allStreamlinesSimple.push(road);
     this.tensorField.sea = this._seaPolygon;
     // Create intermediate samples

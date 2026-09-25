@@ -44,6 +44,8 @@ Changes from the original TypeScript:
   strip.
 - The river's banks and channel are offsets of one smoothed centre line, and
   its bank roads meet the coast road.
+- A coast that would give more than `water.seaMax` of the domain to the sea
+  is tried again, so every city has room.
 - The city is an island (`shore.js`) ending at a promenade outside its ring
   road: land, river and sea are polygon booleans (`booleans.js`, with
   Clipper) over the island's outline, the harbour and the river's channel,

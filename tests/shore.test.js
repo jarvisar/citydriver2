@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import Vector from '../src/mapgen/vector.js';
-import { CITY } from '../src/world/city.js';
+import { CITY, CITY_WIDTH, CITY_HEIGHT } from '../src/world/city.js';
 import { waterAt } from '../src/world/city-route.js';
 import { islandOutline, landAndWater } from '../src/mapgen/shore.js';
 import { ringRoad } from '../src/mapgen/road-network.js';
-import { insidePolygon, distanceToPolyline, interiorPoint, segmentIntersection } from '../src/mapgen/polygon-util.js';
+import { insidePolygon, distanceToPolyline, interiorPoint, segmentIntersection, calcPolygonArea } from '../src/mapgen/polygon-util.js';
 
 const inPiece = (p, piece) => insidePolygon(p, piece.outer) && !piece.holes.some(hole => insidePolygon(p, hole));
 const nearEdge = (p, pieces, distance) => pieces.some(piece => [piece.outer, ...piece.holes].some(ring => distanceToPolyline(p, [...ring, ring[0]]) < distance));
@@ -25,6 +25,14 @@ test('land, sea and river cover the whole world exactly once, and the tyres see 
   assert.ok(land > 1000);
   // The world beyond the island is sea, all the way to the fog and past it
   for (const [x, y] of [[CITY.minX + 5, 0], [CITY.maxX - 5, 0], [0, CITY.minY + 5], [0, CITY.maxY - 5], [CITY.maxX + 900, CITY.maxY + 900]]) assert.ok(waterAt(y, x), `sea at ${x},${y}`);
+});
+
+test('the sea never takes much of the city: its blocks cover most of the domain', () => {
+  // A coast across the middle once left some cities half the size of others
+  const domain = CITY_WIDTH * CITY_HEIGHT, sea = CITY.sea.length >= 3 ? calcPolygonArea(CITY.sea) : 0;
+  const blocks = CITY.blocks.reduce((sum, block) => sum + calcPolygonArea(block.polygon), 0);
+  assert.ok(sea <= domain * .15, `the sea takes ${(100 * sea / domain).toFixed(0)}% of the domain`);
+  assert.ok(blocks >= domain * .65, `blocks cover ${(100 * blocks / domain).toFixed(0)}% of the domain`);
 });
 
 test('the city stands on land: lots and kerbs never in the water, roads only over it on bridges across the river', () => {
