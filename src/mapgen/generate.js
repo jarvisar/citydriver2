@@ -8,7 +8,7 @@ import Graph from './graph.js';
 import PolygonFinder from './polygon-finder.js';
 import { FIELD_TYPE } from './basis-field.js';
 import { RoadIndex } from './road-index.js';
-import { averagePoint, calcPolygonArea, offsetPolygon, insidePolygon, polygonCentroid, bufferPolyline, polygonBounds } from './polygon-util.js';
+import { averagePoint, calcPolygonArea, offsetPolygon, insidePolygon, polygonCentroid, bufferPolyline, polygonBounds, polylineLength } from './polygon-util.js';
 import { filletPolyline, closeLoop, ringRoad, clipInside, weldEnds, circuses, cleanNetwork, spreadJunctions, pruneNetwork, joinCorners, easeKinks, endJoints } from './road-network.js';
 import { frontageLots, throughLots, chamferAcute } from './lots.js';
 import { islandOutline, landAndWater } from './shore.js';
@@ -46,9 +46,8 @@ export const DEFAULT_OPTIONS = {
   parks: { big: 1, small: 6, clusterBig: false, maxLength: 80, minArea: 2000, maxArea: 280000, bigArea: 110000, smallArea: [4500, 30000], spacing: 320 },
   // Lots in a strip round each block (see lots.js); style(centre, district,
   // downtown) may give each block its own depth and frontages. Thin blocks
-  // are cut across into lots between minArea and twice that. A few blocks
-  // stay whole, for a hall or a works.
-  lots: { maxLength: 400, minArea: 380, downtownMinArea: 640, chanceNoDivide: .04, maxLotArea: 9000, style: null },
+  // are cut across into lots between minArea and twice that.
+  lots: { maxLength: 400, minArea: 380, downtownMinArea: 640, style: null },
   // Streets within `align` metres of the ring road turn to meet it square
   ring: { inset: 45, radius: 240, wander: 16, align: 300 },
   // The city is an island whose edge is a harbour all round: the shore is a
@@ -138,8 +137,7 @@ function layDistricts(options, origin, dimensions, onLand, downtown, noise2D, ra
   const seeds = [];
   const nearestLand = p => landCells.reduce((best, i) => centreOf(i).distanceTo(p) < centreOf(best).distanceTo(p) ? i : best);
   if (options.downtown && downtown) seeds.push(nearestLand(downtown));
-  const spread = styles.length ? styles.length : 0;
-  for (let k = 0; k < spread; k++) {
+  for (let k = 0; k < styles.length; k++) {
     const scored = landCells.map(i => {
       const p = centreOf(i), apart = seeds.length ? Math.min(...seeds.map(s => centreOf(s).distanceTo(p))) : 1e9;
       return [Math.min(apart, shore[i] * cell * 3), i];
@@ -322,7 +320,7 @@ export function generateCityMap(options = {}) {
   const major = roads(majorParams, [water, main], true, BEND_RADIUS.major); lap('major');
   const pickParks = (streamlines, count, cluster = false, target = 0) => {
     const graph = new Graph(streamlines, minorParams.dstep, false);
-    const finder = new PolygonFinder(graph.nodes, { maxLength: o.parks.maxLength, minArea: o.parks.minArea, shrinkSpacing: 4, chanceNoDivide: 1 }, field, random);
+    const finder = new PolygonFinder(graph.nodes, { maxLength: o.parks.maxLength }, field);
     finder.findPolygons();
     // A park is a face of the finished network, so it must be closed inside the ring
     const polygons = finder.polygons.filter(p => { const area = calcPolygonArea(p); return area >= o.parks.minArea && area <= o.parks.maxArea && p.every(insideRing); }), parks = [];
@@ -429,7 +427,7 @@ export function generateCityMap(options = {}) {
     return nearest ? nearest.road.profile.halfWidth : ROAD_PROFILES.minor.halfWidth;
   };
   const halfWidthAt = (a, b) => edgeWidths.get(a)?.get(b) ?? nearestHalfWidth(a, b);
-  const finder = new PolygonFinder(lotGraph.nodes, { maxLength: o.lots.maxLength, shrinkSpacing: (a, b) => halfWidthAt(a, b) + SIDEWALK }, field, random);
+  const finder = new PolygonFinder(lotGraph.nodes, { maxLength: o.lots.maxLength, shrinkSpacing: (a, b) => halfWidthAt(a, b) + SIDEWALK }, field);
   finder.findPolygons();
   const blockRoads = finder.polygons.map((polygon, f) => {
     const nodes = finder.faceNodes[f], n = polygon.length, roads = [];
@@ -541,13 +539,10 @@ export function generateCityMap(options = {}) {
     const centre = polygonCentroid(inner), district = districtAt(centre.x, centre.y), downtown = downtownDistance(centre);
     const style = { ...defaultStyle(centre, district, downtown), ...(o.lots.style?.(centre, district, downtown) ?? {}) };
     block.district = district;
-    let result = null;
-    if (random() < o.lots.chanceNoDivide && calcPolygonArea(inner) <= o.lots.maxLotArea) {
-      const whole = throughLots(inner, Infinity, random);
-      result = { lots: whole.length ? whole : [] };
-      if (result.lots.length) { result.lots[0].whole = true; }
-    }
-    if (!result?.lots.length) result = frontageLots(inner, style, random) ?? frontageLots(inner, { ...style, depth: style.depth * .65 }, random);
+    // (A draw that once meant to keep a few blocks whole, though none ever
+    // were; it stays so every city keeps the same lots.)
+    random();
+    const result = frontageLots(inner, style, random) ?? frontageLots(inner, { ...style, depth: style.depth * .65 }, random);
     if (result?.yard) block.yard = result.yard;
     // Every lot keeps its pavement between it and the street
     // (A block cut across keeps only the lots on its streets: any in its
@@ -648,7 +643,7 @@ function clearOfCarriageways(polygon, roadIndex, joints = [], graze = .3) {
 }
 
 export function cityStats(city) {
-  const length = kind => city.roads.filter(r => r.kind === kind).reduce((sum, r) => sum + r.points.slice(1).reduce((acc, p, i) => acc + p.distanceTo(r.points[i]), 0), 0);
+  const length = kind => city.roads.filter(r => r.kind === kind).reduce((sum, r) => sum + polylineLength(r.points), 0);
   const areas = city.lots.map(calcPolygonArea).sort((a, b) => a - b);
   return {
     seed: city.seed, timings: city.timings,
@@ -661,4 +656,3 @@ export function cityStats(city) {
     lotCentre: city.lots.length ? averagePoint(city.lots[0]) : null,
   };
 }
-export { polygonCentroid };

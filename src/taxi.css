@@ -88,7 +88,7 @@ body[data-mode=taxi] :is(#city-stamps, .city-guide-stop) { display: none; }
 body[data-mode=taxi] #welcome .start-button:first-child { background: #ffd238; color: #172229; }
 body[data-controller=true] #taxi-buttons { display: none; }
 body[data-mode=taxi] #toast { top: calc(var(--ui-top) + 120px); }
-#app:has(#welcome:not(.hidden), #pause-overlay:not([hidden]), dialog[open], #journey-transition.active, #taxi-results:not([hidden])) :is(.taxi-hud, .taxi-task, .taxi-dash, #taxi-buttons) { visibility: hidden; pointer-events: none; }
+#app:has(#welcome:not(.hidden), #pause-overlay:not([hidden]), dialog[open], #taxi-results:not([hidden])) :is(.taxi-hud, .taxi-task, .taxi-dash, #taxi-buttons) { visibility: hidden; pointer-events: none; }
 #app:has(#taxi-results:not([hidden])) :is(.topbar, .bottom-bar, .touch-controls, .city-guide, #toast) { visibility: hidden; pointer-events: none; }
 
 /* Shared in-game map: an explicit 44px toggle, compact by default on phones. */

@@ -1,6 +1,6 @@
 # Audio
 
-Sound starts off. Press **M** or enable it in the pause menu.
+Sound starts off. Turn it on in the pause menu.
 
 **Audio settings** has volume controls for master, engine, tires/wind, environment, traffic, and music. Choose Balanced, Scenic, or Night drive as a preset. Balanced has music off. **Soften loud sounds** adds compression. Settings save locally.
 

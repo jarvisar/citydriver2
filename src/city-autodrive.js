@@ -2,7 +2,6 @@ import { navGraph } from './world/nav-graph.js';
 import { onRoadAt } from './world/city-route.js';
 
 import { turnPath, approachSpeed, wayOn } from './world/lane-paths.js';
-export { cityGreen } from './city-junctions.js';
 
 // Where a point is along an edge in the direction of travel, and how far it
 // is from the edge: its projection onto that edge alone, carried on past

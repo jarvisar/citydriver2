@@ -3,18 +3,16 @@ import { ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL, waterAt, onRoadAt, surfaceAt }
 import { junctionGeometry, CROSSWALK, stopLineDistance } from './junction-geometry.js';
 import { junctionControls } from '../city-junctions.js';
 import { cityMedians, MEDIAN_KERB } from './city-medians.js';
-import { cityParks, parkClear, pondShore, SQUARE_WALK, BED_COLOURS } from './city-parks.js';
+import { cityParks, parkClear, pondShore, circle, SQUARE_WALK, BED_COLOURS } from './city-parks.js';
 import { faceYaw, alongYaw } from './city-layout-render.js';
 import { randomAt, seededRandom } from './route.js';
-import { offsetPolyline, offsetPolylineClean, offsetPolygon, insidePolygon, polygonBounds, calcPolygonArea, signedArea, distanceToPolyline, averagePoint, bufferPolyline } from '../mapgen/polygon-util.js';
-import { navGraph } from './nav-graph.js';
+import { offsetPolyline, offsetPolylineClean, offsetPolygon, insidePolygon, polygonBounds, calcPolygonArea, signedArea, distanceToPolyline, averagePoint } from '../mapgen/polygon-util.js';
 import { cityPlaces, placeForBlock } from '../city-exploration.js';
 import { cityIslands, islandFor } from './city-islands.js';
 import { clipInside } from '../mapgen/road-network.js';
 import { rectanglePolygon } from './city-surfaces.js';
 import { frontSetback, treeRoom } from './city-buildings.js';
 import { yardParking, yardDrive, YARD_BAY, PARKED_MODELS } from './city-yards.js';
-export { yardParking, YARD_BAY } from './city-yards.js';
 
 // The streets as the city draws and furnishes them. Everything here is laid
 // out from the same few models: the road centre lines and their profiles, the
@@ -62,7 +60,6 @@ export const COLOURS = {
 // A park pond's water, a little below its lawn and clear of the ground under
 // it however its waves move
 const POND_LEVEL = ROAD_LEVEL + .08;
-const circle = (x, y, r, count = 24) => Array.from({ length: count }, (_, k) => ({ x: x + Math.cos(k / count * Math.PI * 2) * r, y: y + Math.sin(k / count * Math.PI * 2) * r }));
 
 // Points every `step` metres along a polyline, with the unit tangent
 export function alongPolyline(points, step, offset = 0) {
@@ -128,7 +125,7 @@ function kerbReach(p, nx, ny, halfWidth) {
 }
 // Where a street's own markings may run: from beyond the crosswalk at one end
 // to beyond the crosswalk at the other.
-function markedSpan(nav, edge, geometry) {
+function markedSpan(edge, geometry) {
   const end = id => { const clear = geometry.get(id)?.approaches.get(edge)?.clear; return clear === undefined ? 2 : clear + CROSSWALK + 1.2; };
   return [end(edge.a), edge.length - end(edge.b)];
 }
@@ -175,7 +172,7 @@ export function cityCrosswalks(nav) {
     all.splice(all.indexOf(lesser), 1);
   }
   all.sort((a, b) => b.halfWidth - a.halfWidth || a.edge.id - b.edge.id || a.node.id - b.node.id);
-  const kept = [], cells = new Map(), cellOf = p => `${Math.floor(p.x / 40)},${Math.floor(p.y / 40)}`;
+  const kept = [], cells = new Map();
   for (const walk of all) {
     const c = walk.outline[0], cx = Math.floor(c.x / 40), cy = Math.floor(c.y / 40);
     let clear = true;
@@ -184,7 +181,7 @@ export function cityCrosswalks(nav) {
     }
     if (!clear) continue;
     kept.push(walk);
-    const key = cellOf(c);
+    const key = `${cx},${cy}`;
     if (!cells.has(key)) cells.set(key, []);
     cells.get(key).push(walk);
   }
@@ -232,7 +229,7 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
   };
   for (const edge of nav.edges) {
     if (edge.kind === 'path') continue;
-    const profile = edge.profile, [from, to] = markedSpan(nav, edge, geometry);
+    const profile = edge.profile, [from, to] = markedSpan(edge, geometry);
     if (to - from < 4) continue;
     const span = slicePolyline(edge.points, from, to);
     if (profile.kind === 'boulevard') {
@@ -536,7 +533,7 @@ export function placeStreetFurniture(nav, bridges, add) {
     return true;
   };
   // Bus stops, which the parked cars leave clear
-  const stops = [], onPlaced = (x, y, kind, radius) => kind === 'shelter' && stops.some(stop => Math.hypot(stop.x - x, stop.y - y) < radius);
+  const stops = [], nearStop = (x, y, radius) => stops.some(stop => Math.hypot(stop.x - x, stop.y - y) < radius);
   // Street furniture stands on a pavement, whatever placed it
   const PAVED = new Set(['lamp', 'bin', 'shelter', 'stop', 'yield', 'signal', 'sign', 'parking-sign']);
   // A car park's driveway: nothing stands across its mouth, and nobody parks
@@ -933,7 +930,7 @@ export function placeStreetFurniture(nav, bridges, add) {
   for (const edge of nav.edges) {
     const profile = edge.profile;
     if (!profile.parking || edge.kind === 'path') continue;
-    const [from, to] = markedSpan(nav, edge, geometry);
+    const [from, to] = markedSpan(edge, geometry);
     for (let d = from + PARKING_BAY; d + PARKING_BAY / 2 < to; d += PARKING_BAY) for (const side of [-1, 1]) {
       const salt = edge.id * 131 + Math.round(d) * 2 + (side > 0 ? 1 : 0);
       if (randomAt(salt, 7406, CITY.seed) > .42) continue;
@@ -950,7 +947,7 @@ export function placeStreetFurniture(nav, bridges, add) {
       // and well clear of any other road's carriageway, where a street meets another at a slant
       const other = CITY.roadIndex.nearest(x, y, 24, (segment, distance) => segment.road === own || segment.road.kind === 'path' ? Infinity : distance - segment.road.profile.halfWidth);
       if (other && other.score < 3.5) continue;
-      if (onPlaced(x, y, 'shelter', 9) || acrossDrive(x, y, SIDEWALK + 5, 2)) continue;
+      if (nearStop(x, y, 9) || acrossDrive(x, y, SIDEWALK + 5, 2)) continue;
       // Cars face the way their side's traffic goes
       const heading = side > 0 ? Math.atan2(p.tx, p.ty) : Math.atan2(-p.tx, -p.ty);
       const model = PARKED_MODELS[Math.floor(randomAt(salt, 7407, CITY.seed) * PARKED_MODELS.length)];

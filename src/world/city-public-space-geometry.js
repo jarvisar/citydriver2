@@ -10,18 +10,8 @@ export function ellipsePoints(x, s, w, d, segments = ROUND_SEGMENTS) {
     return [x + Math.cos(angle) * w / 2, s + Math.sin(angle) * d / 2];
   });
 }
-export function curvedPath(points, subdivisions = 3) {
-  const closed = points[0][0] === points.at(-1)[0] && points[0][1] === points.at(-1)[1];
-  const knots = closed ? points.slice(0, -1) : points;
-  const curve = new THREE.CatmullRomCurve3(knots.map(([x, s]) => new THREE.Vector3(x, 0, s)), closed, 'centripetal');
-  return curve.getPoints((points.length - 1) * subdivisions).map(p => [p.x, p.z]);
-}
 
-export const roundDisk = new THREE.CylinderGeometry(1, 1, 1, ROUND_SEGMENTS);
 const circle = ellipsePoints(0, 0, 2, 2);
-// A quiet, asymmetric shoreline, still convex so clearance reservations stay
-// exact. A few broad lobes read as landscape rather than a regular polygon.
-export const pondOutline = ellipsePoints(0, 0, 2, 2, 32).map(([x, s]) => [x * (.92 + .08 * s), s * (.96 + .04 * x)]);
 
 function basinGeometry(outline) {
   const vertices = [];
@@ -55,9 +45,4 @@ function waterGeometry(outline) {
   return compactGeometry(geometry);
 }
 export const basinRim = basinGeometry(circle);
-export const pondRim = basinGeometry(pondOutline);
 export const basinWater = waterGeometry(circle);
-export const pondWater = waterGeometry(pondOutline);
-// Twelve fabric panels and a shallow peak replace the old flat umbrella puck.
-export const canopy = new THREE.ConeGeometry(1, 1, 12);
-export const planet = new THREE.IcosahedronGeometry(1, 1);

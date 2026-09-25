@@ -242,7 +242,6 @@ export class DrivingController {
   }
   // Lamps from daytime (0) to night (1); a storm runs them part way up.
   setLights(level) { this.night = level; for (const light of this.nightLights) light.material.emissiveIntensity = light.day + (light.night - light.day) * level; }
-  setNight(enabled) { this.setLights(enabled ? 1 : 0); }
   setAppearance(journey) { this.journeyId = journey; this.applyTrim(journey); this.updatePaint(); }
   setRoute(route, state = {}) {
     this.route = route; this.s = state.s ?? 24; this.distance = state.distance ?? 0;

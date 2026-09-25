@@ -1,7 +1,7 @@
 import { CARS } from './cars.js';
 import { carArt } from './car-art.js';
 import { TAXI_FLEET } from './taxi-fleet.js';
-import { LIVERIES, DRIVER_RANKS, rankIndex } from './taxi-career.js';
+import { LIVERIES, DRIVER_RANKS, rankIndex, liveryById } from './taxi-career.js';
 
 export const fleetMoney = amount => `$${amount.toLocaleString('en-US')}`;
 
@@ -46,7 +46,7 @@ export function setupTaxiFleet(fleet, { running, onChange, career = null, onLive
         style="--swatch:${livery.color ?? CARS.taxi.paint}" aria-label="${label}" title="${label}" ${unlocked ? '' : 'disabled'}><span class="paint-chip" aria-hidden="true"></span></button>`;
     }).join('');
     const next = LIVERIES.find(livery => !career.unlocked(livery.id));
-    dialog.querySelector('#fleet-livery-name').textContent = [`${LIVERIES.find(livery => livery.id === fleet.livery)?.name ?? LIVERIES[0].name} livery`,
+    dialog.querySelector('#fleet-livery-name').textContent = [`${liveryById(fleet.livery).name} livery`,
       next ? `${next.name} at ${DRIVER_RANKS[rankIndex(next.rank)].name}` : 'Every livery unlocked'].join(' · ');
     dialog.querySelector('#fleet-career').textContent = [rank.name, `${fleetMoney(career.earnings)} career`, `${career.fares} fare${career.fares === 1 ? '' : 's'}`,
       rank.next ? `${fleetMoney(rank.next.earnings - career.earnings)} to ${rank.next.name}` : 'Top rank'].join(' · ');
@@ -66,7 +66,7 @@ export function setupTaxiFleet(fleet, { running, onChange, career = null, onLive
     const button = event.target.closest('[data-livery]');
     if (!button || !fleet.setLivery(button.dataset.livery, career)) return;
     render();
-    dialog.querySelector('#fleet-feedback').textContent = `${LIVERIES.find(livery => livery.id === fleet.livery).name} livery selected.`;
+    dialog.querySelector('#fleet-feedback').textContent = `${liveryById(fleet.livery).name} livery selected.`;
     liveries.querySelector(`[data-livery="${fleet.livery}"]`).focus();
     onLivery?.(fleet.liveryColor); onChange();
   });

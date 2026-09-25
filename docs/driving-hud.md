@@ -23,7 +23,6 @@ With a dev server running:
 
 ```sh
 node scripts/hud-test.mjs
-node scripts/taxi-test.mjs
 ```
 
 HUD checks cover 320×568, 390×844, 568×320, 667×375, 844×390, 768×1024, and 1440×960. They check overlap, screen bounds, touch targets, map controls, pickups/deliveries, urgent deadlines, no navigation before boarding, depleted boost, large earnings, safe areas, pause, and free drive.

@@ -21,7 +21,7 @@ import { SEED } from './world/route.js';
 import { resolveWorldSeed } from './world/generation.js';
 import { CityWeather } from './world/city-weather.js';
 import { NightLighting } from './night-lighting.js';
-import { cityCell, cityDistrict, nearestLanePose, journeyStart, lanePose, roadAt } from './world/city-route.js';
+import { cityDistrict, nearestLanePose, journeyStart, lanePose, roadAt } from './world/city-route.js';
 import { CITY } from './world/city.js';
 import { navGraph } from './world/nav-graph.js';
 import { CityGuide } from './city-guide.js';
@@ -61,7 +61,6 @@ const frameClock = new FrameClock();
 let toastTimer; let sceneReady = false;
 // The chosen car and scene outlive the visit; positions and mileage do not.
 const carStorageKey = 'citydriver-car';
-const journeyStorageKey = 'citydriver-journey';
 let carId = DEFAULT_CAR;
 try { const saved = localStorage.getItem(carStorageKey); if (saved && CARS[saved]) carId = saved; } catch { /* Storage is optional. */ }
 // One colour dresses the whole garage and follows the player from car to car.
@@ -112,17 +111,14 @@ async function boot() {
     let needsRender = true;
     window.addEventListener('resize', () => { needsRender = true; });
     document.addEventListener('visibilitychange', () => { if (!document.hidden) needsRender = true; });
-    let journey = 'city';
-    try { const saved = localStorage.getItem(journeyStorageKey); if (saved && Object.hasOwn(JOURNEYS, saved)) journey = saved; } catch { /* Storage is optional. */ }
-    let world = new JOURNEYS[journey].World(scene);
-    // (whichever world is current: a route change replaces it)
-    rendering.addCuller((camera, shadow) => world.cull?.(camera, shadow));
+    const journey = 'city';
+    const world = new JOURNEYS[journey].World(scene);
+    rendering.addCuller((camera, shadow) => world.cull(camera, shadow));
     const weather = new CityWeather(scene);
     try { weather.setMode(localStorage.getItem('citydriver-weather') ?? 'auto', { immediate: true }); } catch { /* Storage is optional. */ }
     let changingJourney = true, journeyWasPaused = false;
-    const savedJourneys = Object.fromEntries(Object.keys(JOURNEYS).map(id => [id, journeyStart()]));
     // The menu cruises in a cab; starting either mode applies its own saved car.
-    const vehicle = new DrivingController(JOURNEYS[journey].route, savedJourneys[journey], 'taxi'); const audio = new DriveAudio();
+    const vehicle = new DrivingController(JOURNEYS[journey].route, journeyStart(), 'taxi'); const audio = new DriveAudio();
     const refreshAudioMixer = setupAudioMixer(audio);
     // Free driving starts on for now, while off-road collision is being tried
     // out. The hidden code only changes the paint.
@@ -130,9 +126,17 @@ async function boot() {
     vehicle.setAppearance(journey);
     vehicle.setLights(weather.state.lightLevel);
     rendering.setJourney(journey); audio.setJourney(journey);
-    const journeyDialog = $('#journey-dialog'), carDialog = $('#car-dialog'), pauseOverlay = $('#pause-overlay');
+    const carDialog = $('#car-dialog'), pauseOverlay = $('#pause-overlay');
     const fleetDialog = $('#taxi-fleet-dialog'), worldMapDialog = $('#world-map-dialog');
-    const openChooser = () => [journeyDialog, carDialog, fleetDialog, worldMapDialog].find(dialog => dialog.open) ?? null;
+    const choosers = [carDialog, fleetDialog, worldMapDialog];
+    const openChooser = () => choosers.find(dialog => dialog.open) ?? null;
+    // A chooser pauses the drive over the pause screen; closing it restores
+    // whatever pause state it found (see the dialogs' close handlers).
+    function holdForChooser() {
+      if (changingJourney || openChooser()) return false;
+      journeyWasPaused = paused; setPaused(true); pauseOverlay.hidden = true;
+      return true;
+    }
     // The pause screen is a menu too: it is up whenever the drive is paused
     // with no chooser over it, and the controller walks it the same way.
     const openPauseMenu = () => !$('#taxi-results').hidden ? $('#taxi-results') : paused && !pauseOverlay.hidden ? pauseOverlay : null;
@@ -142,6 +146,12 @@ async function boot() {
     const traffic = new Traffic(scene, vehicle.route, vehicle.s, journey, vehicle.u);
     const pedestrianContacts = new PedestrianContacts();
     const nightLighting = new NightLighting(scene);
+    // The weather's light, sky and wet roads, on the scene and every car
+    function applyWeather(dt = 0) {
+      weather.update(time, vehicle, world.origin); rendering.setWeather(weather.state, dt);
+      world.setWetness(weather.state.wetness); vehicle.setLights(weather.state.lightLevel); traffic.models.setLights(weather.state.lightLevel);
+    }
+    const haltCar = () => { vehicle.speed = 0; vehicle.knock.x = vehicle.knock.z = vehicle.knock.spin = 0; vehicle.update(0, {}); };
     const drawScene = rendering.render;
     rendering.render = (...args) => {
       nightLighting.update(world, vehicle, traffic, weather.state.lightLevel);
@@ -164,9 +174,10 @@ async function boot() {
     }
     let fleetReturnFocus;
     function openFleet() {
-      if (changingJourney || openChooser()) return;
-      fleetReturnFocus = document.activeElement;
-      journeyWasPaused = paused; setPaused(true); pauseOverlay.hidden = true;
+      // (pausing focuses Resume, so note the focus first)
+      const focus = document.activeElement;
+      if (!holdForChooser()) return;
+      fleetReturnFocus = focus;
       fleetView.render(); $('#fleet-feedback').textContent = ''; fleetDialog.showModal();
       fleetDialog.querySelector(`[data-fleet-car="${taxi.fleet.selected}"]`).focus();
     }
@@ -184,8 +195,7 @@ async function boot() {
       worldMap.draw(worldMapCanvas, vehicle);
     }
     function openWorldMap() {
-      if (changingJourney || openChooser()) return;
-      journeyWasPaused = paused; setPaused(true); pauseOverlay.hidden = true;
+      if (!holdForChooser()) return;
       if (!worldMap) {
         worldMap = new WorldMap(CITY, cityGuide.mapCache);
         // The legend: each district this city has, and its share of the blocks
@@ -267,7 +277,7 @@ async function boot() {
     function recoverTaxi(penalty = false) {
       const pose = nearestLanePose(vehicle.s, vehicle.u, vehicle.heading);
       vehicle.s = pose.s; vehicle.u = pose.u; vehicle.heading = pose.heading;
-      vehicle.speed = 0; vehicle.knock.x = vehicle.knock.z = vehicle.knock.spin = 0; vehicle.update(0, {});
+      haltCar();
       if (penalty) { taxi.timeLeft = Math.max(0, taxi.timeLeft - 5); toast('Reset −5s'); }
       taxi.hold = 0;
       world.update(vehicle.s, vehicle.u); vehicle.render(0, world.origin); rendering.snap(); needsRender = true;
@@ -315,7 +325,6 @@ async function boot() {
       $('#menu-route').textContent = 'TAXI';
       $('#scene').setAttribute('aria-label', data.canvas);
       document.querySelector('meta[name="theme-color"]').content = '#263b47';
-      document.querySelectorAll('button[data-journey]').forEach(button => button.setAttribute('aria-current', String(button.dataset.journey === journey)));
     }
     function buildCarCards() {
       const current = '<span class="chooser-current">CURRENT CAR</span>';
@@ -400,66 +409,11 @@ async function boot() {
     }
     function openCars() {
       if (started && gameMode === 'taxi') { openFleet(); return; }
-      if (changingJourney || openChooser()) return;
-      journeyWasPaused = paused; setPaused(true); pauseOverlay.hidden = true;
+      if (!holdForChooser()) return;
       carDialog.showModal();
       carDialog.querySelector(`[data-car="${carId}"]`).focus();
     }
-    function openJourneys() {
-      if (changingJourney || openChooser()) return;
-      journeyWasPaused = paused; setPaused(true); pauseOverlay.hidden = true;
-      journeyDialog.showModal();
-      journeyDialog.querySelector(`[data-journey="${journey}"]`).focus();
-    }
-    async function changeJourney(id, { regenerate = false } = {}) {
-      if (changingJourney || !JOURNEYS[id]) return;
-      if (id === journey && !regenerate) { journeyDialog.close(); return; }
-      if (!openChooser()) journeyWasPaused = paused;
-      changingJourney = true; paused = true; input.clear(); frameClock.suspend();
-      // Building and compiling the next route says nothing about how it runs,
-      // and the new route may afford a level the last one could not.
-      graphics.relax();
-      audio.setPaused(true);
-      $('#journey-transition').classList.add('active'); journeyDialog.close(); carDialog.close();
-      pauseOverlay.hidden = true;
-      savedJourneys[journey] = { s: vehicle.s, u: vehicle.u, heading: vehicle.heading, distance: vehicle.distance };
-      const nextState = regenerate ? journeyStart() : savedJourneys[id];
-      let nextWorld;
-      try {
-        await new Promise(resolve => setTimeout(resolve, 320));
-        nextWorld = new JOURNEYS[id].World(scene);
-        nextWorld.update(nextState.s, 2.4);
-        while (nextWorld.pending.length) nextWorld.update(nextState.s, 2.4);
-        await rendering.precompile([...nextWorld.warmupObjects(), ...taxiView.warmupObjects()]);
-        world.dispose(); world = nextWorld; journey = id;
-        savedJourneys[id] = nextState;
-        if (regenerate) { time = 0; hudTime = 0; vehicle.wheelSpin = 0; }
-        vehicle.setRoute(JOURNEYS[id].route, nextState);
-        autodrive.reset();
-        vehicle.setAppearance(id);
-        vehicle.setLights(weather.state.lightLevel);
-        traffic.reset(vehicle.route, vehicle.s, id); traffic.render(1, world.origin);
-        primeMenuDrive();
-        rendering.setJourney(id); audio.setJourney(id); updateJourneyUi(); paintCards(); updatePaintUi();
-        vehicle.render(0, world.origin);
-        rendering.snap(); rendering.update(vehicle.car, 1, world.origin); world.animate(time, traffic.time);
-        weather.update(time, vehicle, world.origin); rendering.setWeather(weather.state, 0);
-        world.setWetness(weather.state.wetness); vehicle.setLights(weather.state.lightLevel); traffic.models.setLights(weather.state.lightLevel);
-        updateHud();
-        if (renderer.xr.isPresenting) needsRender = true;
-        else rendering.render();
-        try { localStorage.setItem(journeyStorageKey, id); } catch { /* Still drive it for this visit. */ }
-        toast(regenerate ? 'City reset' : `${JOURNEYS[id].title} selected`);
-      } catch (error) {
-        if (nextWorld && nextWorld !== world) nextWorld.dispose();
-        console.error('Could not change journey:', error); toast('Loading failed');
-      } finally {
-        input.clear(); frameClock.reset(); changingJourney = false;
-        setPaused(journeyWasPaused || hidden());
-        $('#journey-transition').classList.remove('active');
-      }
-    }
-    async function action(name, routeNumber) {
+    async function action(name) {
       if (name === 'exitVR') { if (vr?.active) await vr.toggle(); return; }
       if (name === 'recenterVR') { rendering.vrCamera.recenter(); return; }
       if (vr?.active && name.startsWith('vrMenu')) {
@@ -474,11 +428,6 @@ async function boot() {
       }
       if (name === 'fullscreen') { await toggleFullscreen(); return; }
       if (changingJourney) return;
-      if (name === 'selectJourney') {
-        const id = Object.keys(JOURNEYS).find(id => JOURNEYS[id].routeNumber === routeNumber);
-        await changeJourney(id);
-        return;
-      }
       const chooser = openChooser();
       if (chooser) {
         if (name === 'menuClose' || (vr?.active && name === 'pause') || (name === 'car' && (chooser === carDialog || chooser === fleetDialog)) || (name === 'map' && chooser === worldMapDialog)) chooser.close();
@@ -526,17 +475,15 @@ async function boot() {
       if (name === 'pause') setPaused(!paused);
       if (name === 'reset') {
         if (taxi.running) { recoverTaxi(true); return; }
-        {
-          // The seed also initializes shared layouts and scenery at module load.
-          // Reload with a fresh seed to regenerate the whole city consistently.
-          const url = new URL(window.location.href);
-          let seed = resolveWorldSeed();
-          if (seed === SEED) seed = (seed + 1) >>> 0;
-          url.searchParams.set('seed', String(seed));
-          changingJourney = true; input.clear();
-          window.location.replace(url.href);
-          return;
-        }
+        // The seed also initializes shared layouts and scenery at module load.
+        // Reload with a fresh seed to regenerate the whole city consistently.
+        const url = new URL(window.location.href);
+        let seed = resolveWorldSeed();
+        if (seed === SEED) seed = (seed + 1) >>> 0;
+        url.searchParams.set('seed', String(seed));
+        changingJourney = true; input.clear();
+        window.location.replace(url.href);
+        return;
       }
       if (name === 'view') {
         toast(rendering.toggleView()); updateViewUi();
@@ -595,21 +542,8 @@ async function boot() {
         $('#vr-error').textContent = message; $('#vr-error').hidden = false;
       },
     });
-    $('#change-journey').addEventListener('click', openJourneys);
-    // The route button rides the title screen's stack and leads the toolbar
-    // for the drive, however the menu comes and goes.
-    function placeJourneyButton() {
-      const button = $('#change-journey'), onMenu = !$('#welcome').classList.contains('hidden');
-      for (const name of ['start-button', 'menu-secondary']) button.classList.toggle(name, onMenu);
-      if (onMenu) $('#enter-vr').before(button); else $('.drive-actions').prepend(button);
-    }
-    new MutationObserver(placeJourneyButton).observe($('#welcome'), { attributeFilter: ['class'] });
-    placeJourneyButton();
     $('#change-car').addEventListener('click', openCars);
     $('#close-cars').addEventListener('click', () => carDialog.close());
-    $('#next-journey').addEventListener('click', event => {
-      if (event.pointerType !== 'touch') action('nextJourney');
-    });
     let fullscreenPending = false;
     const desktop = window.citydriverDesktop;
     let desktopFullscreen = false;
@@ -666,17 +600,16 @@ async function boot() {
       desktop.getUpdate().then(showUpdate);
     }
     updateFullscreenUi();
-    $('#fullscreen').addEventListener('click', event => {
-      if (event.pointerType !== 'touch') action('fullscreen');
-    });
-    $('#fullscreen').addEventListener('pointerup', event => {
-      if (event.pointerType === 'touch') { event.preventDefault(); action('fullscreen'); }
-    });
-    $('#next-journey').addEventListener('pointerup', event => {
-      if (event.pointerType === 'touch') { event.preventDefault(); action('nextJourney'); }
-    });
-    $('#close-journeys').addEventListener('click', () => journeyDialog.close());
-    for (const dialog of [journeyDialog, carDialog, fleetDialog, worldMapDialog]) {
+    // A touch acts on pointerup: a secondary finger may not synthesize a
+    // click while the stick is held.
+    for (const name of ['fullscreen', 'pause', 'view']) {
+      $(`#${name}`).addEventListener('click', event => { if (event.pointerType !== 'touch') action(name); });
+      $(`#${name}`).addEventListener('pointerup', event => {
+        if (event.pointerType === 'touch') { event.preventDefault(); action(name); }
+      });
+    }
+    for (const name of ['reset', 'sound']) $(`#${name}`).addEventListener('click', () => action(name));
+    for (const dialog of choosers) {
       dialog.addEventListener('close', () => {
         if (!changingJourney) setPaused(journeyWasPaused || document.hidden);
         if (taxi.status === 'over') pauseOverlay.hidden = true;
@@ -689,15 +622,6 @@ async function boot() {
         if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close();
       });
     }
-    document.querySelectorAll('button[data-journey]').forEach(button => button.addEventListener('click', () => changeJourney(button.dataset.journey)));
-    for (const name of ['pause', 'reset', 'view', 'sound']) $(`#${name}`).addEventListener('click', event => {
-      if (['pause', 'view'].includes(name) && event.pointerType === 'touch') return;
-      action(name);
-    });
-    // A secondary finger may not synthesize a click while the stick is held.
-    for (const name of ['pause', 'view']) $(`#${name}`).addEventListener('pointerup', event => {
-      if (event.pointerType === 'touch') { event.preventDefault(); action(name); }
-    });
     $('#start').addEventListener('click', start);
     $('#free-drive').addEventListener('click', beginFree);
     $('#taxi-retry').addEventListener('click', beginTaxi);
@@ -756,8 +680,7 @@ async function boot() {
     weatherSelect.value = weather.mode;
     weatherSelect.addEventListener('change', () => {
       weather.setMode(weatherSelect.value, { immediate: paused });
-      weather.update(time, vehicle, world.origin); rendering.setWeather(weather.state, 0);
-      world.setWetness(weather.state.wetness); vehicle.setLights(weather.state.lightLevel); traffic.models.setLights(weather.state.lightLevel);
+      applyWeather();
       try { localStorage.setItem('citydriver-weather', weather.mode); } catch { /* Storage is optional. */ }
       updateHud(); needsRender = true;
     });
@@ -770,8 +693,9 @@ async function boot() {
       const degrees = ((vehicle.heading * 180 / Math.PI) % 360 + 360) % 360;
       const text = (selector, value) => { const element = $(selector); if (element.textContent !== value) element.textContent = value; };
       text('#city-heading', ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(degrees / 45) % 8]);
-      text('#city-location', cityDistrict(vehicle.s, vehicle.u));
-      text('#world-map-here', cityDistrict(vehicle.s, vehicle.u));
+      const district = cityDistrict(vehicle.s, vehicle.u);
+      text('#city-location', district);
+      text('#world-map-here', district);
       text('#weather-label', weather.state.label);
       cityGuide.update(started && !paused && !changingJourney);
       taxiView.hud(taxi, vehicle);
@@ -792,8 +716,8 @@ async function boot() {
       if (chooser) {
         const cars = chooser === carDialog;
         const fleet = chooser === fleetDialog;
-        const buttons = [...chooser.querySelectorAll(fleet ? '[data-fleet-car]:not(:disabled), [data-livery]:not(:disabled)' : cars ? '[data-car], [data-paint]' : '[data-journey]')];
-        return { id: chooser.id, title: fleet ? 'Taxi fleet' : cars ? 'Garage & paint' : chooser === worldMapDialog ? 'City map' : 'Choose a route', items: [
+        const buttons = fleet || cars ? [...chooser.querySelectorAll(fleet ? '[data-fleet-car]:not(:disabled), [data-livery]:not(:disabled)' : '[data-car], [data-paint]')] : [];
+        return { id: chooser.id, title: fleet ? 'Taxi fleet' : cars ? 'Garage & paint' : 'City map', items: [
           { label: 'Back', activate: () => chooser.close() },
           ...buttons.map(button => ({
             label: (button.hasAttribute('data-paint') ? 'Paint: ' : button.hasAttribute('data-livery') ? 'Livery: ' : '') + (button.getAttribute('aria-label') ?? button.querySelector('.chooser-card-title')?.textContent ?? button.textContent).trim() + (button.getAttribute('aria-current') === 'true' || button.getAttribute('aria-checked') === 'true' ? ' ✓' : ''),
@@ -843,7 +767,7 @@ async function boot() {
         taxi.update(dt, vehicle, traffic.enabled ? traffic.vehicles : []);
         for (const event of taxi.drainEvents()) {
           if (event.kind === 'over') {
-            vehicle.speed = 0; vehicle.knock.x = vehicle.knock.z = vehicle.knock.spin = 0; vehicle.update(0, {});
+            haltCar();
             setPaused(true); pauseOverlay.hidden = true; taxiView.hud(taxi, vehicle); taxiView.results(taxi); fleetView.render(); $('#taxi-retry').focus();
           } else if (event.kind === 'goal') {
             // A goal usually completes on a payout, whose toast lands first.
@@ -870,8 +794,7 @@ async function boot() {
         pedestrianContacts.update(vehicle, traffic, time);
         rendering.update(vehicle.car, dt, world.origin); world.animate(time, traffic.time, vr.active ? null : rendering.camera, pedestrianContacts);
         taxiView.render(taxi, vehicle, world.origin, time, pedestrianContacts);
-        weather.update(time, vehicle, world.origin); rendering.setWeather(weather.state, dt);
-        world.setWetness(weather.state.wetness); vehicle.setLights(weather.state.lightLevel); traffic.models.setLights(weather.state.lightLevel);
+        applyWeather(dt);
       }
       soundScene.interior = rendering.viewLabel === 'First-person view';
       soundScene.lightning = weather.flash; soundScene.rain = weather.state.rain; soundScene.wetness = weather.state.wetness;
@@ -897,8 +820,7 @@ async function boot() {
     }
     world.update(vehicle.s, vehicle.u);
     while (world.pending.length) world.update(vehicle.s, vehicle.u);
-    weather.update(time, vehicle, world.origin); rendering.setWeather(weather.state, 0);
-    world.setWetness(weather.state.wetness); vehicle.setLights(weather.state.lightLevel); traffic.models.setLights(weather.state.lightLevel);
+    applyWeather();
     buildCarCards(); buildPaintSwatches(); updateCarUi();
     vehicle.render(0, world.origin); traffic.render(1, world.origin); rendering.update(vehicle.car, 1, world.origin); updateHud(); updateJourneyUi(); updateViewUi(); updateGraphicsUi();
     nightLighting.update(world, vehicle, traffic, weather.state.lightLevel);
@@ -908,7 +830,7 @@ async function boot() {
     renderer.setAnimationLoop(frame);
     void vr.detect();
     // Development-only inspection surface for automated driving and streaming checks.
-    if (import.meta.env.DEV) window.__citydriver = { seed: SEED, city: CITY, nav: navGraph(), lanePose, roadAt, nearestLanePose, vehicle, traffic, weather, autodrive, audio, graphics, vr, cityGuide, taxi, taxiView, beginTaxi, beginFree, get gameMode() { return gameMode; }, get world() { return world; }, rendering, input, action, changeJourney, chooseCar, applyPaint, get carId() { return carId; }, get paint() { return paint; }, get journey() { return journey; }, get changingJourney() { return changingJourney; }, get paused() { return paused; }, get started() { return started; } };
+    if (import.meta.env.DEV) window.__citydriver = { seed: SEED, city: CITY, nav: navGraph(), lanePose, roadAt, nearestLanePose, vehicle, traffic, weather, autodrive, audio, graphics, vr, cityGuide, taxi, taxiView, beginTaxi, beginFree, get gameMode() { return gameMode; }, world, rendering, input, action, chooseCar, applyPaint, get carId() { return carId; }, get paint() { return paint; }, get journey() { return journey; }, get changingJourney() { return changingJourney; }, get paused() { return paused; }, get started() { return started; } };
   } catch (error) { console.error('Could not start Citydriver:', error); $('#loading').classList.add('loaded'); $('#error').hidden = false; }
 }
 boot();

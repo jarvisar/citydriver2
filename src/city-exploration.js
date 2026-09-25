@@ -2,12 +2,10 @@ import { CITY, cityDistrict, cityCell, cityStyleDistrict } from './world/city.js
 import { lanePose, nearestLanePose, onRoadAt } from './world/city-route.js';
 import { CITY_PLACES, PLACE_TYPES, LANDMARK_TYPES, SPACE_NAMES, VENUE_DISTRICTS } from './world/city-places.js';
 import { placeName } from './world/city-businesses.js';
-import { navGraph } from './world/nav-graph.js';
 import { randomAt } from './world/route.js';
 import { landmarkSite, venueFits, venueFootprint, VENUE_SIZE } from './world/landmark-site.js';
 import { cityParks } from './world/city-parks.js';
 import { averagePoint, calcPolygonArea } from './mapgen/polygon-util.js';
-export { routeDistance } from './world/nav-graph.js';
 
 // Places worth a taxi ride. The open-air ones are the city's parks and
 // squares, each laid out as what it is (see world/city-parks.js). The rest
@@ -221,51 +219,22 @@ export function nearbyPlaces(s, u, radius = 8) {
   return cityPlaces().filter(place => Math.hypot(place.s - s, place.u - u) <= reach)
     .sort((a, b) => Math.hypot(a.s - s, a.u - u) - Math.hypot(b.s - s, b.u - u) || a.id.localeCompare(b.id));
 }
-// The drive to a place ends on the street beside its entrance.
-export function placeRoute(s, u, place) {
-  if (!place) return [];
-  return navGraph().route({ s, u }, place.entrance);
-}
-
 export class CityExploration {
   // The discoveries last for the visit: through every taxi run and free
   // drive, but not a reload
   constructor() {
-    this.found = new Set(); this.target = null; this.places = []; this.cell = null;
-    this.justArrived = null;
+    this.found = new Set(); this.places = []; this.cell = null;
   }
-  refresh(s, u) {
-    const cell = cityCell(s, u).key;
-    if (this.cell !== cell) {
-      this.cell = cell; this.places = nearbyPlaces(s, u);
-      if (this.target && this.target.type !== 'cityhall' && Math.hypot(this.target.s - s, this.target.u - u) > 4000) this.target = null;
-    }
-    if (!this.target) this.target = this.places.find(p => !this.found.has(p.type)) ?? this.places[0] ?? null;
-  }
-  next(s, u, type = null) {
-    this.refresh(s, u);
-    const choices = [...this.places].sort((a, b) => Math.hypot(a.s - s, a.u - u) - Math.hypot(b.s - s, b.u - u));
-    const selected = type ? choices.find(p => p.type === type) ?? cityPlaces().find(p => p.type === type) ?? null
-      : choices[(choices.findIndex(p => p.id === this.target?.id) + 1) % choices.length];
-    if (!selected) return null;
-    this.target = selected;
-    this.justArrived = null;
-    return this.target;
-  }
+  // The places near the car, looked up again only when it changes cell
   update(s, u, active = true) {
-    this.refresh(s, u);
+    const cell = cityCell(s, u).key;
+    if (this.cell !== cell) { this.cell = cell; this.places = nearbyPlaces(s, u); }
     if (!active) return [];
     const discoveries = [];
     if (onRoadAt(s, u)) for (const place of this.places) {
       if (Math.hypot(place.s - s, place.u - u) > 69 && Math.hypot(place.entrance.s - s, place.entrance.u - u) > 24) continue;
-      if (place.id === this.target?.id) this.justArrived = place;
       if (this.found.has(place.type)) continue;
       this.found.add(place.type); discoveries.push(place);
-    }
-    if (this.justArrived && Math.hypot(this.justArrived.s - s, this.justArrived.u - u) > 125) {
-      const previous = this.justArrived.id;
-      this.target = this.places.find(p => !this.found.has(p.type)) ?? this.places.find(p => p.id !== previous) ?? null;
-      this.justArrived = null;
     }
     return discoveries;
   }

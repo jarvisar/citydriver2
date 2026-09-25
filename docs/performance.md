@@ -35,9 +35,7 @@ Smooth and Basic leave the backdrop blur off the 95%-opaque driving HUD. The HUD
 
 Nearby 3×3 collision blocks must be ready immediately. Background construction works toward a soft 3 ms deadline and keeps unfinished blocks outside the scene. Distant models cover deferred detail.
 
-Prefetch caches hold up to five detailed blocks and 21 outer skyline blocks. A separate cache prepares outgoing detailed blocks for distant rendering. Turning away releases unused work. Startup, resets, and teleports can still require synchronous generation.
-
-See [profiling and measurements](performance-overhaul.md) for cache details, buffer reuse, and recorded comparisons.
+Detailed blocks the car leaves wait detached in a spare cache (up to 2 × (2r + 1) blocks for a detail radius r), and spare frame budget prefetches the ring the car is heading for into it, so crossing a cell usually builds nothing. Every cell has a skyline block, shown within four cells of the detailed ring. Startup, resets, and teleports can still require synchronous generation.
 
 ## Night lighting
 
@@ -55,7 +53,7 @@ With a dev server running:
 npm run test:smoke
 ```
 
-Set `TEST_URL`, `CHROME_PATH`, or `PERF_LABEL` to change the server, browser, or report folder. Reports go to `.artifacts/performance/<PERF_LABEL>/`.
+Set `TEST_URL` or `CHROME_PATH` to change the server or browser. Screenshots go to `.artifacts/smoke/`.
 
 The smoke test uses seed `4817` at 1280×800 and reports an approximate frame rate after a short drive.
 

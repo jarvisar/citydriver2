@@ -6,7 +6,6 @@ import { Parts } from './city-assets.js';
 const cream = '#ede0bf', dark = '#354e58', metal = '#b9c2b7';
 const cylinder = new THREE.CylinderGeometry(1, 1, 1, 12);
 export const signalLens = new THREE.CircleGeometry(1, 12);
-export const produce = new THREE.IcosahedronGeometry(1, 0);
 
 export function round(c, x, y, s, w, h, d, color, axis = 'y', kind = 'solid', yaw = 0) {
   const scale = axis === 'x' ? [h / 2, w, d / 2] : axis === 'z' ? [h / 2, d, w / 2] : [w / 2, h, d / 2];
@@ -39,19 +38,6 @@ function clockGeometry() {
 export const clockFace = clockGeometry();
 export function clock(c, x, y, s, diameter, yaw = 0) {
   c.item('detail-clock', clockFace, c.materials.clock, [x, y, -s], [diameter / 2, diameter / 2, 1], '#ffffff', yaw);
-}
-
-function wheelGeometry() {
-  const p = new Parts();
-  p.cylinder([0, 0, 0], .5, .5, 1, '#293437', 10, [0, 0, Math.PI / 2]);
-  p.cylinder([0, 0, 0], .24, .24, 1.04, metal, 8, [0, 0, Math.PI / 2]);
-  return p.finish();
-}
-const wheel = wheelGeometry();
-export function wheels(c, x, y, s, track, wheelbase, diameter, width) {
-  for (const side of [-1, 1]) for (const end of [-1, 1]) {
-    c.item('detail-wheel', wheel, c.materials.props, [x + side * track / 2, y, -(s + end * wheelbase / 2)], [width, diameter, diameter]);
-  }
 }
 
 // Sloped cab glazing and ten-sided tires match the ordinary traffic fleet.
@@ -93,14 +79,3 @@ function fireEngineGeometry() {
   return p.finish();
 }
 export const fireEngine = fireEngineGeometry();
-
-function bellGeometry() {
-  const p = new Parts();
-  p.cylinder([0, .1, 0], .24, .35, .65, '#ab8962', 12);
-  p.cylinder([0, -.32, 0], .35, .5, .2, '#ab8962', 12);
-  p.cylinder([0, -.45, 0], .5, .5, .07, '#806e4c', 12);
-  p.cylinder([0, -.5, 0], .08, .08, .16, dark, 8);
-  return p.finish();
-}
-export const bell = bellGeometry();
-export const hoop = new THREE.TorusGeometry(.78, .065, 4, 16).rotateX(Math.PI / 2);

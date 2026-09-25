@@ -34,8 +34,8 @@ export class NavGraph {
     };
     // A street ends where another carries on from it with a different profile
     // (an avenue into a boulevard), so each edge is marked as its own road
-    const profileOf = r => CITY.roads[r]?.profile ?? null;
-    const isJunction = i => raw[i].adj.length !== 2 || profileOf(raw[i].roads[0]) !== profileOf(raw[i].roads[1]);
+    const roadProfile = r => CITY.roads[r]?.profile ?? null;
+    const isJunction = i => raw[i].adj.length !== 2 || roadProfile(raw[i].roads[0]) !== roadProfile(raw[i].roads[1]);
     const seen = new Set(), key = (a, b) => (a < b ? `${a}:${b}` : `${b}:${a}`);
     const walk = (start, first, road) => {
       let previous = start, current = first;

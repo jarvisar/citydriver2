@@ -101,7 +101,6 @@
         <div class="menu-actions">
           <button id="start" class="start-button"><svg class="wheel-icon" viewBox="0 0 32 32" fill="none" aria-hidden="true"><circle cx="16" cy="16" r="12.5" stroke="currentColor" stroke-width="3"/><path d="M4 14h5c3 0 4-3 7-3s4 3 7 3h5v4h-6a4 4 0 0 0-4 4v6h-4v-6a4 4 0 0 0-4-4H4Z" fill="currentColor"/></svg><span>Start run</span></button>
           <button id="free-drive" type="button" class="start-button menu-secondary"><span>Free drive</span></button>
-          <button id="change-journey" hidden class="journey-button start-button menu-secondary" aria-haspopup="dialog"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="control-label">Change route</span></button>
           <button id="enter-vr" class="start-button vr-entry menu-secondary" type="button" hidden><svg class="vr-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3.8 7.5h16.4a1.8 1.8 0 0 1 1.8 1.8v5.4a1.8 1.8 0 0 1-1.8 1.8h-3.6a2 2 0 0 1-1.7-.9l-1.2-1.8a2 2 0 0 0-3.4 0l-1.2 1.8a2 2 0 0 1-1.7.9H3.8A1.8 1.8 0 0 1 2 14.7V9.3a1.8 1.8 0 0 1 1.8-1.8Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg><span class="vr-entry-label">Enter VR</span></button>
         </div>
         <span class="controller-hint">D-pad / stick: choose · A / Cross: select · RT / R2: drive</span>
@@ -170,18 +169,10 @@
         </div>
       </div>
       <footer class="bottom-bar">
-        <div class="controls"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> <span class="control-label">drive</span></span><button id="next-journey" hidden title="Next scene (N / RB / R1)" aria-label="Next scene"><kbd>N</kbd><svg class="touch-utility-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 5 10 7-10 7V5ZM18 5v14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> <span class="control-label">next</span></button></div>
+        <div class="controls"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> <span class="control-label">drive</span></span></div>
       </footer>
       <div class="touch-controls" role="group" aria-label="Touch driving controls"><div id="touch-stick" role="group" aria-label="Virtual joystick" aria-describedby="stick-help"><span class="stick-guide" aria-hidden="true"></span><span class="stick-thumb" aria-hidden="true"></span></div><span id="stick-help"><span class="stick-help-copy">Drag anywhere to drive<br><span class="stick-help-line">Release to stop</span></span></span></div>
       <div id="toast" role="status"></div>
-      <dialog id="journey-dialog" class="chooser" aria-labelledby="journey-heading" aria-describedby="journey-description">
-        <div class="chooser-heading"><span class="eyebrow">CITYDRIVER</span><button id="close-journeys" class="icon-button" aria-label="Close city information"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
-        <h2 id="journey-heading" class="chooser-title">City</h2>
-        <p id="journey-description" class="chooser-intro">Drive anywhere.</p>
-        <div class="chooser-options">
-          <button class="chooser-card journey-card" data-journey="city" aria-label="City" aria-current="true"><span class="chooser-card-copy"><span class="chooser-card-title">City</span><span class="chooser-card-description">Free drive.</span><span class="chooser-current">CITY</span></span></button>
-        </div>
-      </dialog>
       <dialog id="world-map-dialog" class="chooser world-map-dialog" aria-labelledby="world-map-heading">
         <div class="chooser-heading"><h2 id="world-map-heading" class="garage-title">City map</h2><button type="button" id="close-world-map" class="icon-button" aria-label="Close city map"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
         <div class="world-map-body">
@@ -224,7 +215,6 @@
         <p id="fleet-feedback" role="status" aria-live="polite"></p>
         <p id="fleet-save" hidden>Saving is unavailable. Your fleet is kept for this visit only.</p>
       </dialog>
-      <div id="journey-transition" aria-hidden="true"><span>Loading…</span></div>
       <div id="error" class="error" hidden><h2>Unable to start the game</h2><p>WebGL 2 required. Update your browser and enable hardware acceleration.</p><button onclick="location.reload()">Try again</button></div>
     </main>
     <script type="module" src="/src/main.js"></script>

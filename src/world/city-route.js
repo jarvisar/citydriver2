@@ -1,4 +1,4 @@
-import { CITY, cityCell, cityDistrict } from './city.js';
+import { CITY } from './city.js';
 import { medianAt, MEDIAN_KERB } from './city-medians.js';
 export { cityCell, cityDistrict } from './city.js';
 
@@ -10,7 +10,6 @@ export { cityCell, cityDistrict } from './city.js';
 export const ROAD_LEVEL = 24;
 export const PAVEMENT_LEVEL = 24.12;
 export const WATER_LEVEL = 17.8;
-export const ROAD_HALF_WIDTH = 9;
 
 // Nearest road by how far inside its surface the point is
 export function roadAt(s, u, radius = 26) {
@@ -20,7 +19,6 @@ export function onRoadAt(s, u) {
   const road = roadAt(s, u);
   return road && road.distance <= road.road.profile.halfWidth ? road : null;
 }
-export const cityRoadDistance = (s, u) => { const road = roadAt(s, u, 60); return road ? road.distance - road.road.profile.halfWidth : Infinity; };
 export const waterAt = (s, u) => CITY.mask.at(u, s);
 // What the ground is at a point: 'pavement', 'median' (the raised strip down a
 // boulevard), 'road' or 'water'. Roads carried over the water are bridges, so

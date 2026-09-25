@@ -53,10 +53,6 @@ export function insidePolygon(point, polygon) {
   return inside;
 }
 
-export function pointInRectangle(point, origin, dimensions) {
-  return point.x >= origin.x && point.y >= origin.y && point.x <= origin.x + dimensions.x && point.y <= origin.y + dimensions.y;
-}
-
 // Drops repeated consecutive vertices, including a closing repeat of the first.
 export function dedupePolygon(polygon, minDistance = 1e-6) {
   const out = [], apart = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) > minDistance;

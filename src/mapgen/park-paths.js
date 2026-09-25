@@ -1,5 +1,5 @@
 import Vector from './vector.js';
-import { insidePolygon, calcPolygonArea, polygonBounds, dedupePolygon, signedArea, segmentIntersection } from './polygon-util.js';
+import { insidePolygon, calcPolygonArea, polygonBounds, dedupePolygon, signedArea, segmentIntersection, polylineLength } from './polygon-util.js';
 import { insetPolygon } from './booleans.js';
 import { filletPolyline } from './road-network.js';
 
@@ -19,7 +19,6 @@ import { filletPolyline } from './road-network.js';
 export const PARK_PATH = { overshoot: .6, step: 4 };
 
 const v = (x, y) => new Vector(x, y);
-const lengthOf = points => points.slice(1).reduce((sum, p, i) => sum + p.distanceTo(points[i]), 0);
 
 // Distance from p to the nearest edge of a closed polygon
 function edgeDistance(p, polygon) {
@@ -220,5 +219,5 @@ export function parkLayout(park, { halfWidthAt, sidewalk = 4.2, junctionNear, st
   if (loop && paths.some(path => path !== ringPath && crosses(path, loop))) paths.push(loop);
   else loop = null;
   const plaza = reachesRing ? { x: centre.x, y: centre.y, radius: pond ? 0 : plazaRadius, kind: pond ? 'pond' : random() < .6 ? 'fountain' : 'bandstand' } : null;
-  return { paths: paths.map(path => path.filter((p, i) => !i || p.distanceTo(path[i - 1]) > 1e-3)), plaza, pond: reachesRing ? pond : null, lawn, loop, gates: used.map(g => ({ x: g.p.x, y: g.p.y, street: { x: g.street.x, y: g.street.y }, profile: g.street.road.profile })), length: paths.reduce((sum, path) => sum + lengthOf(path), 0) };
+  return { paths: paths.map(path => path.filter((p, i) => !i || p.distanceTo(path[i - 1]) > 1e-3)), plaza, pond: reachesRing ? pond : null, lawn, loop, gates: used.map(g => ({ x: g.p.x, y: g.p.y, street: { x: g.street.x, y: g.street.y }, profile: g.street.road.profile })), length: paths.reduce((sum, path) => sum + polylineLength(path), 0) };
 }

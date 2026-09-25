@@ -9,7 +9,6 @@
     "build": "vite build",
     "preview": "vite preview --host",
     "test": "node --import ./tests/world-seed.js --test tests/*.test.js",
-    "test:browser": "node scripts/citydriver-smoke.mjs",
     "test:fleet": "node scripts/taxi-fleet-test.mjs",
     "electron:web": "vite build --outDir dist-electron",
     "electron:dev": "node scripts/electron-launch.mjs",

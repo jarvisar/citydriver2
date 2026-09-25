@@ -1,5 +1,5 @@
 import { CITY } from './city.js';
-import { randomAt } from './route.js';
+import { randomAt, clamp } from './route.js';
 import { deepestPoint } from '../mapgen/park-paths.js';
 import { insidePolygon, distanceToPolyline, offsetPolygon, signedArea, calcPolygonArea, bufferPolyline } from '../mapgen/polygon-util.js';
 import { difference, solids } from '../mapgen/booleans.js';
@@ -17,16 +17,14 @@ import { difference, solids } from '../mapgen/booleans.js';
 // and lawns between its walks; a lawn has its trees in groves. Trees, lamps
 // and benches ask `parkClear` where they may stand.
 export const SQUARE_WALK = 1.8;
-// The discoveries a square can be, and which of them are paved
-export const SQUARE_DESIGNS = ['plaza', 'clock', 'art', 'garden', 'farmersmarket'];
+// The square designs that are paved
 const PAVED = new Set(['plaza', 'clock', 'farmersmarket']);
 // Stall awnings and flower beds
 export const STALL_COLOURS = ['#c9574a', '#d99a3e', '#4f8a78', '#5b76a8', '#b5577e'];
 export const BED_COLOURS = ['#d8586b', '#e7b33f', '#b46fc4', '#f08a4b', '#e9e2d0'];
 
-const circle = (x, y, r, count = 24) => Array.from({ length: count }, (_, k) => ({ x: x + Math.cos(k / count * Math.PI * 2) * r, y: y + Math.sin(k / count * Math.PI * 2) * r }));
+export const circle = (x, y, r, count = 24) => Array.from({ length: count }, (_, k) => ({ x: x + Math.cos(k / count * Math.PI * 2) * r, y: y + Math.sin(k / count * Math.PI * 2) * r }));
 const distanceToRing = (p, ring) => distanceToPolyline(p, [...ring, ring[0]]);
-const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 
 // The direction of a polygon's longest edge, which a square's rows follow
 function longestAxis(ring) {
@@ -268,4 +266,3 @@ export function parkClear(entry, x, y, margin = 3) {
 
 // The pond's edge, its water a little way down inside it
 export const pondShore = pond => offsetPolygon(pond, -.6);
-export const parkVariant = (entry, salt) => randomAt(entry.index, salt, CITY.seed);

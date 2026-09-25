@@ -1,12 +1,12 @@
 import Vector from '../mapgen/vector.js';
 import { SEED } from './route.js';
 import { generateCityMap, carriagewayScore, ROAD_PROFILES, SIDEWALK } from '../mapgen/generate.js';
-import { RoadIndex } from '../mapgen/road-index.js';
+import { FIELD_TYPE } from '../mapgen/basis-field.js';
 import { shoreRuns } from '../mapgen/shore.js';
 import { difference, intersection, region, solids, growRound, union, clean } from '../mapgen/booleans.js';
 import { endJoints, slicePolyline } from '../mapgen/road-network.js';
 import { insidePolygon, offsetPolylineClean, bufferPolyline, averagePoint, calcPolygonArea,
-  offsetPolygon, polygonBounds, distanceToPolyline, signedArea, dedupePolygon } from '../mapgen/polygon-util.js';
+  offsetPolygon, polygonBounds, distanceToPolyline, signedArea, dedupePolygon, polylineLength } from '../mapgen/polygon-util.js';
 
 // One city per visit, generated from the URL seed the way citydriver's grid
 // was: roads, water, blocks and lots come from the MapGenerator port, and this
@@ -186,7 +186,7 @@ const WALK_PIECE = 108;
 // A polyline cut every `length` metres. Each cut falls inside a segment, so
 // the pieces' square ends meet exactly.
 function inPieces(points, length) {
-  const total = points.slice(1).reduce((sum, p, i) => sum + p.distanceTo(points[i]), 0), out = [];
+  const total = polylineLength(points), out = [];
   for (let from = 0; from < total; from += length) {
     const to = total - (from + length) < 1 ? total : from + length, piece = slicePolyline(points, from, to);
     if (piece.length > 1) out.push(piece);
@@ -250,7 +250,7 @@ export function buildCity(seed = SEED) {
   const walls = shores.map(run => run.points);
   const mask = new WaterMask(minX, minY, maxX, maxY);
   for (const piece of land) mask.fillLand([piece.outer, ...piece.holes]);
-  const radial = map.field.getBasisFields().find(field => field.FIELD_TYPE === 0);
+  const radial = map.field.getBasisFields().find(field => field.FIELD_TYPE === FIELD_TYPE.Radial);
   const downtown = radial ? { u: radial.centre.x, s: radial.centre.y, radius: radial._size } : { u: 0, s: 0, radius: 300 };
 
   // Kerbs: every block's pavement edge with its junction corners rounded, and
@@ -407,9 +407,8 @@ export function buildCity(seed = SEED) {
       if (!keep[lo]) return [];
       while (lo > 0 && keep[lo - 1]) lo--;
       while (hi < keep.length - 1 && keep[hi + 1]) hi++;
-      const best = [lo, hi];
-      if (best[1] - best[0] < 4) return [];
-      const line = samples.slice(Math.max(0, best[0] - 1), Math.min(samples.length, best[1] + 2));
+      if (hi - lo < 4) return [];
+      const line = samples.slice(Math.max(0, lo - 1), Math.min(samples.length, hi + 2));
       const polygon = difference([bufferPolyline(line, width / 2)], region(others)).sort((p, q) => calcPolygonArea(q.outer) - calcPolygonArea(p.outer))[0]?.outer;
       return polygon ? [{ side, line, width, polygon }] : [];
     });
@@ -518,4 +517,3 @@ export function cityCell(s, u) {
   return { ix, iz, key: `${ix},${iz}` };
 }
 export const profileOf = kind => ROAD_PROFILES[kind] ?? ROAD_PROFILES.minor;
-export { averagePoint, calcPolygonArea, RoadIndex };

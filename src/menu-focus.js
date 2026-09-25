@@ -14,25 +14,25 @@ export function menuTargets(root) {
 // row. The custom paint well sits in a row of swatches, so left and right pass
 // it by and A turns its hue instead: no native picker is ever needed.
 function adjust(element, step, { colour = false } = {}) {
-  if (element.matches('input[type="range"]')) {
-    if (element.matches('[data-audio-channel]')) element.value = Math.max(0, Math.min(100, Number(element.value) + step * 5));
-    else if (step > 0) element.stepUp(); else element.stepDown();
+  // (as though the player had changed it)
+  const changed = () => {
     element.dispatchEvent(new Event('input', { bubbles: true }));
     element.dispatchEvent(new Event('change', { bubbles: true }));
     return true;
+  };
+  if (element.matches('input[type="range"]')) {
+    if (element.matches('[data-audio-channel]')) element.value = Math.max(0, Math.min(100, Number(element.value) + step * 5));
+    else if (step > 0) element.stepUp(); else element.stepDown();
+    return changed();
   }
   if (element.matches('select')) {
     const count = element.options.length;
     element.selectedIndex = (element.selectedIndex + step + count) % count;
-    element.dispatchEvent(new Event('input', { bubbles: true }));
-    element.dispatchEvent(new Event('change', { bubbles: true }));
-    return true;
+    return changed();
   }
   if (colour && element.matches('input[type="color"]')) {
     element.value = rotateHue(element.value, step * 20);
-    element.dispatchEvent(new Event('input', { bubbles: true }));
-    element.dispatchEvent(new Event('change', { bubbles: true }));
-    return true;
+    return changed();
   }
   return false;
 }

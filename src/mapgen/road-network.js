@@ -1,6 +1,6 @@
 import Vector from './vector.js';
 import { findIntersections } from './graph.js';
-import { insidePolygon, segmentIntersection, signedArea, polygonCentroid } from './polygon-util.js';
+import { insidePolygon, segmentIntersection, signedArea, polygonCentroid, polylineLength } from './polygon-util.js';
 import { RoadIndex } from './road-index.js';
 
 // The streamlines MapGenerator integrates are a sketch of a street network:
@@ -12,9 +12,8 @@ import { RoadIndex } from './road-index.js';
 // next street or are cut back to the last junction. Every later stage (the
 // blocks, the lots, the junctions, the traffic) relies on it being clean.
 
-const lengthOf = points => { let d = 0; for (let i = 1; i < points.length; i++) d += points[i].distanceTo(points[i - 1]); return d; };
 // A street that comes back round to where it began (round a circus, say)
-const isLoop = points => points.length > 3 && points[0].distanceTo(points[points.length - 1]) <= .5 && lengthOf(points) >= 5;
+const isLoop = points => points.length > 3 && points[0].distanceTo(points[points.length - 1]) <= .5 && polylineLength(points) >= 5;
 // Roads the cleanup never cuts: the ring, the waterside roads, and each circus
 const held = (fixed, road) => fixed.has(road.kind) || road.circus === true;
 
@@ -80,8 +79,8 @@ export function filletPolyline(points, maxRadius, { minTurn = .035, arcStep = AR
 // to round like any other bend
 export function closeLoop(points, trim = 12) {
   const n = points.length;
-  if (n < 4 || points[0].distanceTo(points[n - 1]) > 1e-6 || lengthOf(points) < trim * 8) return points;
-  const kept = slicePolyline(points, trim, lengthOf(points) - trim);
+  if (n < 4 || points[0].distanceTo(points[n - 1]) > 1e-6 || polylineLength(points) < trim * 8) return points;
+  const kept = slicePolyline(points, trim, polylineLength(points) - trim);
   return kept.length > 2 ? [...kept, kept[0].clone()] : points;
 }
 function dedupe(points, epsilon = 1e-4) {
@@ -207,7 +206,7 @@ export function clipInside(points, polygon, overshoot = .6, keepInside = true) {
     if (run) run.push(p.clone());
   }
   if (run && run.length > 1) runs.push(run);
-  return runs.filter(r => r.length > 1 && lengthOf(r) > 1);
+  return runs.filter(r => r.length > 1 && polylineLength(r) > 1);
 }
 
 // A cell hash of segments for casting rays through the network
@@ -383,7 +382,7 @@ function unswerve(roads, { fixed, reach = 35, window = 3, minRadius = 20 } = {})
     if (held(fixed, road) || road.kind === 'path' || isLoop(road.points)) return road;
     let points = road.points;
     for (const atStart of [false, true]) {
-      const line = atStart ? points.slice().reverse() : points, total = lengthOf(line);
+      const line = atStart ? points.slice().reverse() : points, total = polylineLength(line);
       if (total < reach + 20) continue;
       const at = d => { const slice = slicePolyline(line, 0, Math.max(1e-6, total - d)); return slice[slice.length - 1]; };
       // The furthest tight bend from the end, within reach of it
@@ -458,7 +457,7 @@ export function circuses(roads, { maxRadius = 55, radius = 40, roundness = .7, s
   const found = [], fixedIndex = new RoadIndex(roads.filter(road => held(fixed, road)));
   for (const road of roads) {
     if (held(fixed, road) || road.kind === 'path' || !isLoop(road.points)) continue;
-    const ring = road.points.slice(0, -1), area = Math.abs(signedArea(ring)), perimeter = lengthOf(road.points);
+    const ring = road.points.slice(0, -1), area = Math.abs(signedArea(ring)), perimeter = polylineLength(road.points);
     if (area > Math.PI * maxRadius * maxRadius || 4 * Math.PI * area / (perimeter * perimeter) < roundness) continue;
     const centre = polygonCentroid(ring), size = Math.max(radius, Math.sqrt(area / Math.PI));
     if (found.some(c => c.centre.distanceTo(centre) < c.radius + size + spacing)) continue;
@@ -503,7 +502,7 @@ export function trimEnds(roads, { stub = 18, overshoot = .6, fixed = new Set(['c
 //  keepOver: a dead end longer than this that cannot be joined stays, as a cul-de-sac
 //  canCross(p, road): whether an extension may pass through p
 export function cleanNetwork(roads, { stub = 18, overshoot = .6, reach = 150, keepOver = 90, snap = 12, fixed = new Set(['coast', 'riverbank', 'ring']), extendable = new Set(['main', 'major', 'minor']), canCross = () => true, halfWidthOf = () => 6.5 } = {}) {
-  let list = roads.filter(road => road.points.length > 1 && lengthOf(road.points) > 1).map(road => ({ ...road, points: road.points.map(p => p.clone()) }));
+  let list = roads.filter(road => road.points.length > 1 && polylineLength(road.points) > 1).map(road => ({ ...road, points: road.points.map(p => p.clone()) }));
   const trim = () => { list = trimEnds(list, { stub, overshoot, fixed }); };
   trim();
   list = unhug(list, { fixed, halfWidthOf });
@@ -771,7 +770,7 @@ export function pruneNetwork(roads, { stub = 18, overshoot = .6, fixed = new Set
       let points = road.points;
       for (const { junction, towards } of cuts.get(r)) {
         // Which end of the road the dead chain is at, and where along it the junction is
-        let best = 0, bestDistance = Infinity, travelled = 0, at = 0;
+        let best = 0, bestDistance = Infinity, travelled = 0;
         for (let i = 0; i < points.length - 1; i++) {
           const a = points[i], b = points[i + 1], dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1;
           const t = Math.max(0, Math.min(1, ((junction.x - a.x) * dx + (junction.y - a.y) * dy) / l2));
@@ -779,12 +778,11 @@ export function pruneNetwork(roads, { stub = 18, overshoot = .6, fixed = new Set
           if (d < bestDistance) { bestDistance = d; best = travelled + Math.sqrt(l2) * t; }
           travelled += Math.sqrt(l2);
         }
-        at = best;
-        const total = lengthOf(points), startSide = points[0].distanceTo(towards) + 1e-6 < points[points.length - 1].distanceTo(towards) ? towards.distanceTo(points[0]) < towards.distanceTo(points[points.length - 1]) : false;
-        points = startSide ? slicePolyline(points, Math.max(0, at - overshoot), total) : slicePolyline(points, 0, Math.min(total, at + overshoot));
+        const total = polylineLength(points), startSide = points[0].distanceTo(towards) + 1e-6 < points[points.length - 1].distanceTo(towards);
+        points = startSide ? slicePolyline(points, Math.max(0, best - overshoot), total) : slicePolyline(points, 0, Math.min(total, best + overshoot));
         if (points.length < 2) break;
       }
-      return points.length > 1 && lengthOf(points) > 1 ? [{ ...road, points }] : [];
+      return points.length > 1 && polylineLength(points) > 1 ? [{ ...road, points }] : [];
     });
   }
   return list;
@@ -868,7 +866,7 @@ export function joinCorners(roads, { near = 24, radiusOf = () => 35, minTurn = .
         break;
       }
     });
-    list = list.filter(road => road.points.length > 1 && lengthOf(road.points) > 1);
+    list = list.filter(road => road.points.length > 1 && polylineLength(road.points) > 1);
     if (!changed) break;
   }
   return list;

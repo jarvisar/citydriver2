@@ -13,22 +13,15 @@ export default class StreamlineGenerator {
   constructor(integrator, origin, worldDimensions, params, random = Math.random) {
     this.integrator = integrator; this.origin = origin; this.worldDimensions = worldDimensions;
     this.params = params; this.random = random;
-    this.SEED_AT_ENDPOINTS = false;
     if (params.dstep > params.dsep) throw new Error('Streamline sample distance bigger than dsep');
     // Enforce test < sep
     params.dtest = Math.min(params.dtest, params.dsep);
-    // Needs to be less than circlejoin
-    this.dcollideselfSq = (params.dcirclejoin / 2) ** 2;
-    this.nStreamlineStep = Math.floor(params.dcirclejoin / params.dstep);
-    this.nStreamlineLookBack = 2 * this.nStreamlineStep;
     this.majorGrid = new GridStorage(worldDimensions, origin, params.dsep);
     this.minorGrid = new GridStorage(worldDimensions, origin, params.dsep);
-    this.candidateSeedsMajor = []; this.candidateSeedsMinor = [];
     this.allStreamlines = []; this.streamlinesMajor = []; this.streamlinesMinor = [];
     this.allStreamlinesSimple = [];  // Reduced vertex count
     this.setParamsSq();
   }
-  clearStreamlines() { this.allStreamlinesSimple = []; this.streamlinesMajor = []; this.streamlinesMinor = []; this.allStreamlines = []; }
   // Extends every open streamline end toward a nearby sample ahead of it
   joinDanglingStreamlines() {
     for (const major of [true, false]) {
@@ -81,7 +74,6 @@ export default class StreamlineGenerator {
   }
   // Assumes s has already generated
   addExistingStreamlines(s) { this.majorGrid.addAll(s.majorGrid); this.minorGrid.addAll(s.minorGrid); }
-  setGrid(s) { this.majorGrid = s.majorGrid; this.minorGrid = s.minorGrid; }
   // All at once
   createAllStreamlines() {
     let major = true;
@@ -99,10 +91,6 @@ export default class StreamlineGenerator {
       this.streamlines(major).push(streamline);
       this.allStreamlines.push(streamline);
       this.allStreamlinesSimple.push(this.simplifyStreamline(streamline));
-      if (!streamline[0].equals(streamline[streamline.length - 1])) {
-        this.candidateSeeds(!major).push(streamline[0]);
-        this.candidateSeeds(!major).push(streamline[streamline.length - 1]);
-      }
     }
     return true;
   }
@@ -114,14 +102,8 @@ export default class StreamlineGenerator {
   samplePoint() {
     return new Vector(this.random() * this.worldDimensions.x, this.random() * this.worldDimensions.y).add(this.origin);
   }
-  // Tries candidate seeds first, then samples using samplePoint
+  // A random seed clear of the other streamlines, or null after seedTries
   getSeed(major) {
-    if (this.SEED_AT_ENDPOINTS && this.candidateSeeds(major).length > 0) {
-      while (this.candidateSeeds(major).length > 0) {
-        const seed = this.candidateSeeds(major).pop();
-        if (this.isValidSample(major, seed, this.paramsSq.dsep)) return seed;
-      }
-    }
     let seed = this.samplePoint(), i = 0;
     while (!this.isValidSample(major, seed, this.paramsSq.dsep)) {
       if (i >= this.params.seedTries) return null;
@@ -134,7 +116,6 @@ export default class StreamlineGenerator {
     if (bothGrids) gridValid = gridValid && this.grid(!major).isValidSample(point, dSq);
     return this.integrator.onLand(point) && gridValid;
   }
-  candidateSeeds(major) { return major ? this.candidateSeedsMajor : this.candidateSeedsMinor; }
   streamlines(major) { return major ? this.streamlinesMajor : this.streamlinesMinor; }
   grid(major) { return major ? this.majorGrid : this.minorGrid; }
   pointInBounds(v) {

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CITY, cityCell, CITY_CELL } from './city.js';
-import { ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL, roadAt, waterAt } from './city-route.js';
+import { ROAD_LEVEL, PAVEMENT_LEVEL } from './city-route.js';
 import { cityAssets, cityTrees, LANTERN_HEIGHT, SIGNAL_LENSES, MAST_HEIGHT, parkedCars, PARKED_PAINTS } from './city-assets.js';
 import { TRAFFIC_MODELS } from '../traffic-models.js';
 import { seededRandom, randomAt } from './route.js';
@@ -8,7 +8,7 @@ import { residentWindow } from './resident.js';
 import { buildCityBuildingSteps } from './city-buildings.js';
 import { createSignMaterials, discoverySignFor, signCore } from './city-signs.js';
 import { cityItemMatrix, cityRigidFrame, cityAffinePoint, itemFrame } from './city-layout-render.js';
-import { addSurfacePolygon, rectanglePolygon } from './city-surfaces.js';
+import { addSurfacePolygon } from './city-surfaces.js';
 import { buildGrassFringe } from './city-grass.js';
 import { createWaterMaterial } from './city-water.js';
 import { Surface } from './surface.js';
@@ -86,7 +86,7 @@ function finishBatchMesh(mesh, { castShadow, receiveShadow, ambientOcclusion }, 
 // A chunk bakes at most this many vertices in all: the cheapest groups merge
 // first, so the draws saved come cheap and a busy street corner stays instanced.
 const MERGE_INSTANCE_LIMIT = 32, MERGE_VERTEX_LIMIT = 6000, MERGE_CHUNK_VERTICES = 18000;
-const LIVE_BATCHES = new Set(['residents', 'signal-lens', 'canal-boat', 'water']);
+const LIVE_BATCHES = new Set(['residents', 'signal-lens', 'water']);
 const mergedMaterials = new WeakMap(), unitColors = new WeakMap();
 function inUnitRange(color) {
   if (!unitColors.has(color)) unitColors.set(color, color.array.every(value => value >= 0 && value <= 1));
@@ -255,7 +255,7 @@ export class CityChunk {
     this.group = new THREE.Group(); this.group.name = `citydriver-block-${this.index}`;
     this.features = { colliders: [], bridges: [], buildings: [], discoveries: [], medians: [], junctions: [], signals: [], lamps: [] };
     this.batches = new Map(); this.bodies = new Surface();
-    this.lots = world.lotsByChunk.get(this.index) ?? []; this.neighbourLots = world.neighbourLots(ix, iz);
+    this.lots = world.lotsByChunk.get(this.index) ?? [];
     this.furniture = world.furnitureByChunk.get(this.index) ?? [];
     this.construction = this.buildSteps();
     if (!deferred) this.buildUntil();
@@ -298,23 +298,8 @@ export class CityChunk {
     finally { this.buildingStructure = previous; }
   }
   polygon(points, y, height, color, kind = 'solid') { addSurfacePolygon(this, points, y, height, color, kind); }
-  groundPoint(x, s) {
-    if (!this.layoutAnchor) return [x, s];
-    const p = cityAffinePoint(this.start + s, this.east + x, this.layoutAnchor, this.layoutPlacement ?? this.layoutFrame(this.layoutAnchor.s, this.layoutAnchor.u));
-    return [p.u - this.east, p.s - this.start];
-  }
-  recordPath(points, width, endSection = null) {
-    this.features.walkways ??= [];
-    this.features.walkways.push({ points: points.map(p => [...p]), width, ...(endSection ? { endSection } : {}) });
-  }
-  recordPlanting(points) { this.features.planting ??= []; this.features.planting.push(points.map(p => [...p])); }
-  recordReserve(points) { this.features.plantingExclusions ??= []; this.features.plantingExclusions.push(points.map(p => [...p])); }
   polygonSolid(points) {
     if (!this.distant) this.features.colliders.push({ logicalPolygon: points.map(([x, s]) => [this.east + x, this.start + s]) });
-  }
-  surface(x, y, s, width, height, depth, color, kind = 'solid', yaw = 0, roll = 0) {
-    if (this.layoutAnchor || roll) return this.box(x, y, s, width, height, depth, color, kind, yaw, roll);
-    this.polygon(rectanglePolygon(x, s, width, depth, yaw), y, height, color, kind);
   }
   box(x, y, s, width, height, depth, color, kind = 'solid', yaw = 0, roll = 0) {
     this.item(kind, boxGeometry, this.materials[kind], [x, y, -s], [width, height, depth], color, yaw, roll);
@@ -379,7 +364,6 @@ export class CityChunk {
     this.features.trees.push({ x, s, scale });
     this.post(x, s, .28);
   }
-  buildFurniture() { for (const _ of this.furnitureSteps()) { /* all at once */ } }
   // A busy street's furniture, a few dozen pieces per step of a streamed build
   *furnitureSteps() {
     for (const [index, piece] of this.furniture.entries()) {
@@ -550,7 +534,6 @@ export class CityChunk {
     }
     this.signalMesh.instanceColor.needsUpdate = true;
   }
-  finish() { for (const _ of this.finishSteps()) { /* synchronous tools/startup */ } }
   *finishSteps() {
     // Street lamps light the road below their heads, lanterns the walk round them
     const lights = (key, head, drop) => (this.batches.get(key)?.items ?? []).map(item => {
@@ -634,7 +617,7 @@ export class CitydriverWorld {
   }
   inCity(ix, iz) { return ix >= CITY.ix0 && ix <= CITY.ix1 && iz >= CITY.iz0 && iz <= CITY.iz1; }
   prepareLots() {
-    this.lotsByChunk = new Map(); this.neighbourCache = new Map(); this.blocksByChunk = new Map();
+    this.lotsByChunk = new Map(); this.blocksByChunk = new Map();
     // A walking loop just inside every block's kerb
     CITY.blocks.forEach((block, index) => {
       if (block.kerb.length < 3) return;
@@ -662,15 +645,6 @@ export class CitydriverWorld {
       if (!this.lotsByChunk.has(cell.key)) this.lotsByChunk.set(cell.key, []);
       this.lotsByChunk.get(cell.key).push(lot);
     }
-  }
-  neighbourLots(ix, iz) {
-    const key = `${ix},${iz}`;
-    if (!this.neighbourCache.has(key)) {
-      const lots = [];
-      for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) lots.push(...(this.lotsByChunk.get(`${ix + dx},${iz + dz}`) ?? []));
-      this.neighbourCache.set(key, lots);
-    }
-    return this.neighbourCache.get(key);
   }
   // Lamps, trees, signs and signals, railings and the parks' trees and
   // benches: placed once (see city-streets.js) and handed to whichever chunk

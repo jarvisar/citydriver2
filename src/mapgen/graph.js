@@ -126,7 +126,6 @@ export default class Graph {
     if (deleteDangling) for (const n of index.data()) this.deleteDanglingNodes(n, index);
     this.nodes = index.data();
     this.restoreAdjacency();
-    this.intersections = intersections.map(i => new Vector(i.point.x, i.point.y));
   }
   static edgeKey(a, b) { return a.id < b.id ? `${a.id}:${b.id}` : `${b.id}:${a.id}`; }
   // Polygon finding consumes adjacency; call this to walk the graph again

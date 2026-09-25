@@ -9,14 +9,6 @@ export function resolveWorldSeed(search = '', randomSeed = freshSeed) {
   return randomSeed();
 }
 
-export function freshSceneStart(currentS, random = Math.random) {
-  let s = Math.floor(random() * 40000) - 20000;
-  // Leave the entire resident and prefetched area behind, even if the random
-  // draw lands near the car. Keep starts in the same range as a new journey.
-  if (Math.abs(s - currentS) < 2048) s += currentS >= 0 ? -4096 : 4096;
-  return { s, distance: 0 };
-}
-
 function freshSeed() {
   if (globalThis.crypto?.getRandomValues) return globalThis.crypto.getRandomValues(new Uint32Array(1))[0];
   return Math.floor(Math.random() * 0x100000000);

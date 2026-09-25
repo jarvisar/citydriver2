@@ -14,7 +14,7 @@ import { itemFrame } from './city-layout-render.js';
 // city-layout-render.js). The tower and the glasshouse are landmarks seen
 // across the city, so they stand at both detail levels; the rest are near
 // detail only.
-const STONE = '#e3d7bd', TRIM = '#efe4c9', COPPER = '#62958b', TIMBER = '#8a6d4f';
+const STONE = '#e3d7bd', TRIM = '#efe4c9', COPPER = '#62958b';
 const spire = new THREE.ConeGeometry(1, 1, 4);
 const gable = new THREE.CircleGeometry(1, 14, 0, Math.PI);
 

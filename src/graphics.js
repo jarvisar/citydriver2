@@ -192,7 +192,7 @@ export class Graphics {
   setMode(mode) {
     const index = levelIndex(mode);
     if (mode !== 'auto' && index === -1) return false;
-    this.mode = mode === 'auto' ? 'auto' : mode;
+    this.mode = mode;
     // A fresh choice clears adaptive history and the density override.
     // The independent AO choice stays as the player left it.
     this.ceiling = 0; this.cascade = null; this.target = 60;

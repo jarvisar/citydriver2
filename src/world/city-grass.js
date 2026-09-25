@@ -1,8 +1,7 @@
 import * as THREE from 'three';
 import { seededRandom } from './route.js';
-const cityLayout = (s, u) => ({ s, u });
 import { cityAffinePoint } from './city-layout-render.js';
-import { containsPoint, pathPanels, signedArea } from './city-surfaces.js';
+import { containsPoint, signedArea } from './city-surfaces.js';
 
 // Three tapered, leaning blades: twelve opaque triangles, shared city material.
 // Solid facets read from every camera angle without alpha textures or animation.
@@ -35,7 +34,6 @@ export function grassArea(c, polygon, color, y) {
 export function buildGrassFringe(c) {
   if (c.distant || !c.grassAreas?.length) return;
   const random = seededRandom(c.plan.seed ^ 0x36f91b27), candidates = [], accepted = [];
-  const worldPoint = ([x, s]) => { const p = cityLayout(c.start + s, c.east + x); return [p.u, p.s]; };
   const obstacles = [];
   const protect = (polygon, margin = .7) => {
     // Test offset half-planes directly: clipping an existing polygon against
@@ -47,7 +45,6 @@ export function buildGrassFringe(c) {
     else protect([[collider.x - collider.reach, -collider.z - collider.reach], [collider.x + collider.reach, -collider.z - collider.reach],
       [collider.x + collider.reach, -collider.z + collider.reach], [collider.x - collider.reach, -collider.z + collider.reach]]);
   }
-  for (const polygon of c.features.plantingExclusions ?? []) protect(polygon.map(worldPoint));
   // Setback aprons and small seating pads need not be recorded as walks.
   // Respect their rendered ground triangles too, including shifted lot edges.
   const lawnHeight = Math.min(...c.grassAreas.map(area => area.y));
@@ -73,22 +70,7 @@ export function buildGrassFringe(c) {
     const polygon = signedArea(area.polygon) < 0 ? [...area.polygon].reverse() : area.polygon;
     for (let i = 0; i < polygon.length; i++) scatterEdge(polygon[i], polygon[(i + 1) % polygon.length], 1.15, 5, .8);
   }
-  for (const walk of c.features.walkways ?? []) {
-    for (const panel of pathPanels(walk.points, walk.width, c.walkBounds ?? [-1e9, -1e9, 1e9, 1e9], walk.endSection)) protect(panel.map(worldPoint), .9);
-    // Resample by physical length, rather than placing a clump at every curve
-    // vertex: rounded walks must not silently make the fringe denser.
-    let remaining = 5 + random() * 3;
-    for (let i = 1; i < walk.points.length; i++) {
-      const a = walk.points[i - 1], b = walk.points[i], dx = b[0] - a[0], ds = b[1] - a[1], length = Math.hypot(dx, ds);
-      while (remaining < length) {
-        const side = random() < .5 ? -1 : 1, offset = side * (walk.width / 2 + 1.3 + random() * .6);
-        candidates.push([a[0] + dx / length * remaining - ds / length * offset, a[1] + ds / length * remaining + dx / length * offset]);
-        remaining += 7 + random() * 4;
-      }
-      remaining -= length;
-    }
-  }
-  // Mix border and path candidates before applying a strict per-block budget.
+  // Mix the border candidates before applying a strict per-block budget.
   for (let i = candidates.length - 1; i > 0; i--) {
     const j = Math.floor(random() * (i + 1)); [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
   }
@@ -99,7 +81,7 @@ export function buildGrassFringe(c) {
       const x = center[0] + (i ? .8 + random() * .4 : 0), s = center[1] + (i ? (random() - .5) * 1.3 : 0);
       const area = c.grassAreas.find(area => containsPoint(area.polygon, x, s, .9));
       if (!area) continue;
-      const p = worldPoint([x, s]);
+      const p = [c.east + x, c.start + s];
       if (obstacles.some(({ polygon, margin }) => containsPoint(polygon, ...p, -margin)) || accepted.some(q => Math.hypot(p[0] - q[0], p[1] - q[1]) < .85)) continue;
       const width = .8 + random() * .4, height = .7 + random() * .35;
       tint.set(area.color).multiplyScalar(.92 + random() * .35);

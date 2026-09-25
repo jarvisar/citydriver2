@@ -21,10 +21,6 @@
 .panel-toggle { justify-content: flex-start; }
 .panel-toggle .panel-switch { margin-left: auto; }
 .panel-button-label { min-width: 0; }
-body[data-journey=snow] .panel-button { background: #17273ed1; border-color: #93acc64a; }
-body[data-journey=snow] .panel-button:hover { background: #304663e0; }
-body[data-journey=jungle] .panel-button { background: #1c3423e0; border-color: #9cbf8f4a; }
-body[data-journey=jungle] .panel-button:hover { background: #2c4a33e8; }
 @media (max-height: 560px) { .pause-panel { margin: 2px 0 8px; } .pause-panel h3 { margin-bottom: 6px; } }
 
 /* The paint counter sits above the fleet: the colour the garage is wearing,
@@ -55,10 +51,7 @@ body[data-journey=jungle] .panel-button:hover { background: #2c4a33e8; }
 .paint-note { margin: 11px 0 0; font-size: 11px; line-height: 1.6; opacity: .62; }
 .paint-note b { font-weight: 650; opacity: .85; }
 .garage-subheading { margin: 0 0 10px; font-size: 9px; font-weight: 700; letter-spacing: 2.1px; text-transform: uppercase; opacity: .72; }
-body[data-journey=desert] .paint-shop, body[data-journey=plains] .paint-shop, body[data-journey=city] .paint-shop { background: #fff6; }
-body[data-journey=snow] .paint-shop { background: #ffffff0f; border-color: #8aa4c442; }
-body[data-journey=jungle] .paint-shop { background: #ffffff0f; border-color: #8fb58442; }
-body[data-journey=snow] .paint-custom, body[data-journey=jungle] .paint-custom { border-color: #ffffff4d; }
+body[data-journey=city] .paint-shop { background: #fff6; }
 
 .car-card { --car-paint: #d96143; }
 .car-card .chooser-card-copy { padding: 12px 14px 11px; }
@@ -72,7 +65,6 @@ body[data-journey=snow] .paint-custom, body[data-journey=jungle] .paint-custom {
 .car-meter { display: grid; grid-template-columns: 74px minmax(0, 1fr); align-items: center; gap: 10px; margin-top: 5px; font-size: 10px; letter-spacing: .2px; opacity: .62; }
 .car-meter-track { height: 3px; border-radius: 2px; background: #25473e2b; overflow: hidden; }
 .car-meter-track > span { display: block; height: 100%; border-radius: 2px; background: var(--ink); }
-body[data-journey=snow] .car-meter-track, body[data-journey=jungle] .car-meter-track { background: #ffffff2b; }
 @media (max-width: 600px) {
   #car-dialog .chooser-heading { padding-bottom: 12px; }
   .paint-shop { margin-bottom: 14px; padding: 11px 12px 12px; }

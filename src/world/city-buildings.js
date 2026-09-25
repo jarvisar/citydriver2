@@ -11,7 +11,6 @@ import { union, intersection } from '../mapgen/booleans.js';
 import { simplify } from '../mapgen/simplify.js';
 import { itemFrame } from './city-layout-render.js';
 import { lotWithoutDrive } from './city-yards.js';
-export { SHOP_NAMES } from './city-signs.js';
 
 // Buildings follow their lots. A lot is one plot of a block's frontage strip
 // (see mapgen/lots.js) and knows which of its edges face the street, which
@@ -36,7 +35,6 @@ const STYLES = {
   'Civic quarter': { narrow: ['brick', 'deco', 'townhouse'], wide: ['deco', 'brick', 'apartment', 'deco', 'atrium'], walls: ['#dbcfb8', '#a1b8bc', '#c99a83', '#ddc19e', '#afc8b4'], shops: .4, floors: [3, 6] },
 };
 const HEIGHTS = { brick: [2, 6], apartment: [3, 8], shop: [1, 2], warehouse: [1, 3], office: [6, 18], deco: [4, 12], townhouse: [2, 4], loft: [3, 5], pavilion: [1, 2], atrium: [5, 12] };
-export const BUILDING_TYPES = Object.keys(HEIGHTS);
 // How a building stands on its lot: its step back from the pavement, the gap
 // to each neighbour (a hair for a party wall), how deep the building itself
 // is, the least yard behind it, and whether its plot is a garden.
@@ -996,10 +994,6 @@ export function buildGarden(c, lot) {
     // (as big as the garden, or where a neighbour's wall may stand on the lot line, as that allows)
     c.tree(p.x, p.y, Math.min(6 + random() * 3, 3.5 + room * 1.6, treeRoom(room + (lawn ? GARDEN_RIM : 0)))); trees.push(p);
   }
-}
-
-export function buildCityBuildings(c) {
-  for (const _ of buildCityBuildingSteps(c)) { /* synchronous startup */ }
 }
 
 export function* buildCityBuildingSteps(c) {

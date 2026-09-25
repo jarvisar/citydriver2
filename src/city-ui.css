@@ -1,5 +1,4 @@
 /* Navigation stays quiet enough to leave the streets in view. */
-#change-journey, #next-journey { display: none !important; }
 .city-hud {
   max-width: 360px; margin-right: auto;
   display: flex; align-items: center; gap: 13px; padding: 10px 16px 10px 10px;
@@ -60,8 +59,6 @@
 .city-guide button:focus-visible { outline-color: #f1cc8e; }
 .city-guide-actions { display: flex; align-items: center; gap: 2px; }
 :is(.city-guide-header > span, .city-guide-actions button) { white-space: nowrap; }
-:is(#city-map-toggle, #city-map-open) { padding: 7px 0 7px 7px; font-size: 9px; color: #d2ddd2; }
-#city-map-open { color: #f1cc8e; }
 #city-map { display: block; width: 100%; height: auto; border-radius: 7px; border: 1px solid #b6c7b918; cursor: pointer; }
 #city-map[hidden] { display: none; }
 .city-guide-stop { display: grid; gap: 5px; padding: 13px 1px 11px; }
@@ -70,7 +67,7 @@ body[data-mode=free] .city-guide-stop { display: none; }
 #city-stop-name { font-family: Georgia, serif; font-size: 21px; font-weight: 400; letter-spacing: -.3px; }
 #city-stop-distance { font-size: 10px; color: #c4d2c8; }
 #city-stop-context { font-size: 10px; line-height: 1.5; color: #becfc4; }
-#app:has(#welcome:not(.hidden), #pause-overlay:not([hidden]), dialog[open], #journey-transition.active) .city-guide { visibility: hidden; pointer-events: none; }
+#app:has(#welcome:not(.hidden), #pause-overlay:not([hidden]), dialog[open]) .city-guide { visibility: hidden; pointer-events: none; }
 #city-notebook-progress { font-size: 12px; line-height: 1.6; margin: 0 0 12px; }
 .notebook-panel { padding: 14px; border: 1px solid var(--ui-line); border-radius: 12px; background: color-mix(in srgb, var(--cream) 90%, transparent); }
 #city-notebook { max-height: 360px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: 2px 8px 2px 2px; }

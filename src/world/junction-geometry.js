@@ -62,10 +62,5 @@ export function junctionGeometry(nav) {
   return junctions;
 }
 
-// How far from the end of an edge a car arriving at `node` leaves its lane:
-// the edge of the junction box, or the whole junction for a node that is not one.
-export function clearance(nav, edge, node) {
-  return junctionGeometry(nav).get(node.id)?.approaches.get(edge)?.clear ?? 0;
-}
 // Distance from the node along an approach to its stop line
 export const stopLineDistance = clear => clear + CROSSWALK + .7;

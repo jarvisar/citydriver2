@@ -26,7 +26,6 @@ export const CITY_PLACES = Object.freeze({
 });
 export const PLACE_TYPES = Object.keys(CITY_PLACES);
 export const LANDMARK_TYPES = PLACE_TYPES.filter(type => type !== 'park' && type !== 'plaza');
-export const REPEATING_LANDMARK_TYPES = LANDMARK_TYPES.filter(type => type !== 'cityhall');
 // Layout variant names, three per venue and four per open space. Open spaces
 // use these as their names; venues paint their business names on their signs.
 export const SPACE_NAMES = Object.freeze({

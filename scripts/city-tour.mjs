@@ -41,7 +41,7 @@ try {
     const out = {};
     const coast = byKind('coast'); if (coast) out.coast = middle(coast);
     const bank = byKind('riverbank'); if (bank) out.river = middle(bank);
-    const bridge = g.world.bridges.sort((a, b) => b.points.length - a.points.length)[0];
+    const bridge = g.world.bridges.slice().sort((a, b) => b.points.length - a.points.length)[0];
     if (bridge) { const p = bridge.points[0], q = bridge.points[Math.floor(bridge.points.length / 2)]; out.bridge = g.lanePose(g.roadAt(p.y, p.x, 40), Math.atan2(q.x - p.x, q.y - p.y)); }
     const path = byKind('path'); if (path) out.park = middle(path);
     const near = g.nearestLanePose(city.downtown.s, city.downtown.u, 0, 400); out.downtown = near;

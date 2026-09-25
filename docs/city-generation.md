@@ -198,8 +198,7 @@ the network first and derives everything else from it, once, in one place.
    folded into the lots; a block too thin for a strip, or whose stepped-in
    yard would shoot out past a sharp corner, is cut across instead
    (keeping only the lots on its streets: the middle of a big, winding block
-   is its yard), and one block in twenty-five stays whole for a hall or a
-   works. The
+   is its yard). The
    generator checks its own output: where a block's kerb would reach onto a
    carriageway (two roads meeting at a shallow angle, a road carried a few
    metres past a junction, or the square end of a wide road carrying on

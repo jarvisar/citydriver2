@@ -51,7 +51,7 @@ async function electronDist({ platformName, arch, version }) {
 module.exports = {
   appId: 'games.citydriver.desktop',
   productName,
-  copyright: `Copyright Â© ${new Date().getFullYear()} jarvisar`,
+  copyright: `Copyright © ${new Date().getFullYear()} jarvisar`,
   extraMetadata: {
     // Written into the packaged package.json only; the repository's stays untouched.
     description: manifest.description,

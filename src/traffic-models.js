@@ -181,7 +181,6 @@ export function createTrafficModels() {
     },
     // Lamps from daytime (0) to night (1); a storm runs them part way up.
     setLights(level) { headlights.emissiveIntensity = .3 + 2 * level; taillights.emissiveIntensity = .25 + 1.55 * level; },
-    setNight(night) { this.setLights(night ? 1 : 0); },
     dispose() {
       for (const template of templates) for (const geometry of Object.values(template.parts)) geometry.dispose();
       for (const mat of [...paints, details, headlights, taillights]) mat.dispose();

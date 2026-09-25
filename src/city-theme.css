@@ -84,7 +84,7 @@ body[data-controller=true] #app #city-map-open::before { content: 'VIEW'; margin
 
 /* Menus, pause settings and dialogs use the same palette as the HUD. */
 #app .pause-overlay, #app .taxi-results { background: #101e28df; color: var(--city-text); backdrop-filter: blur(10px); }
-#app :is(.pause-header h2, .chooser-title, .garage-title, #taxi-fleet-heading, .error h2) {
+#app :is(.pause-header h2, .garage-title, #taxi-fleet-heading, .error h2) {
   font-family: var(--city-font); font-weight: 750; letter-spacing: -.6px; color: var(--city-text); text-shadow: none;
 }
 #app :is(.pause-header .location-copy, .pause-settings h3) { text-shadow: none; }
@@ -110,7 +110,7 @@ body[data-controller=true] #app #city-map-open::before { content: 'VIEW'; margin
 #app .pause-panel > .panel-button + .panel-button { margin-top: 6px; }
 #app :is(.panel-button-value, .graphics-toggle small, .audio-mixer-toggle small, .graphics-status, .weather-note,
   .audio-description, .audio-channel output, .pixel-density-control output, .paint-current, .paint-note,
-  .chooser-intro, .chooser-card-description, .chooser-note, .car-meter, .controller-hint) {
+  .car-meter, .controller-hint) {
   color: var(--city-muted); opacity: 1;
 }
 #app #pause-overlay .pwa-install-help { color: var(--city-muted); opacity: 1; }
@@ -170,7 +170,7 @@ body[data-controller=true] #app #city-map-open::before { content: 'VIEW'; margin
 /* Peripheral states should not fall back to the old light/green theme. */
 #app > #toast, #app #vr-error { background: var(--city-panel); color: var(--city-text); border: 1px solid var(--city-line); border-radius: var(--city-control-radius); box-shadow: var(--city-shadow); }
 #app .taxi-task #toast { border: 0; box-shadow: none; }
-#app :is(.error, #journey-transition, .loading) { background: var(--city-panel); color: var(--city-text); }
+#app :is(.error, .loading) { background: var(--city-panel); color: var(--city-text); }
 #app .error button { background: var(--city-accent); color: var(--city-on-accent); border-color: var(--city-accent); border-radius: var(--city-control-radius); }
 @media (forced-colors: active) {
   #app :is(.audio-channel input, #pixel-density) { appearance: auto; accent-color: auto; }

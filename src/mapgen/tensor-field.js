@@ -28,9 +28,6 @@ export default class TensorField {
   addGrid(centre, size, decay, theta) { this.addField(new Grid(centre, size, decay, theta)); }
   addRadial(centre, size, decay) { this.addField(new Radial(centre, size, decay)); }
   addField(field) { this.basisFields.push(field); }
-  removeField(field) { const index = this.basisFields.indexOf(field); if (index > -1) this.basisFields.splice(index, 1); }
-  reset() { this.basisFields = []; this.parks = []; this.sea = []; this.river = []; }
-  getCentrePoints() { return this.basisFields.map(field => field.centre); }
   getBasisFields() { return this.basisFields; }
   samplePoint(point) {
     // Degenerate point
@@ -45,7 +42,7 @@ export default class TensorField {
       tensorAcc.add(field.getTensor(point).scale(weight), this.smooth);
     }
     // Add rotational noise for parks - range -pi/2 to pi/2
-    if (this.parks.some(p => insidePolygon(point, p))) {
+    if (this.inParks(point)) {
       tensorAcc.rotate(this.getRotationalNoise(point, this.noiseParams.noiseSizePark, this.noiseParams.noiseAnglePark));
     }
     if (this.noiseParams.globalNoise) {

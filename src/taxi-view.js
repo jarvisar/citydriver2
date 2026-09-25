@@ -5,7 +5,7 @@ import { profileOf } from './world/city.js';
 import { STOP_RADIUS, STOP_SECONDS, RATINGS, taxiRoute, fareBand, arrivalRating } from './taxi-run.js';
 import { taxiLicense } from './taxi-license.js';
 import { goalProgress } from './taxi-goals.js';
-import { routeDistance } from './city-exploration.js';
+import { routeDistance } from './world/nav-graph.js';
 import { DestinationArrow } from './destination-arrow.js';
 import { applyWalkerHop } from './world/pedestrian-reactions.js';
 
@@ -194,7 +194,6 @@ export class TaxiView {
     const pickup = run.status === 'pickup';
     text('taxi-stage', pickup ? 'Pick up' : run.fare.stops.length > 1 ? `Stop ${run.stopIndex + 1} of ${run.fare.stops.length}` : 'Drop off');
     data('taxi-task', 'stage', run.status);
-    // Pulse only in the red, just before the riders give up.
     // Pulse in the last seconds before the riders give up.
     data('taxi-task', 'urgent', String(!pickup && run.fareLeft <= 10));
     // Tips multiply by the combo and by every rider aboard.

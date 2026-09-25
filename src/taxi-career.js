@@ -30,14 +30,13 @@ export const LIVERIES = [
 ];
 export const liveryById = id => LIVERIES.find(livery => livery.id === id) ?? LIVERIES[0];
 
-const clock = seconds => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 // What a shift can set a personal best in. Best cash is the licence's job.
 export const RECORDS = [
-  { id: 'fares', label: 'Fares', value: run => run.delivered, format: value => String(value) },
-  { id: 'combo', label: 'Combo', value: run => run.bestCombo, format: value => value > 1 ? `×${value}` : '–' },
-  { id: 'streak', label: 'Speedy streak', value: run => run.bestStreak, format: value => String(value) },
-  { id: 'tips', label: 'Tips', value: run => run.tipsBanked, format: value => `$${value.toLocaleString('en-US')}` },
-  { id: 'shift', label: 'Shift', value: run => Math.round(run.elapsed), format: clock },
+  { id: 'fares', value: run => run.delivered },
+  { id: 'combo', value: run => run.bestCombo },
+  { id: 'streak', value: run => run.bestStreak },
+  { id: 'tips', value: run => run.tipsBanked },
+  { id: 'shift', value: run => Math.round(run.elapsed) },
 ];
 const validCount = value => Number.isSafeInteger(value) && value >= 0;
 

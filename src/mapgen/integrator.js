@@ -7,11 +7,6 @@ export class FieldIntegrator {
   onLand(point) { return this.field.onLand(point); }
 }
 
-export class EulerIntegrator extends FieldIntegrator {
-  constructor(field, params) { super(field); this.params = params; }
-  integrate(point, major) { return this.sampleFieldVector(point, major).multiplyScalar(this.params.dstep); }
-}
-
 // One step of dstep along the field, by fourth-order Runge-Kutta. An
 // eigenvector has no sign, so each sample is turned to agree with the one
 // before it, the first with `direction` (the way the streamline is going)

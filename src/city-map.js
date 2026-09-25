@@ -29,7 +29,6 @@ export class CityMapCache {
       road.points.forEach((p, i) => path[i ? 'lineTo' : 'moveTo'](p.x, p.y));
     }
   }
-  update() { /* the whole city is cached once */ }
   draw(ctx, vehicle, scale, width, height) {
     ctx.save();
     ctx.translate(width / 2 - vehicle.u * scale, height / 2 + vehicle.s * scale);

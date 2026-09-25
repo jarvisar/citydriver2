@@ -76,8 +76,7 @@ button svg:not(.chooser-art) { stroke-linecap: round; stroke-linejoin: round; }
 .drive-actions .control-label { font-size: inherit; }
 .drive-actions svg [stroke-width="1.5"], .panel-button svg [stroke-width="1.5"], .icon-button svg [stroke-width="1.5"] { stroke-width: 1.8; }
 .chooser { border-radius: 24px; box-shadow: 0 24px 80px #183f3638; }
-.chooser-title, .pause-overlay h2 { font-family: 'Trebuchet MS', 'Segoe UI', sans-serif; font-weight: 600; letter-spacing: -1.4px; }
-.chooser-title { font-size: 36px; }
+.pause-overlay h2 { font-family: 'Trebuchet MS', 'Segoe UI', sans-serif; font-weight: 600; letter-spacing: -1.4px; }
 .chooser-card { border-radius: 16px; }
 .chooser-card[aria-current=true] { box-shadow: 0 0 0 1px var(--ink), 0 4px 14px #183f3610; }
 .chooser-card-title > svg { width: 18px; height: 18px; flex-shrink: 0; opacity: .65; }
@@ -99,7 +98,6 @@ button svg:not(.chooser-art) { stroke-linecap: round; stroke-linejoin: round; }
   #welcome .wordmark { font-size: clamp(46px, 10.8vw, 64px); margin-bottom: 15px; }
   #welcome .start-button { min-height: 76px; }
   #welcome .eyebrow { font-size: 9px; gap: 12px; letter-spacing: .28em; }
-  .chooser-title { font-size: 30px; }
 }
 @media (max-width: 760px), (max-height: 560px) {
   .pause-overlay .location { margin: 0 0 18px; }

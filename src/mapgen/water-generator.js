@@ -1,9 +1,7 @@
 import StreamlineGenerator from './streamlines.js';
-import { bufferPolyline, calcPolygonArea, insidePolygon, lineRectanglePolygon, offsetPolylineClean, extendPolyline } from './polygon-util.js';
+import { bufferPolyline, calcPolygonArea, lineRectanglePolygon, offsetPolylineClean, extendPolyline, polylineLength } from './polygon-util.js';
 import { filletPolyline, clipInside } from './road-network.js';
 import { simplify } from './simplify.js';
-
-const polylineLength = points => points.slice(1).reduce((sum, p, i) => sum + p.distanceTo(points[i]), 0);
 
 // Integrates polylines to create a coastline and a river, with controllable
 // noise. params extend the streamline params with coastNoise and riverNoise

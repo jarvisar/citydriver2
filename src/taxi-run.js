@@ -1,13 +1,12 @@
 import { CITY } from './world/city.js';
-import { nearestLanePose, waterAt, onRoadAt } from './world/city-route.js';
+import { nearestLanePose, waterAt } from './world/city-route.js';
 import { navGraph, routeDistance } from './world/nav-graph.js';
 import { nearbyPlaces, cityPlaces } from './city-exploration.js';
 import { randomAt } from './world/route.js';
-export { routeDistance } from './world/nav-graph.js';
-const B = 112;
 import { TaxiFleet } from './taxi-fleet.js';
 import { TaxiCareer } from './taxi-career.js';
 import { shiftGoals, goalProgress } from './taxi-goals.js';
+const B = 112;
 
 export const SHIFT_SECONDS = 90;
 export const STOP_RADIUS = 8;
@@ -178,16 +177,6 @@ export function taxiRoute(player, target) {
   return navGraph().route({ s: player.s, u: player.u }, { s: target.s, u: target.u });
 }
 
-// A stop ahead of the car in its own lane, for tools and tests.
-export function leadStop(player) {
-  const nav = navGraph(), hit = nav.nearest(player.s, player.u, 60);
-  if (!hit) return { s: player.s, u: player.u, heading: player.heading, side: 1 };
-  const forward = nav.pose(hit.edge, hit.along, 1);
-  const direction = Math.cos(player.heading - forward.heading) >= 0 ? 1 : -1;
-  const along = direction > 0 ? hit.along : hit.edge.length - hit.along;
-  const pose = nav.pose(hit.edge, Math.min(hit.edge.length - 4, along + 40), direction, hit.edge.profile.lane);
-  return { ...pose, index: hit.edge.id, side: 1, profile: hit.edge.profile };
-}
 // Where a place's passengers get out: in the lane beside its entrance.
 const placeStop = place => {
   const entrance = place.entrance ?? nearestLanePose(place.s, place.u, 0, 200);
@@ -230,18 +219,20 @@ export class TaxiRun {
   get running() { return this.status === 'pickup' || this.status === 'driving'; }
   get currentStop() { return this.status === 'driving' ? this.fare.stops[this.stopIndex] : null; }
   get target() { return this.currentStop?.destination ?? null; }
-  // What the cab collects if everyone aboard arrives: a group's fare is held
-  // until the last rider is out, as in Crazy Taxi 2.
+  // A waiting passenger the cab has stopped over
+  customerAt(player) { return this.customers.find(p => distance(p, player) < STOP_RADIUS) ?? null; }
   // How much of the current rider's own window is left. Ratings and the time
   // bonus fare judge each leg on its own, so time carried over from a fast
   // earlier stop protects the group without inflating later ratings.
   get legRemaining() { return this.status === 'driving' ? Math.max(0, 1 - this.legElapsed / this.currentStop.limit) : 0; }
+  // What the cab collects if everyone aboard arrives: a group's fare is held
+  // until the last rider is out, as in Crazy Taxi 2.
   get remainingFare() { return this.status === 'driving' ? this.held + this.fare.stops.slice(this.stopIndex).reduce((sum, stop) => sum + stop.fare, 0) + this.fare.groupBonus : 0; }
   start(player) {
     this.status = 'pickup'; this.timeLeft = SHIFT_SECONDS; this.cash = 0; this.delivered = 0; this.failed = 0;
     this.boost = 1; this.boostActive = false; this.elapsed = 0; this.combo = 1; this.comboTime = 0;
     this.tips = 0; this.hold = 0; this.fare = null; this.events = []; this.driftTime = 0; this.crashCooldown = 0;
-    this.recentDestinations = []; this.customers = []; this.boarding = null; this.blockedPickup = null;
+    this.customers = []; this.boarding = null; this.blockedPickup = null;
     this.servedCustomers = new Map();
     this.stopIndex = 0; this.onboard = 0; this.deliveredPassengers = 0; this.held = 0; this.lastDropOff = null;
     this.streak = 0; this.ring = null;
@@ -253,7 +244,7 @@ export class TaxiRun {
     this.goals = shiftGoals(this.career.shifts, this.career.rank.index);
     this.lastImpact = player.audioTelemetry?.impactSerial ?? 0; this.makeCustomers(player);
     // Starting inside a ring must not choose the first fare for the driver.
-    this.blockedPickup = this.customers.find(p => distance(p, player) < STOP_RADIUS) ?? null;
+    this.blockedPickup = this.customerAt(player);
   }
   stop() { this.status = 'idle'; this.customers = []; this.servedCustomers?.clear(); this.fare = null; this.boarding = null; this.hold = 0; this.onboard = 0; this.stopIndex = 0; this.boostActive = false; this.revision++; }
   makeCustomers(player) {
@@ -413,7 +404,7 @@ export class TaxiRun {
       const riders = this.onboard, lost = this.remainingFare + this.tips;
       this.failed++; this.status = 'pickup'; this.fare = null; this.hold = 0; this.onboard = 0; this.stopIndex = 0; this.tips = 0; this.held = 0; this.combo = 1;
       this.streak = 0; this.ring = null; this.revision++; this.makeCustomers(player);
-      this.blockedPickup = this.customers.find(p => distance(p, player) < STOP_RADIUS) ?? null;
+      this.blockedPickup = this.customerAt(player);
       const who = riders === 1 ? 'Rider' : `${riders} riders`;
       this.events.push({ kind: 'missed', text: `Too slow · ${who} jumped out · $${lost} lost`, lost }); return;
     }
@@ -456,7 +447,6 @@ export class TaxiRun {
       this.deliveredPassengers += stop.passengers; this.onboard -= stop.passengers;
       this.timeLeft = Math.min(MAX_SHIFT_SECONDS, this.timeLeft + seconds);
       if (paid) { this.cash += paid; this.fleet.credit(paid); }
-      this.recentDestinations = [...this.recentDestinations, stop.destination.type].slice(-3);
       const group = this.fare.passengers > 1;
       if (last) {
         this.delivered++; this.tipsBanked += this.tips;
@@ -484,7 +474,7 @@ export class TaxiRun {
       this.status = 'pickup'; this.fare = null; this.tips = 0; this.combo = 1; this.hold = 0;
       this.revision++; this.makeCustomers(player); this.checkGoals();
       // Overlapping pickups wait until the driver leaves the ring.
-      this.blockedPickup = this.customers.find(p => distance(p, player) < STOP_RADIUS) ?? null;
+      this.blockedPickup = this.customerAt(player);
     }
   }
   drainEvents() { return this.events.splice(0); }

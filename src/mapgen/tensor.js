@@ -5,11 +5,6 @@ import Vector from './vector.js';
 // across it.
 export default class Tensor {
   constructor(r, matrix) { this.r = r; this.matrix = matrix; this.oldTheta = false; this._theta = this.calculateTheta(); }
-  static fromAngle(angle) { return new Tensor(1, [Math.cos(angle * 4), Math.sin(angle * 4)]); }
-  static fromVector(vector) {
-    const t1 = vector.x ** 2 - vector.y ** 2, t2 = 2 * vector.x * vector.y;
-    return new Tensor(1, [t1 ** 2 - t2 ** 2, 2 * t1 * t2]);
-  }
   static get zero() { return new Tensor(0, [0, 0]); }
   get theta() {
     if (this.oldTheta) { this._theta = this.calculateTheta(); this.oldTheta = false; }

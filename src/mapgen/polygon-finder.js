@@ -1,26 +1,24 @@
-import { subdividePolygon, calcPolygonArea, interiorPoint } from './polygon-util.js';
+import { interiorPoint } from './polygon-util.js';
 import { insetPolygon } from './booleans.js';
 
-// Finds the faces of the road graph: blocks, then lots and parks.
-// params: maxLength (vertices per face), minArea, shrinkSpacing (number or a
-// function of each edge), chanceNoDivide.
+// Finds the faces of the road graph: the blocks and the parks.
+// params: maxLength (vertices per face), shrinkSpacing (number or a function
+// of each edge).
 export default class PolygonFinder {
-  constructor(nodes, params, tensorField, random = Math.random) {
-    this.nodes = nodes; this.params = params; this.tensorField = tensorField; this.random = random;
+  constructor(nodes, params, tensorField) {
+    this.nodes = nodes; this.params = params; this.tensorField = tensorField;
     this.reset();
   }
   get polygons() {
-    if (this._dividedPolygons.length > 0) return this._dividedPolygons;
     if (this._shrunkPolygons.length > 0) return this._shrunkPolygons.filter(p => p.length > 0);
     return this._polygons;
   }
   // Shrunk polygons stay aligned with the faces they came from (empty where
-  // a face collapsed), and every lot remembers the face it was cut from.
+  // a face collapsed).
   get shrunkPolygons() { return this._shrunkPolygons; }
-  get lotBlocks() { return this._lotBlocks; }
   // The graph nodes round each face, parallel to its vertices
   get faceNodes() { return this._faceNodes; }
-  reset() { this._polygons = []; this._shrunkPolygons = []; this._dividedPolygons = []; this._lotBlocks = []; this._faceNodes = []; }
+  reset() { this._polygons = []; this._shrunkPolygons = []; this._faceNodes = []; }
   // Pull every edge in from the road so lots have the same setback all round
   shrink() {
     if (this._polygons.length === 0) this.findPolygons();
@@ -28,27 +26,12 @@ export default class PolygonFinder {
     const distance = typeof spacing === 'function' ? (a, b, i) => -spacing(a, b, i) : -spacing;
     this._shrunkPolygons = this._polygons.map(p => insetPolygon(p, distance));
   }
-  divide() {
-    if (this._polygons.length === 0) this.findPolygons();
-    const polygons = this._shrunkPolygons.length > 0 ? this._shrunkPolygons : this._polygons;
-    this._dividedPolygons = []; this._lotBlocks = [];
-    polygons.forEach((p, block) => {
-      if (p.length < 3) return;
-      // minArea may vary across the map, so the lots downtown can be bigger
-      const minArea = typeof this.params.minArea === 'function' ? this.params.minArea(p) : this.params.minArea;
-      // An undivided block bigger than maxLotArea still splits, into a few big lots
-      const keep = this.params.chanceNoDivide > 0 && this.random() < this.params.chanceNoDivide;
-      const whole = keep && calcPolygonArea(p) <= (this.params.maxLotArea ?? Infinity);
-      const lots = whole ? [p] : subdividePolygon(p, keep ? minArea * 5 : minArea, this.random);
-      for (const lot of lots) { this._dividedPolygons.push(lot); this._lotBlocks.push(block); }
-    });
-  }
   // Every directed edge borders exactly one face. Walking from each unused
   // edge and always taking the next edge round from the one we arrived by
   // visits every face once. Faces with a dead end inside them are skipped,
   // as MapGenerator did, and the outer boundary is dropped by its winding.
   findPolygons() {
-    this._shrunkPolygons = []; this._dividedPolygons = []; this._faceNodes = [];
+    this._shrunkPolygons = []; this._faceNodes = [];
     const sorted = new Map();
     const neighborsOf = node => {
       let list = sorted.get(node);
@@ -98,5 +81,4 @@ export default class PolygonFinder {
     const centre = interiorPoint(polygon);
     return this.tensorField.onLand(centre) && !this.tensorField.inParks(centre);
   }
-  filterPolygonsByWater(polygons) { return polygons.filter(p => this.onDryLand(p)); }
 }

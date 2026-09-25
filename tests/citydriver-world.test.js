@@ -5,7 +5,7 @@ import { CitydriverWorld, CityChunk } from '../src/world/citydriver-world.js';
 import { planLot } from '../src/world/city-buildings.js';
 import { cityTrees } from '../src/world/city-assets.js';
 import { cityCell, CITY, CITY_CELL } from '../src/world/city.js';
-import { journeyStart, PAVEMENT_LEVEL, roadAt } from '../src/world/city-route.js';
+import { journeyStart, roadAt } from '../src/world/city-route.js';
 import { setResidentWindow } from '../src/world/resident.js';
 import { insidePolygon, distanceToPolyline } from '../src/mapgen/polygon-util.js';
 import { collideScenery } from '../src/collision.js';

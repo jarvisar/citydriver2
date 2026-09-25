@@ -95,7 +95,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   let initialized = false; let view = touchScreen.matches ? 2 : 1; let viewHeight = views[view].height; let previousOrigin = 0;
   let weatherFog = null;
   const weatherSun = new THREE.Vector3();
-  const cityFog = { color: '#c9dbe2', near: 390, far: 780, thirdNear: 190, thirdFar: 420 };
+  const cityFog = { thirdNear: 190, thirdFar: 420 };
   function updateFog() {
     // Overhead cameras turn distance fog into a wash across the top of the city.
     // Only perspective views need fog to conceal the distant streaming boundary.
@@ -159,11 +159,8 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
     // render fade also keeps camera switches and lighting adjustments soft;
     // a paused redraw (dt=0) displays the selected conditions immediately.
     const blend = !weatherFog || dt <= 0 ? 1 : 1 - Math.exp(-Math.min(dt, 1) * 4);
-    weatherFog ??= { color: new THREE.Color(), near: state.fogNear, far: state.fogFar, thirdNear: state.drivingFogNear, thirdFar: state.drivingFogFar };
+    weatherFog ??= { thirdNear: state.drivingFogNear, thirdFar: state.drivingFogFar };
     scene.background.lerp(state.background, blend);
-    weatherFog.color.lerp(state.fogColor, blend);
-    weatherFog.near += (state.fogNear - weatherFog.near) * blend;
-    weatherFog.far += (state.fogFar - weatherFog.far) * blend;
     weatherFog.thirdNear += (state.drivingFogNear - weatherFog.thirdNear) * blend;
     weatherFog.thirdFar += (state.drivingFogFar - weatherFog.thirdFar) * blend;
     sky.color.lerp(state.skyColor, blend);

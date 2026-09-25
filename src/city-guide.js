@@ -1,4 +1,3 @@
-import { cityCell } from './world/city-route.js';
 import { CityMapCache } from './city-map.js';
 import { CITY_PLACES, PLACE_TYPES } from './world/city-places.js';
 import { CityExploration } from './city-exploration.js';
@@ -45,9 +44,7 @@ export class CityGuide {
   refreshNotebook() {
     const found = this.exploration.found;
     $('city-stamps').textContent = `${found.size} / ${PLACE_TYPES.length}`;
-    $('city-notebook-progress').textContent = found.size === PLACE_TYPES.length
-      ? `${PLACE_TYPES.length} / ${PLACE_TYPES.length} visited`
-      : `${found.size} / ${PLACE_TYPES.length} visited`;
+    $('city-notebook-progress').textContent = `${found.size} / ${PLACE_TYPES.length} visited`;
     for (const button of document.querySelectorAll('[data-place-type]')) {
       const collected = found.has(button.dataset.placeType);
       button.dataset.found = String(collected);
@@ -69,7 +66,7 @@ export class CityGuide {
     if (this.expanded) this.draw(vehicle);
   }
   updateTaxi() {
-    const run = this.taxi, vehicle = this.position(), target = run.target;
+    const run = this.taxi, vehicle = this.position();
     // The map card keeps the next shift goal in view; the task card already
     // says everything else about the fare.
     const goal = run.goals?.find(goal => !goal.done);
@@ -97,8 +94,6 @@ export class CityGuide {
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0); ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = '#20383e'; ctx.fillRect(0, 0, width, height);
     const point = p => [width / 2 + (p.u - vehicle.u) * scale, height / 2 - (p.s - vehicle.s) * scale];
-    const { ix, iz } = cityCell(vehicle.s, vehicle.u);
-    this.mapCache.update(ix, iz);
     this.mapCache.draw(ctx, vehicle, scale, width, height);
     if (nextStop) {
       ctx.save(); ctx.strokeStyle = '#95b8b9'; ctx.lineWidth = 2; ctx.setLineDash([3, 4]);

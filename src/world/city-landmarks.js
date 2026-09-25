@@ -3,7 +3,6 @@ import { seededRandom } from './route.js';
 import { PAVEMENT_LEVEL as G } from './city-route.js';
 import { edgeFacade, edgeWindows, cornice, convexHull, exitDistance } from './city-buildings.js';
 import { landmarkSite, venueFootprint } from './landmark-site.js';
-export { landmarkSite } from './landmark-site.js';
 import { discoverySignFor, signCore } from './city-signs.js';
 import { round, clock, fireEngine } from './city-detail-assets.js';
 import { roofWedge, vaultGeometry } from './city-roofs.js';

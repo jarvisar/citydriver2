@@ -1,15 +1,14 @@
 // Headless drive through the generated city: loads the page, starts a free
 // drive, holds the throttle and reports console errors and screenshots.
 // node scripts/citydriver-smoke.mjs [url] [outDir]
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { chromium } from '@playwright/test';
 
-const url = process.argv[2] ?? 'http://127.0.0.1:4173/?seed=4817';
+const url = process.argv[2] ?? `${process.env.TEST_URL ?? 'http://127.0.0.1:5173'}/?seed=4817`;
 const out = process.argv[3] ?? '.artifacts/smoke';
 mkdirSync(out, { recursive: true });
 // A pinned Playwright may not match the browsers on the machine: prefer an
 // explicit executable (CHROME_PATH), then the Playwright browsers directory.
-import { existsSync } from 'node:fs';
 const executablePath = [process.env.CHROME_PATH, '/opt/pw-browsers/chromium', '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'].find(candidate => candidate && existsSync(candidate));
 const browser = await chromium.launch({ ...(executablePath ? { executablePath } : {}), args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
@@ -30,7 +29,9 @@ const status = await page.evaluate(() => {
   return { started: game.started, s: game.vehicle.s, u: game.vehicle.u, heading: game.vehicle.heading, chunks: game.world.chunks.size, distant: game.world.distant?.size, pending: game.world.pending.length, distantPending: game.world.distantPending?.length, colliders: [...game.world.chunks.values()].reduce((n, c) => n + c.features.colliders.length, 0), lamps: [...game.world.chunks.values()].reduce((n, c) => n + c.features.lamps.length, 0) };
 });
 console.log('status', JSON.stringify(status));
-if (!status.noGame) {
+// The drive needs the development hooks, which a production build leaves out
+if (status.noGame) errors.push('window.__citydriver is missing: run the smoke test against a dev server');
+else {
   await page.click('#free-drive');
   await page.waitForTimeout(600);
   await page.keyboard.down('KeyW');
