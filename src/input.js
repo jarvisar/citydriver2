@@ -47,6 +47,12 @@ export class Input {
         if (!e.repeat) onAction('fullscreen');
         return;
       }
+      // M opens and closes the city map, so it works with the map open too
+      if (e.code === 'KeyM' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        if (!e.repeat) onAction('map');
+        return;
+      }
       if (['KeyC', 'KeyG'].includes(e.code) && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
         if (!e.repeat) onAction('car');
@@ -61,7 +67,6 @@ export class Input {
         if (['KeyP', 'Escape'].includes(e.code)) onAction('pause');
         if (e.code === 'KeyR') onAction('reset');
         if (e.code === 'KeyV') onAction('view');
-        if (e.code === 'KeyM') onAction('sound');
         if (e.code === 'KeyH' && !e.ctrlKey && !e.metaKey && !e.altKey) onAction('autodrive');
         if (e.code === 'KeyO' && !e.ctrlKey && !e.metaKey && !e.altKey) onAction('ambientOcclusion');
       }

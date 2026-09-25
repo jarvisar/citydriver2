@@ -35,7 +35,7 @@ body[data-mode=taxi] .taxi-task[data-arriving=true] #toast { display: none; }
 .taxi-task[data-arriving=true] { border-color: #b9edb1; }
 .taxi-task[data-arriving=true] #taxi-task-detail { color: #c3f4bb; }
 .taxi-task[data-risky=true]:not([data-arriving=true]) #taxi-task-detail { color: #ffa44a; font-weight: 700; }
-#city-map-toggle:focus-visible, #taxi-buttons button:focus-visible { outline: 3px solid #fff8e7; outline-offset: 3px; }
+#city-map-toggle:focus-visible, #city-map-open:focus-visible, #taxi-buttons button:focus-visible { outline: 3px solid #fff8e7; outline-offset: 3px; }
 .taxi-stop-track { position: absolute; left: 12px; right: 12px; bottom: 0; height: 4px; border-radius: 2px; overflow: hidden; background: #ffffff30; }
 #taxi-stop-progress { display: block; height: 100%; background: #b9edb1; width: 0; }
 
@@ -97,8 +97,9 @@ body[data-mode=taxi] .city-guide[data-expanded=true] { max-height: calc(100% - v
 .city-guide[data-expanded=true] .city-guide-header { position: sticky; top: 0; background: #17262f; z-index: 1; }
 .city-guide-header { margin-bottom: 4px; }
 .city-guide-header > span { font-size: 12px; letter-spacing: .5px; }
-#city-map-toggle { min-width: 80px; min-height: 44px; padding: 8px 10px; font-size: 13px; font-weight: 650; color: #fff8e7; border-radius: 8px; }
-#city-map-toggle:hover { background: #ffffff18; }
+:is(#city-map-toggle, #city-map-open) { min-width: 0; min-height: 44px; padding: 8px 8px; font-size: 13px; font-weight: 650; color: #fff8e7; border-radius: 8px; }
+#city-map-open { color: #f1cc8e; }
+:is(#city-map-toggle, #city-map-open):hover { background: #ffffff18; }
 .city-guide[data-expanded=false] { width: auto; padding: 0; }
 .city-guide[data-expanded=false] .city-guide-header { margin: 0; }
 .city-guide[data-expanded=false] .city-guide-header > span { display: none; }

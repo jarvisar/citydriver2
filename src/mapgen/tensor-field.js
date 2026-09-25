@@ -16,9 +16,9 @@ export default class TensorField {
     this.basisFields = [];
     this.parks = []; this.sea = []; this.river = [];
     this.ignoreRiver = false; this.smooth = false;
-    // Rotational noise over one neighbourhood rather than the whole domain:
-    // each { index, angle, size } turns the streets where basis field
-    // `index` weighs most, fading out with its share of the weight
+    // Rotational noise over some neighbourhoods rather than the whole
+    // domain: each { angle, size, share } turns the streets as much as
+    // share(point), from 0 to 1, says the point is in them
     this.districtNoise = [];
   }
   enableGlobalNoise(angle, size) {
@@ -51,9 +51,9 @@ export default class TensorField {
     if (this.noiseParams.globalNoise) {
       tensorAcc.rotate(this.getRotationalNoise(point, this.noiseParams.noiseSizeGlobal, this.noiseParams.noiseAngleGlobal));
     }
-    // A neighbourhood's own noise, as much as that neighbourhood's field weighs there
-    for (const { index, angle, size } of this.districtNoise) {
-      const share = total > 0 ? weights[index] / total : 0;
+    // A neighbourhood's own noise, as much as the point is in it
+    for (const { angle, size, share: shareAt } of this.districtNoise) {
+      const share = shareAt(point);
       if (share > .01) tensorAcc.rotate(this.getRotationalNoise(point, size, angle) * share);
     }
     if (this.alignment) this.align(point, tensorAcc, total > 0 && this.radialIndex >= 0 ? weights[this.radialIndex] / total : 0);

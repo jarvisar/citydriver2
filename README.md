@@ -53,15 +53,16 @@ again.
 | Brake / reverse | S / Down | LT / L2 or B / Circle |
 | Steer | A D / Left Right | Left stick |
 | Boost | Shift | RB / R1 |
-| Drift / handbrake | Space | D-pad Down |
+| Drift / handbrake | Space | LB / L1 |
 | Camera | V | X / Square |
 | Pause | P / Escape | Start / Menu |
 | Reset | R | Y / Triangle |
 | Garage / Taxi fleet | C / G | L3 |
 | Autodrive (free drive) | H | D-pad Up |
-| Fullscreen | F | LB / L1 |
-| Sound | M | Pause menu |
-| Map | Map button | View / Share |
+| Fullscreen | F | D-pad Down (while driving) |
+| Sound | Pause menu | Pause menu |
+| City map (every district) | M, or Full map on the street map | View / Share |
+| Street map (show / hide) | Its Hide button | |
 | Menus | Tab, Enter | D-pad or left stick to choose, A / Cross to select, B / Circle to go back |
 
 On touch screens, use the stick to drive, hold Boost, and tap Drift while

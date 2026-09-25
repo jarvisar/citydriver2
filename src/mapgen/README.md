@@ -25,9 +25,11 @@ Changes from the original TypeScript:
 - Block edges shrink by the width of the road each one runs along, which the
   road graph records, so lots sit back from wide avenues further than from
   side streets.
-- Rotational noise can be given to one neighbourhood rather than the whole
-  domain (`districtNoise`, weighted by that grid field's share), so an old
-  town's streets wind while the rest keep their grids.
+- The city is a patchwork of neighbourhoods a few blocks across, each with a
+  style (`districts` option, `layNeighbourhoods`), and rotational noise can
+  be given to one style's neighbourhoods rather than the whole domain
+  (`districtNoise`, each with a `share(point)`), so an old town's streets
+  wind while the rest keep their grids.
 - Near the ring road the field turns to run along it or meet it square
   (`alignWith`), and for the minor roads the ring is an existing streamline of
   the family running along it, as MapGenerator treats its coast.

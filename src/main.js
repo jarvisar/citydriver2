@@ -25,6 +25,7 @@ import { cityCell, cityDistrict, nearestLanePose, journeyStart, lanePose, roadAt
 import { CITY } from './world/city.js';
 import { navGraph } from './world/nav-graph.js';
 import { CityGuide } from './city-guide.js';
+import { WorldMap, DISTRICT_COLORS } from './city-world-map.js';
 import { TaxiRun } from './taxi-run.js';
 import { taxiLicense } from './taxi-license.js';
 import { goalProgress } from './taxi-goals.js';
@@ -128,8 +129,8 @@ async function boot() {
     vehicle.setLights(weather.state.lightLevel);
     rendering.setJourney(journey); audio.setJourney(journey);
     const journeyDialog = $('#journey-dialog'), carDialog = $('#car-dialog'), pauseOverlay = $('#pause-overlay');
-    const fleetDialog = $('#taxi-fleet-dialog');
-    const openChooser = () => [journeyDialog, carDialog, fleetDialog].find(dialog => dialog.open) ?? null;
+    const fleetDialog = $('#taxi-fleet-dialog'), worldMapDialog = $('#world-map-dialog');
+    const openChooser = () => [journeyDialog, carDialog, fleetDialog, worldMapDialog].find(dialog => dialog.open) ?? null;
     // The pause screen is a menu too: it is up whenever the drive is paused
     // with no chooser over it, and the controller walks it the same way.
     const openPauseMenu = () => !$('#taxi-results').hidden ? $('#taxi-results') : paused && !pauseOverlay.hidden ? pauseOverlay : null;
@@ -168,6 +169,47 @@ async function boot() {
       fleetDialog.querySelector(`[data-fleet-car="${taxi.fleet.selected}"]`).focus();
     }
     document.querySelectorAll('[data-open-fleet]').forEach(button => button.addEventListener('click', openFleet));
+    // The whole city, from the pause screen: built the first time it opens,
+    // drawn again whenever it opens or the window changes size
+    let worldMap = null;
+    const worldMapCanvas = $('#world-map');
+    const hereText = () => `You are in ${cityDistrict(vehicle.s, vehicle.u)}`;
+    function drawWorldMap() {
+      if (!worldMapDialog.open) return;
+      // as wide as the dialog, or as the window's height leaves room for
+      const room = Math.max(220, window.innerHeight - 250);
+      worldMapCanvas.style.width = `${Math.floor(Math.min(worldMapCanvas.parentElement.clientWidth, room * worldMap.aspect))}px`;
+      worldMap.draw(worldMapCanvas, vehicle);
+    }
+    function openWorldMap() {
+      if (changingJourney || openChooser()) return;
+      journeyWasPaused = paused; setPaused(true); pauseOverlay.hidden = true;
+      if (!worldMap) {
+        worldMap = new WorldMap(CITY, cityGuide.mapCache);
+        // The legend: each district this city has, and how many neighbourhoods
+        const counts = new Map();
+        for (const label of worldMap.labels) if (!label.downtown) counts.set(label.style, (counts.get(label.style) ?? 0) + 1);
+        $('#world-map-legend').innerHTML = Object.keys(DISTRICT_COLORS).filter(style => counts.has(style)).map(style =>
+          `<li><span class="world-map-swatch" style="--district-color:${DISTRICT_COLORS[style]}"></span>${style}<small>${counts.get(style)}</small></li>`).join('');
+      }
+      worldMapCanvas.style.aspectRatio = String(worldMap.aspect);
+      $('#world-map-status').textContent = hereText();
+      worldMapDialog.showModal();
+      drawWorldMap();
+      $('#close-world-map').focus();
+    }
+    $('#open-world-map').addEventListener('click', openWorldMap);
+    // and from the street map on screen, its button or the map itself
+    $('#city-map-open').addEventListener('click', openWorldMap);
+    $('#city-map').addEventListener('click', openWorldMap);
+    $('#close-world-map').addEventListener('click', () => worldMapDialog.close());
+    window.addEventListener('resize', drawWorldMap);
+    worldMapCanvas.addEventListener('pointermove', event => {
+      const box = worldMapCanvas.getBoundingClientRect();
+      const name = worldMap?.districtAt(event.clientX - box.left, event.clientY - box.top, box.width);
+      $('#world-map-status').textContent = name ?? hereText();
+    });
+    worldMapCanvas.addEventListener('pointerleave', () => { $('#world-map-status').textContent = hereText(); });
     $('#close-fleet').addEventListener('click', () => fleetDialog.close());
     const soundScene = { player: vehicle, traffic, interior: false, heading: 0 };
     const autodrive = new Autodrive();
@@ -436,7 +478,7 @@ async function boot() {
       }
       const chooser = openChooser();
       if (chooser) {
-        if (name === 'menuClose' || (vr?.active && name === 'pause') || (name === 'car' && (chooser === carDialog || chooser === fleetDialog))) chooser.close();
+        if (name === 'menuClose' || (vr?.active && name === 'pause') || (name === 'car' && (chooser === carDialog || chooser === fleetDialog)) || (name === 'map' && chooser === worldMapDialog)) chooser.close();
         if (MENU_MOVES.includes(name)) moveMenuFocus(chooser, name);
         if (name === 'menuConfirm') confirmMenuFocus(chooser);
         return;
@@ -457,7 +499,8 @@ async function boot() {
         else if (name !== 'menuClose') moveMenuFocus(welcomeMenu, name);
         return;
       }
-      if (name === 'map') { if (started && !paused) $('#city-map-toggle').click(); return; }
+      // M or View / Share: the city map, from the drive or the pause screen
+      if (name === 'map') { if ((started || paused) && taxi.status !== 'over') openWorldMap(); return; }
       if (name === 'nextJourney') return;
       if (taxi.status === 'over') { if (name === 'reset') beginTaxi(); return; }
       if (name === 'car') { openCars(); return; }
@@ -505,7 +548,7 @@ async function boot() {
       if (name === 'sound') {
         try {
           const enabled = await audio.toggle(); $('#sound').setAttribute('aria-pressed', String(enabled));
-          $('#sound').setAttribute('aria-label', enabled ? 'Turn sound off' : 'Turn sound on'); $('#sound').title = `${enabled ? 'Turn sound off' : 'Turn sound on'} (M)`;
+          $('#sound').setAttribute('aria-label', enabled ? 'Turn sound off' : 'Turn sound on'); $('#sound').title = enabled ? 'Turn sound off' : 'Turn sound on';
           toast(enabled ? JOURNEYS[journey].sound : 'Sound off');
         } catch { toast('Sound unavailable'); }
       }
@@ -572,7 +615,7 @@ async function boot() {
       const active = desktop ? desktopFullscreen : Boolean(document.fullscreenElement || document.webkitFullscreenElement || fullscreenDisplay.matches);
       $('#fullscreen').setAttribute('aria-pressed', String(active));
       $('#fullscreen').setAttribute('aria-label', active ? 'Exit fullscreen' : 'Enter fullscreen');
-      $('#fullscreen').title = `${active ? 'Exit' : 'Enter'} fullscreen (F / LB / L1)`;
+      $('#fullscreen').title = `${active ? 'Exit' : 'Enter'} fullscreen (F / D-pad Down)`;
     }
     async function toggleFullscreen() {
       if (fullscreenPending) return;
@@ -630,11 +673,12 @@ async function boot() {
       if (event.pointerType === 'touch') { event.preventDefault(); action('nextJourney'); }
     });
     $('#close-journeys').addEventListener('click', () => journeyDialog.close());
-    for (const dialog of [journeyDialog, carDialog, fleetDialog]) {
+    for (const dialog of [journeyDialog, carDialog, fleetDialog, worldMapDialog]) {
       dialog.addEventListener('close', () => {
         if (!changingJourney) setPaused(journeyWasPaused || document.hidden);
         if (taxi.status === 'over') pauseOverlay.hidden = true;
         if (dialog === fleetDialog) fleetReturnFocus?.focus();
+        if (dialog === worldMapDialog && paused && !pauseOverlay.hidden) $('#open-world-map').focus();
       });
       dialog.addEventListener('click', event => {
         if (event.target !== dialog) return;
@@ -724,6 +768,7 @@ async function boot() {
       const text = (selector, value) => { const element = $(selector); if (element.textContent !== value) element.textContent = value; };
       text('#city-heading', ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(degrees / 45) % 8]);
       text('#city-location', cityDistrict(vehicle.s, vehicle.u));
+      text('#world-map-here', cityDistrict(vehicle.s, vehicle.u));
       text('#weather-label', weather.state.label);
       cityGuide.update(started && !paused && !changingJourney);
       taxiView.hud(taxi, vehicle);
@@ -745,7 +790,7 @@ async function boot() {
         const cars = chooser === carDialog;
         const fleet = chooser === fleetDialog;
         const buttons = [...chooser.querySelectorAll(fleet ? '[data-fleet-car]:not(:disabled), [data-livery]:not(:disabled)' : cars ? '[data-car], [data-paint]' : '[data-journey]')];
-        return { id: chooser.id, title: fleet ? 'Taxi fleet' : cars ? 'Garage & paint' : 'Choose a route', items: [
+        return { id: chooser.id, title: fleet ? 'Taxi fleet' : cars ? 'Garage & paint' : chooser === worldMapDialog ? 'City map' : 'Choose a route', items: [
           { label: 'Back', activate: () => chooser.close() },
           ...buttons.map(button => ({
             label: (button.hasAttribute('data-paint') ? 'Paint: ' : button.hasAttribute('data-livery') ? 'Livery: ' : '') + (button.getAttribute('aria-label') ?? button.querySelector('.chooser-card-title')?.textContent ?? button.textContent).trim() + (button.getAttribute('aria-current') === 'true' || button.getAttribute('aria-checked') === 'true' ? ' ✓' : ''),

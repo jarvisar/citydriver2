@@ -60,8 +60,71 @@ export const DEFAULT_OPTIONS = {
   // middle are promoted), and style(point, district, downtown), the profile
   // name for a side street there (see road-hierarchy.js)
   streets: { boulevards: 2700, style: null },
+  // Neighbourhoods about `spacing` apart over the city's land, their borders
+  // wandering, each with one of `styles`: every style about as often and no
+  // two neighbours alike, except the one nearest downtown, which is
+  // `downtown`. `winding` gives a style rotational noise { angle, size } over
+  // its streets.
+  districts: { spacing: 460, styles: [], downtown: null, winding: {} },
   coast: true, river: true, closed: true,
 };
+
+// Neighbourhood centres on a jittered grid over the land, and each one's
+// style. A point belongs to the nearest centre after a noise warp, so the
+// borders wander; districtShare(style) gives, from 0 to 1, how much a point is
+// in that style's neighbourhoods, blending over a street or so at the border.
+function layNeighbourhoods(options, origin, dimensions, onLand, downtown, noise2D, random) {
+  const { spacing, styles = [] } = options;
+  const cols = Math.max(1, Math.round(dimensions.x / spacing)), rows = Math.max(1, Math.round(dimensions.y / spacing));
+  const cellX = dimensions.x / cols, cellY = dimensions.y / rows, neighbourhoods = [];
+  for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const jitter = attempt < 4 ? .35 : .5;
+      const centre = new Vector(origin.x + (col + .5 + (random() * 2 - 1) * jitter) * cellX, origin.y + (row + .5 + (random() * 2 - 1) * jitter) * cellY);
+      if (onLand(centre)) { neighbourhoods.push({ centre, style: null }); break; }
+    }
+  }
+  if (!neighbourhoods.length) neighbourhoods.push({ centre: origin.clone().add(dimensions.clone().multiplyScalar(.5)), style: null });
+  // Styles: the neighbourhood round downtown first, then the rest in a random
+  // order, each taking the least used style its neighbours haven't
+  const counts = new Map(styles.map(style => [style, 0]));
+  if (options.downtown && downtown) {
+    neighbourhoods.reduce((best, n) => n.centre.distanceTo(downtown) < best.centre.distanceTo(downtown) ? n : best).style = options.downtown;
+  }
+  const order = neighbourhoods.map((n, i) => i);
+  for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+  for (const index of order) {
+    const here = neighbourhoods[index];
+    if (here.style || !styles.length) continue;
+    const taken = new Set(neighbourhoods.filter(n => n.style && n.centre.distanceTo(here.centre) < spacing * 1.6).map(n => n.style));
+    const free = styles.filter(style => !taken.has(style)), pool = free.length ? free : styles;
+    const least = Math.min(...pool.map(style => counts.get(style)));
+    const choice = pool.filter(style => counts.get(style) === least);
+    here.style = choice[Math.floor(random() * choice.length)];
+    counts.set(here.style, counts.get(here.style) + 1);
+  }
+  const warp = (x, y) => [x + noise2D(x / 520 + 7.3, y / 520) * 120, y + noise2D(x / 520, y / 520 - 11.9) * 120];
+  const distances = (x, y) => { const [wx, wy] = warp(x, y); return neighbourhoods.map(n => Math.hypot(wx - n.centre.x, wy - n.centre.y)); };
+  const neighbourhoodAt = (x, y) => { const d = distances(x, y); return d.indexOf(Math.min(...d)); };
+  const districtAt = (x, y) => neighbourhoods[neighbourhoodAt(x, y)].style;
+  // Shares on a raster, looked up bilinearly: the streets ask at every step
+  // they trace
+  const districtShare = style => {
+    const cell = 12, cw = Math.ceil(dimensions.x / cell) + 1, ch = Math.ceil(dimensions.y / cell) + 1, grid = new Float32Array(cw * ch);
+    for (let r = 0; r < ch; r++) for (let c = 0; c < cw; c++) {
+      const d = distances(origin.x + c * cell, origin.y + r * cell), least = Math.min(...d);
+      let own = 0, total = 0;
+      d.forEach((value, i) => { const weight = Math.exp((least - value) / 60); total += weight; if (neighbourhoods[i].style === style) own += weight; });
+      grid[r * cw + c] = own / total;
+    }
+    return point => {
+      const fx = Math.max(0, Math.min(cw - 1.001, (point.x - origin.x) / cell)), fy = Math.max(0, Math.min(ch - 1.001, (point.y - origin.y) / cell));
+      const c = Math.floor(fx), r = Math.floor(fy), tx = fx - c, ty = fy - r, at = (cc, rr) => grid[rr * cw + cc];
+      return (at(c, r) * (1 - tx) + at(c + 1, r) * tx) * (1 - ty) + (at(c, r + 1) * (1 - tx) + at(c + 1, r + 1) * tx) * ty;
+    };
+  };
+  return { neighbourhoods, neighbourhoodAt, districtAt, districtShare };
+}
 
 function merge(base, extra) {
   const out = { ...base };
@@ -113,9 +176,17 @@ export function generateCityMap(options = {}) {
     }
   }
   lap('water');
+  const radial = field.basisFields.find(basis => basis.FIELD_TYPE === FIELD_TYPE.Radial);
+  const downtownDistance = p => radial ? Math.hypot(p.x - radial.centre.x, p.y - radial.centre.y) / Math.max(1, radial._size) : 2;
+  // The neighbourhoods (not the tensor field's grids: with their random sizes
+  // and decays one grid outweighs the rest nearly everywhere, and there are
+  // only four). They have their own random numbers, so the streets are the
+  // same whatever they are.
+  const { neighbourhoods, neighbourhoodAt, districtAt, districtShare } = layNeighbourhoods(o.districts, origin, dimensions, p => field.onLand(p) && insideRing(p), radial?.centre, field.noise2D, mulberry32(seed ^ 0x2c1b3c6d));
   // The streets of a neighbourhood with noise wind (not the coast or river,
   // which have their own)
-  field.districtNoise = (o.noise.districts ?? []).filter(({ index }) => field.basisFields[index]);
+  field.districtNoise = Object.entries(o.districts.winding ?? {}).filter(([style]) => neighbourhoods.some(n => n.style === style))
+    .map(([style, noise]) => ({ ...noise, share: districtShare(style) }));
   // Near the ring the streets turn to meet it square or run along it, and
   // for the side streets the ring is an existing streamline of the family
   // that runs along it there, as MapGenerator keeps its coast: a street
@@ -138,22 +209,6 @@ export function generateCityMap(options = {}) {
       }
     }
   }
-  const radial = field.basisFields.find(basis => basis.FIELD_TYPE === FIELD_TYPE.Radial);
-  const downtownDistance = p => radial ? Math.hypot(p.x - radial.centre.x, p.y - radial.centre.y) / Math.max(1, radial._size) : 2;
-  // Which grid basis field shapes the streets at a point: each grid is a
-  // neighbourhood with its own street orientation. (Downtown is the radial
-  // field, given separately as downtownDistance.)
-  const districtAt = (x, y) => {
-    const point = new Vector(x, y);
-    let best = -1, bestWeight = 0, nearest = 0, nearestDistance = Infinity;
-    field.basisFields.forEach((basis, i) => {
-      if (basis.FIELD_TYPE !== FIELD_TYPE.Grid) return;
-      const weight = basis.getTensorWeight(point, false), distance = point.distanceTo(basis.centre) / Math.max(1, basis._size);
-      if (weight > bestWeight) { bestWeight = weight; best = i; }
-      if (distance < nearestDistance) { nearestDistance = distance; nearest = i; }
-    });
-    return best >= 0 ? best : nearest;
-  };
   // Each class of road is integrated, joined, simplified and then rounded,
   // so everything built on it later sees the final centre lines.
   const roads = (params, existing, ignoreRiver, radius) => {
@@ -422,8 +477,7 @@ export function generateCityMap(options = {}) {
     riverWidth: waterParams.riverSize - waterParams.riverBankSize, shore,
     hasCoast: water.hasCoast, hasRiver: water.hasRiver,
     parks: parks.map(park => park.polygon), parkInfo: parks, parkLayouts, blocks, lots, lotBlocks, lotEdges, lotDepths, nav, field, joints,
-    districts: field.basisFields.map((basis, index) => ({ index, radial: basis.FIELD_TYPE === FIELD_TYPE.Radial, centre: basis.centre, size: basis._size })),
-    districtAt, downtownDistance,
+    districts: neighbourhoods, neighbourhoodAt, districtAt, downtownDistance,
     sampleDirection: (x, y) => field.samplePoint(new Vector(x, y)).getMajor(),
     timings,
   };

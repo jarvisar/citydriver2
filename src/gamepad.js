@@ -54,7 +54,8 @@ export class GamepadInput {
       left: Math.max(-steer, buttonValue(pad, 14), 0),
       right: Math.max(steer, buttonValue(pad, 15), 0),
       boost: buttonValue(pad, 5),
-      handbrake: buttonValue(pad, 13),
+      // L1 / LB drifts
+      handbrake: buttonValue(pad, 4),
     };
     const active = Object.values(state).some(Boolean) || buttons.some(Boolean);
     if (blocked || this.requireNeutral) {
@@ -78,13 +79,12 @@ export class GamepadInput {
     // fire once and Start can resume the game without a keyboard or touchscreen.
     this.state = paused ? {} : state;
     const pause = pressed(9), view = pressed(2), reset = pressed(3), nextJourney = pressed(5);
-    const map = pressed(8), fullscreen = pressed(4), fps = pressed(11), car = pressed(10);
+    const map = pressed(8), fps = pressed(11), car = pressed(10), fullscreen = pressed(13);
     const back = pressed(1), confirm = pressed(0), autodrive = pressed(12);
     const previous = pressed(14) || pressed(17), next = pressed(15) || pressed(18);
     const up = pressed(12) || pressed(19), down = pressed(13) || pressed(20);
     this.previousButtons = buttons;
     if (fps) this.onAction('fps');
-    if (fullscreen) { this.onAction('fullscreen'); return; }
     // A chooser takes the whole pad. The pause screen only borrows the
     // directions and A, so the shortcuts below still work from it.
     if (menu && menu !== 'pause' && menu !== 'welcome') {
@@ -130,6 +130,8 @@ export class GamepadInput {
     }
     if (state.forward || state.brake) this.onAction('drive');
     if (autodrive) this.onAction('autodrive');
+    // D-pad Down is fullscreen while driving; in a menu it moves the focus
+    if (fullscreen) this.onAction('fullscreen');
     if (view) this.onAction('view');
     if (reset) this.onAction('reset');
   }

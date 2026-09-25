@@ -87,7 +87,7 @@ test('stick deadzone, analog triggers, D-pad and face-button fallbacks', () => {
 
 test('shortcuts fire once per press and Start works while paused', () => {
   const { input, device, actions } = fixture();
-  for (const [index, action] of [[9, 'pause'], [2, 'view'], [3, 'reset'], [5, 'nextJourney'], [8, 'map'], [4, 'fullscreen'], [11, 'fps']]) {
+  for (const [index, action] of [[9, 'pause'], [2, 'view'], [3, 'reset'], [5, 'nextJourney'], [8, 'map'], [13, 'fullscreen'], [11, 'fps']]) {
     hold(device, index); input.update(); input.update(); input.update();
     assert.equal(actions.filter(item => item === action).length, 1);
     hold(device, index, 0); input.update();
@@ -112,6 +112,21 @@ test('scene shortcut works paused and consumes presses made in a modal', () => {
   assert.deepEqual(actions, ['nextJourney', 'nextJourney']);
 });
 
+test('L1 drifts, and D-pad Down is fullscreen while driving but navigation in menus', () => {
+  const { input, device, actions } = fixture();
+  hold(device, 4); input.update(); input.update();
+  assert.equal(input.state.handbrake, 1);
+  assert.deepEqual(actions, [], 'L1 is no shortcut');
+  hold(device, 4, 0); hold(device, 13); input.update(); input.update();
+  assert.equal(input.state.handbrake, 0, 'D-pad Down no longer drifts');
+  assert.deepEqual(actions, ['fullscreen']);
+  hold(device, 13, 0); input.update();
+  hold(device, 13); input.update({ paused: true, menu: 'pause' });
+  hold(device, 13, 0); input.update({ paused: true, menu: 'pause' });
+  hold(device, 13); input.update({ menu: true });
+  assert.deepEqual(actions, ['fullscreen', 'menuDown', 'menuDown']);
+});
+
 test('D-pad Up toggles autodrive once while driving and remains navigation in menus', () => {
   const { input, device, actions } = fixture();
   hold(device, 12); input.update(); input.update();
@@ -126,13 +141,13 @@ test('D-pad Up toggles autodrive once while driving and remains navigation in me
 
 test('chooser routes controller inputs to navigation without driving', () => {
   const { input, device, actions } = fixture();
-  for (const [index, action] of [[15, 'menuNext'], [14, 'menuPrevious'], [12, 'menuUp'], [13, 'menuDown'], [0, 'menuConfirm'], [1, 'menuClose'], [8, 'menuClose'], [10, 'menuClose'], [4, 'fullscreen']]) {
+  for (const [index, action] of [[15, 'menuNext'], [14, 'menuPrevious'], [12, 'menuUp'], [13, 'menuDown'], [0, 'menuConfirm'], [1, 'menuClose'], [8, 'menuClose'], [10, 'menuClose']]) {
     hold(device, index); input.update({ menu: true }); input.update({ menu: true });
     assert.equal(actions.at(-1), action);
     assert.deepEqual(input.state, {});
     hold(device, index, 0); input.update({ menu: true });
   }
-  assert.equal(actions.length, 9);
+  assert.equal(actions.length, 8);
   device.axes[0] = 1; input.update({ menu: true }); input.update({ menu: true });
   assert.equal(actions.at(-1), 'menuNext');
   device.axes[0] = 0; input.update({ menu: true });
@@ -141,7 +156,7 @@ test('chooser routes controller inputs to navigation without driving', () => {
   assert.equal(actions.at(-1), 'menuDown');
   device.axes[1] = -1; input.update({ menu: true }); input.update({ menu: true });
   assert.equal(actions.at(-1), 'menuUp');
-  assert.equal(actions.length, 12);
+  assert.equal(actions.length, 11);
 });
 
 test('the title screen is a menu: the D-pad chooses, A and Start confirm, and only the gas pedal drives', () => {
@@ -179,7 +194,7 @@ test('the pause screen takes the pad as a menu while its shortcuts stay live', (
   assert.equal(actions.length, 6);
   // The pause screen is a layer over the drive, not a modal, so the shortcuts
   // that open the garage or the routes from it still work.
-  for (const [index, action] of [[9, 'pause'], [8, 'map'], [10, 'car'], [5, 'nextJourney'], [4, 'fullscreen'], [11, 'fps']]) {
+  for (const [index, action] of [[9, 'pause'], [8, 'map'], [10, 'car'], [5, 'nextJourney'], [11, 'fps']]) {
     hold(device, index); input.update(pauseMenu); input.update(pauseMenu);
     assert.equal(actions.at(-1), action);
     hold(device, index, 0); input.update(pauseMenu);

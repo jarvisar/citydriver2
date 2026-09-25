@@ -1,5 +1,5 @@
 import Vector from '../mapgen/vector.js';
-import { SEED, randomAt } from './route.js';
+import { SEED } from './route.js';
 import { generateCityMap, carriagewayScore, ROAD_PROFILES, SIDEWALK } from '../mapgen/generate.js';
 import { RoadIndex } from '../mapgen/road-index.js';
 import { shoreRuns } from '../mapgen/shore.js';
@@ -39,9 +39,9 @@ function samplePolyline(points, step) {
 }
 export { SIDEWALK };
 
-// Neighbourhoods follow the tensor field: each grid basis field shapes the
-// streets of one part of town, and that part has one character. The radial
-// field is downtown.
+// The city is a patchwork of neighbourhoods a few blocks across, each with
+// one character (see layNeighbourhoods in mapgen/generate.js), and the one
+// round downtown is Midtown, as is downtown itself (the radial field).
 export const DISTRICT_STYLES = ['Old town', 'Garden quarter', 'Warehouse district', 'Market district', 'Civic quarter'];
 // How each district plats its blocks: lot depth and frontages (see mapgen/lots.js)
 export const LOT_STYLES = {
@@ -63,11 +63,6 @@ const DOWNTOWN = .62;
 // The old town's streets wind: rotational noise over its part of the field
 const OLD_TOWN_NOISE = { angle: 30, size: 300 };
 
-function districtNames(seed) {
-  const names = DISTRICT_STYLES.slice();
-  for (let i = names.length - 1; i > 0; i--) { const j = Math.floor(randomAt(i, 7300, seed) * (i + 1)); [names[i], names[j]] = [names[j], names[i]]; }
-  return names;
-}
 
 // Which cells are under water, at 4 m, so the car never asks a polygon. Land
 // is filled in; everything else, and everything beyond the mask, is water.
@@ -183,14 +178,11 @@ function crossingFree(roadIndex, points, halfWidth, own, step = 2) {
 }
 
 export function buildCity(seed = SEED) {
-  const names = districtNames(seed);
-  const styleName = (grid, downtown) => downtown < DOWNTOWN ? 'Midtown' : names[grid] ?? 'Market district';
-  // (the four grid fields take the first four styles, so a city may have no old town)
-  const oldTown = names.indexOf('Old town');
+  const styleName = (district, downtown) => downtown < DOWNTOWN ? 'Midtown' : district ?? 'Market district';
   const map = generateCityMap({ seed, width: CITY_WIDTH, height: CITY_HEIGHT,
-    noise: { districts: oldTown < 4 ? [{ index: oldTown, ...OLD_TOWN_NOISE }] : [] },
-    lots: { style: (centre, grid, downtown) => ({ ...LOT_STYLES[styleName(grid, downtown)] }) },
-    streets: { style: (point, grid, downtown) => STREET_STYLES[styleName(grid, downtown)] } });
+    districts: { styles: DISTRICT_STYLES, downtown: 'Midtown', winding: { 'Old town': OLD_TOWN_NOISE } },
+    lots: { style: (centre, district, downtown) => ({ ...LOT_STYLES[styleName(district, downtown)] }) },
+    streets: { style: (point, district, downtown) => STREET_STYLES[styleName(district, downtown)] } });
   const margin = CITY_MARGIN;
   const minX = -CITY_WIDTH / 2 - margin, minY = -CITY_HEIGHT / 2 - margin, maxX = CITY_WIDTH / 2 + margin, maxY = CITY_HEIGHT / 2 + margin;
   // Land and water come from the generator's shore model, which tiles the
@@ -231,7 +223,7 @@ export function buildCity(seed = SEED) {
   map.blocks.forEach((block, index) => {
     block.index = index;
     const centre = averagePoint(block.inner.length >= 3 ? block.inner : block.polygon);
-    block.style = styleName(block.district ?? 0, Math.hypot(centre.x - downtown.u, centre.y - downtown.s) / Math.max(1, downtown.radius));
+    block.style = styleName(block.district, Math.hypot(centre.x - downtown.u, centre.y - downtown.s) / Math.max(1, downtown.radius));
     if (block.sidewalk.length < 3) { block.kerb = []; return; }
     const { polygon, patches } = roundCorners(block.sidewalk, KERB_RADIUS);
     block.kerb = polygon;
@@ -451,7 +443,7 @@ export function buildCity(seed = SEED) {
   return {
     ...map, minX, minY, maxX, maxY, margin,
     land, seaWater, riverWater, riverCentre, shores, walls, quays: walks, mask, downtown, inRiver, parks: map.parks, parkPlans: parks,
-    pavement, cornerPatches, bridges, districtNames: names, styleName,
+    pavement, cornerPatches, bridges, styleName,
     cell: CITY_CELL,
     ix0: Math.floor(-CITY_WIDTH / 2 / CITY_CELL), ix1: Math.floor((CITY_WIDTH / 2 - 1e-6) / CITY_CELL),
     iz0: Math.floor(-CITY_HEIGHT / 2 / CITY_CELL), iz1: Math.floor((CITY_HEIGHT / 2 - 1e-6) / CITY_CELL),

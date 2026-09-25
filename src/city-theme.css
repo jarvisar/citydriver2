@@ -63,9 +63,10 @@ body[data-controller=true] #app :is(button, input, select):focus {
 #app .city-guide-header { background: var(--city-panel); }
 #app .city-guide[data-expanded=false] .city-guide-header { background: transparent; }
 #app #city-map-toggle { color: var(--city-text); border-radius: var(--city-control-radius); }
-#app #city-map-toggle:hover { background: var(--city-hover); }
+#app #city-map-open { color: var(--city-gold); border-radius: var(--city-control-radius); }
+#app :is(#city-map-toggle, #city-map-open):hover { background: var(--city-hover); }
 /* With a controller, the map button names the pad button that opens it. */
-body[data-controller=true] #app #city-map-toggle::before { content: 'VIEW'; margin-right: 6px; padding: 1px 5px; border: 1px solid var(--city-line); border-radius: 4px; font-size: 9px; letter-spacing: .5px; vertical-align: 1px; }
+body[data-controller=true] #app #city-map-open::before { content: 'VIEW'; margin-right: 6px; padding: 1px 5px; border: 1px solid var(--city-line); border-radius: 4px; font-size: 9px; letter-spacing: .5px; vertical-align: 1px; }
 #app #taxi-buttons button { border-radius: var(--city-control-radius); border-color: var(--city-line); }
 #app #taxi-buttons > button { color: var(--city-text); background: var(--city-glass); }
 #app #taxi-buttons[data-drifting=true] [data-drive-button=handbrake] { background: var(--city-hover); }
