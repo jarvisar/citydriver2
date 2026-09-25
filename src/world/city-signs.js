@@ -107,10 +107,25 @@ export function drawSign(ctx, sign) {
   lettering(ctx, sign.subtitle.toUpperCase(), w / 2, h * .72, w * .70, h * (sign.header ? .085 : .10), 'sans-serif', 'normal');
   ctx.restore();
 }
-export function createSignMaterial() {
-  let map = null;
+// The part of a sign's face, as shares of its width and height (and how far
+// its middle sits above the face's), that its outline covers whatever its
+// shape: what a board's core, posts and brackets can hide behind
+const CORES = { plaque: [.94, .86, 0], oval: [.66, .64, 0], arch: [.9, .62, -.1], clipped: [.88, .9, 0], pennant: [.94, .7, .1] };
+export function signCore(sign, width, height) {
+  const [w, h, y] = CORES[sign.shape] ?? CORES.plaque;
+  return { width: width * w, height: height * h, y: height * y };
+}
+// The painted faces, and a board for each: the same silhouette in dark paint
+// a little bigger, behind the face, so a sign's board follows its shape (an
+// oval board behind an oval sign) rather than showing a box's corners
+export function createSignMaterials() {
+  const signs = createSignMaterial(), edges = createSignMaterial({ map: signs.map, edge: '#2f3538' });
+  return { signs, edges };
+}
+export function createSignMaterial({ map: shared = undefined, edge = null } = {}) {
+  let map = shared ?? null;
   const { width, height, columns, rows, tileWidth, tileHeight, padding } = SIGN_ATLAS;
-  if (globalThis.document) {
+  if (shared === undefined && globalThis.document) {
     const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
     const ctx = canvas.getContext('2d');
     for (const sign of SIGN_CATALOG) {
@@ -121,9 +136,10 @@ export function createSignMaterial() {
     }
     map = new THREE.CanvasTexture(canvas); map.colorSpace = THREE.SRGBColorSpace;
   }
-  const material = new THREE.MeshBasicMaterial({ map, alphaTest: .5, toneMapped: false });
+  const material = new THREE.MeshBasicMaterial({ map, alphaTest: .5, toneMapped: false, side: edge ? THREE.DoubleSide : THREE.FrontSide });
   material.userData.signAtlas = true;
-  material.customProgramCacheKey = () => `citydriver-sign-atlas-v1-${columns}-${rows}`;
+  const ink = edge ? new THREE.Color(edge) : null;
+  material.customProgramCacheKey = () => `citydriver-sign-atlas-v2-${columns}-${rows}${edge ? '-edge' : ''}`;
   material.onBeforeCompile = shader => {
     // Reuse instanceColor as a tile index; no per-sign uniforms, geometries or
     // per-frame uploads. Keep the atlas colors independent of this index.
@@ -140,6 +156,11 @@ export function createSignMaterial() {
           vMapUv = (cell * vec2(${tileWidth}.0, ${tileHeight}.0) + vec2(${padding + .5})
             + uv * vec2(${tileWidth - 2 * padding - 1}.0, ${tileHeight - 2 * padding - 1}.0)) / vec2(${width}.0, ${height}.0);
         #endif
+      `);
+    // A board keeps only its sign's silhouette, in its own flat colour
+    if (ink) shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `
+        #include <map_fragment>
+        diffuseColor.rgb = vec3(${ink.r.toFixed(4)}, ${ink.g.toFixed(4)}, ${ink.b.toFixed(4)});
       `);
   };
   return material;

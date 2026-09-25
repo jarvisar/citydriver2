@@ -215,19 +215,42 @@ function blockFloors(block, style) {
   return integer(random, style.floors[0], style.floors[1]);
 }
 
+// The pieces of a rectangle on a wall ({x0, x1, y0, y1}) outside a zone
+function cutAround(pieces, z) {
+  return pieces.flatMap(r => {
+    if (r.x1 <= z.from || r.x0 >= z.to || r.y1 <= z.bottom || r.y0 >= z.top) return [r];
+    const x0 = Math.max(r.x0, z.from), x1 = Math.min(r.x1, z.to);
+    return [{ ...r, x1: z.from }, { ...r, x0: z.to }, { x0, x1, y0: r.y0, y1: z.bottom }, { x0, x1, y0: z.top, y1: r.y1 }]
+      .filter(p => p.x1 - p.x0 > .05 && p.y1 - p.y0 > .05);
+  });
+}
 // Coordinates on one wall of a building: offset along the wall from its
 // middle, height, and distance outwards. The wall's own yaw turns each box.
+// A sign mounted on the wall keeps its patch of wall `clear` ({from, to,
+// bottom, top}): no window stands behind it, and the pilasters, fins and
+// string courses that would cross it stop at its edges.
 export function edgeFacade(c, a, b) {
   const dx = b.x - a.x, dy = b.y - a.y, span = Math.hypot(dx, dy) || 1, tx = dx / span, ty = dy / span, nx = ty, ny = -tx;
   const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, yaw = Math.atan2(ty, tx);
   const point = (offset, outward) => ({ x: mx + tx * offset + nx * outward, s: my + ty * offset + ny * outward });
-  return { span, yaw, street: false,
+  return { span, yaw, street: false, clear: [], normal: { x: nx, y: ny },
+    // A point's offset along the wall and distance out from it
+    local(x, s) { const ex = x - mx, ey = s - my; return { offset: ex * tx + ey * ty, outward: ex * nx + ey * ny }; },
+    // Whether a rectangle on the wall would stand behind a sign
+    blocked(offset, y, w, h) { return this.clear.some(z => offset + w / 2 > z.from && offset - w / 2 < z.to && y + h / 2 > z.bottom && y - h / 2 < z.top); },
     position(offset, y, outward) { const p = point(offset, outward); return [p.x, y, -p.s]; },
     add(offset, y, outward, w, h, d, color, kind = 'solid', broad = false) {
       if (c.distant && kind === 'solid' && !broad) return;
-      const p = point(offset, outward);
-      if (c.distant && (kind === 'glass' || kind === 'lit')) c.item(`distant-${kind}`, signGeometry, c.materials[kind], [p.x, y, -p.s], [w, h, 1], color, yaw);
-      else c.box(p.x, y, p.s, w, h, d, color, kind, yaw);
+      let pieces = [{ x0: offset - w / 2, x1: offset + w / 2, y0: y - h / 2, y1: y + h / 2 }];
+      for (const z of this.clear) pieces = cutAround(pieces, z);
+      // (a pilaster cut short by a sign stops, rather than leaving a stub
+      // that looks like the sign's post)
+      if (w < 1 && h > 3) pieces = pieces.filter(r => r.y1 - r.y0 >= Math.min(2.2, h - .01));
+      for (const r of pieces) {
+        const p = point((r.x0 + r.x1) / 2, outward), pw = r.x1 - r.x0, ph = r.y1 - r.y0, py = (r.y0 + r.y1) / 2;
+        if (c.distant && (kind === 'glass' || kind === 'lit')) c.item(`distant-${kind}`, signGeometry, c.materials[kind], [p.x, py, -p.s], [pw, ph, 1], color, yaw);
+        else c.box(p.x, py, p.s, pw, ph, d, color, kind, yaw);
+      }
     } };
 }
 
@@ -370,6 +393,8 @@ export function edgeWindows(c, b, f, bottom, floors, random) {
     if (b.type === 'deco' && floor === floors - 1) f.add(0, y + 1.55, .2, span + .4, .35, .5, '#ded2b8', 'solid', true);
     for (let bay = 0; bay < bays; bay++) {
       const offset = (bay - (bays - 1) / 2) * spacing, lit = random() < .1;
+      // (no window, sill or balcony behind a sign)
+      if (f.clear.length && f.blocked(offset, y - .3, windowWidth + 1.2, h + 1.2)) continue;
       f.add(offset, y, .075, windowWidth + .25, h + .25, .11, frame);
       f.add(offset, y, .17, windowWidth, h, .09, lit ? '#e3c38d' : modern ? '#5e8a9a' : '#3e5663', lit ? 'lit' : 'glass');
       if (loft || b.variation === 1) f.add(offset, y, .25, .09, h, .07, frame);
@@ -411,6 +436,35 @@ function entrance(b, span, primary) {
   return span > 9 ? { offset: span * .3 * (b.variation % 2 ? 1 : -1), width: 1.6 } : null;
 }
 
+// Where along a shopfront its sign goes, and how big: over the middle, unless
+// a street tree's crown or a lamp's column stands in front of it there, and
+// over one of the shop's windows or its door (`centres`) or at one end of its
+// fascia, a little smaller if need be, far less of it would be hidden
+const IN_FRONT = { lamp: .3, 'median-lamp': .3, lantern: .3, 'street-lantern': .3, signal: .3 };
+function signPlace(c, f, w, centres) {
+  const obstacles = [];
+  for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (const piece of c.world?.furnitureByChunk?.get(`${c.ix + dx},${c.iz + dz}`) ?? []) {
+    const reach = piece.kind === 'tree' ? piece.scale * .5 : IN_FRONT[piece.kind] ?? 0;
+    if (!reach) continue;
+    const q = f.local(piece.u - c.east, piece.s - c.start);
+    if (q.outward > .5 && q.outward < 9 && Math.abs(q.offset) < f.span / 2 + reach) obstacles.push({ offset: q.offset, reach });
+  }
+  const centre = { offset: 0, scale: 1 };
+  if (!obstacles.length) return centre;
+  // (the share of the sign hidden, from straight across the street)
+  const hidden = (o, width) => obstacles.reduce((sum, p) => sum + Math.max(0, Math.min(o + width / 2, p.offset + p.reach) - Math.max(o - width / 2, p.offset - p.reach)), 0) / width;
+  let best = centre, least = hidden(0, w);
+  for (const scale of [1, .8]) {
+    const end = f.span / 2 - 1.3 - w * scale / 2;
+    for (const offset of [...centres, end, -end]) {
+      if (Math.abs(offset) > end + 1e-6) continue;
+      const share = hidden(offset, w * scale) + (1 - scale) * .5;
+      if (share < least - .1) { best = { offset, scale }; least = share; }
+    }
+  }
+  return best;
+}
+
 // The ground floor along a street: a shopfront with its sign and awnings, a
 // loading bay, or a front door with windows either side.
 function groundFloor(c, b, f, base, primary, random) {
@@ -436,9 +490,14 @@ function groundFloor(c, b, f, base, primary, random) {
         }
       }
     }
-    if (!c.distant && primary && b.variation !== 3) {
-      const sign = shopSignFor(b), w = Math.min(6.2, span * .65, (signTop - signBottom - .2) * sign.aspect), h = w / sign.aspect;
-      c.item('shop-signs', signGeometry, c.materials.signs, f.position(0, G + signY, .32), [w, h, 1], '#ffffff', f.yaw).signTile = sign.tile;
+    if (!c.distant && primary) {
+      // The shop's name on its fascia board, high enough that the awnings
+      // below it hide none of it from across the street
+      const sign = shopSignFor(b), full = Math.min(1.15, signTop - signBottom - .3, span * .65 / sign.aspect, 6.2 / sign.aspect);
+      const centres = Array.from({ length: units }, (_, i) => (i - (units - 1) / 2) * spacing).flatMap(offset => [offset, offset + spacing * .25]);
+      const { offset, scale } = signPlace(c, f, full * sign.aspect, centres), h = full * scale, w = h * sign.aspect;
+      const y = Math.min(signTop - .1 - h / 2, Math.max(signY, 3.92 + h / 2)), p = f.position(offset, G + y, .34);
+      c.signFace('shop-signs', sign, p[0], p[1], -p[2], f.yaw, w, h, .05, .05);
     }
   } else if (b.type === 'office' || b.type === 'atrium') {
     // A glazed lobby with its mullions, a double door and a canopy

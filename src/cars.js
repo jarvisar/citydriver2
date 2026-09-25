@@ -126,7 +126,7 @@ export const CARS = {
   formula: {
     name: 'Formula', mass: .8, kind: 'formula', paint: '#d8452f', shape: FORMULA_SHAPE,
     // 112 mph, with enough power to overcome air drag at that speed.
-    stats: { topSpeed: 50, acceleration: 40, braking: 30, grip: 2.25, offRoad: 20, turnRadius: 3.6 },
+    stats: { topSpeed: 100, acceleration: 60, braking: 30, grip: 2.25, offRoad: 20, turnRadius: 3.6 },
   },
 };
 

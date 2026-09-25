@@ -6,7 +6,7 @@ import { TRAFFIC_MODELS } from '../traffic-models.js';
 import { seededRandom, randomAt } from './route.js';
 import { residentWindow } from './resident.js';
 import { buildCityBuildingSteps } from './city-buildings.js';
-import { createSignMaterial, discoverySignFor } from './city-signs.js';
+import { createSignMaterials, discoverySignFor, signCore } from './city-signs.js';
 import { cityItemMatrix, cityRigidFrame, cityAffinePoint, itemFrame } from './city-layout-render.js';
 import { addSurfacePolygon, rectanglePolygon } from './city-surfaces.js';
 import { buildGrassFringe } from './city-grass.js';
@@ -218,7 +218,7 @@ function resources() {
     mergedMaterials.set(result[name], merged);
     result[`merged-${name}`] = merged;
   }
-  result.signs = createSignMaterial();
+  ({ signs: result.signs, edges: result.signEdges } = createSignMaterials());
   return result;
 }
 
@@ -297,18 +297,34 @@ export class CityChunk {
   box(x, y, s, width, height, depth, color, kind = 'solid', yaw = 0, roll = 0) {
     this.item(kind, boxGeometry, this.materials[kind], [x, y, -s], [width, height, depth], color, yaw, roll);
   }
-  // A double-sided board on two posts; yaw turns its face (see faceYaw)
-  sign(sign, x, y, s, yaw, width = 6.1) {
+  // A sign's painted face centred at (x, y, s), looking along its yaw (see
+  // faceYaw), with its board `back` metres behind it: the sign's own
+  // silhouette a `border` wider all round, so the board is the sign's shape
+  signFace(key, sign, x, y, s, yaw, width, height, back = .05, border = .09) {
     if (this.distant || !sign) return;
-    const height = width / sign.aspect, ex = Math.cos(yaw), es = Math.sin(yaw);
-    for (const facing of [yaw, yaw + Math.PI]) {
-      this.item('sign-board', windowGeometry, this.materials.signs,
-        [x + Math.sin(facing) * .08, y, -s + Math.cos(facing) * .08], [width, height, 1], '#ffffff', facing).signTile = sign.tile;
+    const nx = Math.sin(yaw), ns = -Math.cos(yaw);
+    this.item(key, windowGeometry, this.materials.signs, [x, y, -s], [width, height, 1], '#ffffff', yaw).signTile = sign.tile;
+    if (back !== null) this.item('sign-edge', windowGeometry, this.materials.signEdges, [x - nx * back, y, -(s - ns * back)], [width + 2 * border, height + 2 * border, 1], '#ffffff', yaw).signTile = sign.tile;
+  }
+  // A free-standing board, painted on both faces, its bottom `bottom` above
+  // the ground, on two posts or (`plinth`) a stone base: the posts and the
+  // board's core run up behind the faces, wherever the sign's outline is
+  standingSign(sign, x, s, yaw, width = 4.2, bottom = 1.9, plinth = null) {
+    if (this.distant || !sign) return;
+    const height = width / sign.aspect, y = PAVEMENT_LEVEL + bottom + height / 2, ex = Math.cos(yaw), es = Math.sin(yaw), nx = Math.sin(yaw), ns = -Math.cos(yaw);
+    for (const side of [1, -1]) this.signFace('sign-board', sign, x + nx * side * .045, y, s + ns * side * .045, side > 0 ? yaw : yaw + Math.PI, width, height, null);
+    this.item('sign-edge', windowGeometry, this.materials.signEdges, [x, y, -s], [width + .18, height + .18, 1], '#ffffff', yaw).signTile = sign.tile;
+    const core = signCore(sign, width, height);
+    this.box(x, y + core.y, s, core.width, core.height, .07, '#2f3538', 'solid', yaw);
+    if (plinth) {
+      // (a dark stem from the plinth up behind the board)
+      const top = PAVEMENT_LEVEL + plinth.height, stem = y + core.y - top;
+      this.box(x, top + stem / 2, s, core.width * .5, stem, .07, '#2f3538', 'solid', yaw);
+      return;
     }
-    this.box(x, y, s, width + .16, height + .16, .1, '#3d4246', 'solid', yaw);
     for (const side of [-1, 1]) {
-      const px = x + ex * side * width * .38, ps = s + es * side * width * .38, bottom = y - height / 2;
-      this.box(px, (PAVEMENT_LEVEL + bottom) / 2, ps, .12, bottom - PAVEMENT_LEVEL, .12, '#3d4246', 'solid', yaw);
+      const along = side * Math.min(width * .38, core.width / 2 - .08), px = x + ex * along, ps = s + es * along, top = y + core.y;
+      this.box(px, (PAVEMENT_LEVEL + top) / 2, ps, .12, top - PAVEMENT_LEVEL, .12, '#3d4246', 'solid', yaw);
       this.post(px, ps, .1);
     }
   }
@@ -348,7 +364,7 @@ export class CityChunk {
       else if (piece.kind === 'bin') { this.prop('bin', x, s); this.post(x, s, .36); }
       else if (piece.kind === 'bollard') { this.prop('bollard', x, s); this.post(x, s, .16); }
       else if (piece.kind === 'railing') { this.prop('railing', x, s, piece.yaw, piece.y ?? PAVEMENT_LEVEL); this.rigid(x, s, () => this.solid(x, s, .24, 4), itemFrame(piece.s, piece.u, piece.yaw)); }
-      else if (piece.kind === 'sign') this.sign(discoverySignFor(piece.type, piece.variant), x, PAVEMENT_LEVEL + 2.9, s, piece.yaw, 4.2);
+      else if (piece.kind === 'sign') this.standingSign(discoverySignFor(piece.type, piece.variant), x, s, piece.yaw, piece.width ?? 4.2, piece.bottom ?? 1.9);
       else if (piece.kind === 'stop' || piece.kind === 'yield') { this.prop(piece.kind, x, s, piece.yaw); this.post(x, s, .12); }
       else if (piece.kind === 'parking-sign') {
         // A blue P on a post, read from along the street both ways (yaw lays

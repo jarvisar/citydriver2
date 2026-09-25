@@ -62,13 +62,19 @@ test('a venue stands inside its site, and its drop-off is in the lane beside it 
   }
 });
 
-test('every place has its sign on the pavement at its entrance', () => {
+test('every park and square has its sign by its gate, on its lawn and off its walks', () => {
   const pieces = [];
   placeStreetFurniture(navGraph(), findBridges(), piece => pieces.push(piece));
   const signs = pieces.filter(piece => piece.kind === 'sign');
-  for (const place of places) {
-    assert.ok(signs.some(sign => sign.type === place.type && sign.variant === place.variant && Math.hypot(sign.u - place.entrance.u, sign.s - place.entrance.s) < 30), `${place.name} has no sign`);
+  for (const place of places.filter(place => place.park !== undefined)) {
+    const sign = signs.find(sign => sign.type === place.type && sign.variant === place.variant && Math.hypot(sign.u - place.entrance.u, sign.s - place.entrance.s) < 30);
+    assert.ok(sign, `${place.name} has no sign`);
+    assert.ok(insidePolygon({ x: sign.u, y: sign.s }, CITY.parkPlans[place.park].lawn), `${place.name}'s sign is off its lawn`);
+    const path = CITY.roadIndex.nearest(sign.u, sign.s, 20, (segment, distance) => distance - segment.road.profile.halfWidth);
+    assert.ok(!path || path.score > 1, `${place.name}'s sign stands in a street or a walk`);
   }
+  // (a venue's name is on its building: see below)
+  assert.ok(signs.every(sign => places.some(place => place.park !== undefined && place.type === sign.type && place.variant === sign.variant)), 'a venue has a sign on the pavement');
   // and the pieces of every square stand on its lawn, clear of its walks
   for (const entry of cityParks().filter(entry => entry.park.square)) {
     const lawn = entry.park.lawn;

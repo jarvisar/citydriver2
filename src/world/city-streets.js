@@ -47,7 +47,7 @@ const PARK_TREES = { share: 1, spacing: 19, scale: [7.2, 9.6] };
 // would swallow or hide: a lamp's column and the head on its arm, a sign or
 // signal a driver has to see, and a bus shelter's roof
 const TREE_CROWN = .5;
-const CROWN_CLEAR = { lamp: .5, 'median-lamp': .5, 'street-lantern': .3, stop: 1.2, yield: 1.2, signal: 1.2, sign: 1, 'parking-sign': .4, shelter: 2.4 };
+const CROWN_CLEAR = { lamp: .5, 'median-lamp': .5, 'street-lantern': .3, stop: 1.2, yield: 1.2, signal: 1.2, sign: 2, 'parking-sign': .4, shelter: 2.4 };
 // The share of street corners with a litter bin by the crossing, as busy as
 // each district's pavements are
 const CORNER_BINS = { 'Market district': .55, Midtown: .55, 'Old town': .45, 'Civic quarter': .4, 'Warehouse district': .12, 'Garden quarter': .1 };
@@ -582,44 +582,40 @@ export function placeStreetFurniture(nav, bridges, add) {
       }
     }
   }
-  // A sign board on the pavement at every place's entrance, square to the
-  // street, before the lamps and trees take the kerb: beside a venue's
-  // forecourt rather than across it, or as near a park's gate as it can stand
+  // A park or a square has its name on a board by its gate, before the lamps
+  // and trees take the kerb: just inside its lawn, beside the walk in (not
+  // across the pavement or the walk), facing the street at a height a
+  // passer-by reads it at. A venue's name is on its own building or on a
+  // plinth in its grounds (see city-landmarks.js).
+  const parkEntries = new Map(cityParks().map(entry => [entry.index, entry]));
   for (const place of cityPlaces()) {
-    const e = place.entrance, du = Math.sin(e.heading), ds = Math.cos(e.heading);
-    const road = CITY.roadIndex.nearest(e.u, e.s, 40, (segment, distance) => segment.road.kind === 'path' ? Infinity : distance);
-    if (!road) continue;
-    const reach = road.road.profile.halfWidth + SIDEWALK - 1.2, aside = place.footprint ? Math.min(place.footprint.width, 14) / 2 + 3 : 0;
-    let signed = false;
-    for (const along of [0, 4, 8, 12, 16, 20, 24].flatMap(step => [aside + step, -aside - step])) {
-      const u = road.x + du * along + ds * reach, y = road.y + ds * along - du * reach;
-      if (waterAt(y, u) || inZone(u, y)) continue;
-      if (put({ kind: 'sign', type: place.type, variant: place.variant, u, s: y, yaw: faceYaw(du, ds) }, 3)) { signed = true; break; }
-    }
-    if (signed) continue;
-    // A venue whose frontage is all junction corners has its sign just inside
-    // its grounds, beside the forecourt, and a square (a circus) just inside
-    // its lawn, facing the same way
-    const f = place.footprint;
-    if (f) {
-      for (const side of [1, -1]) {
-        const along = side * (Math.min(f.width, 14) / 2 + 3), u = f.front.x - f.nx * (f.setback + 3) + f.tx * along, y = f.front.y - f.ny * (f.setback + 3) + f.ty * along;
-        if (!insidePolygon({ x: u, y }, place.polygon) || !free(u, y, 2, 'sign')) continue;
-        remember(u, y, 'sign'); add({ kind: 'sign', type: place.type, variant: place.variant, u, s: y, yaw: faceYaw(du, ds) });
-        break;
-      }
-      continue;
-    }
-    const lawn = place.park === undefined ? null : CITY.parkPlans[place.park].lawn;
+    const entry = place.park === undefined ? null : parkEntries.get(place.park), lawn = entry?.park.lawn;
     if (!(lawn?.length >= 3)) continue;
+    const e = place.entrance;
+    // The lawn's edge nearest the gate, and which way is out of the lawn there
     let best = null;
     for (let i = 0; i < lawn.length; i++) {
       const a = lawn[i], b = lawn[(i + 1) % lawn.length], dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1;
-      const t = Math.max(0, Math.min(1, ((e.u - a.x) * dx + (e.s - a.y) * dy) / l2)), x = a.x + dx * t, y = a.y + dy * t;
-      if (!best || Math.hypot(x - e.u, y - e.s) < Math.hypot(best.x - e.u, best.y - e.s)) best = { x, y };
+      const t = Math.max(0, Math.min(1, ((e.u - a.x) * dx + (e.s - a.y) * dy) / l2)), x = a.x + dx * t, y = a.y + dy * t, d = Math.hypot(x - e.u, y - e.s);
+      if (!best || d < best.d) best = { x, y, d, tx: dx / Math.sqrt(l2), ty: dy / Math.sqrt(l2) };
     }
-    const inward = Math.hypot(place.u - best.x, place.s - best.y) || 1, u = best.x + (place.u - best.x) / inward * 2.2, y = best.y + (place.s - best.y) / inward * 2.2;
-    if (insidePolygon({ x: u, y }, lawn) && free(u, y, 2, 'sign')) { remember(u, y, 'sign'); add({ kind: 'sign', type: place.type, variant: place.variant, u, s: y, yaw: faceYaw(du, ds) }); }
+    let ox = best.ty, oy = -best.tx;
+    if (insidePolygon({ x: best.x + ox * .5, y: best.y + oy * .5 }, lawn)) { ox = -ox; oy = -oy; }
+    // Along that edge either way from the gate, a spot on the lawn clear of
+    // the walks and whatever stands on it, with the board all on the lawn
+    const walkClear = (x, y) => { const road = CITY.roadIndex.nearest(x, y, 20, (segment, distance) => segment.road.kind === 'path' ? distance - segment.road.profile.halfWidth : Infinity); return !road || road.score > 1.4; };
+    const width = 3.6;
+    for (const along of [4, -4, 6.5, -6.5, 9, -9, 12, -12, 16, -16]) {
+      const u = best.x + best.tx * along - ox * 2.4, y = best.y + best.ty * along - oy * 2.4;
+      const ends = [-1, 1].map(k => ({ x: u + best.tx * k * (width / 2 + .3), y: y + best.ty * k * (width / 2 + .3) }));
+      if (![{ x: u, y }, ...ends].every(p => insidePolygon(p, lawn) && walkClear(p.x, p.y) && parkClear(entry, p.x, p.y, .6) && !inZone(p.x, p.y))) continue;
+      if (!free(u, y, 3, 'sign')) continue;
+      // (and the lamps and trees along the kerb keep out of the way between
+      // it and the street)
+      for (const out of [0, 4.5, 8]) remember(u + ox * out, y + oy * out, 'sign');
+      add({ kind: 'sign', type: place.type, variant: place.variant, u, s: y, yaw: faceYaw(ox, oy), width, bottom: .75 });
+      break;
+    }
   }
   // How far back a block's buildings stand from its pavement near a point:
   // each lot builds as the district its middle is in, so where two districts
