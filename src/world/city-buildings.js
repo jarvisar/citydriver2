@@ -341,7 +341,7 @@ export function planLot(c, lot) {
   return { kind: 'building', lot, district, footprint: local(footprintOut, c), lotLocal: local(polygon, c), court: local(court, c), street, windows, type, floors, area: massedArea, breadth,
     wall: pick(style.walls, random), accent: pick(ACCENTS, random), roof: pick(pitched ? TILES[district] ?? ROOFS : ROOFS, random), roofType: house ? 'hip' : pitched ? 'gable' : stepped ? 'terrace' : 'flat', eaves,
     setbackFloors: stepped ? Math.max(2, Math.floor(floors * .57)) : floors, seed: (lot.seed + 9973) >>> 0, variation: integer(random, 0, 3),
-    shop: pick(SHOP_NAMES, random), shopfront, domestic, lawn: insets.lawn, side: insets.side, lotStreet: kinds.map(kind => kind === 'street'), rearWindows: rear > 2.4 || footprintOut !== footprint };
+    shop: pick(SHOP_NAMES, random), shopfront, domestic, lawn: insets.lawn, side: insets.side, party: wallKinds.map(kind => kind === 'side'), lotStreet: kinds.map(kind => kind === 'street'), rearWindows: rear > 2.4 || footprintOut !== footprint };
 }
 
 export function edgeWindows(c, b, f, bottom, floors, random) {
@@ -374,12 +374,15 @@ export function edgeWindows(c, b, f, bottom, floors, random) {
       }
     }
   }
-  if (b.type === 'deco') for (let bay = 0; bay <= bays; bay++) f.add((bay - bays / 2) * spacing, bottom + floors * 1.8, .18, .38, floors * 3.6, .4, '#cfbea2', 'solid', true);
-  if (b.type === 'loft' || b.type === 'townhouse') for (let floor = 1; floor <= floors; floor++) {
+  // (pilasters, fins and string courses stop under the cornice or eaves that
+  // cap the wall, rather than meeting its faces)
+  const rise = floors * 3.6 - .12;
+  if (b.type === 'deco') for (let bay = 0; bay <= bays; bay++) f.add((bay - bays / 2) * spacing, bottom + rise / 2, .18, .38, rise, .4, '#cfbea2', 'solid', true);
+  if (b.type === 'loft' || b.type === 'townhouse') for (let floor = 1; floor < floors; floor++) {
     f.add(0, bottom + floor * 3.6 - .12, .16, span + .2, b.type === 'loft' ? .4 : .22, .3, '#d6c1a0', 'solid', true);
   }
   if (b.type === 'atrium' || b.type === 'pavilion') for (let bay = 0; bay <= bays; bay++) {
-    f.add((bay - bays / 2) * spacing, bottom + floors * 1.8, .4, .25, floors * 3.6, .85, b.type === 'pavilion' ? '#bf976c' : '#d5d9bd', 'solid', true);
+    f.add((bay - bays / 2) * spacing, bottom + rise / 2, .4, .25, rise, .85, b.type === 'pavilion' ? '#bf976c' : '#d5d9bd', 'solid', true);
   }
 }
 
@@ -427,10 +430,10 @@ function groundFloor(c, b, f, base, primary, random) {
   } else if (b.type === 'office' || b.type === 'atrium') {
     // A glazed lobby with its mullions, a double door and a canopy
     const bays = Math.max(1, Math.floor((span - 1.2) / 3.2)), spacing = (span - 1.2) / bays;
-    f.add(0, G + base / 2 + .1, .08, span - .3, base - .6, .12, '#5e8a9a', 'glass');
+    f.add(0, G + base / 2 + .1, .1, span - .3, base - .6, .12, '#5e8a9a', 'glass');
     for (let i = 0; i <= bays; i++) f.add(-(span - 1.2) / 2 + i * spacing, G + base / 2 + .1, .2, .14, base - .6, .12, '#b6c9c8');
     if (primary) {
-      f.add(0, G + 1.25, .22, 2.4, 2.5, .1, '#2f4b55', 'glass'); f.add(0, G + 2.62, .26, 2.6, .14, .12, '#d8dbd2');
+      f.add(0, G + 1.25, .25, 2.4, 2.5, .1, '#2f4b55', 'glass'); f.add(0, G + 2.62, .26, 2.6, .14, .12, '#d8dbd2');
       f.add(0, G + 3.05, 1.1, 4.2, .18, 2.2, '#b6c9c8', 'solid', true);
     }
   } else if (b.type === 'warehouse') {
@@ -442,7 +445,8 @@ function groundFloor(c, b, f, base, primary, random) {
     if (door) {
       f.add(doorOffset, G + 1.15, .12, 1.15, 2.3, .12, b.variation % 2 ? '#4d3f36' : b.accent);
       f.add(doorOffset, G + 2.4, .2, 1.7, .22, .4, creamTrim, 'solid', true);
-      f.add(doorOffset, G + .04, .5, 1.9, .1, 1.1, '#c7bba3', 'solid', true);
+      // (a step up from the garden path, whose top is at G + .09)
+      f.add(doorOffset, G + .06, .5, 1.9, .12, 1.1, '#c7bba3', 'solid', true);
     }
     // Windows in bays along the whole front, as on the floors above, clear of the door
     // (or, where the door takes the only bay, one either side of it)
@@ -466,8 +470,10 @@ function cap(bodies, a, b, y, colour) {
 }
 // A cornice, a parapet and the roof deck inside it, with the same again round
 // any courtyard. Returns the deck polygon and the holes in it.
-export function cornice(bodies, ring, top, trim, roofColour, wall, parapet, courts = []) {
-  const band = offsetPolygon(ring, .32), courtBands = courts.map(court => offsetPolygon(court, -.32)).filter(p => p.length >= 3);
+// A wall shared with the house next door carries its cornice only to the lot
+// line (`reach` gives each wall's), where the neighbour's meets it.
+export function cornice(bodies, ring, top, trim, roofColour, wall, parapet, courts = [], reach = null) {
+  const band = (reach && signedArea(ring) > 0 && offsetPolygonMapped(ring, (p, q, k) => reach(k))?.points) || offsetPolygon(ring, .32), courtBands = courts.map(court => offsetPolygon(court, -.32)).filter(p => p.length >= 3);
   if (band.length >= 3) { bodies.prism(band, top - .3, top + .12, trim); bodies.polygon(band, top + .12, trim, null, true, courtBands); }
   else bodies.polygon(ring, top + .12, trim, null, true, courtBands);
   for (const courtBand of courtBands) bodies.wall(ccw(courtBand), top + .12, top - .3, trim, true);
@@ -803,7 +809,8 @@ function buildBuilding(c, b) {
   if (b.roofType === 'hip') { hipRoof(c, b, bodies, ring, lowerTop); return; }
   if (b.roofType === 'gable') { gableRoof(c, b, bodies, ring, lowerTop, random); return; }
   const trim = b.type === 'office' ? '#b8cccd' : '#d6c9b1';
-  let { deck, holes } = cornice(bodies, ring, lowerTop, trim, b.roof, b.wall, b.type === 'deco' ? 1.2 : .65, courts), top = lowerTop;
+  const reach = k => b.party?.[k] && b.side < .32 ? b.side : .32;
+  let { deck, holes } = cornice(bodies, ring, lowerTop, trim, b.roof, b.wall, b.type === 'deco' ? 1.2 : .65, courts, reach), top = lowerTop;
   if (lower < b.floors) {
     const inset = Math.min(4, b.breadth * .15), upper = offsetPolygon(ring, -inset);
     if (upper.length >= 3 && calcPolygonArea(upper) > 50) {

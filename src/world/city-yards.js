@@ -57,7 +57,12 @@ export function yardDrive(index) {
   const rect = [e, { x: e.x + sx * DRIVE_WIDTH, y: e.y + sy * DRIVE_WIDTH }, { x: e.x + sx * DRIVE_WIDTH + nx * DRIVE_REACH, y: e.y + sy * DRIVE_WIDTH + ny * DRIVE_REACH }, { x: e.x + nx * DRIVE_REACH, y: e.y + ny * DRIVE_REACH }];
   const strip = intersection(solids([best.ring]), solids([rect])).sort((p, q) => calcPolygonArea(q.outer) - calcPolygonArea(p.outer))[0]?.outer;
   if (!strip || calcPolygonArea(strip) < DRIVE_WIDTH * 8) return null;
-  const drive = { lot: best.lot, polygon: strip, rect, mouth: { x: e.x + sx * DRIVE_WIDTH / 2, y: e.y + sy * DRIVE_WIDTH / 2 }, tx: best.tx, ty: best.ty, nx, ny, width: DRIVE_WIDTH };
+  // The dropped kerb across the pavement in front of it, from the lot's edge
+  // to the kerb however wide the pavement is there
+  const across = [e, { x: e.x + sx * DRIVE_WIDTH, y: e.y + sy * DRIVE_WIDTH }, { x: e.x + sx * DRIVE_WIDTH - nx * 12, y: e.y + sy * DRIVE_WIDTH - ny * 12 }, { x: e.x - nx * 12, y: e.y - ny * 12 }];
+  const crossing = difference(intersection(solids([block.kerb]), solids([across])), solids([block.inner]))
+    .sort((p, q) => calcPolygonArea(q.outer) - calcPolygonArea(p.outer))[0]?.outer ?? null;
+  const drive = { lot: best.lot, polygon: strip, rect, crossing, mouth: { x: e.x + sx * DRIVE_WIDTH / 2, y: e.y + sy * DRIVE_WIDTH / 2 }, tx: best.tx, ty: best.ty, nx, ny, width: DRIVE_WIDTH };
   drives.set(index, drive);
   return drive;
 }

@@ -1,5 +1,5 @@
 import { CITY, SIDEWALK, cityStyleDistrict } from './city.js';
-import { ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL, waterAt, onRoadAt } from './city-route.js';
+import { ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL, waterAt, onRoadAt, surfaceAt } from './city-route.js';
 import { junctionGeometry, CROSSWALK, stopLineDistance } from './junction-geometry.js';
 import { junctionControls } from '../city-junctions.js';
 import { cityMedians, MEDIAN_KERB } from './city-medians.js';
@@ -82,8 +82,20 @@ export function slicePolyline(points, from, to) {
   }
   return out;
 }
+// A polyline with points added along it at most `step` apart
+const densify = (points, step) => points.flatMap((p, i) => {
+  if (!i) return [p];
+  const a = points[i - 1], count = Math.ceil(Math.hypot(p.x - a.x, p.y - a.y) / step);
+  return Array.from({ length: count }, (_, k) => ({ x: a.x + (p.x - a.x) * (k + 1) / count, y: a.y + (p.y - a.y) * (k + 1) / count }));
+});
 const polylineLength = points => points.slice(1).reduce((sum, p, i) => sum + Math.hypot(p.x - points[i].x, p.y - points[i].y), 0);
 
+// How far a road's carriageway reaches from its centre line on one side at
+// a point: to its kerb, or where a bridge's footway takes the edge of the road
+function kerbReach(p, nx, ny, halfWidth) {
+  for (let d = Math.max(0, halfWidth - 3.2); d < halfWidth; d += .1) if (CITY.pavement.find(p.x + nx * d, p.y + ny * d)?.kind === 'bridge') return d;
+  return halfWidth;
+}
 // Where a street's own markings may run: from beyond the crosswalk at one end
 // to beyond the crosswalk at the other.
 function markedSpan(nav, edge, geometry) {
@@ -103,7 +115,7 @@ function approachPoint(nav, edge, node, distance) {
 // link inside a junction complex has none). Two junctions a few metres apart
 // can lay two crosswalks over each other: the one across the narrower road
 // gives way.
-const crosswalkCache = new WeakMap();
+const crosswalkCache = new WeakMap(), CONTROL_RANK = { signal: 3, stop: 2, yield: 1, priority: 0 };
 export function cityCrosswalks(nav) {
   if (crosswalkCache.has(nav)) return crosswalkCache.get(nav);
   const geometry = junctionGeometry(nav), controls = junctionControls(nav), all = [];
@@ -114,8 +126,23 @@ export function cityCrosswalks(nav) {
       if (arm.link || !approach.crosswalk) continue;
       const near = approachPoint(nav, edge, node, arm.clear + .2), far = approachPoint(nav, edge, node, arm.clear + CROSSWALK);
       const at = (p, across) => ({ x: p.x + p.rx * across, y: p.y + p.ry * across });
-      all.push({ node, edge, near, far, halfWidth, outline: [at(near, -halfWidth + .8), at(near, halfWidth - .5), at(far, halfWidth - .5), at(far, -halfWidth + .8)] });
+      // (across the carriageway, kerb to kerb: on a bridge, footway to footway)
+      const middle = { x: (near.x + far.x) / 2, y: (near.y + far.y) / 2 };
+      const left = -kerbReach(middle, -near.rx, -near.ry, halfWidth) + .8, right = kerbReach(middle, near.rx, near.ry, halfWidth) - .5;
+      all.push({ node, edge, near, far, halfWidth, left, right, rank: CONTROL_RANK[approach.kind] ?? 0, outline: [at(near, left), at(near, right), at(far, right), at(far, left)] });
     }
+  }
+  // A street short enough that the crosswalks at its two ends all but meet
+  // keeps one: the one where its traffic has to stop
+  const byEdge = new Map();
+  for (const walk of all) { if (!byEdge.has(walk.edge)) byEdge.set(walk.edge, []); byEdge.get(walk.edge).push(walk); }
+  const middle = walk => ({ x: (walk.near.x + walk.far.x) / 2, y: (walk.near.y + walk.far.y) / 2 });
+  for (const pair of byEdge.values()) {
+    if (pair.length !== 2) continue;
+    const [a, b] = pair, ma = middle(a), mb = middle(b);
+    if (Math.hypot(ma.x - mb.x, ma.y - mb.y) >= CROSSWALK + 5) continue;
+    const lesser = a.rank !== b.rank ? (a.rank < b.rank ? a : b) : a.node.id > b.node.id ? a : b;
+    all.splice(all.indexOf(lesser), 1);
   }
   all.sort((a, b) => b.halfWidth - a.halfWidth || a.edge.id - b.edge.id || a.node.id - b.node.id);
   const kept = [], cells = new Map(), cellOf = p => `${Math.floor(p.x / 40)},${Math.floor(p.y / 40)}`;
@@ -208,27 +235,35 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
     ground.wall(clockwise(median.polygon), top, ROAD_LEVEL - .02, COLOURS.medianKerb, true);
   }
   // Crosswalks where each road leaves a junction, stop lines behind them
-  for (const { near, far, halfWidth } of cityCrosswalks(nav)) {
+  for (const { near, far, left, right } of cityCrosswalks(nav)) {
     const at = (p, across) => ({ x: p.x + p.rx * across, y: p.y + p.ry * across });
-    for (let across = -halfWidth + .8; across < halfWidth - .5; across += 1.6) {
+    for (let across = left; across < right; across += 1.6) {
       markings.polygon([at(near, across), at(near, across + .85), at(far, across + .85), at(far, across)], ROAD_LEVEL + .014, COLOURS.stripe);
     }
   }
+  // (a stop line or a row of teeth that would fall on a crosswalk, where two
+  // junctions are close, is left out: the crosswalk marks where to stop)
+  const crosswalks = cityCrosswalks(nav), onCrosswalk = mark => crosswalks.some(walk => convexOverlap(walk.outline, mark, .02));
   for (const [node, control] of controls) {
     const shape = geometry.get(node.id);
     for (const [edge, approach] of control.approaches) {
       const arm = shape.approaches.get(edge), halfWidth = edge.profile.halfWidth;
       if (arm.link || approach.kind === 'priority') continue;
       const at = (p, across) => ({ x: p.x + p.rx * across, y: p.y + p.ry * across });
-      const inner = edge.profile.median ? edge.profile.median + .2 : .25, outer = halfWidth - (edge.profile.parking ? halfWidth - edge.profile.parking + .2 : .4);
+      // (to the kerb, or on a bridge to its footway)
+      const at0 = approachPoint(nav, edge, node, stopLineDistance(arm.clear)), kerb = kerbReach(at0, at0.rx, at0.ry, halfWidth);
+      const inner = edge.profile.median ? edge.profile.median + .2 : .25, outer = Math.min(kerb, halfWidth - (edge.profile.parking ? halfWidth - edge.profile.parking : 0)) - (edge.profile.parking ? .2 : .4);
       if (approach.kind === 'yield') {
         // A row of teeth across the lane, pointing at the driver who gives way
         const base = approachPoint(nav, edge, node, stopLineDistance(arm.clear) - .3), tip = approachPoint(nav, edge, node, stopLineDistance(arm.clear) + .6);
-        for (let across = inner + .15; across + .55 <= outer; across += .85) markings.polygon([at(base, across), at(base, across + .55), at(tip, across + .275)], ROAD_LEVEL + .014, COLOURS.stop);
+        const teeth = [];
+        for (let across = inner + .15; across + .55 <= outer; across += .85) teeth.push([at(base, across), at(base, across + .55), at(tip, across + .275)]);
+        if (!teeth.some(onCrosswalk)) for (const tooth of teeth) markings.polygon(tooth, ROAD_LEVEL + .014, COLOURS.stop);
         continue;
       }
       const line = approachPoint(nav, edge, node, stopLineDistance(arm.clear) - .2), back = approachPoint(nav, edge, node, stopLineDistance(arm.clear) + .25);
-      markings.polygon([at(line, inner), at(line, halfWidth - .4), at(back, halfWidth - .4), at(back, inner)], ROAD_LEVEL + .014, COLOURS.stop);
+      const stop = [at(line, inner), at(line, kerb - .4), at(back, kerb - .4), at(back, inner)];
+      if (!onCrosswalk(stop)) markings.polygon(stop, ROAD_LEVEL + .014, COLOURS.stop);
     }
   }
   // A zebra crossing over the street at each park gate (a median stops either side of it)
@@ -258,7 +293,9 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
     if (drive) {
       ground.polygon(drive.polygon, PAVEMENT_LEVEL + .035, yardGround(block));
       const { mouth: m, tx, ty, nx, ny, width } = drive, at = (along, into) => ({ x: m.x + tx * along + nx * into, y: m.y + ty * along + ny * into });
-      ground.polygon([at(-width / 2, -SIDEWALK + .08), at(width / 2, -SIDEWALK + .08), at(width / 2, .05), at(-width / 2, .05)], PAVEMENT_LEVEL + .01, COLOURS.crossing);
+      if (drive.crossing) ground.polygon(drive.crossing, PAVEMENT_LEVEL + .01, COLOURS.crossing);
+      // (and the driveway's edge where it meets it)
+      ground.wall([at(-width / 2, 0), at(width / 2, 0)], PAVEMENT_LEVEL + .035, PAVEMENT_LEVEL, yardGround(block));
     }
     // A car park's bays, lined out down each side
     for (const bay of yardParking(block)) for (const side of [-1, 1]) {
@@ -280,7 +317,10 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
     // The plaza in the middle, paved out to the walk round it
     if (entry.plaza) {
       const reach = park.square ? entry.plaza.radius + SQUARE_WALK * 2 + .6 : entry.plaza.radius + 4.4;
-      ground.polygon(circle(entry.plaza.x, entry.plaza.y, reach, 28), PAVEMENT_LEVEL + .03, paved ? COLOURS.flags : COLOURS.plaza);
+      // (over the ends of the paths that lead to it)
+      const disc = circle(entry.plaza.x, entry.plaza.y, reach, 28);
+      ground.polygon(disc, PAVEMENT_LEVEL + .05, paved ? COLOURS.flags : COLOURS.plaza);
+      ground.wall(clockwise(disc), PAVEMENT_LEVEL + .05, PAVEMENT_LEVEL, paved ? COLOURS.flags : COLOURS.plaza, true);
     }
     // A paved square's lawns
     for (const panel of entry.panels) ground.polygon(panel.outer, PAVEMENT_LEVEL + .03, COLOURS.lawn, null, true, panel.holes);
@@ -288,10 +328,14 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
     for (const walk of entry.walks) paths.ribbon(walk, SQUARE_WALK, PAVEMENT_LEVEL + .035, paved ? COLOURS.flags : COLOURS.path);
     // A pond: water a little below the lawn, inside a low stone coping
     if (entry.pond) {
-      const shore = pondShore(entry.pond), ring = [...shore, shore[0]];
+      const shore = pondShore(entry.pond), ccw = signedArea(shore) > 0 ? shore : shore.slice().reverse(), top = PAVEMENT_LEVEL + .3;
+      // (each line round it closed, and mitred where it closes as everywhere else)
+      const around = d => offsetPolyline([ccw.at(-1), ...ccw, ccw[0], ccw[1]], d).slice(1, -1), inner = around(.03), outer = around(-.73);
       water.polygon(shore, POND_LEVEL, '#3f7f86', () => [1, 0]);
-      walls.wall(signedArea(shore) > 0 ? ring.slice().reverse() : ring, PAVEMENT_LEVEL + .3, POND_LEVEL - .4, COLOURS.coping);
-      walls.ribbon(offsetPolyline(signedArea(shore) > 0 ? ring : ring.slice().reverse(), -.35), .38, PAVEMENT_LEVEL + .3, COLOURS.coping);
+      walls.wall(around(0).reverse(), top, POND_LEVEL - .4, COLOURS.coping);
+      for (let i = 0; i < ccw.length; i++) { walls.flat(inner[i], outer[i], outer[i + 1], top, COLOURS.coping); walls.flat(inner[i], outer[i + 1], inner[i + 1], top, COLOURS.coping); }
+      // (and its outer face, down to the lawn)
+      walls.wall(outer, top, PAVEMENT_LEVEL, COLOURS.coping);
     }
   }
   // Quays and promenades: raised, with a kerb on the road side
@@ -311,17 +355,51 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
   for (const piece of CITY.seaWater) water.polygon(piece.outer, WATER_LEVEL, '#397780', () => [1, 0], true, piece.holes);
   for (const piece of CITY.riverWater) water.polygon(piece.outer, WATER_LEVEL, '#397780', flowAt, true, piece.holes);
   // A quay run has the water on its right, which is the way a wall faces
-  for (const run of CITY.walls) { walls.wall(run, PAVEMENT_LEVEL + .02, WATER_LEVEL - 1.6, '#9b9789'); walls.ribbon(offsetPolyline(run, .25), .3, PAVEMENT_LEVEL + .2, '#b3aea0'); }
+  // (where the shore runs under a carriageway or a pavement carried on over
+  // the water, at a bridge's abutment or a road along the water's edge, the
+  // wall stops just under it and has no coping, rather than standing across it).
+  // Elsewhere a stone coping runs along its top: a low kerb on the promenade,
+  // overhanging the wall a little, solid on every side
+  for (const run of CITY.walls) for (const { points, road } of shoreStretches(run)) {
+    walls.wall(points, road ? ROAD_LEVEL - .03 : PAVEMENT_LEVEL, WATER_LEVEL - 1.6, '#9b9789');
+    // (not a scrap of coping on a metre or two of shore left between roads)
+    if (road || polylineLength(points) < 2) continue;
+    const top = PAVEMENT_LEVEL + .2, outer = offsetPolyline(points, -.05), inner = offsetPolyline(points, .55);
+    for (let i = 0; i < points.length - 1; i++) {
+      walls.flat(outer[i], inner[i], inner[i + 1], top, COLOURS.coping); walls.flat(outer[i], inner[i + 1], outer[i + 1], top, COLOURS.coping);
+    }
+    walls.wall(outer, top, PAVEMENT_LEVEL, COLOURS.coping);
+    // (down to the road, where one comes right up to it)
+    walls.wall(inner.slice().reverse(), top, ROAD_LEVEL - .02, COLOURS.coping);
+    walls.wall([outer[0], inner[0]], top, ROAD_LEVEL - .02, COLOURS.coping);
+    walls.wall([inner.at(-1), outer.at(-1)], top, ROAD_LEVEL - .02, COLOURS.coping);
+  }
   // Bridge decks: the road surface is already there; add the sides and piers
   for (const bridge of bridges) {
     const halfWidth = bridge.road.profile.halfWidth, points = bridge.points;
-    for (const side of [-1, 1]) walls.wall(offsetPolyline(points, side * halfWidth), bridge.footways.some(f => f.side === side) ? PAVEMENT_LEVEL : ROAD_LEVEL - .01, ROAD_LEVEL - 1.4, '#8f8b80');
-    // Its footways, raised, with a kerb along the carriageway
+    // Its sides, up to the footway where one runs along them and otherwise to
+    // the road, in stretches as the footway comes and goes
+    // (every quarter metre, so each stretch starts and stops with the footway)
+    const dense = densify(points, .25);
+    for (const side of [-1, 1]) {
+      // (only where the footway reaches the very edge: where another road
+      // crosses the end of the deck, the side stays under its carriageway)
+      const edge = offsetPolyline(dense, side * halfWidth), inner = offsetPolyline(dense, side * (halfWidth - 1)), rim = offsetPolyline(dense, side * (halfWidth - .03));
+      const onFootway = inner.map((p, i) => CITY.pavement.find(p.x, p.y)?.kind === 'bridge' && CITY.pavement.find(rim[i].x, rim[i].y)?.kind === 'bridge');
+      // (a piece of side is raised only with the footway at both its ends)
+      const raised = edge.slice(1).map((p, i) => onFootway[i] && onFootway[i + 1]);
+      for (let i = 0; i < edge.length - 1;) {
+        let j = i + 1;
+        while (j < edge.length - 1 && raised[j] === raised[i]) j++;
+        walls.wall(edge.slice(i, j + 1), raised[i] ? PAVEMENT_LEVEL : ROAD_LEVEL - .01, ROAD_LEVEL - 1.4, '#8f8b80');
+        i = j;
+      }
+    }
+    // Its footways, raised and paved as the promenades they carry on from,
+    // kerbed all round as a promenade is
     for (const footway of bridge.footways) {
-      ground.polygon(footway.polygon, PAVEMENT_LEVEL, COLOURS.pavement);
-      const kerb = offsetPolyline(footway.line, -footway.side * footway.width / 2);
-      // (a wall faces right of its way; the carriageway is right of a left-hand footway)
-      ground.wall(footway.side < 0 ? kerb.slice().reverse() : kerb, PAVEMENT_LEVEL, ROAD_LEVEL - .02, COLOURS.kerb);
+      ground.polygon(footway.polygon, PAVEMENT_LEVEL, COLOURS.quay);
+      ground.wall(clockwise(footway.polygon), PAVEMENT_LEVEL, ROAD_LEVEL - .02, COLOURS.kerb, true);
     }
     walls.ribbon(points, halfWidth, ROAD_LEVEL - 1.4, '#6f6b63');
     for (const p of alongPolyline(points, 30, 15)) {
@@ -334,6 +412,37 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
     }
   }
 }
+// Whether the shore at p (running along t, the water on its right) is built
+// over: a carriageway on it, or a pavement carried on over the water
+// (or a kerb corner rounded off a walk, which is road on the land side)
+const shoreCovered = (p, tx, ty) => Boolean(onRoadAt(p.y, p.x)) || Boolean(CITY.pavement.find(p.x + ty, p.y - tx)) || surfaceAt(p.y + tx * .6, p.x - ty * .6) === 'road';
+// A shore run in stretches, each either built over or not, split where it
+// passes the edge of what covers it (found to a couple of centimetres, so a
+// coping stops at the kerb rather than running on into the road)
+function shoreStretches(run) {
+  const stretches = [];
+  let current = null, last = null;
+  for (let i = 0; i < run.length - 1; i++) {
+    const a = run[i], b = run[i + 1], length = Math.hypot(b.x - a.x, b.y - a.y), count = Math.max(1, Math.ceil(length / 1.5));
+    const tx = (b.x - a.x) / (length || 1), ty = (b.y - a.y) / (length || 1);
+    for (let k = i ? 1 : 0; k <= count; k++) {
+      const p = { x: a.x + (b.x - a.x) * k / count, y: a.y + (b.y - a.y) * k / count }, road = shoreCovered(p, tx, ty);
+      if (current && current.road !== road) {
+        let lo = last, hi = p;
+        for (let step = 0; step < 7; step++) {
+          const m = { x: (lo.x + hi.x) / 2, y: (lo.y + hi.y) / 2 };
+          if (shoreCovered(m, tx, ty) === current.road) lo = m; else hi = m;
+        }
+        const edge = { x: (lo.x + hi.x) / 2, y: (lo.y + hi.y) / 2 };
+        current.points.push(edge); stretches.push(current); current = { road, points: [edge] };
+      }
+      (current ??= { road, points: [] }).points.push(p);
+      last = p;
+    }
+  }
+  if (current?.points.length > 1) stretches.push(current);
+  return stretches;
+}
 // Surface.wall faces the right of travel; a clockwise ring faces outward
 const clockwise = polygon => signedArea(polygon) > 0 ? polygon.slice().reverse() : polygon;
 // What the ground inside a block is: gardens where the district has them, paving elsewhere
@@ -345,34 +454,8 @@ const YARD_TREES = { 'Garden quarter': 240, 'Civic quarter': 290, 'Old town': 56
 export const blockGround = block => GARDEN_STYLES.has(block.style) ? '#86a263' : block.style === 'Warehouse district' ? '#a8a598' : '#b3b2a5';
 export const yardGround = block => block.style === 'Warehouse district' ? '#9e9b8e' : block.style === 'Midtown' ? '#a9a99d' : '#83a05e';
 
-// Bridges: the runs of a road over water, with their footways (see city.js).
-// A footway stops where the crosswalk across its road's end begins; the
-// crosswalks are the junctions' own, so this is done once here, the first
-// time the bridges are asked for, reshaping each footway where the pavement
-// index already holds it.
-let footwaysTrimmed = false;
-export function findBridges() {
-  if (footwaysTrimmed) return CITY.bridges;
-  footwaysTrimmed = true;
-  const walks = cityCrosswalks(navGraph());
-  for (const bridge of CITY.bridges) for (const footway of bridge.footways) {
-    const clear = footway.line.map(p => !walks.some(walk => walk.edge.kind !== 'path' && distanceToPolyline(p, [...walk.outline, walk.outline[0]]) < 1.2 + footway.width / 2 || insidePolygon(p, walk.outline)));
-    let best = null;
-    for (let i = 0; i < clear.length; i++) {
-      if (!clear[i]) continue;
-      let j = i; while (j + 1 < clear.length && clear[j + 1]) j++;
-      if (!best || j - i > best[1] - best[0]) best = [i, j];
-      i = j;
-    }
-    const line = best && best[1] - best[0] >= 4 ? footway.line.slice(best[0], best[1] + 1) : [];
-    if (line.length === footway.line.length) continue;
-    footway.line = line;
-    // (an emptied footway leaves a degenerate polygon the index never finds)
-    footway.polygon.splice(0, footway.polygon.length, ...(line.length ? bufferPolyline(line, footway.width / 2) : []));
-  }
-  for (const bridge of CITY.bridges) bridge.footways = bridge.footways.filter(footway => footway.line.length);
-  return CITY.bridges;
-}
+// Bridges: the runs of a road over water, with their footways (see city.js)
+export const findBridges = () => CITY.bridges;
 
 // Street furniture for the whole city, as pieces the chunks stand up:
 // { kind, u, s, yaw, ... } with yaw an item yaw (see city-layout-render.js).
@@ -441,7 +524,8 @@ export function placeStreetFurniture(nav, bridges, add) {
       const arm = shape.approaches.get(edge);
       for (const back of [0, 2.5, 5]) {
         const p = approachPoint(nav, edge, node, stopLineDistance(arm.clear) + .9 + back);
-        const reach = edge.profile.halfWidth + 1.1, u = p.x + p.rx * reach, y = p.y + p.ry * reach;
+        // (on a bridge, the middle of its footway)
+        const kerb = kerbReach(p, p.rx, p.ry, edge.profile.halfWidth), reach = kerb < edge.profile.halfWidth ? (kerb + edge.profile.halfWidth) / 2 : edge.profile.halfWidth + 1.1, u = p.x + p.rx * reach, y = p.y + p.ry * reach;
         if (waterAt(y, u)) continue;
         const yaw = faceYaw(p.tx, p.ty);
         // On a wide road the signal hangs over the lanes from a mast arm, a
@@ -590,21 +674,43 @@ export function placeStreetFurniture(nav, bridges, add) {
       if (put({ kind: 'bench', u: x, s: y, yaw: alongYaw(-ax / l, -ay / l) }, 2.5) && i % 2) put({ kind: 'bin', u: x + p.tx * 1.6, s: y + p.ty * 1.6 }, 1);
     });
   }
-  // Railings along the quay walls, with a gap wherever a road meets the water
+  // Railings along the quay walls in four-metre lengths, with a gap wherever
+  // a road meets the water: each stretch between roads is railed right up to
+  // the kerb, its last length set back to end there
+  const kerbClear = p => { const road = CITY.roadIndex.nearest(p.x, p.y, 30, (segment, distance) => distance - segment.road.profile.halfWidth); return !road || road.score > .3; };
   for (const run of CITY.walls) {
-    const inland = offsetPolylineClean(run, 1.1);
-    for (const p of alongPolyline(inland, 4, 2)) {
-      const road = CITY.roadIndex.nearest(p.x, p.y, 30, (segment, distance) => distance - segment.road.profile.halfWidth);
-      if (road && road.score < 1.5) continue;
+    // (and none where the walk carries on over the water)
+    const samples = alongPolyline(offsetPolylineClean(run, 1.1), .5), clear = samples.map(p => kerbClear(p) && !CITY.pavement.find(p.x + p.ty * 2.1, p.y - p.tx * 2.1));
+    // (a length centred on sample i spans samples i - 4 to i + 4)
+    const fits = i => i >= 4 && i + 4 < samples.length && clear[i - 4] && clear[i] && clear[i + 4];
+    let next = 0, last = -Infinity;
+    for (let i = 0; i < samples.length; i++) {
+      if (!fits(i)) continue;
+      const end = !fits(i + 1);
+      if (i < next && !(end && i - last >= 2)) continue;
+      const p = samples[i];
       add({ kind: 'railing', u: p.x, s: p.y, yaw: faceYaw(p.tx, p.ty), y: PAVEMENT_LEVEL });
+      last = i; next = i + 8;
     }
   }
   // Bridges: railings on both edges of the deck
+  const crossings = cityCrosswalks(nav);
   for (const bridge of bridges) {
     const halfWidth = bridge.road.profile.halfWidth;
     for (const side of [-1, 1]) {
       const edge = offsetPolyline(bridge.points, side * (halfWidth - .35));
-      for (const p of alongPolyline(edge, 4, 2)) add({ kind: 'railing', u: p.x, s: p.y, yaw: faceYaw(p.tx, p.ty), y: CITY.pavement.find(p.x, p.y)?.kind === 'bridge' ? PAVEMENT_LEVEL : ROAD_LEVEL });
+      for (const p of alongPolyline(edge, 4, 2)) {
+        // (over the water, reaching to meet the quay's railing, and not across
+        // another road that joins the bridge)
+        if (!waterAt(p.y + p.ty * 2, p.x + p.tx * 2) && !waterAt(p.y - p.ty * 2, p.x - p.tx * 2)) continue;
+        const other = CITY.roadIndex.nearest(p.x, p.y, 30, (segment, distance) => segment.road === bridge.road || segment.road.kind === 'path' ? Infinity : distance - segment.road.profile.halfWidth);
+        if (other && other.score < 2.2) continue;
+        // (nor across a crosswalk where a junction is at the bridge's end)
+        const span = [{ x: p.x - p.tx * 2 - p.ty * .05, y: p.y - p.ty * 2 + p.tx * .05 }, { x: p.x + p.tx * 2 - p.ty * .05, y: p.y + p.ty * 2 + p.tx * .05 },
+          { x: p.x + p.tx * 2 + p.ty * .05, y: p.y + p.ty * 2 - p.tx * .05 }, { x: p.x - p.tx * 2 + p.ty * .05, y: p.y - p.ty * 2 - p.tx * .05 }];
+        if (crossings.some(walk => convexOverlap(walk.outline, span))) continue;
+        add({ kind: 'railing', u: p.x, s: p.y, yaw: faceYaw(p.tx, p.ty), y: CITY.pavement.find(p.x, p.y)?.kind === 'bridge' ? PAVEMENT_LEVEL : ROAD_LEVEL });
+      }
     }
   }
   // Parks and squares: what a square is for (its fountain, tower, sculptures,

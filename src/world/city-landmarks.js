@@ -178,7 +178,9 @@ export function buildLandmark(c, lot, place) {
   // A barrel vault along the depth of the building, closed at both ends
   const vault = (width, rise, depth, base, roofColour, material = c.materials.solid, endColour = STONE) => {
     const p = at(0, 0);
-    c.item('roof-vault', vaultGeometry, material, [p.x, base, -p.s], [width / 2, rise, depth], roofColour, faceYaw(nx, ny));
+    // (its eaves a little proud of the walls all round: the vault's edge dips
+    // below its base, and flush it would share the top of each wall's face)
+    c.item('roof-vault', vaultGeometry, material, [p.x, base, -p.s], [width / 2 + .15, rise, depth + .3], roofColour, faceYaw(nx, ny));
     for (const end of [-1, 1]) {
       const q = at(0, end * (depth / 2 - .08));
       c.item(end < 0 ? 'landmark-gable-front' : 'landmark-gable', gable, end < 0 && material === c.materials.solid ? c.materials.glass : material, [q.x, base, -q.s], [width / 2 - .1, rise - .1, 1], end < 0 ? '#8fb3b4' : endColour, end < 0 ? facing : facing + Math.PI);

@@ -208,7 +208,18 @@ tyres and the street furniture agree:
   whole) and kept off every carriageway, in pieces of a few lamps' spacing
   so a lookup never tests a promenade the length of the city; where the ring
   and the coast road meet end to end, the carriageway and the promenade are
-  patched across the joint (`endJoints`);
+  patched across the joint (`endJoints`); and whatever land is still bare
+  once the blocks, parks, carriageways and promenades are laid (where a
+  promenade stops short of a road crossing it, at a bridge's end, or cuts a
+  corner round a bend) is paved as waterfront, so every pavement meets a kerb,
+  and a sliver inland (where two roads meet end to end at an angle) is road.
+  A scrap of bare land only becomes road where it lies against a road (never
+  a strip along the water's edge), and a hairline scrap, where two outlines
+  differ by a rounding, only seals the seam against a road. Last, each
+  promenade loses the needles the booleans leave where two boundaries all
+  but meet (an edge out and straight back), and a wedge thinner than 40 cm
+  against the road that meets no other pavement is handed to it, so no kerb
+  stands out on its own in the carriageway;
 - each big park's kerb, the park less the carriageways round it as they are
   drawn, so it follows them however their widths change;
 - a spatial index of all of these, so `surfaceAt(s, u)` in `city-route.js`
@@ -251,8 +262,9 @@ with a share of each district's junctions doing otherwise. A crosswalk is
 marked across every approach at a signal or a stop line, and across a
 street nobody stops on only downtown and in the market; a quiet junction
 has none. Where two junctions a few metres apart would lay two crosswalks
-over each other, the one across the narrower road gives way
-(`cityCrosswalks`).
+over each other, the one across the narrower road gives way, and a street
+so short that the crosswalks at its two ends all but meet keeps only the one
+where its traffic stops (`cityCrosswalks`).
 
 `lane-paths.js` is how a car gets from one street to the next: a circular arc
 tangent to both lanes, as wide as the junction allows. The arc's apex keeps a
@@ -262,6 +274,12 @@ carriageway is used. Cars choose their way on when they join a street and
 brake so they enter each turn at its own speed (a comfortable 2.8 m/s²
 sideways), and slow in the same way for the street's own bends; they avoid
 hairpins when there is another way on. The autodrive follows the same curves.
+It tracks where it is by projecting the car onto its own street and onto the
+turn it is taking, never onto whichever street is nearest (in a wide road's
+outer lane a side street leaving at a slant can be nearer), aims closer in a
+turn so it keeps to the curve rather than cutting across the kerb, pulls up
+at a dead end, and if it is ever knocked off its way it finds its street
+again instead of turning back to a point behind it.
 
 `city-junctions.js` decides who may cross a junction and when. Before a car
 crosses the stop line it claims its way through (from its lane, round its
@@ -309,8 +327,17 @@ corners, markings, medians, parking bays, crosswalks and stop lines, a zebra
 at each park gate, pavements and kerbs, parks and squares with their plazas,
 walks and ponds, the ground inside each block and its yard, promenades,
 water, quay walls and bridges, each bridge with a raised footway along its
-deck wherever its road has room outside its lanes, carrying the promenade on
-over the water and stopping short of the crosswalks at its ends). A block too small or too pointed for any lot
+deck wherever its road has room outside its lanes and no promenade of its own
+beside it, paved and kerbed as the promenade is and carried on over the bank
+to the kerb of the road along the water, where it and the promenade become
+one pavement round a rounded kerb corner (`city.js`: the carriageways round
+each bridge end, not counting any hairline or scrap of road cut off beyond a
+footway, are closed by the kerb radius, a sharp wedge more tightly);
+the crosswalks and stop lines across a bridge road end at its footways, and
+its signs stand on them; railings run along its edges over the water, never
+across a road that joins it or a crosswalk at its end; where the shore runs under a carriageway or a
+walk carried on over the water, the quay wall stops just beneath it and has
+no coping or railing). A block too small or too pointed for any lot
 (a wedge where streets meet at a slant) is a planted island
 (`city-islands.js`): a lawn inside a paved rim, with trees where there is
 room clear of the junctions, and on the bigger ones a flower bed or a small
@@ -338,6 +365,25 @@ rather than across it; where a frontage is all junction corners (a circus)
 the sign stands just inside the grounds or the lawn. Props are turned with the helpers
 in `city-layout-render.js` (`faceYaw`, `alongYaw`, `itemFrame`), one
 convention for every item and its collider.
+
+The layers are stacked so that no two surfaces of different looks ever lie in
+one plane, where they would flicker as the camera moves: the bare island 6 cm
+under the road, the markings 12 and 14 mm over it, the pavements 12 cm up,
+the ground inside a block, a yard or a park's lawn and walks a centimetre or
+two above that, and a plaza's paved disc over the ends of the walks that lead
+to it. Anything that stands proud of what is round it is solid on every side:
+the plaza's disc has its edge, a pond's coping and a quay's coping (a low
+stone kerb along the top of the wall, overhanging the water a little) have
+their outer faces down to the lawn, promenade or road, a coping's ends are
+closed and stop at the kerb where a road crosses the shore (found to a couple
+of centimetres), no scrap of coping stands on a metre or two of shore between
+two roads, and rings like a pond's are offset as closed rings, so there is no
+notch where they close. A driveway's dropped kerb spans exactly the pavement
+in front of it, from the lot to the kerb however wide the pavement is, and a
+stop line or a row of teeth that would fall on a crosswalk (where two
+junctions are close) is left out. A bridge's side walls rise to the footway
+only where it reaches the deck's edge, tested every quarter metre along the
+road itself, which the deck follows round any bend.
 
 `citydriver-world.js` streams chunks of 160 m as the car moves. Each chunk
 holds the buildings on its lots and the furniture in it, with the same
@@ -375,7 +421,12 @@ skylights down a shed, a stair head and chimney stacks on flats, now and then
 a water tank on old brick or a roof garden, all square to the building. A
 house or a terrace of houses has an ordinary ground floor in its own walls
 over a low plinth, and a detached one windows round its garden; a block over
-shops or offices stands on a tall stone base. A lot with no room for a
+shops or offices stands on a tall stone base. The trim on a facade stops under the
+cornice or eaves that cap its wall (pilasters, fins, string courses), and
+where two buildings share a party wall each cornice reaches only to the lot
+line, where the neighbour's meets it, rather than overlapping it; a door's
+step stands above the garden path that leads to it, and a vaulted hall's
+roof overhangs its walls. A lot with no room for a
 building is a garden: one more lawn where the houses have gardens, and in
 the built-up districts (most often the sharp tip where two streets meet at a
 slant) a little public garden inside a paved rim, with trees sized to it.
@@ -421,6 +472,10 @@ no lot edge across it, so a street biting into a lot is never built over.
 - `npm test` includes the network, street profile, park layout, shore, lot,
   junction, furniture, building, place and traffic invariants;
   `TEST_WORLD_SEED=42 npm test` runs the whole suite against another city.
+- `tests/city-geometry.test.js` builds the meshes round the start and round
+  a bridge end and checks them as drawn: no two surfaces of different looks
+  in one plane, and no kerb, coping or wall standing up on its own in the
+  road.
 - `node scripts/city-map-svg.mjs <seed> city.svg` draws the plan.
 - `node scripts/city-tour.mjs <seed>` takes screenshots round the city.
 - `node scripts/world-stats.mjs` builds the world in Node and reports what it

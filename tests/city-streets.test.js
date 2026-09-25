@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { CITY, SIDEWALK } from '../src/world/city.js';
 import { yardDrive } from '../src/world/city-yards.js';
-import { surfaceAt, onRoadAt, citydriverRoute, journeyStart } from '../src/world/city-route.js';
+import { surfaceAt, onRoadAt, citydriverRoute, journeyStart, PAVEMENT_LEVEL } from '../src/world/city-route.js';
 import { navGraph } from '../src/world/nav-graph.js';
-import { junctionGeometry, stopLineDistance } from '../src/world/junction-geometry.js';
+import { junctionGeometry, stopLineDistance, CROSSWALK } from '../src/world/junction-geometry.js';
+import { difference, solids } from '../src/mapgen/booleans.js';
 import { junctionControls } from '../src/city-junctions.js';
 import { placeStreetFurniture, findBridges, cityCrosswalks, convexOverlap } from '../src/world/city-streets.js';
 import { cityIslands } from '../src/world/city-islands.js';
@@ -14,7 +15,7 @@ import { planLot } from '../src/world/city-buildings.js';
 import { cityPlaces } from '../src/city-exploration.js';
 import { CityTraffic } from '../src/city-traffic.js';
 import { DrivingController } from '../src/vehicle.js';
-import { averagePoint, calcPolygonArea, insidePolygon, polygonBounds } from '../src/mapgen/polygon-util.js';
+import { averagePoint, calcPolygonArea, insidePolygon, polygonBounds, bufferPolyline } from '../src/mapgen/polygon-util.js';
 
 const furniture = (() => { const pieces = []; placeStreetFurniture(navGraph(), findBridges(), piece => pieces.push(piece)); return pieces; })();
 // Where an item's modelled front (+z) and its +x point on the map (see city-layout-render.js)
@@ -257,14 +258,50 @@ test('a car park behind the buildings has a driveway in from the street, kept cl
   }
 });
 
-test('a bridge has a footway along its deck that stops short of the crosswalks at its ends', () => {
+test('a bridge has a footway along its deck that joins the promenade, and the crosswalks stop at its kerb', () => {
   const walks = cityCrosswalks(navGraph());
   let footways = 0;
   for (const bridge of findBridges()) for (const footway of bridge.footways) {
     footways++;
     const middle = footway.line[Math.floor(footway.line.length / 2)];
     assert.equal(surfaceAt(middle.y, middle.x), 'pavement', 'a footway is walked, not driven');
-    for (const walk of walks) assert.ok(!footway.line.some(p => insidePolygon(p, walk.outline)), `a footway across a crosswalk at ${middle.x.toFixed(0)},${middle.y.toFixed(0)}`);
+    // Somewhere along its edge it runs on into other paving: the promenade, a
+    // pavement on the bank, or the footway of the bridge beside it
+    const edge = [];
+    footway.polygon.forEach((a, i) => { const b = footway.polygon[(i + 1) % footway.polygon.length], n = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / .5); for (let k = 0; k < n; k++) edge.push({ x: a.x + (b.x - a.x) * k / n, y: a.y + (b.y - a.y) * k / n }); });
+    const joins = edge.some(v => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => { const p = { x: v.x + dx * .4, y: v.y + dy * .4 }; return CITY.pavement.find(p.x, p.y) && !insidePolygon(p, footway.polygon); }));
+    // (or, where the bridge is a causeway with no promenade at either end,
+    // it runs from one road's kerb to another's)
+    const line = footway.line, beyond = (p, q) => { const l = Math.hypot(p.x - q.x, p.y - q.y) || 1; return surfaceAt(p.y + (p.y - q.y) / l * .6, p.x + (p.x - q.x) / l * .6) === 'road'; };
+    const kerbToKerb = beyond(line[0], line[1]) && beyond(line.at(-1), line.at(-2));
+    assert.ok(joins || kerbToKerb, `a footway that meets no other pavement near ${middle.x.toFixed(0)},${middle.y.toFixed(0)}`);
+  }
+  // No crosswalk is painted over a footway
+  for (const walk of walks) for (let u = .1; u < 1; u += .2) for (let v = .1; v < 1; v += .4) {
+    const [a, b, c, d] = walk.outline, p = { x: a.x + (b.x - a.x) * u + (d.x - a.x) * v, y: a.y + (b.y - a.y) * u + (d.y - a.y) * v };
+    assert.notEqual(CITY.pavement.find(p.x, p.y)?.kind, 'bridge', `a crosswalk over a footway at ${p.x.toFixed(0)},${p.y.toFixed(0)}`);
   }
   if (findBridges().some(bridge => bridge.road.profile.halfWidth >= 9)) assert.ok(footways > 0, 'the wider bridges have footways');
+});
+
+test('the waterfront is finished: no land left bare, railings off the roads, one crosswalk to a short street', () => {
+  // Every piece of land is under a block, a park, a carriageway or a pavement
+  const covered = solids([...CITY.blocks.map(block => block.kerb), ...CITY.parkPlans.filter(park => !park.square).map(park => park.kerb),
+    ...CITY.roads.filter(road => road.kind !== 'path').map(road => bufferPolyline(road.points, road.profile.halfWidth)), ...CITY.cornerPatches, ...CITY.quays.map(quay => quay.polygon)]);
+  const bare = difference(CITY.land.map(piece => piece.outer), CITY.land.flatMap(piece => piece.holes), covered)
+    .map(piece => calcPolygonArea(piece.outer)).filter(area => area >= .5).reduce((sum, area) => sum + area, 0);
+  // (slivers of the booleans' rounding aside)
+  assert.ok(bare < 1, `${bare.toFixed(1)} m² of bare land`);
+  // A quay's railing stands on its walk, never on a road or out over a walk carried on over the water
+  for (const piece of furniture) {
+    if (piece.kind !== 'railing' || piece.y !== PAVEMENT_LEVEL || CITY.pavement.find(piece.u, piece.s)?.kind === 'bridge') continue;
+    assert.ok(!onRoadAt(piece.s, piece.u), `a railing on a road at ${piece.u.toFixed(0)},${piece.s.toFixed(0)}`);
+  }
+  // The crosswalks at the two ends of a street never all but meet
+  const walks = cityCrosswalks(navGraph()), middle = walk => ({ x: (walk.near.x + walk.far.x) / 2, y: (walk.near.y + walk.far.y) / 2 });
+  for (let i = 0; i < walks.length; i++) for (let j = i + 1; j < walks.length; j++) {
+    if (walks[i].edge !== walks[j].edge) continue;
+    const a = middle(walks[i]), b = middle(walks[j]);
+    assert.ok(Math.hypot(a.x - b.x, a.y - b.y) >= CROSSWALK + 5, `two crosswalks back to back at ${a.x.toFixed(0)},${a.y.toFixed(0)}`);
+  }
 });

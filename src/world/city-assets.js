@@ -142,7 +142,8 @@ function busShelter() {
   const p = new Parts();
   for (const z of [-1.7, 1.7]) p.box([.6, 1.25, z], [.1, 2.5, .1], iron);
   p.box([0, 2.55, 0], [1.6, .12, 4], darkIron);
-  p.box([.62, 1.35, 0], [.04, 2, 3.5], '#5c6b74');
+  // (the glass ends inside the posts, not flush with their outer faces)
+  p.box([.62, 1.35, 0], [.04, 2, 3.4], '#5c6b74');
   p.box([0, .45, 0], [.5, .06, 3], timber);
   p.box([-.9, 2.9, 1.6], [.06, .5, .5], '#2f5f8a');
   p.cylinder([-.9, 1.4, 1.6], .05, .05, 2.8, iron, 5);
@@ -152,7 +153,7 @@ function busShelter() {
 function railing() {
   const p = new Parts();
   p.box([0, 1.02, 0], [.07, .09, 4], iron);
-  p.box([0, .5, 0], [.05, .05, 4], iron);
+  p.box([0, .5, 0], [.04, .04, 4], iron);
   for (const z of [-2, -1, 0, 1, 2]) p.box([0, .52, z], [.05, 1.04, .05], darkIron);
   return p.finish();
 }

@@ -146,3 +146,37 @@ test('autodrive follows the street ahead and keeps the car on the road through j
     assert.ok(offRoad < 60, `${offRoad} ticks off the road`);
   } finally { player.disposeModel(); }
 });
+
+test('autodrive never loses its way: it never whips round, circles on the spot or leaves the tarmac', () => {
+  // (the streams of turns that, before, lost the car in a wide road's outer
+  // lane beside a side street leaving at a slant, and in a junction's turns)
+  for (const seed of [7, 108, 209]) {
+    const player = new DrivingController(citydriverRoute, journeyStart(), 'taxi');
+    const traffic = new CityTraffic(new THREE.Scene(), player.route, player.s, 'city', player.u);
+    let k = seed;
+    const autodrive = new CityAutodrive({ random: () => (k = (k * 16807) % 2147483647) / 2147483647 });
+    try {
+      player.toggleFreeDriving(); autodrive.toggle();
+      let heading = player.heading, whips = 0, offRoad = 0;
+      const trail = [];
+      for (let i = 0; i < 60 * 150; i++) {
+        const state = autodrive.update(player, traffic, player.stats.topSpeed, 1 / 60);
+        player.update(1 / 60, state);
+        traffic.update(1 / 60, player);
+        const turned = Math.abs(Math.atan2(Math.sin(player.heading - heading), Math.cos(player.heading - heading)));
+        if (turned > Math.PI / 2 && Math.abs(player.speed) > 2) whips++;
+        heading = player.heading;
+        if (surfaceAt(player.s, player.u) !== 'road') offRoad++;
+        trail.push({ s: player.s, u: player.u, moving: Math.abs(player.speed) > 3 });
+        // Moving, it gets somewhere: over ten seconds at speed it covers ground
+        if (i >= 600 && i % 60 === 0 && trail.slice(i - 600).every(p => p.moving)) {
+          const then = trail[i - 600];
+          assert.ok(Math.hypot(player.s - then.s, player.u - then.u) > 20, `circling at ${player.u.toFixed(0)},${player.s.toFixed(0)}`);
+        }
+      }
+      assert.equal(whips, 0, `whipped round ${whips} times`);
+      assert.ok(offRoad < 60, `${offRoad} ticks off the tarmac`);
+      assert.ok(player.distance > 800, `drove ${player.distance.toFixed(0)} m`);
+    } finally { traffic.dispose(); player.disposeModel(); }
+  }
+});

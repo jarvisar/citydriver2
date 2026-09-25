@@ -50,6 +50,14 @@ export function grow(rings, distance) {
   offset.Execute(out, distance * SCALE);
   return union(out.map(fromPath));
 }
+// A region grown (or, negative, shrunk) by `distance` metres with rounded
+// corners, arcs true to within `tolerance` metres
+export function growRound(rings, distance, tolerance = .05) {
+  const offset = new ClipperLib.ClipperOffset(2, tolerance * SCALE), out = new ClipperLib.Paths();
+  offset.AddPaths(rings.filter(ring => ring.length >= 3).map(toPath), ClipperLib.JoinType.jtRound, ClipperLib.EndType.etClosedPolygon);
+  offset.Execute(out, distance * SCALE);
+  return union(out.map(fromPath));
+}
 // Pieces with their spikes (an edge out and straight back, left where two
 // shapes shared an edge) and near-collinear points within `tolerance` metres gone
 export const clean = (pieces, tolerance = .01) => union(region(pieces).map(ring => fromPath(ClipperLib.Clipper.CleanPolygon(toPath(ring), tolerance * SCALE))));
