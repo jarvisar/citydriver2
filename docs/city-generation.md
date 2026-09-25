@@ -318,7 +318,10 @@ one), a sculpture garden a centrepiece in a pool and smaller works along its
 walks, and a fountain square a tiered fountain with a cafe's tables beside
 it. No design comes up more than twice. A paved square has a promenade
 under two rows of trees round its edge and lawns between its walks; a lawn
-has its trees in groves. The pieces (`city-monuments.js`) are laid out
+has its trees in groves. A square too narrow for a circle (a strip between
+two streets) is a linear garden instead: one walk down the middle of its
+length from edge to edge, with its lanterns, benches and trees along it.
+The pieces (`city-monuments.js`) are laid out
 square to the square's longest side, the tower and the glasshouse at both
 detail levels.
 
@@ -347,8 +350,15 @@ between them as each district plants its streets (an avenue of big trees in
 the garden and civic quarters, smaller ones in the old town and none in its
 lanes, and only some of the warehouse streets planted), every tree no bigger
 than its room to the building line so its crown only brushes the fronts,
-trees and double-armed lamps down the boulevards' medians, bus shelters on
-the main roads, bins, parked cars in two bays in five, car parks lined out in the paved
+and its crown clear of every lamp, sign, signal and bus shelter, whichever
+stood first (a street tree steps a metre or few along the kerb rather than
+grow round one), lanterns on short posts rather than tall lamps along the
+old town's and the garden quarter's own streets (their avenues keep the tall
+ones), trees and double-armed lamps down the boulevards' medians, bus
+shelters on the main roads, each with a bin at one end, bins where people
+wait to cross (just short of the corners, at most of them where the
+pavements are busy and a few where they are quiet), parked cars in two bays
+in five, car parks lined out in the paved
 yards behind the offices and warehouses, a little over half full, each with
 a driveway in from the street between two of the buildings round it
 (`city-yards.js`: the narrowest lot backing onto the yard gives up the
@@ -421,7 +431,13 @@ skylights down a shed, a stair head and chimney stacks on flats, now and then
 a water tank on old brick or a roof garden, all square to the building. A
 house or a terrace of houses has an ordinary ground floor in its own walls
 over a low plinth, and a detached one windows round its garden; a block over
-shops or offices stands on a tall stone base. The trim on a facade stops under the
+shops or offices stands on a tall stone base. Where that tall ground floor is
+not a shopfront or a lobby, its windows are as tall as the storey, transomed
+level with the head of a door that has a fanlight over it, and a warehouse
+has a door for its staff beside the loading door and a row of high windows
+along the rest of its front. A block's shops are dealt their names round the
+block from the whole catalogue in turn, so no two shops round a block share
+a name and neighbouring shops sell different things. The trim on a facade stops under the
 cornice or eaves that cap its wall (pilasters, fins, string courses), and
 where two buildings share a party wall each cornice reaches only to the lot
 line, where the neighbour's meets it, rather than overlapping it; a door's

@@ -12,6 +12,7 @@ import { placeStreetFurniture, findBridges, cityCrosswalks, convexOverlap } from
 import { cityIslands } from '../src/world/city-islands.js';
 import { turnPath, wayOn, isLink } from '../src/world/lane-paths.js';
 import { planLot } from '../src/world/city-buildings.js';
+import { shopSignFor } from '../src/world/city-signs.js';
 import { cityPlaces } from '../src/city-exploration.js';
 import { CityTraffic } from '../src/city-traffic.js';
 import { DrivingController } from '../src/vehicle.js';
@@ -84,6 +85,27 @@ test('signs and signals face the drivers they are for, lamps lean over the road'
     const arm = side(lamp.yaw), head = { x: lamp.u - arm.x * 2.5, y: lamp.s - arm.y * 2.5 };
     assert.equal(surfaceAt(head.y, head.x), 'road', `lamp at ${lamp.u.toFixed(0)},${lamp.s.toFixed(0)} leans over the pavement`);
   }
+});
+
+test('a street tree keeps its crown clear of the lamps, signs, signals and shelters, and bins wait at the corners and stops', () => {
+  const trees = furniture.filter(piece => piece.kind === 'tree'), crown = tree => tree.scale * .5;
+  // (as far as each needs: a lamp's head, a sign's face, a shelter's roof)
+  for (const [kind, clear] of [['lamp', .5], ['median-lamp', .5], ['stop', 1.2], ['yield', 1.2], ['signal', 1.2], ['sign', 1], ['shelter', 2.4]]) {
+    for (const piece of furniture.filter(piece => piece.kind === kind)) {
+      const hit = trees.find(tree => Math.hypot(tree.u - piece.u, tree.s - piece.s) < crown(tree) + clear - .01);
+      assert.ok(!hit, `a tree at ${hit?.u.toFixed(1)},${hit?.s.toFixed(1)} grows over the ${kind} at ${piece.u.toFixed(1)},${piece.s.toFixed(1)}`);
+    }
+  }
+  // A street's planting survives the rule: the trees step aside rather than go
+  assert.ok(trees.filter(tree => CITY.pavement.find(tree.u, tree.s)).length > 1000, 'street trees planted');
+  // Every bus stop has a bin beside it, and most bins stand near a junction or a stop
+  const bins = furniture.filter(piece => piece.kind === 'bin'), shelters = furniture.filter(piece => piece.kind === 'shelter');
+  for (const shelter of shelters) assert.ok(bins.some(bin => Math.hypot(bin.u - shelter.u, bin.s - shelter.s) < 4), `bus stop at ${shelter.u.toFixed(0)},${shelter.s.toFixed(0)} has no bin`);
+  const nodes = [...junctionGeometry(navGraph()).values()].map(shape => shape.node);
+  const placed = bins.filter(bin => shelters.some(s => Math.hypot(bin.u - s.u, bin.s - s.s) < 4) || nodes.some(node => Math.hypot(bin.u - node.x, bin.s - node.y) < 32));
+  assert.ok(placed.length > bins.length * .6, `${placed.length} of ${bins.length} bins at a corner or a stop`);
+  // The old town and the garden quarter light their own streets with lanterns
+  assert.ok(furniture.some(piece => piece.kind === 'lantern' && CITY.pavement.find(piece.u, piece.s) && !CITY.parkPlans.some(park => park.lawn?.length >= 3 && insidePolygon({ x: piece.u, y: piece.s }, park.lawn))), 'street lanterns');
 });
 
 test('crosswalks are marked where traffic stops, and never lie over one another', () => {
@@ -183,12 +205,18 @@ test('crosswalks and stop lines begin beyond the kerb corners, and turns join th
 });
 
 test('buildings stand inside their lots without touching each other, and every venue is a landmark', () => {
-  const c = { east: 0, start: 0 }, footprints = [];
+  const c = { east: 0, start: 0 }, footprints = [], shops = new Map();
   CITY.lots.forEach((polygon, index) => {
     const lot = { polygon, index, block: CITY.lotBlocks[index], edges: CITY.lotEdges[index], depth: CITY.lotDepths[index], centre: averagePoint(polygon), area: calcPolygonArea(polygon), seed: index * 7919 };
     const plan = planLot(c, lot);
     if (plan.kind === 'landmark') { assert.equal(plan.place.lot, index); return; }
     if (plan.kind !== 'building') return;
+    // No two shops round a block have the same name over the door
+    if (plan.shopfront) {
+      const name = shopSignFor(plan).name, names = shops.get(lot.block) ?? new Set();
+      assert.ok(!names.has(name), `two ${name} shops in block ${lot.block}`);
+      shops.set(lot.block, names.add(name));
+    }
     for (const p of plan.footprint) assert.ok(insidePolygon(p, polygon) || polygon.some((q, i) => { const r = polygon[(i + 1) % polygon.length]; return Math.abs((r.x - q.x) * (p.y - q.y) - (r.y - q.y) * (p.x - q.x)) / Math.hypot(r.x - q.x, r.y - q.y) < 1e-6; }), 'footprint inside its lot');
     footprints.push(plan.footprint);
   });

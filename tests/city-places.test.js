@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { CITY, cityCell } from '../src/world/city.js';
 import { cityPlaces, placeForBlock } from '../src/city-exploration.js';
 import { PLACE_TYPES } from '../src/world/city-places.js';
-import { cityParks, SQUARE_WALK } from '../src/world/city-parks.js';
+import { cityParks, squareLayout, SQUARE_WALK } from '../src/world/city-parks.js';
 import { placeStreetFurniture, findBridges } from '../src/world/city-streets.js';
 import { discoverySignFor } from '../src/world/city-signs.js';
 import { navGraph } from '../src/world/nav-graph.js';
@@ -105,4 +105,24 @@ test('every venue is built as its landmark, with its name on it', () => {
     }
     for (const chunk of cells.values()) chunk.dispose();
   } finally { world.dispose(); }
+});
+
+test('a square too narrow for a circle is a linear garden with a walk down its length', () => {
+  // A strip 150 m long and 16 m across, at an angle, between two streets
+  const angle = .4, ux = Math.cos(angle), uy = Math.sin(angle), at = (along, across) => ({ x: 300 + ux * along - uy * across, y: -200 + uy * along + ux * across });
+  const lawn = [at(-75, -8), at(75, -8), at(75, 8), at(-75, 8)];
+  const layout = squareLayout({ lawn, circus: false }, 'plaza', 3);
+  for (const key of ['walks', 'features', 'panels']) assert.ok(Array.isArray(layout[key]), key);
+  assert.equal(layout.plaza, null);
+  assert.equal(layout.walks.length, 1);
+  const walk = layout.walks[0], ends = [walk[0], walk.at(-1)];
+  // (from edge to edge, down the middle, never out of the lawn)
+  assert.ok(Math.hypot(ends[1].x - ends[0].x, ends[1].y - ends[0].y) > 140, 'the walk runs the strip end to end');
+  for (const p of walk) {
+    assert.ok(insidePolygon(p, lawn), `walk point ${p.x.toFixed(1)},${p.y.toFixed(1)} off the lawn`);
+    assert.ok(Math.abs(-(p.x - 300) * uy + (p.y + 200) * ux) < 1, 'the walk keeps to the middle');
+  }
+  // A square with no room for a walk at all still has its (empty) layout
+  const tiny = squareLayout({ lawn: [at(-6, -3), at(6, -3), at(6, 3), at(-6, 3)], circus: false }, 'art', 4);
+  assert.deepEqual([tiny.walks.length, tiny.panels.length, tiny.features.length], [0, 0, 0]);
 });

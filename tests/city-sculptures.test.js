@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { balancingBeam } from '../src/world/city-sculptures.js';
+import { balancingBeam, standingBeam } from '../src/world/city-sculptures.js';
 
 test('balancing sculpture keeps its silhouette with one face at every beam join, front and rear', () => {
   const material = new THREE.MeshBasicMaterial();
@@ -26,4 +26,12 @@ test('balancing sculpture keeps its silhouette with one face at every beam join,
   } finally {
     orange.geometry.dispose(); originalGold.geometry.dispose(); material.dispose();
   }
+});
+
+test('the balancing sculpture stands on its plinth: the upright beam reaches down to it and the leaning one rests on top', () => {
+  const bounds = geometry => { geometry.computeBoundingBox(); return geometry.boundingBox; };
+  const standing = bounds(standingBeam), leaning = bounds(balancingBeam);
+  // (drawn from the top of the plinth, so the upright beam's foot is at its height)
+  assert.ok(standing.min.y > -.5 && standing.min.y < .2, `the upright beam's foot is ${standing.min.y.toFixed(2)} from the plinth`);
+  assert.ok(leaning.min.y > standing.min.y + 5 && leaning.min.y < standing.max.y, 'the leaning beam rests on the upright one');
 });

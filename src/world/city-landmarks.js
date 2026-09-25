@@ -8,7 +8,7 @@ import { discoverySignFor } from './city-signs.js';
 import { round, clock, fireEngine } from './city-detail-assets.js';
 import { roofWedge, vaultGeometry } from './city-roofs.js';
 import { basinRim, basinWater } from './city-public-space-geometry.js';
-import { balancingBeam } from './city-sculptures.js';
+import { balancingBeam, standingBeam, STANDING_BEAM } from './city-sculptures.js';
 import { grassArea } from './city-grass.js';
 import { faceYaw, alongYaw, itemFrame } from './city-layout-render.js';
 import { buildMonument } from './city-monuments.js';
@@ -351,6 +351,7 @@ export function buildLandmark(c, lot, place) {
     if (place.type === 'clock') clockTower(0, 0, G, 16, 4.6);
     else {
       c.item('landmark-sculpture', balancingBeam, c.materials.solid, [p.x, G + .2, -p.s], [.32, .32, .32], colour, along);
+      c.item('landmark-sculpture-base', standingBeam, c.materials.solid, [p.x, G + .2, -p.s], [.32, .32, .32], STANDING_BEAM, along);
       c.post(p.x, p.s, 3.5);
     }
     const pool = at(0, D * .3);

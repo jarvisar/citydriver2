@@ -231,6 +231,19 @@ export function edgeFacade(c, a, b) {
     } };
 }
 
+// Which of its block's lots a lot is, counting round the block, so the block
+// can deal its shops their signs in turn (see city-signs.js)
+let firstLots = null;
+function shopSlot(lot) {
+  if (lot.index === undefined || !(lot.block >= 0) || !CITY.lotBlocks) return {};
+  if (!firstLots || firstLots.city !== CITY.lotBlocks) {
+    firstLots = new Map();
+    firstLots.city = CITY.lotBlocks;
+    CITY.lotBlocks.forEach((block, i) => { if (!firstLots.has(block)) firstLots.set(block, i); });
+  }
+  return { shopBlock: (lot.block + Math.imul(CITY.seed, 7919)) | 0, shopSlot: lot.index - (firstLots.get(lot.block) ?? lot.index) };
+}
+
 // What stands on a lot: a building shaped like the lot, or a garden where
 // the lot is too small or too awkward for one.
 export function planLot(c, lot) {
@@ -341,7 +354,7 @@ export function planLot(c, lot) {
   return { kind: 'building', lot, district, footprint: local(footprintOut, c), lotLocal: local(polygon, c), court: local(court, c), street, windows, type, floors, area: massedArea, breadth,
     wall: pick(style.walls, random), accent: pick(ACCENTS, random), roof: pick(pitched ? TILES[district] ?? ROOFS : ROOFS, random), roofType: house ? 'hip' : pitched ? 'gable' : stepped ? 'terrace' : 'flat', eaves,
     setbackFloors: stepped ? Math.max(2, Math.floor(floors * .57)) : floors, seed: (lot.seed + 9973) >>> 0, variation: integer(random, 0, 3),
-    shop: pick(SHOP_NAMES, random), shopfront, domestic, lawn: insets.lawn, side: insets.side, party: wallKinds.map(kind => kind === 'side'), lotStreet: kinds.map(kind => kind === 'street'), rearWindows: rear > 2.4 || footprintOut !== footprint };
+    shop: pick(SHOP_NAMES, random), ...shopSlot(lot), shopfront, domestic, lawn: insets.lawn, side: insets.side, party: wallKinds.map(kind => kind === 'side'), lotStreet: kinds.map(kind => kind === 'street'), rearWindows: rear > 2.4 || footprintOut !== footprint };
 }
 
 export function edgeWindows(c, b, f, bottom, floors, random) {
@@ -437,25 +450,60 @@ function groundFloor(c, b, f, base, primary, random) {
       f.add(0, G + 3.05, 1.1, 4.2, .18, 2.2, '#b6c9c8', 'solid', true);
     }
   } else if (b.type === 'warehouse') {
-    f.add(0, G + 1.6, .17, Math.min(8, span * .5), 2.9, .1, '#455b61', 'glass');
-    f.add(0, G + 3.3, .3, Math.min(9, span * .55), .35, .7, b.accent, 'solid', true);
+    const door = Math.min(8, span * .5), canopy = Math.min(9, span * .55);
+    f.add(0, G + 1.6, .17, door, 2.9, .1, '#455b61', 'glass');
+    f.add(0, G + 3.3, .3, canopy, .35, .7, b.accent, 'solid', true);
     for (let y = .6; y < 3; y += .4) f.add(0, G + y, .24, Math.min(7.8, span * .49), .06, .05, '#85968f');
+    // Beside the loading door on the main front, a door for the people who
+    // work there, and along the rest of a long front a row of high windows
+    const side = b.variation % 2 ? 1 : -1, staff = primary && span / 2 - canopy / 2 > 3 ? side * (canopy / 2 + 1.5) : null;
+    if (staff !== null) {
+      f.add(staff, G + 1.15, .12, 1.05, 2.3, .12, b.accent);
+      f.add(staff, G + 2.45, .2, 1.45, .14, .5, '#85968f', 'solid', true);
+    }
+    for (const way of [-1, 1]) {
+      const from = canopy / 2 + (staff !== null && way === side ? 3.4 : 1.4), to = span / 2 - 1, count = Math.floor((to - from) / 3.4);
+      for (let k = 0; k < count; k++) {
+        const offset = way * (from + (to - from) * (k + .5) / count);
+        f.add(offset, G + 3.05, .075, 2, 1.3, .11, '#b3c5bc');
+        f.add(offset, G + 3.05, .17, 1.75, 1.05, .08, '#455b61', 'glass');
+      }
+    }
   } else {
+    // A house's ground floor is a storey like the ones above it; the tall
+    // ground floor of a block has windows as tall as it is, their transoms
+    // level with the head of a door that has a fanlight over it
+    const tall = base > 4, loft = b.type === 'loft', frame = b.type === 'brick' || b.type === 'townhouse' ? '#e0ccab' : '#b3c5bc';
+    const head = tall ? 2.6 : 2.3;
     const door = entrance(b, span, primary), doorOffset = door ? door.offset : span * .3 * (b.variation % 2 ? 1 : -1);
     if (door) {
-      f.add(doorOffset, G + 1.15, .12, 1.15, 2.3, .12, b.variation % 2 ? '#4d3f36' : b.accent);
-      f.add(doorOffset, G + 2.4, .2, 1.7, .22, .4, creamTrim, 'solid', true);
+      f.add(doorOffset, G + head / 2, .12, 1.15, head, .12, b.variation % 2 ? '#4d3f36' : b.accent);
+      if (tall) {
+        f.add(doorOffset, G + 3.3, .075, 1.45, 1.35, .11, frame);
+        f.add(doorOffset, G + 3.3, .17, 1.15, 1.1, .08, '#435b65', 'glass');
+      }
+      f.add(doorOffset, G + (tall ? 4.1 : 2.4), .2, 1.7, .22, .4, creamTrim, 'solid', true);
       // (a step up from the garden path, whose top is at G + .09)
       f.add(doorOffset, G + .06, .5, 1.9, .12, 1.1, '#c7bba3', 'solid', true);
     }
     // Windows in bays along the whole front, as on the floors above, clear of the door
     // (or, where the door takes the only bay, one either side of it)
-    const bays = Math.max(1, Math.floor((span - 1.6) / (b.variation === 1 ? 5.6 : 4.8))), spacing = (span - 1.8) / bays;
-    let offsets = Array.from({ length: bays }, (_, bay) => (bay - (bays - 1) / 2) * spacing).filter(offset => !door || Math.abs(offset - doorOffset) >= 2);
+    const bays = Math.max(1, Math.floor((span - 1.6) / (tall && loft ? 6.5 : b.variation === 1 ? 5.6 : 4.8))), spacing = (span - 1.8) / bays;
+    const width = tall ? Math.min(loft ? Math.min(3.7, spacing - 1) : b.variation === 2 ? 2.25 : 1.65, spacing - .5) : 1.4;
+    let offsets = Array.from({ length: bays }, (_, bay) => (bay - (bays - 1) / 2) * spacing).filter(offset => !door || Math.abs(offset - doorOffset) >= width / 2 + 1.3);
     if (!offsets.length) offsets = [-span * .3, span * .3].filter(offset => !door || Math.abs(offset - doorOffset) > 1.9);
     if (span > 5.5) for (const offset of offsets) {
-      f.add(offset, G + 2, .075, 1.65, 2.05, .11, '#e0ccab');
-      f.add(offset, G + 2, .17, 1.4, 1.8, .08, '#435b65', 'glass');
+      if (!tall) {
+        f.add(offset, G + 2, .075, 1.65, 2.05, .11, '#e0ccab');
+        f.add(offset, G + 2, .17, 1.4, 1.8, .08, '#435b65', 'glass');
+        continue;
+      }
+      const w = Math.min(width, span * .3), y = G + 2.5, h = 3.2;
+      f.add(offset, y, .075, w + .25, h + .25, .11, frame);
+      f.add(offset, y, .17, w, h, .08, '#435b65', 'glass');
+      f.add(offset, G + head + .06, .23, w, .1, .08, frame);
+      if (loft || b.variation === 1) f.add(offset, y, .25, .09, h, .07, frame);
+      f.add(offset, y - h / 2 - .14, .25, w + .44, .14, .48, frame);
     }
   }
   void random;

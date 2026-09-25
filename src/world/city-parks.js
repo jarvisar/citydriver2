@@ -63,6 +63,52 @@ function squareWalks(ring, centre, radius, long) {
   return walks;
 }
 
+// A square too narrow for a circle (a strip between two streets) is a
+// linear garden: one walk down the middle of its length, following the strip
+// wherever it has room for a walk with lawn either side, from end to end.
+function stripWalk(ring, centre, axis) {
+  const ux = Math.cos(axis), uy = Math.sin(axis), vx = -uy, vy = ux;
+  // The inside of the strip across the axis at `t` along it: the widest span
+  const across = t => {
+    const bx = centre.x + ux * t, by = centre.y + uy * t, cuts = [];
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      const da = (a.x - bx) * ux + (a.y - by) * uy, db = (b.x - bx) * ux + (b.y - by) * uy;
+      if ((da < 0) === (db < 0)) continue;
+      const k = da / (da - db);
+      cuts.push((a.x + (b.x - a.x) * k - bx) * vx + (a.y + (b.y - a.y) * k - by) * vy);
+    }
+    cuts.sort((a, b) => a - b);
+    let best = null;
+    for (let i = 0; i + 1 < cuts.length; i += 2) if (!best || cuts[i + 1] - cuts[i] > best.width) best = { width: cuts[i + 1] - cuts[i], x: bx + vx * (cuts[i] + cuts[i + 1]) / 2, y: by + vy * (cuts[i] + cuts[i + 1]) / 2 };
+    return best;
+  };
+  let reach = 0;
+  for (const p of ring) reach = Math.max(reach, Math.abs((p.x - centre.x) * ux + (p.y - centre.y) * uy));
+  let run = [], best = [];
+  for (let t = -reach + .5; t <= reach - .5; t += 2) {
+    const span = across(t);
+    if (span && span.width >= 2 * SQUARE_WALK + 3) run.push(span);
+    else run = [];
+    if (run.length > best.length) best = run.slice();
+  }
+  if (best.length < 8) return [];
+  // (straightened between every third sample, where a strip's edges wobble)
+  const walk = best.filter((p, i) => i % 3 === 0 || i === best.length - 1).map(({ x, y }) => ({ x, y }));
+  if (!insidePolygon(walk[0], ring) || !insidePolygon(walk.at(-1), ring)) return [];
+  // and carried on to just inside the edge at each end, to meet the pavement
+  for (const end of [0, 1]) {
+    const tip = end ? walk.at(-1) : walk[0], back = end ? walk.at(-2) : walk[1];
+    const length = Math.hypot(tip.x - back.x, tip.y - back.y) || 1, dx = (tip.x - back.x) / length, dy = (tip.y - back.y) / length;
+    let reach = 0;
+    while (reach < 12 && insidePolygon({ x: tip.x + dx * (reach + .5), y: tip.y + dy * (reach + .5) }, ring)) reach += .25;
+    if (reach >= 12 || reach < .5) continue;
+    const out = { x: tip.x + dx * (reach - .25), y: tip.y + dy * (reach - .25) };
+    if (end) walk.push(out); else walk.unshift(out);
+  }
+  return [walk];
+}
+
 // Which square is which: a botanical garden and a market in the two roomiest,
 // a clocktower in a circus (or the square nearest downtown), a sculpture
 // garden, a fountain square, and any more in turn
@@ -89,12 +135,15 @@ function assignDesigns(entries) {
 // A point `along` the square's axis and `across` it from (x, y)
 const onAxis = (x, y, angle, along, across) => ({ x: x + Math.cos(angle) * along - Math.sin(angle) * across, y: y + Math.sin(angle) * along + Math.cos(angle) * across });
 
-function squareLayout(park, design, index) {
+export function squareLayout(park, design, index) {
   const lawn = park.lawn;
   if (lawn.length < 3) return null;
   const deep = deepestPoint(lawn);
-  if (!deep || deep.distance < 9) return { design, walks: [], plaza: null, features: [], paved: false };
   const ring = signedArea(lawn) > 0 ? lawn : lawn.slice().reverse();
+  if (!deep || deep.distance < 9) {
+    const walks = deep && !park.circus ? stripWalk(ring, deep.point, longestAxis(ring)) : [];
+    return { design, walks, plaza: null, features: [], panels: [], paved: false };
+  }
   const centre = deep.point, d = deep.distance, axis = longestAxis(ring), features = [];
   const random = (salt) => randomAt(index, 7420 + salt, CITY.seed);
   const circus = Boolean(park.circus);

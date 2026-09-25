@@ -23,6 +23,11 @@ export { yardParking, YARD_BAY } from './city-yards.js';
 // lamp or tree only ever stands on a pavement.
 
 const LAMP_SPACING = 27;
+// The old town's and the garden quarter's own streets are lit by lanterns on
+// short posts, closer together, where a tall street lamp would stand over the
+// houses; their avenues and every busier road keep the tall lamps
+const LANTERN_DISTRICTS = new Set(['Old town', 'Garden quarter']);
+const LANTERN_SPACING = 21;
 // Street trees by district: the garden and civic quarters' streets are
 // avenues of big trees, the old town's lanes are too narrow for any and its
 // other streets have small ones, and the warehouses have them only here and
@@ -37,6 +42,15 @@ const STREET_TREES = {
   Midtown: { share: .5, spacing: 19, scale: [7, 9] },
 };
 const PARK_TREES = { share: 1, spacing: 19, scale: [7.2, 9.6] };
+// A tree's crown reaches about half its scale from the trunk (see
+// city-assets.js), and keeps that far and a little more from whatever a crown
+// would swallow or hide: a lamp's column and the head on its arm, a sign or
+// signal a driver has to see, and a bus shelter's roof
+const TREE_CROWN = .5;
+const CROWN_CLEAR = { lamp: .5, 'median-lamp': .5, 'street-lantern': .3, stop: 1.2, yield: 1.2, signal: 1.2, sign: 1, 'parking-sign': .4, shelter: 2.4 };
+// The share of street corners with a litter bin by the crossing, as busy as
+// each district's pavements are
+const CORNER_BINS = { 'Market district': .55, Midtown: .55, 'Old town': .45, 'Civic quarter': .4, 'Warehouse district': .12, 'Garden quarter': .1 };
 // A parking bay's length along the kerb
 export const PARKING_BAY = 6.5;
 export const COLOURS = {
@@ -65,6 +79,21 @@ export function alongPolyline(points, step, offset = 0) {
     travelled += length;
   }
   return out;
+}
+// The point `distance` along a polyline, with the unit tangent (null off either end)
+function pointAlong(points, distance) {
+  let travelled = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i], b = points[i + 1], dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy);
+    if (length < 1e-9) continue;
+    if (distance < travelled) return null;
+    if (distance <= travelled + length) {
+      const t = (distance - travelled) / length;
+      return { x: a.x + dx * t, y: a.y + dy * t, tx: dx / length, ty: dy / length, distance, segment: i };
+    }
+    travelled += length;
+  }
+  return null;
 }
 // The part of a polyline between two distances along it
 export function slicePolyline(points, from, to) {
@@ -463,27 +492,43 @@ export function placeStreetFurniture(nav, bridges, add) {
   const geometry = junctionGeometry(nav), controls = junctionControls(nav);
   // Junction zones: nothing stands on a corner or in a crosswalk's path
   const zones = [...geometry.values()].map(shape => ({ x: shape.node.x, y: shape.node.y, r: shape.arms.reduce((sum, arm) => sum + arm.clear, 0) / shape.arms.length + CROSSWALK + 2.5 }));
-  const zoneIndex = new Map();
+  const zoneIndex = new Map(), zoneCell = (x, y) => Math.floor(x / 60) * 65536 + Math.floor(y / 60);
   for (const zone of zones) {
-    const key = `${Math.floor(zone.x / 60)},${Math.floor(zone.y / 60)}`;
+    const key = zoneCell(zone.x, zone.y);
     if (!zoneIndex.has(key)) zoneIndex.set(key, []);
     zoneIndex.get(key).push(zone);
   }
+  // The zones that could reach a ring, so a walk round it asks only those
+  const zonesNear = ring => {
+    const b = polygonBounds(ring), near = [];
+    for (let cx = Math.floor(b.minX / 60) - 1; cx <= Math.floor(b.maxX / 60) + 1; cx++) for (let cy = Math.floor(b.minY / 60) - 1; cy <= Math.floor(b.maxY / 60) + 1; cy++) near.push(...zoneIndex.get(cx * 65536 + cy) ?? []);
+    return near;
+  };
   // Junction corners and crosswalks, and wherever a road or park path crosses
   // a pavement (a median stands in its own road, so asks only of junctions)
   const inZone = (x, y, junctionsOnly = false) => {
     for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
-      for (const zone of zoneIndex.get(`${Math.floor(x / 60) + dx},${Math.floor(y / 60) + dy}`) ?? []) if (Math.hypot(zone.x - x, zone.y - y) < zone.r) return true;
+      for (const zone of zoneIndex.get(zoneCell(x + dx * 60, y + dy * 60)) ?? []) if (Math.hypot(zone.x - x, zone.y - y) < zone.r) return true;
     }
     if (junctionsOnly) return false;
     const road = CITY.roadIndex.nearest(x, y, 12, (segment, distance) => distance - segment.road.profile.halfWidth);
     return Boolean(road && (road.score < 0 || road.road.kind === 'path' && road.score < 1.5));
   };
-  // What already stands, by 10 m cell, so nothing is placed on top of anything else
+  // What already stands, by 10 m cell, so nothing is placed on top of anything
+  // else, and no tree's crown takes in a lamp, a sign or a shelter, whichever
+  // of them stood first
   const placed = new Map(), cellOf = (x, y) => Math.floor(x / 10) * 65536 + Math.floor(y / 10);
-  const free = (x, y, radius) => {
+  const remember = (x, y, kind, crown = 0) => {
+    const key = cellOf(x, y);
+    if (!placed.has(key)) placed.set(key, []);
+    placed.get(key).push({ x, y, kind, crown });
+  };
+  const free = (x, y, radius, kind = null, crown = 0) => {
     for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
-      for (const p of placed.get(cellOf(x + dx * 10, y + dy * 10)) ?? []) if (Math.hypot(p.x - x, p.y - y) < radius) return false;
+      for (const p of placed.get(cellOf(x + dx * 10, y + dy * 10)) ?? []) {
+        const d = Math.hypot(p.x - x, p.y - y);
+        if (d < radius || (crown && d < crown + (CROWN_CLEAR[p.kind] ?? -Infinity)) || (p.crown && d < p.crown + (CROWN_CLEAR[kind] ?? -Infinity))) return false;
+      }
     }
     return true;
   };
@@ -500,13 +545,13 @@ export function placeStreetFurniture(nav, bridges, add) {
   });
   const put = (piece, radius = 1.5) => {
     // on a pavement, and not where a road or park path runs across it
-    if (PAVED.has(piece.kind) && (!CITY.pavement.find(piece.u, piece.s) || onRoadAt(piece.s, piece.u))) return false;
+    if ((PAVED.has(piece.kind) || piece.street) && (!CITY.pavement.find(piece.u, piece.s) || onRoadAt(piece.s, piece.u))) return false;
     if (piece.kind !== 'parking-sign' && acrossDrive(piece.u, piece.s, SIDEWALK + .5, .6)) return false;
-    if (!free(piece.u, piece.s, Math.min(radius, 10))) return false;
-    const key = cellOf(piece.u, piece.s);
-    if (!placed.has(key)) placed.set(key, []);
-    placed.get(key).push({ x: piece.u, y: piece.s });
-    add(piece);
+    const crown = piece.kind === 'tree' ? TREE_CROWN * piece.scale : 0, kind = piece.street ? 'street-lantern' : piece.kind;
+    if (!free(piece.u, piece.s, Math.min(radius, 10), kind, crown)) return false;
+    remember(piece.u, piece.s, kind, crown);
+    const { street, ...item } = piece;
+    add(item);
     return true;
   };
   // A parking sign on the pavement beside each driveway, to one side of it
@@ -559,8 +604,8 @@ export function placeStreetFurniture(nav, bridges, add) {
     if (f) {
       for (const side of [1, -1]) {
         const along = side * (Math.min(f.width, 14) / 2 + 3), u = f.front.x - f.nx * (f.setback + 3) + f.tx * along, y = f.front.y - f.ny * (f.setback + 3) + f.ty * along;
-        if (!insidePolygon({ x: u, y }, place.polygon) || !free(u, y, 2)) continue;
-        add({ kind: 'sign', type: place.type, variant: place.variant, u, s: y, yaw: faceYaw(du, ds) });
+        if (!insidePolygon({ x: u, y }, place.polygon) || !free(u, y, 2, 'sign')) continue;
+        remember(u, y, 'sign'); add({ kind: 'sign', type: place.type, variant: place.variant, u, s: y, yaw: faceYaw(du, ds) });
         break;
       }
       continue;
@@ -574,7 +619,7 @@ export function placeStreetFurniture(nav, bridges, add) {
       if (!best || Math.hypot(x - e.u, y - e.s) < Math.hypot(best.x - e.u, best.y - e.s)) best = { x, y };
     }
     const inward = Math.hypot(place.u - best.x, place.s - best.y) || 1, u = best.x + (place.u - best.x) / inward * 2.2, y = best.y + (place.s - best.y) / inward * 2.2;
-    if (insidePolygon({ x: u, y }, lawn) && free(u, y, 2)) add({ kind: 'sign', type: place.type, variant: place.variant, u, s: y, yaw: faceYaw(du, ds) });
+    if (insidePolygon({ x: u, y }, lawn) && free(u, y, 2, 'sign')) { remember(u, y, 'sign'); add({ kind: 'sign', type: place.type, variant: place.variant, u, s: y, yaw: faceYaw(du, ds) }); }
   }
   // How far back a block's buildings stand from its pavement near a point:
   // each lot builds as the district its middle is in, so where two districts
@@ -606,26 +651,59 @@ export function placeStreetFurniture(nav, bridges, add) {
       const nx = -p.ty, ny = p.tx, x = p.x + nx * 1.7, y = p.y + ny * 1.7;
       const road = CITY.roadIndex.nearest(p.x, p.y, 16);
       if (sinceShelter < 240 || !road || !['main', 'major', 'ring'].includes(road.road.kind) || inZone(x, y)) continue;
-      if (put({ kind: 'shelter', u: x, s: y, yaw: alongYaw(nx, ny) }, 6)) { sinceShelter = 0; stops.push({ x, y }); }
+      if (!put({ kind: 'shelter', u: x, s: y, yaw: alongYaw(nx, ny) }, 6)) continue;
+      sinceShelter = 0; stops.push({ x, y });
+      // (with a bin beside it, just past one end)
+      [2.9, -2.9, 3.6, -3.6].some(along => put({ kind: 'bin', u: x + p.tx * along - nx * .5, s: y + p.ty * along - ny * .5 }, 1));
     }
-    let lamps = 0;
+    const lanterns = block && LANTERN_DISTRICTS.has(block.style), local = p => (CITY.roadIndex.nearest(p.x, p.y, 16)?.road.profile.rank ?? 9) <= 1;
     for (const p of alongPolyline(loop, LAMP_SPACING, lampStart)) {
       const nx = -p.ty, ny = p.tx, x = p.x + nx * .7, y = p.y + ny * .7;
-      if (inZone(x, y)) continue;
-      if (!put({ kind: 'lamp', u: x, s: y, yaw: alongYaw(nx, ny) }, 4)) continue;
-      // A litter bin beside every third lamp
-      if (++lamps % 3 === 0) put({ kind: 'bin', u: x + p.tx * 1.4, s: y + p.ty * 1.4 }, 1);
+      if (inZone(x, y) || (lanterns && local(p))) continue;
+      put({ kind: 'lamp', u: x, s: y, yaw: alongYaw(nx, ny) }, 4);
+    }
+    if (lanterns) for (const p of alongPolyline(loop, LANTERN_SPACING, lampStart)) {
+      const nx = -p.ty, ny = p.tx, x = p.x + nx * .8, y = p.y + ny * .8;
+      if (!inZone(x, y) && local(p)) put({ kind: 'lantern', street: true, u: x, s: y }, 4);
+    }
+    // A litter bin where people wait to cross: at the end of a street's
+    // pavement, just short of the corner, at some corners in every district
+    // and at most in the busy ones
+    const bins = block ? CORNER_BINS[block.style] ?? .3 : 0;
+    if (bins) {
+      // (the junction corners alone decide where a corner ends; the bin's own spot is asked the rest)
+      const corners = zonesNear(ring), samples = alongPolyline(loop, 1.5), n = samples.length;
+      const open = samples.map(p => { const x = p.x - p.ty, y = p.y + p.tx; return !corners.some(zone => Math.hypot(zone.x - x, zone.y - y) < zone.r); });
+      for (let i = 0; i < n; i++) {
+        if (!open[i]) continue;
+        // (two samples, 3 m, in from where the corner ends, on a run of pavement long enough to be a street's)
+        const inward = !open[(i - 1 + n) % n] ? 1 : !open[(i + 1) % n] ? -1 : 0;
+        if (!inward || !open[(i + inward * 2 + n) % n] || !open[(i + inward * 8 + n) % n]) continue;
+        const p = samples[(i + inward * 2 + n) % n];
+        if (randomAt(Math.round(p.x * 3), Math.round(p.y * 3) + 7409, CITY.seed) >= bins || inZone(p.x - p.ty, p.y + p.tx)) continue;
+        put({ kind: 'bin', u: p.x - p.ty, s: p.y + p.tx }, 1.5);
+      }
     }
     if (!trees) continue;
     // Each tree no bigger than its room to the building line behind the
-    // pavement, so its crown only brushes the house fronts
+    // pavement, so its crown only brushes the house fronts, and slid a
+    // little along the kerb where its crown would take in a lamp or a sign
     const [low, high] = planting.scale, line = block?.inner?.length >= 3 ? [...block.inner, block.inner[0]] : null;
-    for (const p of alongPolyline(loop, planting.spacing, lampStart + planting.spacing / 2)) {
-      const nx = -p.ty, ny = p.tx, x = p.x + nx * 1.9, y = p.y + ny * 1.9;
-      if (inZone(x, y) || CITY.roadIndex.nearest(p.x, p.y, 12)?.road.profile.narrow) continue;
-      const room = line ? distanceToPolyline({ x, y }, line) + setbackNear(block, { x, y }) : Infinity;
-      const scale = Math.min(low + randomAt(Math.round(x), Math.round(y) + 31, CITY.seed) * (high - low), treeRoom(room));
-      if (scale >= 4.8) put({ kind: 'tree', u: x, s: y, scale }, 3);
+    const roomAt = (x, y) => line ? distanceToPolyline({ x, y }, line) + setbackNear(block, { x, y }) : Infinity;
+    for (const slot of alongPolyline(loop, planting.spacing, lampStart + planting.spacing / 2)) {
+      if (inZone(slot.x - slot.ty * 1.9, slot.y + slot.tx * 1.9) || CITY.roadIndex.nearest(slot.x, slot.y, 12)?.road.profile.narrow) continue;
+      // (the room at the slot says how big a tree could be; a spot a step
+      // along is measured again only once nothing else stands in its way)
+      const room = roomAt(slot.x - slot.ty * 1.9, slot.y + slot.tx * 1.9);
+      for (const shift of [0, 1.5, -1.5, 3, -3, 4.5, -4.5]) {
+        const p = shift ? pointAlong(loop, ((slot.distance + shift) % perimeter + perimeter) % perimeter) : slot;
+        if (!p) continue;
+        const nx = -p.ty, ny = p.tx, x = p.x + nx * 1.9, y = p.y + ny * 1.9, grown = low + randomAt(Math.round(x), Math.round(y) + 31, CITY.seed) * (high - low);
+        let scale = Math.min(grown, treeRoom(room));
+        if (scale < 4.8 || !free(x, y, 3, 'tree', TREE_CROWN * scale)) continue;
+        if (shift && (inZone(x, y) || (scale = Math.min(grown, treeRoom(roomAt(x, y)))) < 4.8)) continue;
+        if (put({ kind: 'tree', u: x, s: y, scale }, 3)) break;
+      }
     }
   }
   // Down each median: trees on a boulevard's, and now and then a lamp with an
@@ -643,10 +721,8 @@ export function placeStreetFurniture(nav, bridges, add) {
   for (const bridge of bridges) for (const footway of bridge.footways) {
     for (const p of alongPolyline(footway.line, LAMP_SPACING, footway.side > 0 ? 6 : 6 + LAMP_SPACING / 2)) {
       const nx = -p.ty * footway.side, ny = p.tx * footway.side, x = p.x + nx * (footway.width / 2 - .9), y = p.y + ny * (footway.width / 2 - .9);
-      if (!free(x, y, 4) || inZone(x, y, true)) continue;
-      const key = cellOf(x, y);
-      if (!placed.has(key)) placed.set(key, []);
-      placed.get(key).push({ x, y });
+      if (!free(x, y, 4, 'lamp') || inZone(x, y, true)) continue;
+      remember(x, y, 'lamp');
       add({ kind: 'lamp', u: x, s: y, yaw: alongYaw(nx, ny), bridge: true });
     }
   }

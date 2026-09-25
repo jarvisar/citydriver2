@@ -4,7 +4,7 @@ import { PAVEMENT_LEVEL as G } from './city-route.js';
 import { clock } from './city-detail-assets.js';
 import { vaultGeometry } from './city-roofs.js';
 import { basinRim, basinWater } from './city-public-space-geometry.js';
-import { balancingBeam } from './city-sculptures.js';
+import { balancingBeam, standingBeam, STANDING_BEAM } from './city-sculptures.js';
 import { itemFrame } from './city-layout-render.js';
 
 // What stands in the city's squares (see city-parks.js): a clocktower on its
@@ -139,6 +139,7 @@ export function buildMonument(c, piece, x, s) {
     if (piece.form === 0) {
       c.box(x, G + lift + .45, s, 2.2 * k, .9, 2.2 * k, '#d9d1bf', 'solid', yaw);
       c.item('landmark-sculpture', balancingBeam, c.materials.solid, [x, G + lift + .9, -s], [.22 * k, .22 * k, .22 * k], '#8b78c4', yaw);
+      c.item('landmark-sculpture-base', standingBeam, c.materials.solid, [x, G + lift + .9, -s], [.22 * k, .22 * k, .22 * k], STANDING_BEAM, yaw);
     } else c.item(`square-sculpture-${piece.form}`, template(`sculpture-${piece.form}`, () => sculpture(piece.form)), c.materials.props, [x, G + lift, -s], [k, k, k], '#ffffff', yaw);
     c.post(x, s, piece.pool ?? 1.4 * k);
     return true;

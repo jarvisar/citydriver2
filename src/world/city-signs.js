@@ -40,12 +40,20 @@ export const DISCOVERY_SIGNS = Object.entries(CITY_PLACES).flatMap(([type, place
 export const SIGN_CATALOG = [...SHOP_SIGNS, ...DISCOVERY_SIGNS].map((sign, tile) => Object.assign(sign, { tile }));
 const shopsByCategory = Object.fromEntries(SHOP_NAMES.map(category => [category, SHOP_SIGNS.filter(sign => sign.category === category)]));
 
+// A block's shops are dealt from the whole catalogue in turn, each block from
+// a start and a stride of its own that changes the kind of shop at every
+// step, so no two shops round a block share a name and a street of shops is
+// not a bakery beside a bakery.
+const STRIDES = [13, 37, 49, 73, 97, 109];
+const mix = n => { n = Math.imul(n ^ (n >>> 16), 0x45d9f3b); return (n ^ (n >>> 16)) >>> 0; };
 export function shopSignFor(building) {
-  // A private hash leaves the architecture's seeded random sequence untouched.
-  let seed = Math.imul(building.seed ^ (building.seed >>> 16), 0x45d9f3b);
-  seed = (seed ^ (seed >>> 16)) >>> 0;
+  // (a private hash leaves the architecture's seeded random sequence untouched)
+  if (building.shopSlot !== undefined) {
+    const block = mix(Math.imul(building.shopBlock, 0x9e3779b1) ^ 7411), stride = STRIDES[block % STRIDES.length];
+    return SHOP_SIGNS[(mix(block) + building.shopSlot * stride) % SHOP_SIGNS.length];
+  }
   const choices = shopsByCategory[building.shop];
-  return choices[seed % choices.length];
+  return choices[mix(building.seed) % choices.length];
 }
 export function discoverySignFor(type, variant = 0) {
   return DISCOVERY_SIGNS.find(sign => sign.type === type && sign.variant === variant) ?? DISCOVERY_SIGNS.find(sign => sign.type === type);
