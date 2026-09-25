@@ -19,7 +19,7 @@ test('traffic spawns on the streets around the car, drives on and stays on the r
       assert.ok(car.edge && Number.isFinite(car.s) && Number.isFinite(car.u));
       assert.ok(Math.hypot(car.s - player.s, car.u - player.u) < 400);
       assert.ok(onRoadAt(car.s, car.u), 'spawned on a street');
-      assert.ok(Math.abs(car.position.y - 24.13) < 1e-6);
+      assert.ok(Math.abs(car.position.y - 24) < 1e-6);
     }
     let moved = 0;
     for (let i = 0; i < 600; i++) traffic.update(1 / 60, player);

@@ -60,7 +60,7 @@ test('the car drives forward from the start and stays on the road surface', () =
   const car = new DrivingController(citydriverRoute, journeyStart(), 'taxi');
   try {
     car.toggleFreeDriving();
-    assert.ok(Math.abs(car.car.position.y - ROAD_LEVEL - .13) < 1e-6);
+    assert.ok(Math.abs(car.car.position.y - ROAD_LEVEL) < 1e-6);
     for (let i = 0; i < 180; i++) car.update(1 / 60, { forward: true });
     assert.ok(car.distance > 15, `${car.distance}`);
     assert.ok(car.speed > 5);

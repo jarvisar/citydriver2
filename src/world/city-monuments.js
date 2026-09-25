@@ -51,6 +51,28 @@ function cafe(colour) {
   p.cone([0, 2.35, 0], 1.7, .55, colour, 8);
   return p.finish();
 }
+
+// A low flowering clump: green flanks and a softly domed patch of colour.
+// Eighteen faces replace the old solid cubes; no individual petals or stems.
+function flowers(colour) {
+  const positions = [], colours = [], normal = new THREE.Color(colour), pale = normal.clone().lerp(new THREE.Color('#f1e6cc'), .18);
+  const green = new THREE.Color('#59724b');
+  const face = (a, b, c, tint) => {
+    positions.push(...a, ...b, ...c);
+    for (let i = 0; i < 3; i++) colours.push(tint.r, tint.g, tint.b);
+  };
+  for (let i = 0; i < 6; i++) {
+    const point = (k, r, y) => [Math.cos(k * Math.PI / 3) * r, y, Math.sin(k * Math.PI / 3) * r];
+    const a = point(i, .38, .025), b = point(i + 1, .38, .025), c = point(i, .31, .21), d = point(i + 1, .31, .21);
+    face(a, c, d, green); face(a, d, b, green);
+    face(c, [.035, .3, -.02], d, i % 3 ? normal : pale);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(colours, 3));
+  g.computeVertexNormals();
+  return g;
+}
 // Four sculptures, each on its plinth, about 5 m tall at full size: stacked
 // tilted blocks, an upright ring, a sphere on a column, and a pair of arches
 function sculpture(form) {
@@ -106,9 +128,20 @@ export function buildMonument(c, piece, x, s) {
       const [ex, es] = at(end * (w / 2 - .3), 0);
       c.item('landmark-gable', gable, c.materials.glass, [ex, G + 1 + H + .2, -es], [d / 2 - .35, rise - .1, 1], '#8fb9b5', yaw + Math.PI / 2 + (end < 0 ? Math.PI : 0));
     }
+    // The square's glasshouse is separate from the landmark venue. Give its
+    // long faces an entrance too, down through the stone base to the paving.
+    for (const side of [-1, 1]) {
+      const [dx, ds] = at(0, side * (d / 2 + .06));
+      c.box(dx, G + 1.72, ds, 2.65, 3.24, .12, TRIM, 'solid', yaw);
+      const [gx, gs] = at(0, side * (d / 2 + .14));
+      c.box(gx, G + 1.65, gs, 2.3, 3.1, .08, '#375563', 'glass', yaw);
+      c.box(gx, G + 1.65, gs, .08, 3.1, .12, TRIM, 'solid', yaw);
+      c.box(dx, G + .07, ds, 2.8, .14, .65, STONE, 'solid', yaw);
+    }
     if (!c.distant) {
       // White glazing bars down the walls and a lantern along the ridge
       for (let along = -w / 2 + 2.5; along < w / 2 - 1; along += 2.5) for (const side of [-1, 1]) {
+        if (Math.abs(along) < 1.5) continue;
         const [bx, bs] = at(along, side * (d / 2 - .22));
         c.box(bx, G + 1 + H / 2, bs, .14, H, .14, '#eef0e8', 'solid', yaw);
       }
@@ -155,12 +188,15 @@ export function buildMonument(c, piece, x, s) {
     return true;
   }
   if (piece.kind === 'bed') {
-    // A raised bed: a stone kerb, and flowers in rows filling it
+    // A raised bed with staggered clumps, green at the sides and colour above.
     c.box(x, G + .2, s, piece.w, .4, piece.d, '#cfc5ad', 'solid', yaw);
     c.box(x, G + .43, s, piece.w - .35, .1, piece.d - .35, '#5b4a3a', 'solid', yaw);
-    for (let along = -piece.w / 2 + .7; along < piece.w / 2 - .5; along += .9) for (const across of [-.45, .45]) {
-      const [fx, fs] = at(along, across);
-      c.box(fx, G + .62, fs, .6, .38, .6, piece.colour, 'solid', yaw + along);
+    for (let along = -piece.w / 2 + .7; along < piece.w / 2 - .5; along += .9) for (const side of [-1, 1]) {
+      const shifted = Math.min(piece.w / 2 - .55, along + (side > 0 ? .22 : 0));
+      const [fx, fs] = at(shifted, side * Math.min(.45, piece.d / 2 - .5));
+      const size = .88 + .12 * Math.sin(along * 7 + side);
+      c.item(`square-flowers-${piece.colour}`, template(`flowers-${piece.colour}`, () => flowers(piece.colour)), c.materials.props,
+        [fx, G + .48, -fs], [size, .8 + size * .3, size], '#ffffff', yaw + along * 2 + side);
     }
     solid(piece.w, piece.d);
     return true;

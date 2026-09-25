@@ -262,7 +262,7 @@ test('traffic geometry stays stable through long straight drives, reverse travel
       for (const car of traffic.vehicles) {
         assert.equal(car.u, car.direction * 2.4);
         assert.ok(Math.abs(car.s - player.s) < 625 * traffic.spacing);
-        assert.ok(Math.abs(car.position.y - route.height(car.s, car.u) - .13) < 1e-8);
+        assert.ok(Math.abs(car.position.y - route.height(car.s, car.u)) < 1e-8);
         assert.ok(car.quaternion.toArray().every(Number.isFinite));
         assert.ok(Math.abs(car.car.getWorldPosition(new THREE.Vector3()).z) < 1024 + 625 * traffic.spacing);
         assert.ok(car.car.children.every(mesh => geometries.has(mesh.geometry)));

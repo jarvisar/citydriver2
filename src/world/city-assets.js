@@ -145,9 +145,13 @@ function busShelter() {
   const p = new Parts();
   for (const z of [-1.7, 1.7]) p.box([.6, 1.25, z], [.1, 2.5, .1], iron);
   p.box([0, 2.55, 0], [1.6, .12, 4], darkIron);
-  // (the glass ends inside the posts, not flush with their outer faces)
-  p.box([.62, 1.35, 0], [.04, 2, 3.4], '#5c6b74');
+  // Quiet frosted panels in a frame, with air below and above the screen.
+  // Opaque baked colours keep this in the single furniture batch.
+  for (const z of [-.84, .84]) p.box([.62, 1.48, z], [.04, 1.7, 1.62], '#9dafad');
+  for (const y of [.61, 2.35]) p.box([.62, y, 0], [.09, .07, 3.4], iron);
+  p.box([.62, 1.48, 0], [.09, 1.7, .06], iron);
   p.box([0, .45, 0], [.5, .06, 3], timber);
+  for (const z of [-1.15, 1.15]) p.box([0, .21, z], [.12, .42, .12], iron);
   // A blue transit flag faces the road; a bus symbol identifies the stop
   // without an invented route number or advertising on the shelter.
   const blue = '#2f5f8a', white = '#f1ead6';
@@ -257,8 +261,24 @@ function bandstand() {
   return p.finish();
 }
 
-// Pruned street trees: the same faceted geometry as the other routes, with a
-// narrower, upright crown that fits between the shopfronts and the kerb.
+// Rounded, asymmetric main lobes with broad facets.
+// Spend 48 triangles on the main lobe; small offshoots retain their 20 faces.
+// The two templates and their instance batches stay shared.
+function foliageLobe(radius, phase) {
+  const g = new THREE.SphereGeometry(radius, 8, 4), vertices = g.attributes.position;
+  for (let i = 0; i < vertices.count; i++) {
+    const x = vertices.getX(i), y = vertices.getY(i), z = vertices.getZ(i), angle = Math.atan2(z, x);
+    const fullness = .94 + .06 * Math.sin(angle * 3 + phase + y / radius);
+    const turn = .23 * Math.sin(y / radius * 3 + phase), cs = Math.cos(turn), sn = Math.sin(turn);
+    // Keep every lobe within its old clearance envelope, including its tips.
+    vertices.setXYZ(i, (x * cs - z * sn) * fullness, y * .92 + radius * .045 * Math.sin(angle * 2 + phase) * (1 - Math.abs(y / radius)), (z * cs + x * sn) * fullness);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+
+// Pruned street trees: a broad crown and a narrower upright one, both fitted
+// between the shopfronts and the kerb. The silhouette is shared at every LOD.
 function streetTree(variant) {
   const trunk = new Parts(), crown = new Parts();
   trunk.beam([0, -.04, 0], [.025, .66, 0], .048, '#ffffff', 5);
@@ -266,7 +286,7 @@ function streetTree(variant) {
   const clusters = variant ? [[0, .79, 0, .3, 1.55], [-.12, .54, .025, .23, 1.1]]
     : [[0, .77, 0, .37, 1.05], [-.22, .62, .025, .27, 1], [.22, .62, -.07, .27, .95]];
   for (const [x, y, z, radius, stretch] of clusters) {
-    const g = new THREE.IcosahedronGeometry(radius, 0);
+    const g = x === 0 ? foliageLobe(radius, variant * 1.7) : new THREE.IcosahedronGeometry(radius, 0);
     g.scale(1, stretch, .92); g.rotateY(variant * .8 + y);
     crown.add(g, [x, y, z], x === 0 ? '#ffffff' : '#e2e8da');
   }
@@ -286,14 +306,17 @@ function tint(g, color) {
   for (let i = 0; i < colors.length; i += 3) { colors[i] = c.r; colors[i + 1] = c.g; colors[i + 2] = c.b; }
   g.setAttribute('color', new THREE.BufferAttribute(colors, 3)); return g;
 }
-// A parked car's wheels are plain six-sided tyres: hundreds line the streets.
+// Ten-sided tyres match moving traffic; flat hub faces read at kerb distance
+// without adding cylinders or a new batch for hundreds of parked cars.
 function parkedCar(spec) {
   const { paint, details, headlights, taillights, wheels } = vehicleGeometry(spec, { separateWheels: true });
-  const tyres = wheels.map(({ x, y, z }) => {
-    const tyre = new THREE.CylinderGeometry(WHEEL.radius, WHEEL.radius, WHEEL.width, 6);
-    // Put a vertex at road level; a six-sided tyre's flat would leave a visible gap.
+  const tyres = wheels.flatMap(({ x, y, z }) => {
+    const tyre = new THREE.CylinderGeometry(WHEEL.radius, WHEEL.radius, WHEEL.width, 10);
+    // Put a vertex at road level so a tyre's flat does not leave a visible gap.
     tyre.rotateY(Math.PI / 2); tyre.rotateZ(Math.PI / 2); tyre.translate(x, y, z); tyre.deleteAttribute('uv');
-    return tint(tyre, '#2b3434');
+    const hub = new THREE.CircleGeometry(WHEEL.hubRadius, 8);
+    hub.rotateY(Math.sign(x) * Math.PI / 2); hub.translate(x + Math.sign(x) * (WHEEL.width / 2 + .006), y, z); hub.deleteAttribute('uv');
+    return [tint(tyre, '#2b3434'), tint(hub, '#a6aea5')];
   });
   const trim = mergeGeometries([details, tint(headlights, '#d8d4c2'), tint(taillights, '#8a3a30'), ...tyres]);
   for (const g of [details, headlights, taillights, ...tyres]) g.dispose();

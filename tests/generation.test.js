@@ -28,7 +28,7 @@ test('the city starts grounded on a street and a saved position is restored', ()
   const car = new DrivingController(citydriverRoute, state);
   try {
     assert.equal(car.s, state.s); assert.equal(car.u, state.u); assert.equal(car.distance, 0); assert.equal(car.speed, 0);
-    assert.ok(Math.abs(car.car.position.y - citydriverRoute.height(car.s, car.u) - .13) < 1e-8);
+    assert.ok(Math.abs(car.car.position.y - citydriverRoute.height(car.s, car.u)) < 1e-8);
     // Drive on along the streets for ten seconds
     car.toggleFreeDriving();
     const autodrive = new CityAutodrive({ random: () => .3 }), traffic = { enabled: false, vehicles: [], time: 0 };

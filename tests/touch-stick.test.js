@@ -63,6 +63,6 @@ test('touch keeps the car grounded throughout an unbounded city', () => {
     car.update(1 / 60, { touchDrive: touchDrivingInput({ x: 1, y: 0 }, camera, car.route, car.s, car.u) });
     const [lo, hi] = car.route.bounds(car.s);
     assert.ok(car.u >= lo && car.u <= hi);
-    assert.ok(Math.abs(car.car.position.y - car.route.height(car.s, car.u) - .13) < 1e-8);
+    assert.ok(Math.abs(car.car.position.y - car.route.height(car.s, car.u)) < 1e-8);
   }
 });

@@ -11,8 +11,25 @@ import { calcPolygonArea, insidePolygon } from '../src/mapgen/polygon-util.js';
 import { intersection, region } from '../src/mapgen/booleans.js';
 import { buildLandmark } from '../src/world/city-landmarks.js';
 import { cityPlaces } from '../src/city-exploration.js';
+import { cityTrees, parkedCars } from '../src/world/city-assets.js';
 
 const rectangle = (x, y, w, h) => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
+test('refined tree crowns fit existing planting clearances and parked tyres retain road contact', () => {
+  for (const tree of cityTrees) {
+    const g = tree.leaves, p = g.attributes.position;
+    assert.ok((g.index?.count ?? p.count) / 3 <= 88, 'a crown stays a small shared mesh');
+    for (let i = 0; i < p.count; i++) {
+      assert.ok(Math.hypot(p.getX(i), p.getZ(i)) <= .52, 'crowns fit the street planner clearance');
+      assert.ok(p.getY(i) > .27 && p.getY(i) < 1.26, 'keep headroom and the established tree height');
+    }
+  }
+  for (const { paint, trim } of Object.values(parkedCars)) {
+    paint.computeBoundingBox(); trim.computeBoundingBox();
+    assert.ok(Math.abs(trim.boundingBox.min.y) < 1e-6, 'tyres touch the road at model zero');
+    assert.ok(paint.boundingBox.min.y > 0, 'the body sits above the tyres');
+  }
+});
+
 test('windows can overlook open ground but not neighbouring plots or the return of a concave building', () => {
   const building = rectangle(0, 0, 20, 15);
   assert.ok(wallHasOutlook(building, 1, []), 'an exposed side has an outlook');

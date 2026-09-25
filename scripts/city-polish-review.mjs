@@ -88,18 +88,32 @@ try {
         if (p) result.push({ name: `venue-${type}`, ...p, heading: Math.atan2(place.u - p.u, place.s - p.s), view: 5 });
       }
       result.push({ ...result.find(p => p.name === 'shopfront'), name: 'basic-shopfront', quality: 'basic' });
+      // Public-space details, viewed from the closest ordinary driving lane.
+      const furniture = [...g.world.furnitureByChunk.values()].flat();
+      for (const kind of ['shelter', 'bed', 'glasshouse', 'bandstand']) {
+        const candidates = furniture.filter(f => f.kind === kind).map(f => {
+          const p = g.nearestLanePose(f.s, f.u, 0, 100);
+          return p && { f, p, distance: Math.hypot(f.s - p.s, f.u - p.u) };
+        }).filter(c => c && c.distance > 7).sort((a, b) => a.distance - b.distance);
+        const chosen = candidates[0];
+        if (chosen) {
+          const { f, p } = chosen;
+          result.push({ name: `detail-${kind}`, ...p, heading: Math.atan2(f.u - p.u, f.s - p.s), view: 5 });
+        }
+      }
       result.push({ ...result[0], name: 'night', weather: 'night' });
       return result.filter(p => Number.isFinite(p.s)).map(({ name, s, u, heading, view, weather, quality }) => ({ name, s, u, heading, view, weather, quality }));
     }, seedIndex);
     await writeFile(`${dir}/poses.json`, JSON.stringify(poses, null, 2));
     const shots = [], metrics = [];
-    for (const pose of poses) {
+    for (const pose of poses.filter(p => !process.env.REVIEW_VIEWS || process.env.REVIEW_VIEWS.split(',').includes(p.name))) {
       await page.evaluate(p => {
         const g = window.__citydriver, v = g.vehicle;
         g.graphics.setMode(p.quality ?? 'balanced'); g.graphics.setDensity(1);
         g.weather.setMode(p.weather ?? 'clear', { immediate: true });
-        v.s = p.s; v.u = p.u; v.heading = p.heading; v.speed = 0; v.update(0, {});
-        v.wheelSpin = 0; v.bodyPitch = 0; v.bodyRoll = 0;
+        v.s = p.s; v.u = p.u; v.heading = p.heading; v.speed = 0;
+        v.wheelSpin = 0; v.bodyPitch = 0; v.bodyRoll = 0; v.steer = 0;
+        v.update(0, {});
         g.world.update(v.s, v.u);
         while (g.world.pending.length || g.world.distantPending.length) g.world.update(v.s, v.u);
         g.weather.update(0, v, g.world.origin); g.rendering.setWeather(g.weather.state, 0);
@@ -109,11 +123,21 @@ try {
         g.world.animate(0, 0, g.rendering.camera);
       }, pose);
       await page.waitForTimeout(250);
-      const { data, counts } = await page.evaluate(() => {
+      const { data, counts, medianRenderMs } = await page.evaluate(timing => {
         const r = window.__citydriver.rendering; r.render();
-        return { data: r.renderer.domElement.toDataURL('image/png'), counts: { ...r.renderer.info.render, ...r.renderer.info.memory } };
-      });
-      metrics.push({ name: pose.name, quality: pose.quality ?? 'balanced', ...counts });
+        const times = [];
+        if (timing) {
+          const gl = r.renderer.getContext();
+          for (let i = 0; i < 8; i++) r.render();
+          gl.finish();
+          for (let i = 0; i < 15; i++) {
+            const start = performance.now(); r.render(); gl.finish(); times.push(performance.now() - start);
+          }
+          times.sort((a, b) => a - b);
+        }
+        return { data: r.renderer.domElement.toDataURL('image/png'), counts: { ...r.renderer.info.render, ...r.renderer.info.memory }, medianRenderMs: times[7] };
+      }, Boolean(process.env.REVIEW_TIMING));
+      metrics.push({ name: pose.name, quality: pose.quality ?? 'balanced', ...counts, medianRenderMs });
       await writeFile(`${dir}/${pose.name}.png`, Buffer.from(data.split(',')[1], 'base64'));
       shots.push({ name: pose.name, data });
     }
@@ -142,7 +166,7 @@ try {
       await contact.screenshot({ path: `${dir}/contact-${i / 8 + 1}.png` });
       await contact.close();
     }
-    console.log(`Reviewed seed ${seed}: ${poses.length} driving views; autodrive ${drive.distance.toFixed(1)} m`);
+    console.log(`Reviewed seed ${seed}: ${shots.length} driving views; autodrive ${drive.distance.toFixed(1)} m`);
   }
   if (errors.length) throw new Error(errors.join('\n'));
 } finally { await browser.close(); await server.close(); }
