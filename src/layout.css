@@ -205,13 +205,13 @@ body[data-controller=true] .drive-actions { display: none; }
 
 #fps-counter { position: absolute; top: var(--header-clear); left: var(--ui-left); z-index: 6; padding: 6px 9px; border-radius: 4px; background: #102019d9; color: #edffe9; font: 12px/1.4 monospace; font-variant-numeric: tabular-nums; pointer-events: none; }
 
-/* Four route cards: two columns on mid-width screens before the single mobile column. */
+/* Two chooser columns on mid-width screens, before the single mobile column. */
 @media (min-width: 761px) and (max-width: 960px) {
   .chooser-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-/* The pause screen carries the readout the drive no longer shows: pinned to
-   its top-left corner where the header's brand would sit, and folded back
+/* The pause screen carries the location readout: pinned to its top-left
+   corner where the header's brand would sit, and folded back
    into the column when the screen is too small for a corner. */
 .pause-overlay .location { position: absolute; top: var(--ui-top); left: var(--ui-left); width: max-content; max-width: calc(100% - var(--ui-left) - var(--ui-right)); }
 .pause-overlay .location-title { font-size: 10px; }
@@ -219,21 +219,19 @@ body[data-controller=true] .drive-actions { display: none; }
 @media (max-width: 760px), (max-height: 560px) {
   .pause-overlay .location { position: static; display: flex; margin: clamp(0px, calc((100dvh - 620px) / 2), 180px) 0 14px; }
 }
-/* The drive's own toasts have to clear the pause screen now that sound,
-   fullscreen and the graphics levels are all set from it. */
+/* The drive's toasts sit above the pause screen, where sound, fullscreen and
+   graphics are set. */
 #toast { z-index: 4; }
 .drive-actions #pause .play-icon { display: none; }
 .drive-actions #pause[aria-pressed=true] .pause-icon { display: none; }
 .drive-actions #pause[aria-pressed=true] .play-icon { display: block; }
-/* Four actions in one row: on a narrow screen only the route keeps its word. */
+/* On a narrow screen the driving actions are icons only. */
 @media (max-width: 760px) {
   .drive-actions :is(#view, #reset, #pause) .control-label { display: none; }
 }
 
-/* The joystick's caption is a caption, not a dialog: the copy and its dismiss
-   button share one line instead of the button floating in a band of reserved
-   space above the text. The button keeps a 44px tap target through a halo, so
-   it can look like the small control it is. */
+/* The joystick's caption and its dismiss button share one line. The button
+   keeps a 44px tap target through a halo, so it can look small. */
 #stick-help {
   display: flex; align-items: center; gap: 8px;
   width: max-content; max-width: min(230px, 62vw);

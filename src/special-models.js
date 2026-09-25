@@ -179,7 +179,7 @@ const BUILDERS = {
   // a fifth wheel with nothing on it.
   rig({ box, tapered, glass, tube }) {
     box([1, .3, 7.1], [0, .75, .05], 'details', DARK);
-    // Keep the original 1.9 m hood; the extra length belongs behind the cab.
+    // A 1.9 m hood; the rest of the length goes behind the cab.
     tapered([1.7, .95, 1.9], [0, 1.5, -2.5], { at: -1, x: .88, y: .9, lift: -.04 });
     box([1.3, .85, .08], [0, 1.46, -3.49], 'details', CHROME);
     box([1.08, .66, .025], [0, 1.46, -3.54], 'details', DARK);
@@ -263,7 +263,7 @@ export function createSpecialCar(entry) {
   return {
     car, body, wheels,
     nightLights: [{ material: front, day: .24, night: 2.2 }, { material: rear, day: .1, night: 2.5 }],
-    // A chosen car keeps its own paint and kit on every route.
+    // A chosen car keeps its own paint and kit.
     applyTrim() {},
     paintCar(color) { paint.color.set(color || entry.paint); },
     disposeModel() {

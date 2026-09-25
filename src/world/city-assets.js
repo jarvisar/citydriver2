@@ -49,8 +49,8 @@ export class Parts {
 
 const iron = '#3d4246', darkIron = '#2f3336', galvanised = '#9da3a6', timber = '#6b5a48';
 
-// A street lamp: a tapered column with an arm reaching over the road, unlit
-// in the daytime storm. Local -x is toward the road.
+// A street lamp: a tapered column with an arm reaching over the road.
+// Local -x is toward the road.
 function lampPost() {
   const p = new Parts();
   p.cylinder([0, 3.6, 0], .09, .15, 7.2, iron, 6);
@@ -105,7 +105,7 @@ function stopSign() {
   p.cylinder([0, 2.8, 0], .7, .7, .06, galvanised, 8, [Math.PI / 2, Math.PI / 8, 0]);
   p.cylinder([0, 2.8, .044], .685, .685, .024, '#f1ead6', 8, [Math.PI / 2, Math.PI / 8, 0]);
   p.cylinder([0, 2.8, .066], .62, .62, .012, '#b74635', 8, [Math.PI / 2, Math.PI / 8, 0]);
-  // Continuous vector strokes avoid the old disconnected pixel-box lettering.
+  // S, T, O, P as continuous vector outlines.
   const glyphs = [
     { outline: [[0,0],[5,0],[5,4],[1.3,4],[1.3,5.7],[5,5.7],[5,7],[0,7],[0,2.7],[3.7,2.7],[3.7,1.3],[0,1.3]] },
     { outline: [[1.85,0],[3.15,0],[3.15,5.7],[5,5.7],[5,7],[0,7],[0,5.7],[1.85,5.7]] },
@@ -176,7 +176,7 @@ function railing() {
   for (const z of [-2, -1, 0, 1, 2]) p.box([0, .52, z], [.05, 1.04, .05], darkIron);
   return p.finish();
 }
-// A bollard by the water and a bin by the bench.
+// A bollard by the water.
 function bollard() {
   const p = new Parts();
   p.cylinder([0, .42, 0], .12, .14, .84, darkIron, 6);
@@ -261,16 +261,15 @@ function bandstand() {
   return p.finish();
 }
 
-// Rounded, asymmetric main lobes with broad facets.
-// Spend 48 triangles on the main lobe; small offshoots retain their 20 faces.
-// The two templates and their instance batches stay shared.
+// A rounded, asymmetric main lobe with broad facets: 48 triangles, against
+// the small offshoots' 20.
 function foliageLobe(radius, phase) {
   const g = new THREE.SphereGeometry(radius, 8, 4), vertices = g.attributes.position;
   for (let i = 0; i < vertices.count; i++) {
     const x = vertices.getX(i), y = vertices.getY(i), z = vertices.getZ(i), angle = Math.atan2(z, x);
     const fullness = .94 + .06 * Math.sin(angle * 3 + phase + y / radius);
     const turn = .23 * Math.sin(y / radius * 3 + phase), cs = Math.cos(turn), sn = Math.sin(turn);
-    // Keep every lobe within its old clearance envelope, including its tips.
+    // Keep every lobe within its planting clearance, including its tips.
     vertices.setXYZ(i, (x * cs - z * sn) * fullness, y * .92 + radius * .045 * Math.sin(angle * 2 + phase) * (1 - Math.abs(y / radius)), (z * cs + x * sn) * fullness);
   }
   g.computeVertexNormals();

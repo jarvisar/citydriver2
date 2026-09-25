@@ -82,9 +82,9 @@ function finishBatchMesh(mesh, { castShadow, receiveShadow, ambientOcclusion }, 
 
 // Small batches that share a material draw as one merged mesh per chunk,
 // with each instance's transform and colour baked into the vertices; big
-// batches stay instanced. See citydriver's world for the reasoning.
-// A chunk bakes at most this many vertices in all: the cheapest groups merge
-// first, so the draws saved come cheap and a busy street corner stays instanced.
+// batches stay instanced. A chunk bakes at most this many vertices in all:
+// the cheapest groups merge first, so the draws saved come cheap and a busy
+// street corner stays instanced.
 const MERGE_INSTANCE_LIMIT = 32, MERGE_VERTEX_LIMIT = 6000, MERGE_CHUNK_VERTICES = 18000;
 const LIVE_BATCHES = new Set(['residents', 'signal-lens', 'water']);
 const mergedMaterials = new WeakMap(), unitColors = new WeakMap();
@@ -245,8 +245,8 @@ function resources() {
 }
 
 // A cell of the city: the lots and street furniture inside it, built either
-// in full detail or as the distant skyline. Chunks share the batching and
-// placement API of citydriver's grid blocks, so its buildings build unchanged.
+// in full detail or as the distant skyline. Its item/box/solid calls are the
+// placement API the buildings (city-buildings.js) build with.
 export class CityChunk {
   constructor(world, ix, iz, distant = false, deferred = false) {
     this.world = world; this.ix = ix; this.iz = iz; this.start = iz * CITY_CELL; this.east = ix * CITY_CELL;

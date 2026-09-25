@@ -1,8 +1,8 @@
 // What the car cannot drive through. A chunk records the footprint of each
-// solid thing as it stands it up, in the global coordinates the car and the
-// traffic already collide in, so the list crosses from the chunk worker as
-// plain data and the driving step never has to read a mesh. Positions come in
-// as the chunk places them: x, and z measured from the chunk's own start.
+// solid thing as it stands it up, as plain data in the global coordinates the
+// car and the traffic collide in, so the driving step never has to read a
+// mesh. Positions come in as the chunk places them: x, and z measured from the
+// chunk's own start.
 
 // A rectangle turned by the object's own yaw, in the shape trafficContact reads.
 export function solidBox(chunk, x, z, yaw, halfWidth, halfLength) {
@@ -18,7 +18,7 @@ export function solidPost(chunk, x, z, radius) {
 }
 
 // The outline of a model's lowest quarter is what a car can reach: the walls
-// and the trunk, not the eaves, a crown, or a turbine's nacelle overhead.
+// and the trunk, not the eaves or a crown overhead.
 const footprints = new WeakMap();
 function footprint(geometry) {
   if (!footprints.has(geometry)) {

@@ -239,7 +239,7 @@ export function taxiGroupAppearance(seed, passenger) {
 
 // Pair existing residents rather than increasing the crowd. Shared travel
 // phase/speed keeps them together through culling and streaming; their bob,
-// proportions and wardrobe remain individual. No following AI is needed.
+// proportions and wardrobe remain individual.
 const pairStyles = { masculine: [0, 1, 5, 6], feminine: [3, 4, 8, 11] };
 export function pairWalkers(walkers, seed) {
   for (let i = 0; i + 1 < walkers.length; i += 2) {

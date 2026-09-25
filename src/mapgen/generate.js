@@ -477,7 +477,7 @@ export function generateCityMap(options = {}) {
     const reaches = !clear(block.sidewalk);
     if (!reaches && !poked(block.sidewalk)) continue;
     // Cut round the joints if that leaves a clean kerb; failing that a block
-    // that reaches onto a road is cut as before, and one only poked keeps its line
+    // that reaches onto a road is cut without them, and one only poked keeps its line
     let kept = clearOfCarriageways(block.sidewalk, roadIndex, joints);
     if (!(kept && clear(kept) && !poked(kept))) kept = reaches ? clearOfCarriageways(block.sidewalk, roadIndex) : block.sidewalk;
     if (kept === block.sidewalk) continue;

@@ -57,7 +57,7 @@ body .start-button:hover { background: var(--action-hover); box-shadow: inset 0 
 #welcome .start-button:hover { background: #fffef9; box-shadow: 0 0 0 5px #fffdf326, 0 12px 32px #10272040, inset 0 1px 0 #ffffff; }
 #welcome .start-button:focus-visible { outline: 3px solid var(--menu-ink); outline-offset: 8px; }
 #welcome .wheel-icon { width: 43px; height: 43px; }
-/* The route and VR buttons share the main action's finish at a smaller size.
+/* The free-drive and VR buttons share the main action's finish at a smaller size.
    Both stack under it, so the toolbar has nothing left to show on the menu. */
 #welcome .start-button.menu-secondary {
   position: static; width: clamp(148px, 15vw, 190px); min-height: 44px; margin-top: 12px; padding: 9px 16px; gap: 9px;

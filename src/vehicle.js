@@ -56,7 +56,7 @@ export function createClassicCar(entry = carEntry(DEFAULT_CAR)) {
     for (const part of parts) { body.remove(part); part.geometry.dispose(); }
     body.add(mesh);
   }
-  // Keep the coastal design, with a small accessory swap for each other journey.
+  // One roof or tail accessory per wagon trim (see cars.js).
   const rack = new THREE.Group(); rack.name = 'roof-rack'; body.add(rack);
   for (const z of [-.48, .75]) box(rack, [1.65, .09, .12], [0, 2.2, z], tires);
   const surfboard = new THREE.Group(); surfboard.name = 'surfboard'; body.add(surfboard);
@@ -156,12 +156,9 @@ const LEAN = .105;
 // A handbrake tap leaves the slide available for this long, so the button and
 // the steering can be pressed in either order.
 const DRIFT_ARM = .3;
-// A displayed frame lands between two simulation steps. Carrying the last step
-// forward by the leftover time shows the car where it is now rather than where
-// it was a whole step ago, which is latency the player can feel in their
-// hands. The projection is capped in metres so that a collision correction --
-// the one step that is not smooth motion -- cannot throw the body ahead of
-// itself.
+// How far, in metres, render() may carry the last step forward, so that a
+// collision correction (the one step that is not smooth motion) cannot throw
+// the body ahead of itself.
 const LEAD_REACH = .5;
 
 export class DrivingController {
@@ -373,10 +370,8 @@ export class DrivingController {
     this.reverseDelay = arcade && brake && !touch && dt > 0 ? Math.max(0, this.reverseDelay - dt) : 0;
     // How far off the tarmac the car is: 0 on the road, 1 out on open ground,
     // ramped across about half a car's width so putting two wheels on the verge
-    // costs a fraction of what leaving altogether does. One number drives the
-    // surface everywhere -- what it resists, how it steers and how it sounds --
-    // so what the player hears matches what the car is doing. The ramp closes
-    // by 5.9 m because the alpine road's own shoulder is only 6.3 m wide.
+    // costs a fraction of what leaving altogether does. The same number sets
+    // the surface's resistance, grip and sound.
     const looseness = this.route.looseness?.(this.s, this.u) ?? clamp((Math.abs(this.u) - 4.8) / 1.1, 0, 1);
     // Loose ground takes the speed rather than the game capping it: resistance
     // that full throttle balances at the off-road figure, plus a little more
@@ -386,14 +381,11 @@ export class DrivingController {
     // at a standstill can exceed reverse torque and trap the car in the grass.
     const surface = looseness * (stats.loose * Math.min(1, Math.abs(this.speed) / stats.offRoad)
       + .35 * Math.max(0, Math.abs(this.speed) - stats.offRoad));
-    // Grip goes with it. Losing top speed is a number in the corner of the
-    // screen; losing turn-in is the thing that says "this is grass". A quarter
-    // of it keeps the car recoverable, and the alignment assist still works out
-    // here, so a straightened wheel still points the car back at the road.
+    // Grip goes with it: lost turn-in is what makes grass feel like grass.
+    // Losing only a quarter keeps the car recoverable, and the alignment assist
+    // still works here, so a straightened wheel points the car back at the road.
     const grip = stats.grip * (1 - .25 * looseness);
     if (!input.handbrake || !dt) this.driftReady = true;
-    // A tap leaves the slide available for a moment, so the handbrake and the
-    // steering can be pressed in either order without either being mistimed.
     this.driftArmed = input.handbrake && this.driftReady ? DRIFT_ARM : Math.max(0, this.driftArmed - dt);
     this.driftDirection = dt && !touch ? driftDirection(this.driftDirection, this.speed, steering, input, this.driftArmed > 0) : 0;
     if (this.driftDirection) { this.driftReady = false; this.driftArmed = 0; }
@@ -439,13 +431,10 @@ export class DrivingController {
     }
     if (!forward && !brake && oldSpeed * this.speed < 0) this.speed = 0;
     if (input.handbrake && oldSpeed * this.speed < 0) this.speed = 0;
-    // Weight transfer, and the whole of it: -1 with the car's weight over its
-    // back under power, +1 with it over the nose on the brakes, measured as a
-    // share of what this car can actually do in each direction. Taking it
-    // along the direction of travel means the brake pedal used as a reverse
-    // throttle lifts the nose, as it should, rather than pretending to brake.
-    // It eases in over about a tenth of a second, which is the car settling
-    // rather than a filter between the player and the road.
+    // Weight transfer as a share of what this car can do in each direction.
+    // Taken along the direction of travel, so the brake pedal used as a reverse
+    // throttle lifts the nose rather than pretending to brake. It eases in over
+    // about a tenth of a second: the car settling, not an input filter.
     const effort = pedals * Math.sign(this.speed);
     const transfer = clamp(-effort / (effort > 0 ? stats.acceleration : stats.braking), -1, 1);
     this.weight = dt ? THREE.MathUtils.damp(this.weight, transfer, 9, dt) : transfer;
@@ -497,8 +486,7 @@ export class DrivingController {
     this.pitch = THREE.MathUtils.damp(this.pitch, Math.atan(slope * Math.cos(difference) + lateralSlope * Math.sin(difference)), 10, dt || 1);
     this.roll = THREE.MathUtils.damp(this.roll, Math.atan(lateralSlope * Math.cos(difference) - slope * Math.sin(difference)), 9, dt || 1);
     this.car.rotation.set(0, -this.heading, 0, 'YXZ'); this.car.rotateX(this.pitch); this.car.rotateZ(this.roll);
-    // Lean and dive read the same numbers the tyres do, so what the car looks
-    // like it is doing and what it is doing are the same thing.
+    // Lean and dive read the same numbers the tyres do.
     this.bodyRoll = THREE.MathUtils.damp(this.bodyRoll, -clamp(yaw * this.speed * .0042, -LEAN, LEAN), 11, dt);
     this.bodyPitch = THREE.MathUtils.damp(this.bodyPitch, -clamp(acceleration, -15, 12) * .0034, 7, dt);
     this.wheelSpin -= step / .48;
@@ -519,7 +507,7 @@ export class DrivingController {
     if (dt === 0) { this.audioTelemetry.impact = 0; this.reverseDelay = 0; this.drifting = false; }
     this.currentPose.position.copy(this.groundedPosition); this.currentPose.quaternion.copy(this.car.quaternion);
     for (const key of ['bodyPitch', 'bodyRoll', 'wheelSpin', 'steer', 'slip']) this.currentPose[key] = this[key];
-    // Resets and journey changes are teleports, so never blend from the old location.
+    // Resets and route changes are teleports, so never blend from the old location.
     if (dt === 0) this.copyPose(this.previousPose, this.currentPose);
     this.render(0);
   }

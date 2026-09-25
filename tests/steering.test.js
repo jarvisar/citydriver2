@@ -80,7 +80,7 @@ test('steering responds within 40 ms and releases or reverses promptly in both m
           }
         };
         // `steer` is the angle the wheels take: the request run through the
-        // precision curve, which is where a stick's fine control now lives.
+        // precision curve, which is where a stick's fine control lives.
         const lock = steerCurve(amount);
         advance(.04, turn);
         assert.ok(car.heading * direction > 0, `${label}: heading follows input`);

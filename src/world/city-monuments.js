@@ -53,7 +53,7 @@ function cafe(colour) {
 }
 
 // A low flowering clump: green flanks and a softly domed patch of colour.
-// Eighteen faces replace the old solid cubes; no individual petals or stems.
+// Eighteen faces, with no individual petals or stems.
 function flowers(colour) {
   const positions = [], colours = [], normal = new THREE.Color(colour), pale = normal.clone().lerp(new THREE.Color('#f1e6cc'), .18);
   const green = new THREE.Color('#59724b');

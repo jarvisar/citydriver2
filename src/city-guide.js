@@ -12,7 +12,7 @@ const hide = (element, hidden) => { if (element.hidden !== hidden) element.hidde
 const MAP_SCALE = .36;
 export class CityGuide {
   constructor(notify, position) {
-    // Discoveries are no longer kept between visits: drop any saved before
+    // Discoveries last only for the visit: clear any an older build saved
     try { localStorage.removeItem('citydriver-city-notebook-v1'); } catch { /* Optional storage. */ }
     this.exploration = new CityExploration(); this.notify = notify; this.position = position;
     this.mapCache = new CityMapCache();

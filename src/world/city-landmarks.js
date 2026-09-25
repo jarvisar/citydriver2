@@ -332,8 +332,7 @@ export function buildLandmark(c, lot, place) {
       }
       entrance(0, front, 1.4, 3.1);
     } else {
-      // The station's concourse and market windows have a structural rhythm,
-      // rather than one vast unframed dark rectangle behind a tiny doorway.
+      // Station and market front glazing, framed with mullions and a transom.
       box(0, G + 3.2, front - .08, glazed + .3, 5.3, .12, TRIM);
       box(0, G + 3.2, front - .2, glazed, 5, .1, GLASS, 'glass');
       const doorHeight = market ? 2.65 : 3.5, transom = doorHeight + .35;
@@ -354,8 +353,7 @@ export function buildLandmark(c, lot, place) {
       nameBoard(G + H + .3, G + H + rise * .7, W * .45, front + .08, (w, top) => w / 2 + .4 <= a * Math.sqrt(Math.max(0, 1 - ((top - G - H) / b) ** 2)));
     }
     if (market) {
-      // The market uses the same sloping fabric as the shops, with a clear
-      // gap at the central doorway instead of alternating horizontal slabs.
+      // The shops' sloping fabric awnings, with a gap at the central doorway.
       const f = edgeFacade(c, body[0], body[1]);
       for (const side of [-1, 1]) shopAwning(c, f, side * (glazed + 4.2) / 4, (glazed - 4.2) / 2, colour, 0);
     } else if (place.type === 'station') {

@@ -1,6 +1,6 @@
-// Longer, independent stereo textures. Road noise has contact grains and
-// irregular density, wind has slow pressure movement, and rain has many small
-// overlapping droplets. They no longer share the same pink-noise fingerprint.
+// Independent stereo textures, so road, wind and rain do not share one
+// pink-noise fingerprint. Road noise has contact grains and irregular density,
+// wind has slow pressure movement, and rain has many small overlapping droplets.
 export function createTextureBuffer(ctx, kind) {
   const rate = ctx.sampleRate, length = Math.round(rate * 8), overlap = Math.round(rate * .12);
   const buffer = ctx.createBuffer(2, length, rate);

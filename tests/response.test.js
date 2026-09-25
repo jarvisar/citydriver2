@@ -55,7 +55,7 @@ test('the displayed car is where the simulation has it, not a step behind', () =
     const car = new DrivingController(road), clock = new FrameClock();
     try {
       // Balance drag against the throttle so the car holds exactly 24 m/s and
-      // the distance it has covered is simply the time that has passed.
+      // the distance it has covered follows from the time that has passed.
       car.speed = 24;
       const forward = (DRAG.rolling + DRAG.air * 24 * 24) / car.stats.acceleration;
       for (let frame = 0; frame <= hz; frame++) {
@@ -97,7 +97,6 @@ test('the chase lens opens with speed and settles back down again', () => {
     car.speed = 0; car.update(0, {});
     for (let tick = 0; tick < 480; tick++) rig.update(car.car, 1 / 60);
     assert.ok(Math.abs(rig.camera.fov - parked.fov) < .05, 'and return to normal when stopped');
-    // A junction crawl must look like a junction crawl.
     car.speed = car.stats.topSpeed * .35; car.update(0, {});
     for (let tick = 0; tick < 240; tick++) rig.update(car.car, 1 / 60);
     assert.ok(Math.abs(rig.camera.fov - parked.fov) < .02, 'a junction crawl must still look like a junction crawl');

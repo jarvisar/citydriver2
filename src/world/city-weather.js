@@ -116,8 +116,8 @@ export class CityWeather {
   }
   update(time, vehicle, origin = 0) {
     const nextTime = Number.isFinite(time) ? Math.max(0, time) : this.time;
-    // Starting a fresh district rewinds the game clock. A manual crossfade
-    // from the previous drive must not wait for that old timestamp to recur.
+    // If the game clock rewinds, a manual crossfade must not wait for its old
+    // timestamp to recur.
     if (nextTime < this.time) this.transitionStart = -Infinity;
     this.time = nextTime;
     sampleCityWeather(this.time, this.mode, this.targetState);

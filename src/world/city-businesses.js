@@ -85,7 +85,6 @@ export const SHOP_BRANDS = {
 };
 
 // Display name and short building lettering. No advertising copy.
-
 export const VENUE_BRANDS = {
   cinema: [['Rivoli Cinema', 'RIVOLI'], ['Apollo Picturehouse', 'APOLLO'], ['Bijou Cinema', 'BIJOU']],
   hotel: [['Grand Hotel', 'GRAND HOTEL'], ['Hotel Marigold', 'MARIGOLD'], ['The Wayfarer Hotel', 'WAYFARER']],

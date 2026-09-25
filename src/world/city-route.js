@@ -3,7 +3,7 @@ import { medianAt, MEDIAN_KERB } from './city-medians.js';
 export { cityCell, cityDistrict } from './city.js';
 
 // The route the car drives: a flat plane with s pointing north and u east,
-// as citydriver's grid was, answered from the generated city. The surfaces
+// answered from the generated city. The surfaces
 // are the ones the city draws: inside a kerb (a block's pavement, a park, a
 // quay) is pavement, the water is water, and everything else inside the city
 // is roadway, junction corners included.

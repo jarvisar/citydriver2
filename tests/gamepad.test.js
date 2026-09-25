@@ -192,8 +192,8 @@ test('the pause screen takes the pad as a menu while its shortcuts stay live', (
     hold(device, index, 0); input.update(pauseMenu);
   }
   assert.equal(actions.length, 6);
-  // The pause screen is a layer over the drive, not a modal, so the shortcuts
-  // that open the garage or the routes from it still work.
+  // The pause screen is a layer over the drive, not a modal, so its shortcuts
+  // still work.
   for (const [index, action] of [[9, 'pause'], [8, 'map'], [10, 'car'], [5, 'nextJourney'], [11, 'fps']]) {
     hold(device, index); input.update(pauseMenu); input.update(pauseMenu);
     assert.equal(actions.at(-1), action);

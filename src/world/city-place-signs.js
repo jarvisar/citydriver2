@@ -9,7 +9,7 @@ export const PLACE_SIGN_DESIGNS = {
   clock: [
     // Clocktower Square: an enamel civic plaque.
     face('plaque', 3.5, 'frame', '#293c48', '#f2ead9', '#aab7bd', { font: 'Georgia, serif', weight: 'normal' }),
-    // Bell Court: a small brass nameplate, without invented heritage copy.
+    // Bell Court: a small brass nameplate.
     face('rect', 3.2, 'wordmark', '#cab287', '#342f2a', '#87704c', { font: 'Georgia, serif', weight: 'normal' }),
     // Chime Terrace: simple painted lettering on a terracotta board.
     face('rect', 3.4, 'left', '#86564a', '#f3e9d7', '#c8a187', { font: 'Georgia, serif', weight: 'normal' }),
@@ -94,7 +94,7 @@ export const PLACE_SIGN_DESIGNS = {
     face('plaque', 3.3, 'frame', '#385347', '#ede8d5', '#a1ae8c', { font: 'Georgia, serif', weight: 'normal' }), // Orchard Walk
   ],
   plaza: [
-    // Squares use the city's pale enamel nameplates, without tourism copy.
+    // Squares use the city's pale enamel nameplates.
     face('rect', 3.5, 'frame', '#e6e3d6', '#344851', '#84969a', { uppercase: true }), // Fountain Square
     face('rect', 3.3, 'frame', '#e6e3d6', '#344851', '#84969a', { uppercase: true }), // Market Square
     face('rect', 3.5, 'frame', '#e6e3d6', '#344851', '#84969a', { uppercase: true }), // Old Town Square

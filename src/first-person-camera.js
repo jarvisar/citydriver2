@@ -25,8 +25,7 @@ export class FirstPersonCamera {
     this.camera.quaternion.setFromEuler(this.orientation);
     if (car.userData.driverEye) this.eye.copy(car.userData.driverEye);
     else this.eye.set(0, 1.73, -1.01);
-    // Keep the eye fixed at the windshield as the chassis tilts; the viewing
-    // direction still softens pitch and keeps the horizon free of body roll.
+    // Keep the eye fixed at the windshield as the chassis tilts.
     this.camera.position.copy(this.eye.applyQuaternion(car.quaternion)).add(car.position);
     this.camera.updateMatrixWorld();
   }

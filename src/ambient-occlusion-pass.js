@@ -26,8 +26,8 @@ export class AmbientOcclusion {
     this.pass = new N8AOPass(scene, camera, 2, 2);
     // N8AO's noise is fixed to the screen, so while the world scrolls beneath it
     // whatever noise survives denoising reads as crawling shade. Measured at
-    // fixed world points (scripts/ao-motion-test.mjs), samples and a wide denoise
-    // radius are what quiet it; more resolution, or N8AO's sharper radius-6
+    // fixed world points, samples and a wide denoise radius are what quiet
+    // it; more resolution, or N8AO's sharper radius-6
     // presets, make it worse. Every preset shares these, so changing level never
     // recompiles the AO shaders mid-drive.
     Object.assign(this.pass.configuration, {

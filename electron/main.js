@@ -201,9 +201,6 @@ function installMenu() {
   ]));
 }
 
-// Desktop updates stay disabled until a Citydriver release destination is configured.
-// This fork never checks or downloads releases from the original game.
-
 // --- Lifecycle --------------------------------------------------------------
 app.whenReady().then(() => {
   if (!options.devUrl && !existsSync(path.join(rendererDir, 'index.html'))) {
@@ -220,7 +217,8 @@ app.whenReady().then(() => {
       return mainWindow.isFullScreen();
     });
   }
-  // There is no update feed for this project.
+  // No update feed until a Citydriver release destination is configured; this
+  // fork never checks the original game's releases.
   ipcMain.handle('citydriver:update-get', () => undefined);
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

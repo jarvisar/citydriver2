@@ -152,8 +152,8 @@ export class DriveAudio {
     const rain = this.journey === 'city' ? Math.max(0, Math.min(1, scene?.rain ?? 0)) : 0;
     set(g.bed.level, (profile.bed + envelope * profile.swell) * (this.journey === 'city' ? .6 + rain * .4 : 1));
     set(g.bed.frequency, profile.low);
-    // The breaking crest and retreating foam lag the low surf surge. Wind
-    // and foliage breathe slowly; city rain uses a separate droplet texture.
+    // Wind breathes slowly; city rain uses its own droplet texture. The foam
+    // and insect branches only apply to Citydriver 1's journeys.
     const foam = this.journey === 'coast' ? (.5 + .5 * Math.sin(now * .47 - .7 + .6 * Math.sin(now * .113))) ** 3 : envelope ** 1.5;
     set(g.air.level, this.journey === 'city' ? .012 + .02 * rain : profile.air + foam * profile.wash, 1);
     set(g.air.frequency, profile.high * (.8 + envelope * .4), 1);

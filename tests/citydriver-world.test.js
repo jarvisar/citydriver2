@@ -34,8 +34,8 @@ test('the world streams detailed chunks around the car and keeps the skyline eve
     const walkers = [...world.chunks.values()].reduce((n, c) => n + (c.walkers?.length ?? 0), 0);
     assert.ok(colliders > 100 && lamps > 10 && walkers > 10, `${colliders} colliders, ${lamps} lamps, ${walkers} walkers`);
     assert.ok(scene.getObjectByName('citydriver-roads') && scene.getObjectByName('citydriver-ground') && scene.getObjectByName('citydriver-water'));
-    // Moving far away frees the old detail and streams new chunks within a frame budget
-    // Well across the city, to a built-up street about 750 m away
+    // Moving to a built-up street about 750 m away frees the old detail and
+    // streams new chunks within a frame budget
     const far = CITY.lots.map(lot => ({ s: lot[0].y, u: lot[0].x })).sort((a, b) => Math.abs(Math.hypot(a.s - start.s, a.u - start.u) - 750) - Math.abs(Math.hypot(b.s - start.s, b.u - start.u) - 750))[0];
     const cell = cityCell(far.s, far.u);
     const before = world.chunks.size;
@@ -148,10 +148,10 @@ test('roofs follow the buildings under them and trees keep their crowns off the 
   } finally { world.dispose(); }
 });
 
-// Basic detail keeps one ring of detailed chunks. Crossing into a cell used to
-// build its new ring at once, a long stall on a phone; the ring starts a whole
-// cell ahead, so it streams over later frames, is built ahead of time when
-// the car is heading for it, and what the car has just left is kept aside.
+// Basic detail keeps one ring of detailed chunks. Building a new ring at once
+// on crossing into a cell stalls a phone, so the ring starts a whole cell
+// ahead: it streams over later frames, is built ahead of time when the car is
+// heading for it, and what the car has just left is kept aside.
 test('at the lowest detail the ring ahead streams in, is built ahead of time, and the ring left behind is kept', () => {
   setResidentWindow({ behind: 1, ahead: 3 });
   const scene = new THREE.Scene(), world = new CitydriverWorld(scene);

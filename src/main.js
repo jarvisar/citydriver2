@@ -59,7 +59,7 @@ let paused = false, started = false, time = 0, hudTime = 0, gameMode = 'taxi';
 document.body.dataset.mode = gameMode;
 const frameClock = new FrameClock();
 let toastTimer; let sceneReady = false;
-// The chosen car and scene outlive the visit; positions and mileage do not.
+// The chosen car outlives the visit; positions and mileage do not.
 const carStorageKey = 'citydriver-car';
 let carId = DEFAULT_CAR;
 try { const saved = localStorage.getItem(carStorageKey); if (saved && CARS[saved]) carId = saved; } catch { /* Storage is optional. */ }
@@ -79,7 +79,7 @@ const toast = (message, tone = '') => {
 
 async function boot() {
   try {
-    // `?ao=0` still forces the soft shading off, whatever the quality level is.
+    // `?ao=0` forces the soft shading off, whatever the quality level is.
     const graphics = new Graphics({ ambientOcclusion: new URLSearchParams(window.location.search).get('ao') === '0' ? false : null });
     // How much of the route stays built is a quality setting too, so it has to
     // be in place before the first world is streamed.
@@ -120,8 +120,7 @@ async function boot() {
     // The menu cruises in a cab; starting either mode applies its own saved car.
     const vehicle = new DrivingController(JOURNEYS[journey].route, journeyStart(), 'taxi'); const audio = new DriveAudio();
     const refreshAudioMixer = setupAudioMixer(audio);
-    // Free driving starts on for now, while off-road collision is being tried
-    // out. The hidden code only changes the paint.
+    // Free driving starts on; the hidden code only changes the paint.
     vehicle.toggleFreeDriving();
     vehicle.setAppearance(journey);
     vehicle.setLights(weather.state.lightLevel);
@@ -377,9 +376,8 @@ async function boot() {
       paintInput.value = paint ?? ownPaint(carId);
       showPaintName();
     }
-    // Repainting needs no new scenery either: the colour lands on the car where
-    // it stands and on every card at once, and the drive carries on. Default
-    // clears it, and the fleet goes back to its own finishes.
+    // The colour lands on the car where it stands and on every card at once.
+    // Default clears it, and the fleet goes back to its own finishes.
     function applyPaint(value) {
       const color = value === DEFAULT_PAINT ? null : readPaint(value);
       if (value !== DEFAULT_PAINT && !color) return;
@@ -394,7 +392,6 @@ async function boot() {
       $('#change-car').setAttribute('aria-label', started && gameMode === 'taxi' ? 'Garage: free drive only' : `Garage: ${carEntry(carId).name}`);
       updatePaintUi();
     }
-    // Swapping cars needs no new scenery, so the drive simply carries on.
     function chooseCar(id) {
       if (started && gameMode === 'taxi') return;
       carDialog.close();
@@ -436,8 +433,8 @@ async function boot() {
         return;
       }
       // The pause screen is not modal, so it takes the menu actions and leaves
-      // the drive's own shortcuts — the garage, the routes, the next scene — to
-      // the handling below. B closes it the way it closes a chooser.
+      // the drive's own shortcuts, such as the garage and the map, to the
+      // handling below. B closes it the way it closes a chooser.
       const pauseMenu = openPauseMenu();
       if (pauseMenu && name.startsWith('menu')) {
         if (name === 'menuClose') { if (taxi.status !== 'over') setPaused(false); }
@@ -505,7 +502,6 @@ async function boot() {
     }
     const input = new Input(action, connected => {
       toast(connected ? controlHelpDismissed() ? 'Controller connected' : 'Controller connected · RT / R2 to drive' : 'Controller disconnected');
-      // Show the focus ring straight away, so the title screen reads as a menu.
       if (connected && openWelcomeMenu() && !$('#welcome').contains(document.activeElement)) $('#start').focus();
       if (!connected && started && !paused) setPaused(true);
     }, () => {
@@ -662,8 +658,8 @@ async function boot() {
       pixelDensity.style.setProperty('--control-level', `${(densityPercent - 50) * 2}%`);
       pixelDensityValue.textContent = `${densityPercent}%${settings.customDensity ? (densityPercent === 100 ? ' · Native' : '') : ' · Preset limit'}`;
       pixelDensity.setAttribute('aria-valuetext', `${densityPercent}% of native resolution${settings.customDensity ? '' : ', capped by the preset'}`);
-      // The drawing buffer is the thing the quality level actually changes, so
-      // show it: it explains a softer picture without any further digging.
+      // Show the drawing buffer, which is what the quality level changes: it
+      // explains a softer picture.
       graphicsStatus.textContent = `${graphics.auto ? 'Auto · ' : ''}${settings.label} · ${renderer.domElement.width} × ${renderer.domElement.height} · soft shading ${settings.ambientOcclusion ? 'on' : 'off'}`;
     }
     graphics.onChange((settings, reason) => {

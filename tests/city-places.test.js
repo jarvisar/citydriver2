@@ -122,7 +122,6 @@ test('a square too narrow for a circle is a linear garden with a walk down its l
   assert.equal(layout.plaza, null);
   assert.equal(layout.walks.length, 1);
   const walk = layout.walks[0], ends = [walk[0], walk.at(-1)];
-  // (from edge to edge, down the middle, never out of the lawn)
   assert.ok(Math.hypot(ends[1].x - ends[0].x, ends[1].y - ends[0].y) > 140, 'the walk runs the strip end to end');
   for (const p of walk) {
     assert.ok(insidePolygon(p, lawn), `walk point ${p.x.toFixed(1)},${p.y.toFixed(1)} off the lawn`);

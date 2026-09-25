@@ -4,7 +4,7 @@ import { randomAt } from './route.js';
 const WIDTH = 300, HEIGHT = 200, DEPTH = 360, COUNT = 1900;
 const wrap = (value, extent) => value - Math.floor(value / extent) * extent - extent / 2;
 
-// Rain in a world-anchored volume, built like the alpine snowfall: one draw
+// Rain in a world-anchored volume, built like the snowfall: one draw
 // call of points, wrapped around the car. Each point is masked to a thin
 // vertical streak instead of a soft disc and falls straight down. Nearer
 // drops draw longer; the distant ones thin out into a grey veil.

@@ -49,7 +49,7 @@ test('completed fares bank exactly once and survive restart, abandonment, expiry
   const disk = storage(), run = new TaxiRun(disk);
   const player = { s: 25, u: 3, heading: 0, speed: 0 };
   // A solo rider pays at their one stop; a group would hold its fare until the last.
-  // (not one the cab started beside, who waits until it has driven off)
+  // Skip the rider the cab starts beside, who waits until it has driven off.
   const solo = () => run.customers.find(customer => customer.passengers === 1 && customer.id !== run.blockedPickup?.id) ?? run.customers.find(customer => customer.id !== run.blockedPickup?.id);
   run.start(player); Object.assign(player, solo()); run.update(.5, player);
   assert.equal(run.status, 'driving'); assert.equal(run.fleet.balance, 0);

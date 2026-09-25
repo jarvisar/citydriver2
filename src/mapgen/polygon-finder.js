@@ -27,7 +27,7 @@ export default class PolygonFinder {
     this._shrunkPolygons = this._polygons.map(p => insetPolygon(p, distance));
   }
   // Every directed edge borders exactly one face. Walking from each unused
-  // edge and always taking the next edge round from the one we arrived by
+  // edge and always taking the next edge round from the one it arrived by
   // visits every face once. Faces with a dead end inside them are skipped,
   // as MapGenerator did, and the outer boundary is dropped by its winding.
   findPolygons() {
@@ -53,7 +53,7 @@ export default class PolygonFinder {
           const edge = key(from, to);
           if (used.has(edge)) { ok = false; break; }
           used.add(edge); walk.push(edge); visited.push(from);
-          // The next edge round from the one we came in by
+          // The next edge round from the one it came in by
           const list = neighborsOf(to), back = Math.atan2(from.value.y - to.value.y, from.value.x - to.value.x);
           let choice = null;
           for (const entry of list) if (entry.angle > back + 1e-12) { choice = entry.next; break; }

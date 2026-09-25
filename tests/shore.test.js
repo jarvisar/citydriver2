@@ -28,7 +28,7 @@ test('land, sea and river cover the whole world exactly once, and the tyres see 
 });
 
 test('the sea never takes much of the city: its blocks cover most of the domain', () => {
-  // A coast across the middle once left some cities half the size of others
+  // A coast across the middle can leave a city half the size of others
   const domain = CITY_WIDTH * CITY_HEIGHT, sea = CITY.sea.length >= 3 ? calcPolygonArea(CITY.sea) : 0;
   const blocks = CITY.blocks.reduce((sum, block) => sum + calcPolygonArea(block.polygon), 0);
   assert.ok(sea <= domain * .15, `the sea takes ${(100 * sea / domain).toFixed(0)}% of the domain`);

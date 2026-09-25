@@ -22,7 +22,7 @@ body[data-driving-help-expired=true] :is(.controls, #stick-help) { display: none
 body[data-controller=true] :is(.touch-controls, .touch-hint) { display: none; }
 body[data-controller=true] .controller-hint { display: block; }
 
-/* Shared polish: readable panels and comfortable controls on every screen. */
+/* Readable panels and comfortable controls on every screen. */
 .icon-button, .chooser-heading .icon-button { width: 44px; height: 44px; flex-shrink: 0; }
 .start-button { min-height: 44px; }
 .controls { padding: 3px 10px; }

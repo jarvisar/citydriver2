@@ -1,7 +1,7 @@
 import { AMBIENCE } from './profiles.js';
 
 const note = midi => 440 * 2 ** ((midi - 69) / 12);
-// Original, sparse suspended chords. The route changes the key; cruising adds
+// Original, sparse suspended chords in the ambience's key; cruising adds
 // occasional upper notes. No network, recordings or repeating music file.
 const CHORDS = [[0, 7, 14], [-3, 4, 12], [-5, 2, 9], [-7, 0, 7]];
 export class SoundDirector {

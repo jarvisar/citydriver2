@@ -170,7 +170,7 @@ export function carStats(id) {
 // Chooser meters. The ranges sit just outside everything with number plates, so
 // the slowest car still shows a little bar and each special nearly fills the one
 // it was built for. The formula racer is off that scale by design and pegs the
-// first three, which is the point; what its slicks cost shows on the fourth.
+// first three; what its slicks cost shows on the fourth.
 const METERS = [
   { label: 'Top speed', key: 'topSpeed', low: 20, high: 38 },
   { label: 'Acceleration', key: 'acceleration', low: 7.5, high: 18.5 },

@@ -71,7 +71,7 @@ body[data-controller=true] #app #city-map-open::before { content: 'VIEW'; margin
 #app #taxi-buttons > button { color: var(--city-text); background: var(--city-glass); }
 #app #taxi-buttons[data-drifting=true] [data-drive-button=handbrake] { background: var(--city-hover); }
 
-/* Keep the circular steering target, but retire the cream frosted-glass finish. */
+/* The circular steering target in slate rather than the base cream glass. */
 #app #touch-stick { background: #263b45b8; border-color: #afc9d170; opacity: 1; box-shadow: var(--city-shadow); }
 #app .stick-guide { border-color: #c4d3d84d; }
 #app .stick-thumb { background: var(--city-muted); border-color: #f5f4e970; box-shadow: 0 3px 10px #101e2859; }
@@ -167,7 +167,7 @@ body[data-controller=true] #app #city-map-open::before { content: 'VIEW'; margin
 #app .notebook-check { color: var(--city-gold); }
 #app #city-stop-name { font-family: var(--city-font); font-weight: 700; }
 
-/* Peripheral states should not fall back to the old light/green theme. */
+/* Peripheral states too, rather than the base light/green theme. */
 #app > #toast, #app #vr-error { background: var(--city-panel); color: var(--city-text); border: 1px solid var(--city-line); border-radius: var(--city-control-radius); box-shadow: var(--city-shadow); }
 #app .taxi-task #toast { border: 0; box-shadow: none; }
 #app :is(.error, .loading) { background: var(--city-panel); color: var(--city-text); }

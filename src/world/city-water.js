@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 
-// The sea and the river: citydriver's river water, with the current following
-// the water's own direction instead of the old grid's river axes. Small waves
-// displace the surface; analytic normals follow them, and the hemisphere sky
-// is reflected as a soft sheen.
+// The sea and the river, with the current following the water's own
+// direction (the surface's flowDirection). Small waves displace the surface;
+// analytic normals follow them, and the hemisphere sky is reflected as a soft
+// sheen.
 export function createWaterMaterial() {
   const material = new THREE.MeshStandardMaterial({ color: '#397780', roughness: .3, metalness: .04, flatShading: true });
   const time = { value: 0 }, origin = { value: 0 };

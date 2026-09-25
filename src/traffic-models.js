@@ -10,8 +10,8 @@ export const TRAFFIC_MODELS = [
   { name: 'van', width: 2.08, length: 5.15, cabin: [1.93, 1.35, 3.95], cabinZ: .32 },
 ];
 
-// Chooser-only: a low, short-cabin coupe. It is never spawned into traffic and
-// is not any route's own car, so the roads keep their ordinary-looking fleet.
+// Chooser-only: a low, short-cabin coupe. It is never spawned into traffic,
+// so the roads keep their ordinary-looking fleet.
 export const SPORTS_MODEL = { name: 'sports', width: 1.94, length: 4.2, cabin: [1.6, .56, 1.84], cabinZ: .3, drop: .2 };
 
 export const TRAFFIC_COLORS = ['#d8c7a0', '#e9e5d9', '#577f96', '#829789', '#b34e43', '#d2a345', '#58636a', '#b7c4c9', '#796c8c', '#397e7b'];
@@ -37,7 +37,7 @@ export function vehicleGeometry(spec, { separateWheels = false } = {}) {
   const { width: w, length: l, cabin: [cw, ch, cl], cabinZ: cz, name, drop = 0 } = spec;
   const roofY = 1.22 + ch;
   // Clip the four corners without adding subdivisions to the long body sides.
-  // The short bevels catch light while keeping the original flat-panel style.
+  // The short bevels catch light while keeping the flat-panel style.
   const corner = .12;
   const outline = new THREE.Shape();
   outline.moveTo(-w / 2 + corner, -l / 2);
@@ -68,8 +68,8 @@ export function vehicleGeometry(spec, { separateWheels = false } = {}) {
   add(glass, [0, 1.22 + ch / 2, cz], 'details', '#344e55');
   box([cw * .94 + .08, .1, cl - .24], [0, roofY + .025, cz + .06]);
   for (const side of [-1, 1]) {
-    // Follow the sloped glass edges: vertical posts left the windshield looking
-    // like a dark box perched on the doors.
+    // Follow the sloped glass edges: vertical posts would leave the windshield
+    // looking like a dark box perched on the doors.
     for (const [end, rake] of [[-1, .24], [1, -.12]]) {
       const pillar = new THREE.BoxGeometry(.085, ch + .02, .1), p = pillar.attributes.position;
       for (let i = 0; i < p.count; i++) if (p.getY(i) > 0) {

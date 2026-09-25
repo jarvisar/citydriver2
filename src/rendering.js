@@ -147,7 +147,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   }
   // Zoom only changes the projection; resizing the canvas every zoom frame reallocates its buffers.
   window.addEventListener('resize', () => { graphics.suspend(); resizeCanvas(); resize(); }); resize();
-  // The launcher still calls this when starting or resetting the city.
+  // Called when starting or resetting the city.
   function setJourney() {
     weatherFog = null;
     setWeather(sampleCityWeather(0, 'sunset'), 0);

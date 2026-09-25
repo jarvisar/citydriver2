@@ -2,7 +2,7 @@ import { ENGINES } from './profiles.js';
 import { createEngineBank } from './engine.js';
 import { createTextureBuffer } from './textures.js';
 
-// Longer stereo noise with a seamless join, shared by all the noise layers.
+// Stereo pink noise with a seamless join: the noise layers' default buffer.
 export function createNoiseBuffer(ctx, seed = 0x71ca9) {
   const length = Math.ceil(ctx.sampleRate * 12), overlap = Math.ceil(ctx.sampleRate * .15);
   const buffer = ctx.createBuffer(2, length, ctx.sampleRate);

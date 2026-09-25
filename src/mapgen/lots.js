@@ -89,7 +89,7 @@ function cutPositions(polygon, geometry, { frontage, corner, depth }, random) {
 
 // Cuts off the tip of every corner sharper than maxTurn (radians of turn), so
 // the cut is about `width` across: an acute corner is a small plaza, not a
-// lot, and stepping the block in no longer throws its corner far away.
+// lot, and stepping the block in does not throw its corner far away.
 export function chamferAcute(input, maxTurn = 2.25, width = 9) {
   let polygon = dedupePolygon(input, .05);
   if (polygon.length < 3) return polygon;

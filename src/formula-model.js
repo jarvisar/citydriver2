@@ -93,7 +93,7 @@ export function createFormulaCar(entry) {
     for (const y of [.3, .56]) box([.62, .05, .07], [side * .42, y, z], 'details', CARBON);
     box([.07, .05, .5], [side * .42, .43, z + (z < 0 ? .3 : -.3)], 'details', CARBON);
   }
-  // A rear rain light keeps the racer visible on the midnight route.
+  // A rear rain light keeps the racer visible at night.
   box([.14, .12, .05], [0, .92, 2.28], 'taillights');
   if (entry.taxi) for (const side of [-1, 1]) box([.2, .1, .05], [side * .54, .39, -2.57], 'headlights');
 
@@ -145,7 +145,7 @@ export function createFormulaCar(entry) {
   return {
     car, body, wheels,
     nightLights: [{ material: rear, day: .15, night: 2.6 }, ...(front ? [{ material: front, day: .3, night: 2.2 }] : [])],
-    // A chosen car keeps its own paint and kit on every route.
+    // A chosen car keeps its own paint and kit.
     applyTrim() {},
     paintCar(color) { paint.color.set(color || entry.paint); },
     disposeModel() {

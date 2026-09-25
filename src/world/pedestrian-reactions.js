@@ -13,7 +13,7 @@ export function applyWalkerHop(walker, matrix, time) {
   const t = (time - walker.hopStart) / PEDESTRIAN_HOP_SECONDS;
   if (t <= 0) return;
   // Zero velocity at both ends, a single clean arc, and exactly one turn.
-  // Rotate around the character's middle, not their feet: the center stays
+  // Rotate around the character's middle, not their feet: the centre stays
   // over the same patch of pavement instead of orbiting sideways.
   const eased = t * t * t * (t * (t * 6 - 15) + 10);
   const lift = PEDESTRIAN_HOP_HEIGHT * 16 * t * t * (1 - t) * (1 - t);

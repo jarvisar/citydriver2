@@ -29,9 +29,9 @@ export class ThirdPersonCamera {
   }
   snap() { this.initialized = false; this.rush = 0; }
   update(car, dt) {
-    // Speed is a thing you see, not a number in the corner. Past two fifths of
-    // the car's top speed the lens opens up and the chase seat slides back, so
-    // a boulevard at full throttle feels quick and a junction crawl does not.
+    // Past two fifths of the car's top speed the lens opens up and the chase
+    // seat slides back, so a boulevard at full throttle feels quick and a
+    // junction crawl does not.
     const rush = THREE.MathUtils.clamp(car.userData.speedRush ?? 0, 0, 1);
     this.rush = this.initialized ? THREE.MathUtils.damp(this.rush, rush, 3.5, dt) : rush;
     const fov = this.baseFov * (1 + (RUSH_FOV - 1) * this.rush);

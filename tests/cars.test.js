@@ -39,7 +39,6 @@ test('every car builds a solid, steerable model', () => {
       assert.ok([...position.array].every(Number.isFinite), `${id} has a broken mesh`);
     });
     assert.ok(meshes >= 8, `${id} is missing bodywork`);
-    // Wheels rest on the ground the car is placed on.
     const box = new THREE.Box3().setFromObject(model.car);
     assert.ok(Math.abs(box.min.y) < .05, `${id} floats or sinks: ${box.min.y}`);
     model.disposeModel();
@@ -269,7 +268,7 @@ test('a chosen car keeps its own paint and kit on every route', () => {
     const car = new DrivingController(straightRoute, {}, id), own = palette(car);
     for (const journey of Object.keys(JOURNEYS)) { car.setAppearance(journey); assert.equal(palette(car), own, `${id} changed with the scenery`); }
   }
-  // Route Match is the one that still dresses for the scenery.
+  // The default car is the one that dresses for the route.
   const matching = new DrivingController(straightRoute, {}, 'auto'), paints = new Set();
   for (const journey of Object.keys(JOURNEYS)) { matching.setAppearance(journey); paints.add(palette(matching)); }
   assert.equal(paints.size, Object.keys(JOURNEYS).length);

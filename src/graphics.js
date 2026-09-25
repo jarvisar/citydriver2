@@ -12,11 +12,9 @@
 // changes the shader light counts, which would make the browser recompile every
 // program mid-drive.
 
-// `density` is a fraction of the device's own pixel ratio, not a ceiling on it.
-// A ceiling did nothing on the displays that need the help most: clamping to 3,
-// 2 and 1.5 all leave a 1x laptop panel rendering at exactly 1x, so three of
-// the four levels were the same picture at the same price. A fraction removes
-// pixels on every display.
+// `density` is a fraction of the device's own pixel ratio, not a ceiling on it:
+// a ceiling leaves a 1x laptop panel, the display that needs help most, at
+// exactly 1x on every level. A fraction removes pixels on every display.
 //
 // High keeps a wider square of detailed city blocks. Lower levels use fewer
 // furnished blocks, with a cheap distant skyline covering the same camera views.
@@ -29,7 +27,6 @@ export const QUALITY_LEVELS = [
 const WORST = QUALITY_LEVELS.length - 1;
 export const levelIndex = id => QUALITY_LEVELS.findIndex(level => level.id === id);
 
-// Density is a fraction of native resolution, including on high-density screens.
 const MIN_DENSITY = .5;
 export function renderScale(density, devicePixelRatio = globalThis.devicePixelRatio || 1) {
   return devicePixelRatio * Math.max(MIN_DENSITY, Math.min(1, density));
@@ -110,13 +107,11 @@ function displayPixels() {
   return screen.width * screen.height * ratio * ratio;
 }
 
-// A first guess from what the browser will tell us. Deliberately cautious on
-// touch devices: the controller below raises the level within a few seconds
-// when the device turns out to be quick, which looks better than starting too
-// high and stuttering through the first corner. The same now goes for anything
-// with a mouse, which used to start at the top whatever it was — so a thin
-// laptop with an integrated chip began exactly where a tower with a discrete
-// card did, and only found out the difference by stuttering through that corner.
+// A first guess from what the browser will tell us. Deliberately cautious: the
+// controller below raises the level within a few seconds when the device turns
+// out to be quick, which looks better than starting too high and stuttering
+// through the first corner. Desktops are tiered too, so a thin laptop with an
+// integrated chip does not start where a tower with a discrete card does.
 export function detectLevel(hints = {}) {
   const nav = hints.navigator ?? globalThis.navigator ?? {};
   // A coarse primary pointer covers phones and tablets, including the tablets

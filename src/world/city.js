@@ -8,12 +8,12 @@ import { endJoints, slicePolyline } from '../mapgen/road-network.js';
 import { insidePolygon, offsetPolylineClean, bufferPolyline, averagePoint, calcPolygonArea,
   offsetPolygon, polygonBounds, distanceToPolyline, signedArea, dedupePolygon, polylineLength } from '../mapgen/polygon-util.js';
 
-// One city per visit, generated from the URL seed the way citydriver's grid
-// was: roads, water, blocks and lots come from the MapGenerator port, and this
-// module derives the surfaces the game stands on from them, once, so the
-// renderer, the tyres and the street furniture all agree: the water and the
-// quays round it, the kerbs with their rounded corners, the districts and a
-// spatial index that says whether a point is pavement or roadway.
+// One city per visit, generated from the URL seed: roads, water, blocks and
+// lots come from the MapGenerator port, and this module derives the surfaces
+// the game stands on from them, once, so the renderer, the tyres and the
+// street furniture all agree: the water and the quays round it, the kerbs with
+// their rounded corners, the districts and a spatial index that says whether
+// a point is pavement or roadway.
 export const CITY_WIDTH = 2880, CITY_HEIGHT = 2160, CITY_MARGIN = 800, CITY_CELL = 160;
 // Promenade between a waterside road's kerb and the water
 export const QUAY = 6;

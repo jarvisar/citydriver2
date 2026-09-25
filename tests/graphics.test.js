@@ -47,9 +47,9 @@ test('quality levels get cheaper in every dimension, from high down to basic', (
 });
 
 test('every level removes pixels, on a 1x panel as much as on a dense one', () => {
-  // A ceiling on the pixel ratio was the old rule, and it did nothing here:
-  // clamping to 3, 2 and 1.5 all leave a 1x laptop panel rendering at 1x, so
-  // three of the four levels were the same picture at the same price.
+  // A ceiling on the pixel ratio alone does nothing here: clamping to 3, 2 and
+  // 1.5 all leave a 1x laptop panel rendering at 1x, so three of the four
+  // levels would be the same picture at the same price.
   for (const devicePixelRatio of [1, 1.25, 1.5, 2, 3]) {
     const scales = QUALITY_LEVELS.map(level => renderScale(level.density, devicePixelRatio));
     for (let i = 1; i < scales.length; i++) {
@@ -208,7 +208,6 @@ test('auto remembers the level it settled on so the next visit starts there', ()
   const graphics = new Graphics({ storage, detect: () => levelIndex('high') });
   new Device(graphics, [22, 31, 43, 61]).run(60);
   assert.equal(graphics.levelId, 'basic');
-  // Remember the settled level and the unchanged default AO choice.
   assert.deepEqual(stored(storage), { mode: 'auto', level: 'basic', density: null, ambientOcclusion: false });
   const next = new Graphics({ storage, detect: () => levelIndex('high') });
   assert.equal(next.auto, true);

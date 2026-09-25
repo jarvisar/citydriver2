@@ -128,7 +128,6 @@ export function removeLoops(points, window = 64) {
   }
   return out;
 }
-// A polyline offset sideways with its inside-bend loops removed
 export function offsetPolylineClean(points, distance) { return removeLoops(offsetPolyline(points, distance)); }
 
 // The area within `width` of a polyline, with flat ends: a river channel or a

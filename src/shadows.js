@@ -19,9 +19,9 @@ export function stabilizeShadowFiltering() {
     shadow *= 0.0625;`);
 }
 
-// Enclose the visible terrain, from valleys to peaks. Routes with a changing
-// elevation datum pass the local height so coverage travels with the landscape.
-// Translating both height planes preserves the shadow map's texel density.
+// Enclose the visible terrain, from valleys to peaks. heightOrigin moves both
+// height planes to a local elevation datum; translating them preserves the
+// shadow map's texel density.
 export function fitSunShadow(camera, sun, heightOrigin = 0, worldOrigin = 0) {
   camera.updateMatrixWorld();
   sun.updateMatrixWorld();

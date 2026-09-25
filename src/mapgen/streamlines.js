@@ -14,7 +14,6 @@ export default class StreamlineGenerator {
     this.integrator = integrator; this.origin = origin; this.worldDimensions = worldDimensions;
     this.params = params; this.random = random;
     if (params.dstep > params.dsep) throw new Error('Streamline sample distance bigger than dsep');
-    // Enforce test < sep
     params.dtest = Math.min(params.dtest, params.dsep);
     this.majorGrid = new GridStorage(worldDimensions, origin, params.dsep);
     this.minorGrid = new GridStorage(worldDimensions, origin, params.dsep);
@@ -38,7 +37,6 @@ export default class StreamlineGenerator {
         }
       }
     }
-    // Reset simplified streamlines
     this.allStreamlinesSimple = this.allStreamlines.map(s => this.simplifyStreamline(s));
   }
   // Points from v1 to v2 separated by at most dstep, not including v1
@@ -74,7 +72,6 @@ export default class StreamlineGenerator {
   }
   // Assumes s has already generated
   addExistingStreamlines(s) { this.majorGrid.addAll(s.majorGrid); this.minorGrid.addAll(s.minorGrid); }
-  // All at once
   createAllStreamlines() {
     let major = true;
     while (this.createStreamline(major)) major = !major;
@@ -131,14 +128,13 @@ export default class StreamlineGenerator {
     }
     return false;
   }
-  // One step of the streamline integration process
   streamlineIntegrationStep(params, major, collideBoth) {
     if (!params.valid) return;
     params.streamline.push(params.previousPoint);
     const nextDirection = this.integrator.integrate(params.previousPoint, major, params.previousDirection);
     // Stop at degenerate point
     if (nextDirection.lengthSq() < .01) { params.valid = false; return; }
-    // Make sure we travel in the same direction
+    // Keep travelling the same way
     if (nextDirection.dot(params.previousDirection) < 0) nextDirection.negate();
     const nextPoint = params.previousPoint.clone().add(nextDirection);
     if (this.pointInBounds(nextPoint)

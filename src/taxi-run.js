@@ -19,7 +19,7 @@ export const GROUP_MAX_DETOUR = 1.45;
 export const GROUP_MAX_ROUTE = 2200;
 export const MAX_SHIFT_SECONDS = 180;
 // Cosine of the sharpest turn a party route may take between two drop-offs,
-// about 105°. Street routes zigzag, so demanding a strictly forward hop left
+// about 105°. Street routes zigzag, so demanding a strictly forward hop leaves
 // most full cabs with nowhere legal to go.
 export const GROUP_MIN_TURN = -.25;
 // Each hop samples a handful of the closest unused places; the chain is built
@@ -28,7 +28,7 @@ const GROUP_CANDIDATES = 6;
 const CUSTOMER_RANGE = B * 3;
 // A new pickup never waits where the last rider got out. Pickup sites and
 // destinations are laid out independently, so without this about one drop-off
-// in four ended beside, or inside, a fresh ring.
+// in four would end beside, or inside, a fresh ring.
 export const DROP_OFF_CLEARANCE = 60;
 // As in Crazy Taxi, a waiting fare's colour says how far the whole job goes:
 // red is a hop around the corner, green a long haul that pays the most.
@@ -119,8 +119,8 @@ export const GROUP_FARE_SHARE = .2;
 // one street. Each hop ranks the nearby places by distance plus these
 // penalties, in metres: a stop around a corner beats one straight ahead on
 // the street the cab is already on, and a new kind of place beats a second
-// museum or a second market. Nearest-first chose the straight run about one
-// group in five.
+// museum or a second market. Nearest-first would choose the straight run
+// about one group in five.
 export const SAME_STREET_PENALTY = 320;
 export const STRAIGHT_PENALTY = 140;
 export const SAME_TYPE_PENALTY = 200;

@@ -476,9 +476,9 @@ function entrance(b, span, primary) {
 }
 
 // Where along a shopfront its sign goes, and how big: over the middle, unless
-// a street tree's crown or a lamp's column stands in front of it there, and
-// over one of the shop's windows or its door (`centres`) or at one end of its
-// fascia, a little smaller if need be, far less of it would be hidden
+// a street tree's crown or a lamp's column stands in front of it there. Then
+// it moves over one of the shop's windows or its door (`centres`), or to one
+// end of the fascia, a little smaller if need be, if far less of it is hidden.
 const IN_FRONT = { lamp: .3, 'median-lamp': .3, lantern: .3, 'street-lantern': .3, signal: .3 };
 function signPlace(c, f, w, centres) {
   const obstacles = [];
@@ -505,8 +505,8 @@ function signPlace(c, f, w, centres) {
 }
 
 // Thin fabric, falling away from the fascia to a short valance. Both sides
-// are faces in the building's existing mesh: even a striped awning uses a
-// third of the triangles of the old pair of boxes per stripe.
+// are faces in the building's existing mesh, a third of the triangles of a
+// pair of boxes per stripe.
 export function shopAwning(c, f, offset, width, accent, variation) {
   const stripes = !c.distant && variation % 2 === 0 ? 8 : 1;
   const reach = 1.4 + variation * .16, back = G + 3.52, front = G + 3.04;

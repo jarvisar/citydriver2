@@ -39,7 +39,6 @@ test('a big park is laid out with gates on its streets, a loop walk and a plaza 
     if (layout.loop) loops++;
     const edge = [...layout.lawn, layout.lawn[0]];
     for (const path of layout.paths) for (const p of path) assert.ok(insidePolygon(p, layout.lawn) || distanceToPolyline(p, edge) < 22, `seed ${city.seed}: a walk leaves its park`);
-    // Walks never cross the pond
     if (layout.pond) for (const path of layout.paths) for (const p of path) assert.ok(!insidePolygon(p, layout.pond), 'a walk through the pond');
   }
   assert.ok(ponds > 0 && loops > 0, `${ponds} ponds, ${loops} loops`);

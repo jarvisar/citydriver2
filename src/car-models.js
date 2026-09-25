@@ -57,7 +57,7 @@ export function createShapeCar(entry) {
   return {
     car, body, wheels,
     nightLights: [{ material: front, day: .24, night: 2.2 }, { material: rear, day: .1, night: 2.5 }],
-    // A chosen car keeps its own paint and kit on every route.
+    // A chosen car keeps its own paint and kit.
     applyTrim() {},
     paintCar(color) { paint.color.set(color || entry.paint); },
     disposeModel() {

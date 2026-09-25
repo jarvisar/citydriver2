@@ -51,7 +51,7 @@ export class Traffic {
       return { rig, light };
     });
     // Three cars in each direction over a kilometer: usually one or two in
-    // view. The pool holds a few more for the routes that run heavier traffic.
+    // view. The pool holds a few more for the city's heavier traffic.
     this.pool = Array.from({ length: 9 }, (_, index) => {
       const model = this.models.create(index % TRAFFIC_MODELS.length, TRAFFIC_COLORS[0]);
       this.group.add(model.car);
@@ -93,7 +93,7 @@ export class Traffic {
     car.s = s; car.generation++;
     car.u = car.direction * LANE; car.drift = 0; car.yaw = 0; car.spin = 0; car.recoil = 0;
     car.cruiseSpeed = car.direction > 0 ? TRAFFIC_CRUISE_SPEED : 20; car.speed = car.cruiseSpeed;
-    // A random colour, stepping past any another car already wears
+    // A random colour, stepping past any that another car already wears
     const worn = new Set(this.vehicles.filter(other => other !== car && other.generation).map(other => other.paint.color.getHex()));
     let pick = Math.floor(this.random(car, 2) * TRAFFIC_COLORS.length);
     for (let k = 0; k < TRAFFIC_COLORS.length && worn.has(new THREE.Color(TRAFFIC_COLORS[pick]).getHex()); k++) pick = (pick + 1) % TRAFFIC_COLORS.length;
