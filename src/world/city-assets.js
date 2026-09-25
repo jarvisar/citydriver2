@@ -100,9 +100,11 @@ function signalMast() {
 }
 function stopSign() {
   const p = new Parts();
-  p.cylinder([0, 1.4, 0], .055, .07, 2.8, galvanised, 6);
-  p.cylinder([0, 2.8, 0], .7, .7, .08, '#e9e2cd', 8, [Math.PI / 2, Math.PI / 8, 0]);
-  p.cylinder([0, 2.8, .05], .62, .62, .03, '#b74635', 8, [Math.PI / 2, Math.PI / 8, 0]);
+  // Bare metal at the back; the white rim and red face sit ahead of the post.
+  p.cylinder([0, 1.4, -.085], .055, .07, 2.8, galvanised, 6);
+  p.cylinder([0, 2.8, 0], .7, .7, .06, galvanised, 8, [Math.PI / 2, Math.PI / 8, 0]);
+  p.cylinder([0, 2.8, .044], .685, .685, .024, '#f1ead6', 8, [Math.PI / 2, Math.PI / 8, 0]);
+  p.cylinder([0, 2.8, .066], .62, .62, .012, '#b74635', 8, [Math.PI / 2, Math.PI / 8, 0]);
   // Continuous vector strokes avoid the old disconnected pixel-box lettering.
   const glyphs = [
     { outline: [[0,0],[5,0],[5,4],[1.3,4],[1.3,5.7],[5,5.7],[5,7],[0,7],[0,2.7],[3.7,2.7],[3.7,1.3],[0,1.3]] },
@@ -114,16 +116,17 @@ function stopSign() {
     const shape = new THREE.Shape(outline.map(([x, y]) => new THREE.Vector2(x, y)));
     if (hole) shape.holes.push(new THREE.Path(hole.map(([x, y]) => new THREE.Vector2(x, y))));
     const geometry = new THREE.ShapeGeometry(shape); geometry.scale(.038, .044, 1);
-    p.add(geometry, [-.437 + i * .228, 2.646, .073], '#fff2d9');
+    p.add(geometry, [-.437 + i * .228, 2.646, .084], '#fff2d9');
   });
   return p.finish();
 }
 // A give-way sign: a white triangle, point down, in a red border.
 function yieldSign() {
   const p = new Parts();
-  p.cylinder([0, 1.35, 0], .055, .07, 2.7, galvanised, 6);
-  p.cylinder([0, 2.72, .02], .82, .82, .06, '#b74635', 3, [Math.PI / 2, 0, 0]);
-  p.cylinder([0, 2.72, .06], .5, .5, .03, '#f1ead6', 3, [Math.PI / 2, 0, 0]);
+  p.cylinder([0, 1.35, -.085], .055, .07, 2.7, galvanised, 6);
+  p.cylinder([0, 2.72, 0], .82, .82, .06, galvanised, 3, [Math.PI / 2, 0, 0]);
+  p.cylinder([0, 2.72, .044], .8, .8, .024, '#b74635', 3, [Math.PI / 2, 0, 0]);
+  p.cylinder([0, 2.72, .066], .61, .61, .012, '#f1ead6', 3, [Math.PI / 2, 0, 0]);
   return p.finish();
 }
 // A promenade bench facing the water.
@@ -145,8 +148,20 @@ function busShelter() {
   // (the glass ends inside the posts, not flush with their outer faces)
   p.box([.62, 1.35, 0], [.04, 2, 3.4], '#5c6b74');
   p.box([0, .45, 0], [.5, .06, 3], timber);
-  p.box([-.9, 2.9, 1.6], [.06, .5, .5], '#2f5f8a');
-  p.cylinder([-.9, 1.4, 1.6], .05, .05, 2.8, iron, 5);
+  // A blue transit flag faces the road; a bus symbol identifies the stop
+  // without an invented route number or advertising on the shelter.
+  const blue = '#2f5f8a', white = '#f1ead6';
+  p.box([-.9, 2.93, 1.6], [.06, .66, .5], blue);
+  p.cylinder([-.9, 1.3, 1.6], .05, .05, 2.6, iron, 5);
+  for (const side of [-1, 1]) {
+    const face = -.9 + side * .042;
+    p.box([face, 2.95, 1.6], [.018, .38, .3], white);
+    p.box([face + side * .017, 3.01, 1.6], [.012, .15, .23], blue);
+    for (const z of [1.5, 1.7]) {
+      p.box([face, 2.74, z], [.018, .075, .06], white);
+      p.box([face + side * .017, 2.82, z], [.012, .045, .045], blue);
+    }
+  }
   return p.finish();
 }
 // A four-metre run of quay railing, laid along z.

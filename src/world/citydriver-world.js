@@ -324,7 +324,9 @@ export class CityChunk {
     }
     for (const side of [-1, 1]) {
       const along = side * Math.min(width * .38, core.width / 2 - .08), px = x + ex * along, ps = s + es * along, top = y + core.y;
-      this.box(px, (PAVEMENT_LEVEL + top) / 2, ps, .12, top - PAVEMENT_LEVEL, .12, '#3d4246', 'solid', yaw);
+      // Both faces are only .09 m apart: a square .12 m post would poke
+      // through their lettering. Flat posts stay inside the board's core.
+      this.box(px, (PAVEMENT_LEVEL + top) / 2, ps, .12, top - PAVEMENT_LEVEL, .06, '#3d4246', 'solid', yaw);
       this.post(px, ps, .1);
     }
   }
@@ -369,11 +371,12 @@ export class CityChunk {
       else if (piece.kind === 'parking-sign') {
         // A blue P on a post, read from along the street both ways (yaw lays
         // the panel across the pavement)
-        this.box(x, PAVEMENT_LEVEL + 1.3, s, .08, 2.6, .08, '#9da3a6');
-        this.box(x, PAVEMENT_LEVEL + 2.6, s, .72, .72, .05, '#2f5f9a', 'solid', piece.yaw);
+        this.box(x, PAVEMENT_LEVEL + 1.09, s, .08, 2.18, .08, '#9da3a6');
+        this.box(x, PAVEMENT_LEVEL + 2.6, s, .78, .84, .04, '#f2f0e6', 'solid', piece.yaw);
+        this.box(x, PAVEMENT_LEVEL + 2.6, s, .7, .76, .058, '#2f5f9a', 'solid', piece.yaw);
         if (!this.distant) for (const side of [-1, 1]) {
           const letter = (u, v, w, h) => {
-            const across = u * side, px = x + Math.cos(piece.yaw) * across + piece.tx * .03 * side, ps = s + Math.sin(piece.yaw) * across + piece.ty * .03 * side;
+            const across = u * side, px = x + Math.cos(piece.yaw) * across + piece.tx * .042 * side, ps = s + Math.sin(piece.yaw) * across + piece.ty * .042 * side;
             this.box(px, PAVEMENT_LEVEL + 2.6 + v, ps, w, h, .02, '#f2f0e6', 'solid', piece.yaw);
           };
           letter(-.1, 0, .09, .46); letter(.01, .19, .24, .08); letter(.01, .01, .24, .08); letter(.12, .1, .08, .26);

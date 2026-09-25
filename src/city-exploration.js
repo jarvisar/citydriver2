@@ -228,14 +228,11 @@ export function placeRoute(s, u, place) {
 }
 
 export class CityExploration {
-  constructor(storage = null) {
-    this.storage = storage; this.key = 'citydriver-city-notebook-v1';
+  // The discoveries last for the visit: through every taxi run and free
+  // drive, but not a reload
+  constructor() {
     this.found = new Set(); this.target = null; this.places = []; this.cell = null;
     this.justArrived = null;
-    try {
-      const saved = JSON.parse(storage?.getItem(this.key) ?? '[]');
-      if (Array.isArray(saved)) for (const type of saved) if (PLACE_TYPES.includes(type)) this.found.add(type);
-    } catch { /* Exploration also works with storage disabled. */ }
   }
   refresh(s, u) {
     const cell = cityCell(s, u).key;
@@ -264,9 +261,6 @@ export class CityExploration {
       if (place.id === this.target?.id) this.justArrived = place;
       if (this.found.has(place.type)) continue;
       this.found.add(place.type); discoveries.push(place);
-    }
-    if (discoveries.length) {
-      try { this.storage?.setItem(this.key, JSON.stringify([...this.found])); } catch { /* Keep stamps for this visit. */ }
     }
     if (this.justArrived && Math.hypot(this.justArrived.s - s, this.justArrived.u - u) > 125) {
       const previous = this.justArrived.id;

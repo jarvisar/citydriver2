@@ -975,33 +975,3 @@ export function* buildCityBuildingSteps(c) {
   }
 }
 
-export function fitSignText(ctx, text, x, y, width, size, weight = 'bold') {
-  ctx.font = `${weight} ${size}px sans-serif`;
-  const fitted = Math.min(size, size * width / Math.max(1, ctx.measureText(text).width));
-  ctx.font = `${weight} ${fitted}px sans-serif`;
-  ctx.fillText(text, x, y);
-}
-export function shopSignMaterial(name, aspect = name.endsWith(' TOWER') ? .25 : 4) {
-  let map = null;
-  if (globalThis.document) {
-    const vertical = name.endsWith(' TOWER');
-    // Match the physical panel's proportions with roughly the same texel
-    // budget as the old 512 x 128 texture. Materials are shared across sites.
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(Math.min(1024, Math.sqrt(65536 * aspect)));
-    canvas.height = Math.round(canvas.width / aspect);
-    const { width, height } = canvas, edge = Math.min(width, height) * .07;
-    const ctx = canvas.getContext('2d');
-    const colors = { BAKERY: '#94664b', FLOWERS: '#55795a', NOODLES: '#a45142', RECORDS: '#625676', STUDIO: '#657999', RIVOLI: '#864a41', 'BLUE NOTE': '#39496d' };
-    ctx.fillStyle = colors[name] ?? '#29484e'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.strokeStyle = '#d6c79e'; ctx.lineWidth = Math.max(1.5, edge / 3); ctx.strokeRect(edge, edge, width - 2 * edge, height - 2 * edge);
-    ctx.fillStyle = '#f6e8c9'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    if (vertical) {
-      const letters = [...name.replace(' TOWER', '')], step = height * .86 / letters.length;
-      letters.forEach((letter, i) => fitSignText(ctx, letter, width / 2, height * .07 + (i + .5) * step, width * .75, Math.min(width * .7, step * .85)));
-    } else fitSignText(ctx, name, width / 2, height * .53, width - 4 * edge, height * .78);
-    map = new THREE.CanvasTexture(canvas); map.colorSpace = THREE.SRGBColorSpace;
-  }
-  return new THREE.MeshStandardMaterial({ map, color: map ? '#ffffff' : '#365c60', emissive: '#ffffff', emissiveMap: map, emissiveIntensity: map ? .22 : 0, roughness: .85 });
-}
-

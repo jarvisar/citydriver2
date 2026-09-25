@@ -13,8 +13,9 @@ const hide = (element, hidden) => { if (element.hidden !== hidden) element.hidde
 const MAP_SCALE = .36;
 export class CityGuide {
   constructor(notify, position) {
-    let storage; try { storage = localStorage; } catch { /* Optional storage. */ }
-    this.exploration = new CityExploration(storage); this.notify = notify; this.position = position;
+    // Discoveries are no longer kept between visits: drop any saved before
+    try { localStorage.removeItem('citydriver-city-notebook-v1'); } catch { /* Optional storage. */ }
+    this.exploration = new CityExploration(); this.notify = notify; this.position = position;
     this.mapCache = new CityMapCache();
     this.canvas = $('city-map'); this.ctx = this.canvas.getContext('2d');
     this.compactQuery = matchMedia('(max-width: 760px), (max-height: 560px)');
