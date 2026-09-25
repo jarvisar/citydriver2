@@ -31,6 +31,7 @@ const spire = new THREE.ConeGeometry(1, 1, 4);
 const ring = new THREE.TorusGeometry(1, .42, 10, 22);
 // The half-disc that closes each end of a vaulted roof
 const gable = new THREE.CircleGeometry(1, 14, 0, Math.PI);
+const frontGlazing = new THREE.PlaneGeometry(1, 1);
 const STONE = '#e3d7bd', TRIM = '#efe4c9', COPPER = '#62958b', GLASS = '#5e8a9a', LAWN = '#7f9a5e', PAVING = '#c9bfa9';
 
 const KIND = {
@@ -50,7 +51,13 @@ export function buildLandmark(c, lot, place) {
   const at = (along, into) => ({ x: cx + tx * along + nx * into, s: cs + ty * along + ny * into });
   const localRing = (w, d, into = 0, along = 0) => [[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]].map(([u, v]) => { const p = at(u + along, v + into); return { x: p.x, y: p.s }; });
   const along = alongYaw(tx, ty), facing = faceYaw(-nx, -ny);
-  const box = (u, y, v, w, h, d, colour, kind = 'solid') => { const p = at(u, v); c.box(p.x, y, p.s, w, h, d, colour, kind, along); };
+  const box = (u, y, v, w, h, d, colour, kind = 'solid') => {
+    // All glazed boxes here face the street. At skyline distance their
+    // fronts join the ordinary windows' plane batch, without another draw.
+    const p = at(u, v - (c.distant && kind === 'glass' ? d / 2 : 0));
+    if (c.distant && kind === 'glass') c.item('distant-glass', frontGlazing, c.materials.glass, [p.x, y, -p.s], [w, h, 1], colour, facing);
+    else c.box(p.x, y, p.s, w, h, d, colour, kind, along);
+  };
   const colour = place.color, wall = kind === 'firehouse' ? '#a4574a' : kind === 'diner' ? '#e8c9c9' : kind === 'tower' ? '#d8c7a8' : STONE;
   const bodies = c.bodies, front = -D / 2;
   const sign = discoverySignFor(place.type, place.variant);
@@ -62,7 +69,7 @@ export function buildLandmark(c, lot, place) {
   // mounted a hand's width proud of the wall at `wall`. The patch of wall
   // round it is kept clear of windows and pilasters (see edgeFacade).
   const boards = [];
-  const keepClear = (wall, halfWidth, bottom, top) => boards.push({ wall, from: -halfWidth, to: halfWidth, bottom, top });
+  const keepClear = (wall, halfWidth, bottom, top, u = 0) => boards.push({ wall, from: u - halfWidth, to: u + halfWidth, bottom, top });
   const nameBoard = (bottom, top, widthMax, wall = front, fits = () => true) => {
     if (!sign) return;
     let h = Math.min(top - bottom - .2, Math.min(widthMax, 8.5) / sign.aspect, 3.8);
@@ -99,6 +106,16 @@ export function buildLandmark(c, lot, place) {
       }
       if (f.span >= 3) edgeWindows(c, { type, variation: 1, accent: colour }, f, bottom, floors, random);
     }
+  };
+  // A way in beneath the canopy or portico. Reserve it before the window
+  // pass so that no sill or pilaster runs across the doorway. The same few
+  // pieces serve a glazed pair of public doors or a single staff door.
+  const entrance = (u = 0, wall = front, w = 2.8, h = 3.1, level = .1) => {
+    keepClear(wall, w / 2 + .35, G + level, G + level + h + .3, u);
+    box(u, G + level + h / 2, wall - .12, w + .3, h + .24, .16, TRIM);
+    box(u, G + level + h / 2, wall - .23, w, h, .08, '#375563', 'glass');
+    if (w > 1.6) box(u, G + level + h / 2, wall - .3, .1, h, .08, TRIM);
+    if (!c.distant) for (const side of w > 1.6 ? [-1, 1] : [1]) box(u + side * (w > 1.6 ? .18 : w * .32), G + level + 1.25, wall - .36, .06, .42, .08, '#cfb88a');
   };
   const civic = kind === 'hall' || place.type === 'station';
   const court = Math.min(W + 2, civic ? Math.max(14, W * .7) : Math.max(8, W * .5));
@@ -197,7 +214,10 @@ export function buildLandmark(c, lot, place) {
   const forecourtSign = () => plinthSign(plinthAt.u, plinthAt.into);
   const steps = (w, into) => { for (let k = 0; k < 3; k++) box(0, G + .1 + k * .2, into - 1.6 + k * .5, w + 2 - k * .6, .2 + k * .2, 1.2, TRIM); };
   const portico = (w, height, depth = 3.6) => {
-    const count = Math.max(4, Math.round(w / 3.2)), spacing = w / count;
+    // Paired columns leave a central opening; the steps meet a landing all
+    // the way back to the door rather than ending in a drop behind them.
+    const count = Math.max(4, Math.round(w / 6.4) * 2), spacing = w / count;
+    box(0, G + .4, front - depth / 2, w + .8, .8, depth, TRIM);
     for (let k = 0; k < count; k++) { const p = at(-w / 2 + (k + .5) * spacing, front - depth / 2); round(c, p.x, G + height / 2, p.s, .9, height, .9, TRIM); }
     box(0, G + height + .6, front - depth / 2 + .2, w + 1, 1.2, depth + .6, TRIM);
     // A pediment of two wedges meeting at the middle
@@ -245,6 +265,7 @@ export function buildLandmark(c, lot, place) {
     windows(body, G + 1, Math.floor((H - 2) / 3.6));
     const porch = Math.min(W * .62, 22);
     if (place.type === 'hospital') {
+      entrance(0, front, 3.8, 3.35);
       // A canopy over the ambulance entrance and a red cross on the front
       box(0, G + 4, front - 2.1, Math.min(14, W * .6), .4, 4.2, TRIM);
       for (const side of [-1, 1]) { const p = at(side * Math.min(6.5, W * .28), front - 3.8); round(c, p.x, G + 2, p.s, .4, 4, .4, TRIM); }
@@ -257,6 +278,7 @@ export function buildLandmark(c, lot, place) {
       vault(W - 1.2, Math.min(5, W * .2), D - 1.2, G + H, '#c07a55', c.materials.solid, '#d8b48f');
       // A tiled arcade across the front, turquoise piers under a terracotta band
       const bays = Math.max(3, Math.round(porch / 3.4));
+      entrance(bays % 2 ? 0 : porch / bays / 2, front, Math.min(2.5, porch / bays - 1.1));
       for (let k = 0; k <= bays; k++) box(-porch / 2 + k * porch / bays, G + 2.1, front - 1.4, .8, 4.2, .8, '#4aa3a0');
       box(0, G + 4.6, front - 1.4, porch + .8, .8, 1.2, '#c07a55');
       box(0, G + 5.05, front - 1.4, porch + 1.2, .12, 1.4, TRIM);
@@ -264,6 +286,7 @@ export function buildLandmark(c, lot, place) {
       nameBoard(G + 5.9, G + H - 1, porch);
     } else {
       portico(porch, H - 3.2);
+      entrance(0, front, Math.min(2.8, porch / Math.max(4, Math.round(porch / 6.4) * 2) - 1.2), 3.6, .8);
       forecourtSign();
     }
     if (place.type === 'cityhall' || place.type === 'museum') domeOn(G + H + .5, Math.min(W, D) * .2);
@@ -281,6 +304,7 @@ export function buildLandmark(c, lot, place) {
     if (calcPolygonArea(crown) > 20) { bodies.prism(crown, G + H2, G + H2 + 4, COPPER); bodies.polygon(crown, G + H2 + 4, '#4d7a72'); }
     bodies.polygon(tower, G + H2, '#8a9189');
     box(0, G + 4.2, front - 1.7, Math.min(12, W * .5), .45, 3.4, COPPER);
+    entrance(0, front, 3.4, 3.5);
     nameBoard(G + 5.5, G + H1 - .6, W * .7);
     top = G + H2 + 4;
   } else if (kind === 'shed') {
@@ -291,7 +315,10 @@ export function buildLandmark(c, lot, place) {
     windows(body, G + 1, 1, 'loft');
     // A glazed entrance, and the name on the gable above it (or, where the
     // station's clock is, over the entrance)
-    box(0, G + 3.2, front - .15, W * .55, 5, .2, GLASS, 'glass');
+    keepClear(front, W * .275 + .35, G + .4, G + 5.9);
+    box(0, G + 3.2, front - .08, W * .55 + .3, 5.3, .12, TRIM);
+    box(0, G + 3.2, front - .2, W * .55, 5, .1, GLASS, 'glass');
+    entrance(0, front - .2, 3.4, place.type === 'market' || place.type === 'farmersmarket' ? 2.65 : 3.5);
     if (place.type === 'station') {
       clock(c, at(0, front - .2).x, G + H + rise * .45, at(0, front - .2).s, Math.min(3.4, rise * .7), facing);
       nameBoard(G + 5.9, G + H - .3, W * .5);
@@ -314,6 +341,7 @@ export function buildLandmark(c, lot, place) {
     box(0, G + 4.3, front - 2, Math.min(W * .8, 18), 1, 4, '#2c2c34');
     if (!c.distant) box(0, G + 4.3, front - 4.05, Math.min(W * .8, 18), .5, .1, '#ffd98a', 'lit');
     nameBoard(G + 6.2, G + H - 1.4, W * .75);
+    for (const side of [-1, 1]) entrance(side * 1.65, front, 2.6, 3.2);
     top = G + H;
   } else if (kind === 'observatory') {
     const H = 6, body = localRing(W, D, D * .1), radius = Math.min(W, D) * .3;
@@ -321,7 +349,8 @@ export function buildLandmark(c, lot, place) {
     cornice(bodies, body, G + H, TRIM, '#8d9a92', STONE, .6, []);
     windows(body, G + .8, 1);
     domeOn(G + H, radius, 6, 0, D * .1);
-    nameBoard(G + 1.5, G + H - .7, W * .6, front + D * .1);
+    nameBoard(G + 3.8, G + H - .4, W * .6, front + D * .1);
+    entrance(0, front + D * .1, 2.6);
     top = G + H + 6 + radius;
   } else if (kind === 'club') {
     // A clubhouse at the back, and courts side by side in front of it:
@@ -352,6 +381,7 @@ export function buildLandmark(c, lot, place) {
       }
     }
     nameBoard(G + 1.9, G + H - .5, W * .5, D / 2 - depth);
+    entrance(W * .3, D / 2 - depth, 2.6);
     top = G + H;
   } else if (kind === 'firehouse') {
     const H = 9, body = localRing(W, D);
@@ -359,7 +389,14 @@ export function buildLandmark(c, lot, place) {
     cornice(bodies, body, G + H, TRIM, '#7e7a74', wall, .8, []);
     windows(body, G + 5, 1, 'brick');
     const doors = Math.max(2, Math.min(3, Math.floor(W / 7)));
-    for (let k = 0; k < doors; k++) box((k - (doors - 1) / 2) * W / (doors + .5), G + 2.3, front - .12, 4.4, 4.6, .2, '#b8453a');
+    for (let k = 0; k < doors; k++) {
+      const u = (k - (doors - 1) / 2) * W / (doors + .5);
+      box(u, G + 2.35, front - .08, 4.7, 4.7, .12, TRIM);
+      box(u, G + 2.3, front - .2, 4.4, 4.6, .1, '#b8453a');
+      box(u, G + 3.25, front - .28, 3.7, .65, .06, '#375563', 'glass');
+      if (!c.distant) for (const height of [1.2, 2.2]) box(u, G + height, front - .28, 4.2, .06, .06, '#a26b59');
+    }
+    entrance(W / 2 - 1.1, front, 1.2, 2.6);
     // The hose tower
     const p = at(W / 2 - 2.5, D / 2 - 2.5);
     c.box(p.x, G + 8.5, p.s, 4, 17, 4, wall, 'solid', along);
@@ -373,6 +410,7 @@ export function buildLandmark(c, lot, place) {
     bodies.prism(body, G, G + H, wall);
     cornice(bodies, body, G + H, '#f5eee0', '#e2a3b5', wall, .6, []);
     box(0, G + 2.1, -D / 2 - .15, W * .7, 2.4, .2, GLASS, 'glass');
+    entrance(0, front - .2, 2.4);
     // The roof sign: the name on a board standing on legs just behind the
     // parapet, clear over it, and the giant donut on its posts behind and
     // above the board, facing the street, so that neither hides the other
@@ -395,6 +433,7 @@ export function buildLandmark(c, lot, place) {
     vault(W * .8, Math.min(W * .25, 6), D * .7, G + H, '#8fb9b5', c.materials.glass, '#8fb9b5');
     for (let k = -2; k <= 2; k++) { const q = at(k * W * .16, front + D * .15 + .1); round(c, q.x, G + H / 2 + .5, q.s, .22, H - 1, .22, '#e9e5d8'); }
     plinthSign(-(W * .25), front + D * .15 - 2.2);
+    entrance(0, front + D * .15, 2.6, 3.4);
     top = G + H + 6;
   } else {
     // An open square: paving, with a clock tower or a sculpture and a pool

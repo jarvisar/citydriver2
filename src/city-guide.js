@@ -62,7 +62,7 @@ export class CityGuide {
     if (this.taxi?.running) { this.updateTaxi(); return; }
     attribute(this.canvas, 'title', 'Local street map');
     hide($('taxi-offer'), true);
-    attribute(this.canvas, 'aria-label', 'Local street map. North is up; the white arrow is your car.');
+    attribute(this.canvas, 'aria-label', 'Local street map. Your heading is up; the white arrow is your car.');
     if (this.expanded) this.draw(vehicle);
   }
   updateTaxi() {
@@ -75,8 +75,8 @@ export class CityGuide {
     hide($('taxi-offer'), !this.expanded || !offer);
     attribute(this.canvas, 'title', run.status === 'pickup' ? 'Nearby passengers' : 'Route to the drop-off');
     attribute(this.canvas, 'aria-label', run.status === 'pickup'
-      ? 'Local street map. North is up; the white arrow is your car. Dots mark waiting passengers, red for short trips through orange and yellow to green for long ones; numbers show group size.'
-      : 'Local street map. North is up; the white arrow is your car. Gold marks the current drop-off; a dashed line leads to the next group stop.');
+      ? 'Local street map. Your heading is up; the white arrow is your car. Dots mark waiting passengers, red for short trips through orange and yellow to green for long ones; numbers show group size.'
+      : 'Local street map. Your heading is up; the white arrow is your car. Gold marks the current drop-off; a dashed line leads to the next group stop.');
     if (this.expanded) this.draw(vehicle);
   }
   draw(vehicle) {
@@ -93,7 +93,12 @@ export class CityGuide {
     if (this.canvas.width !== pixelWidth || this.canvas.height !== pixelHeight) { this.canvas.width = pixelWidth; this.canvas.height = pixelHeight; }
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0); ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = '#20383e'; ctx.fillRect(0, 0, width, height);
-    const point = p => [width / 2 + (p.u - vehicle.u) * scale, height / 2 - (p.s - vehicle.s) * scale];
+    // Roads and destinations share the car's frame; marker labels stay upright.
+    const heading = vehicle.heading ?? 0, sin = Math.sin(heading), cos = Math.cos(heading);
+    const point = p => {
+      const du = p.u - vehicle.u, ds = p.s - vehicle.s;
+      return [width / 2 + (du * cos - ds * sin) * scale, height / 2 - (du * sin + ds * cos) * scale];
+    };
     this.mapCache.draw(ctx, vehicle, scale, width, height);
     if (nextStop) {
       ctx.save(); ctx.strokeStyle = '#95b8b9'; ctx.lineWidth = 2; ctx.setLineDash([3, 4]);
@@ -125,10 +130,15 @@ export class CityGuide {
         ctx.fillStyle = '#f5d69c'; ctx.beginPath(); ctx.moveTo(5, 0); ctx.lineTo(-4, -4); ctx.lineTo(-4, 4); ctx.closePath(); ctx.fill(); ctx.restore();
       }
     }
-    ctx.save(); ctx.translate(width / 2, height / 2); ctx.rotate(vehicle.heading);
+    ctx.save(); ctx.translate(width / 2, height / 2);
     ctx.beginPath(); ctx.moveTo(0, -7); ctx.lineTo(5, 5); ctx.lineTo(0, 2); ctx.lineTo(-5, 5); ctx.closePath();
     ctx.fillStyle = '#fff9e9'; ctx.strokeStyle = '#163038'; ctx.lineWidth = 2; ctx.stroke(); ctx.fill(); ctx.restore();
-    ctx.fillStyle = '#e2eee1'; ctx.font = 'bold 9px sans-serif'; ctx.fillText('N ↑', 10, 16);
+    // A small compass keeps north available while the player always faces up.
+    ctx.save(); ctx.translate(21, 22); ctx.rotate(-heading);
+    ctx.strokeStyle = '#e2eee1'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(0, 5); ctx.lineTo(0, -5); ctx.moveTo(-3, -2); ctx.lineTo(0, -5); ctx.lineTo(3, -2); ctx.stroke(); ctx.restore();
+    ctx.save(); ctx.fillStyle = '#e2eee1'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('N', 21 - sin * 13, 22 - cos * 13); ctx.restore();
     ctx.fillStyle = '#b3c4ba'; ctx.font = '8px sans-serif'; ctx.fillText('100 m', width - 37, height - 9);
     ctx.fillRect(width - 43, height - 19, 100 * scale, 1);
   }

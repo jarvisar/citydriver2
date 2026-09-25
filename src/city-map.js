@@ -31,8 +31,10 @@ export class CityMapCache {
   }
   draw(ctx, vehicle, scale, width, height) {
     ctx.save();
-    ctx.translate(width / 2 - vehicle.u * scale, height / 2 + vehicle.s * scale);
+    ctx.translate(width / 2, height / 2);
+    ctx.rotate(-(vehicle.heading ?? 0));
     ctx.scale(scale, -scale);
+    ctx.translate(-vehicle.u, -vehicle.s);
     ctx.fillStyle = '#3a5155'; ctx.fill(this.blocks);
     ctx.fillStyle = '#48626a'; ctx.fill(this.lots);
     ctx.fillStyle = '#4e705d'; ctx.fill(this.parks);
