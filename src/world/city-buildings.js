@@ -274,6 +274,34 @@ function shopSlot(lot) {
   return { shopBlock: (lot.block + Math.imul(CITY.seed, 7919)) | 0, shopSlot: lot.index - (firstLots.get(lot.block) ?? lot.index) };
 }
 
+// Lot subdivision also calls an exposed edge beside a yard or a missing lot
+// a 'side'. Only a wall with another plot close outside it is a party wall.
+// Keep three metres of outlook over the whole face, including concave corners.
+export function wallHasOutlook(ring, i, neighbours) {
+  const a = ring[i], b = ring[(i + 1) % ring.length], length = edgeLength(ring, i);
+  if (length < 3.2) return false;
+  const tx = (b.x - a.x) / length, ty = (b.y - a.y) / length;
+  const at = (along, out) => ({ x: a.x + tx * along + ty * out, y: a.y + ty * along - tx * out });
+  const strip = [at(.6, .05), at(length - .6, .05), at(length - .6, 3), at(.6, 3)], bounds = polygonBounds(strip);
+  return [ring, ...neighbours].every(polygon => {
+    const other = polygonBounds(polygon);
+    if (other.maxX < bounds.minX || other.minX > bounds.maxX || other.maxY < bounds.minY || other.minY > bounds.maxY) return true;
+    return !intersection([strip], [polygon]).some(piece => calcPolygonArea(piece.outer) > .01);
+  });
+}
+let plotsByBlock = null;
+function neighboursOf(lot) {
+  if (!plotsByBlock) {
+    plotsByBlock = new Map();
+    CITY.lots.forEach((polygon, index) => {
+      const block = CITY.lotBlocks[index];
+      if (!plotsByBlock.has(block)) plotsByBlock.set(block, []);
+      plotsByBlock.get(block).push({ polygon, index });
+    });
+  }
+  return (plotsByBlock.get(lot.block) ?? []).filter(p => p.index !== lot.index).map(p => p.polygon);
+}
+
 // What stands on a lot: a building shaped like the lot, or a garden where
 // the lot is too small or too awkward for one.
 export function planLot(c, lot) {
@@ -380,7 +408,9 @@ export function planLot(c, lot) {
   const domestic = !shopfront && (house || type === 'townhouse' || (type === 'pavilion' && insets.lawn));
   // Windows on the street, on the yard when there is room behind, and on the
   // sides only where there is a gap to look out of
-  const windows = wallKinds.map((kind, i) => street[i] || (kind === 'rear' && (rear > 2.4 || footprintOut !== footprint)) || (kind === 'side' && insets.side > 1.5));
+  const neighbours = lot.index === undefined ? null : neighboursOf(lot);
+  const windows = wallKinds.map((kind, i) => street[i] || (kind === 'rear' && (rear > 2.4 || footprintOut !== footprint))
+    || (kind === 'side' && (insets.side > 1.5 || Boolean(neighbours && wallHasOutlook(footprintOut, i, neighbours)))));
   return { kind: 'building', lot, district, footprint: local(footprintOut, c), lotLocal: local(polygon, c), court: local(court, c), street, windows, type, floors, area: massedArea, breadth,
     wall: pick(style.walls, random), accent: pick(ACCENTS, random), roof: pick(pitched ? TILES[district] ?? ROOFS : ROOFS, random), roofType: house ? 'hip' : pitched ? 'gable' : stepped ? 'terrace' : 'flat', eaves,
     setbackFloors: stepped ? Math.max(2, Math.floor(floors * .57)) : floors, seed: (lot.seed + 9973) >>> 0, variation: integer(random, 0, 3),
@@ -914,6 +944,7 @@ function buildBuilding(c, b) {
     f.street = b.street[i];
     if (f.span < 2.5) continue;
     if (f.street) groundFloor(c, b, f, base, i === primary, random);
+    else if (b.windows[i] && (b.type === 'office' || b.type === 'atrium')) groundFloor(c, { ...b, shopfront: false }, f, base, false, random);
     // (a detached house's ground floor is a storey like the others, windowed
     // round its garden)
     const garden = b.domestic && b.lawn && !f.street;

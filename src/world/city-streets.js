@@ -11,6 +11,7 @@ import { navGraph } from './nav-graph.js';
 import { cityPlaces, placeForBlock } from '../city-exploration.js';
 import { cityIslands, islandFor } from './city-islands.js';
 import { clipInside } from '../mapgen/road-network.js';
+import { rectanglePolygon } from './city-surfaces.js';
 import { frontSetback, treeRoom } from './city-buildings.js';
 import { yardParking, yardDrive, YARD_BAY, PARKED_MODELS } from './city-yards.js';
 export { yardParking, YARD_BAY } from './city-yards.js';
@@ -634,7 +635,7 @@ export function placeStreetFurniture(nav, bridges, add) {
   // clear of the junctions. The ring of a kerb runs anticlockwise, so the road
   // is on the right and the pavement on the left.
   const kerbs = [...CITY.blocks.map(block => ({ ring: block.kerb, block })), ...CITY.parkPlans.filter(park => !park.square).map(park => ({ ring: park.kerb, park }))];
-  for (const { ring, block } of kerbs) {
+  for (const { ring, block, park } of kerbs) {
     if (ring.length < 3) continue;
     const loop = [...ring, ring[0]], perimeter = polylineLength(loop);
     if (perimeter < 40) continue;
@@ -700,7 +701,12 @@ export function placeStreetFurniture(nav, bridges, add) {
         let scale = Math.min(grown, treeRoom(room));
         if (scale < 4.8 || !free(x, y, 3, 'tree', TREE_CROWN * scale)) continue;
         if (shift && (inZone(x, y) || (scale = Math.min(grown, treeRoom(roomAt(x, y)))) < 4.8)) continue;
-        if (put({ kind: 'tree', u: x, s: y, scale }, 3)) break;
+        // A small soil opening, square to the kerb, wholly within the paved
+        // strip. Park lawns come closer to the kerb than building lots do.
+        const pit = rectanglePolygon(x, y, 1.8, 1.6, Math.atan2(p.ty, p.tx)).map(([x, y]) => ({ x, y }));
+        const inner = block?.inner ?? park?.lawn ?? [];
+        if (!pit.every(p => insidePolygon(p, ring) && !insidePolygon(p, inner) && !onRoadAt(p.y, p.x))) continue;
+        if (put({ kind: 'tree', u: x, s: y, scale, pit }, 3)) break;
       }
     }
   }
@@ -844,7 +850,11 @@ export function placeStreetFurniture(nav, bridges, add) {
       const ring = signedArea(lawn) > 0 ? lawn : lawn.slice().reverse();
       for (const inset of paved && entry.panels.length ? [4.5, 11.5] : [4.5]) for (const p of alongPolyline([...ring, ring[0]], paved ? 10 : 12, 5)) {
         const x = p.x - p.ty * inset, y = p.y + p.tx * inset;
-        if (onLawn(x, y) && pathClear(x, y) > 3 && parkClear(entry, x, y, 1.5)) put({ kind: 'tree', u: x, s: y, scale: 7.5 + random() * 2 }, 5);
+        if (onLawn(x, y) && pathClear(x, y) > 3 && parkClear(entry, x, y, 1.5)) {
+          const opening = rectanglePolygon(x, y, 1.8, 1.8, Math.atan2(p.ty, p.tx)).map(([x, y]) => ({ x, y }));
+          const pit = paved && opening.every(p => insidePolygon(p, lawn) && !entry.panels.some(panel => insidePolygon(p, panel.outer))) ? opening : null;
+          put({ kind: 'tree', u: x, s: y, scale: 7.5 + random() * 2, ...(pit ? { pit, pitLevel: PAVEMENT_LEVEL + .034 } : {}) }, 5);
+        }
       }
       // and a few in its lawns
       for (const panel of entry.panels) {

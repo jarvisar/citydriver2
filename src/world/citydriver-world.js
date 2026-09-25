@@ -232,7 +232,7 @@ export class CityChunk {
     this.plan = { seed: Math.floor(randomAt(ix, iz + 7102, CITY.seed) * 0xffffffff) >>> 0, kind: 'blocks', ix, iz };
     this.group = new THREE.Group(); this.group.name = `citydriver-block-${this.index}`;
     this.features = { colliders: [], bridges: [], buildings: [], discoveries: [], medians: [], junctions: [], signals: [], lamps: [] };
-    this.batches = new Map(); this.random = seededRandom(this.plan.seed); this.bodies = new Surface();
+    this.batches = new Map(); this.bodies = new Surface();
     this.lots = world.lotsByChunk.get(this.index) ?? []; this.neighbourLots = world.neighbourLots(ix, iz);
     this.furniture = world.furnitureByChunk.get(this.index) ?? [];
     this.construction = this.buildSteps();
@@ -345,11 +345,14 @@ export class CityChunk {
     this.item(name, cityAssets[name], this.materials.props, [x, y, -s], [1, 1, 1], '#ffffff', yaw, 0, ['shelter', 'tank', 'kiosk', 'bandstand'].includes(name));
   }
   tree(x, s, scale = 7) {
-    const index = this.random() < .28 ? 1 : 0, variant = cityTrees[index], p = [x, PAVEMENT_LEVEL, -s];
-    const width = scale * (.82 + this.random() * .24), size = [width, scale, width];
-    if (this.distant) this.box(x, PAVEMENT_LEVEL + scale * .24, s, .2, scale * .48, .2, '#625548');
-    else this.item(`tree-trunks-${index}`, variant.bark, this.materials.bark, p, size);
-    this.item(`tree-crowns-${index}`, variant.leaves, this.materials.leaves, p, size, pick(GREENS, this.random));
+    // An address owns its tree: extra garden trees in a detailed chunk must
+    // not change the street trees when the distant model hands over to it.
+    const random = seededRandom(Math.floor(randomAt(Math.round((this.east + x) * 10), Math.round((this.start + s) * 10), CITY.seed) * 0xffffffff));
+    const index = random() < .28 ? 1 : 0, variant = cityTrees[index], p = [x, PAVEMENT_LEVEL, -s];
+    const width = scale * (.82 + random() * .24), size = [width, scale, width], colour = pick(GREENS, random), yaw = random() * Math.PI * 2;
+    if (this.distant) this.box(x, PAVEMENT_LEVEL + scale * .24, s, width * .085, scale * .48, width * .085, '#625548', 'solid', yaw);
+    else this.item(`tree-trunks-${index}`, variant.bark, this.materials.bark, p, size, '#ffffff', yaw);
+    this.item(`tree-crowns-${index}`, variant.leaves, this.materials.leaves, p, size, colour, yaw);
     this.features.trees ??= [];
     this.features.trees.push({ x, s, scale });
     this.post(x, s, .28);
@@ -361,7 +364,17 @@ export class CityChunk {
       if (piece.kind === 'lamp') { this.prop('lamp', x, s, piece.yaw); this.post(x, s, .25); }
       // Two lamps back to back on one column, an arm over each carriageway
       else if (piece.kind === 'median-lamp') { for (const yaw of [piece.yaw, piece.yaw + Math.PI]) this.prop('lamp', x, s, yaw); this.post(x, s, .25); }
-      else if (piece.kind === 'tree') this.tree(x, s, piece.scale);
+      else if (piece.kind === 'tree') {
+        this.tree(x, s, piece.scale);
+        if (piece.pit && !this.distant) {
+          const rim = piece.pit.map(p => ({ x: p.x - this.east, y: p.y - this.start })), soil = offsetPolygon(rim, -.12);
+          if (soil.length >= 3) {
+            const level = piece.pitLevel ?? PAVEMENT_LEVEL + .014;
+            this.bodies.polygon(rim, level, '#989b8b', null, true, [soil]);
+            this.bodies.polygon(soil, level, '#75664e');
+          }
+        }
+      }
       else if (piece.kind === 'bench') { this.prop('bench', x, s, piece.yaw); this.rigid(x, s, () => this.solid(x, s, .7, 2), itemFrame(piece.s, piece.u, piece.yaw)); }
       else if (piece.kind === 'bin') { this.prop('bin', x, s); this.post(x, s, .36); }
       else if (piece.kind === 'bollard') { this.prop('bollard', x, s); this.post(x, s, .16); }

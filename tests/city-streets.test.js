@@ -23,6 +23,21 @@ const furniture = (() => { const pieces = []; placeStreetFurniture(navGraph(), f
 const front = yaw => ({ x: Math.sin(yaw), y: -Math.cos(yaw) });
 const side = yaw => ({ x: Math.cos(yaw), y: Math.sin(yaw) });
 
+test('paved tree openings stay within the kerb and out of building lots and lawns', () => {
+  const pits = furniture.filter(p => p.kind === 'tree' && p.pit);
+  assert.ok(pits.length > 1000, 'street trees have soil openings');
+  for (const tree of pits) {
+    assert.ok(insidePolygon({ x: tree.u, y: tree.s }, tree.pit));
+    const street = tree.pitLevel === undefined, paving = CITY.pavement.find(tree.u, tree.s);
+    const inner = paving?.kind === 'block' ? CITY.blocks[paving.block].inner : paving?.kind === 'park' ? CITY.parkPlans[paving.park].lawn : [];
+    for (const p of tree.pit) {
+      assert.ok(CITY.pavement.find(p.x, p.y) && !onRoadAt(p.y, p.x), `tree opening over a kerb at ${p.x},${p.y}`);
+      if (street) assert.ok(!insidePolygon(p, inner), 'the opening stays in the pavement strip');
+    }
+  }
+  assert.ok(furniture.some(p => p.kind === 'tree' && p.median && !p.pit), 'trees in median lawns need no paved opening');
+});
+
 test('lamps, trees, signs and signals stand on the pavement, never on a carriageway or in a junction', () => {
   const nav = navGraph(), geometry = junctionGeometry(nav);
   const kinds = new Set(furniture.map(piece => piece.kind));
