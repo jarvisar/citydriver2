@@ -115,6 +115,8 @@ async function boot() {
     let journey = 'city';
     try { const saved = localStorage.getItem(journeyStorageKey); if (saved && Object.hasOwn(JOURNEYS, saved)) journey = saved; } catch { /* Storage is optional. */ }
     let world = new JOURNEYS[journey].World(scene);
+    // (whichever world is current: a route change replaces it)
+    rendering.addCuller((camera, shadow) => world.cull?.(camera, shadow));
     const weather = new CityWeather(scene);
     try { weather.setMode(localStorage.getItem('citydriver-weather') ?? 'auto', { immediate: true }); } catch { /* Storage is optional. */ }
     let changingJourney = true, journeyWasPaused = false;

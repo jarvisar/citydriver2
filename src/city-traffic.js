@@ -146,15 +146,20 @@ export class CityTraffic {
   // the corner makes it look like, and nor are two cars crossing a junction
   // on paths that do not meet.
   following(car, player) {
-    const reach = Math.min(70, car.speed * car.speed / (2 * FOLLOW_DECEL) + 18), path = [];
-    for (let d = 1.5; d <= reach; d += 1.5) { const p = this.ahead(car, d); if (!p) break; path.push(d, p.u, p.s); }
-    const crossing = new Set([...(car.claim?.nodes ?? []), ...(car.leaving?.nodes ?? [])]);
+    const reach = Math.min(70, car.speed * car.speed / (2 * FOLLOW_DECEL) + 18);
+    // (the path ahead is walked only once something is near enough to be on it)
+    let path = null, crossing = null;
     let limit = Infinity;
     for (let i = 0; i <= this.vehicles.length; i++) {
       const other = i === this.vehicles.length ? player : this.vehicles[i];
       if (other === car || (other !== player && !other.edge) || !Number.isFinite(other.heading)) continue;
       if (Math.abs(other.s - car.s) > reach + 6 || Math.abs(other.u - car.u) > reach + 6) continue;
+      crossing ??= new Set([...(car.claim?.nodes ?? []), ...(car.leaving?.nodes ?? [])]);
       if (other !== player && crossing.size && this.passes(car, other, crossing)) continue;
+      if (!path) {
+        path = [];
+        for (let d = 1.5; d <= reach; d += 1.5) { const p = this.ahead(car, d); if (!p) break; path.push(d, p.u, p.s); }
+      }
       const length = other.spec?.length ?? 4.4, reachAlong = length / 2 * .62, clear = (car.spec.width + (other.spec?.width ?? 2)) / 2 + .2;
       const hx = Math.sin(other.heading) * reachAlong, hy = Math.cos(other.heading) * reachAlong;
       const discs = [other.u, other.s, other.u + hx, other.s + hy, other.u - hx, other.s - hy];

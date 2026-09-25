@@ -13,6 +13,9 @@ export class CarSilhouette {
       toneMapped: false, fog: false,
     });
     this.parts = new Map();
+    // A stand-in compiled with the city before any car is outlined, so the
+    // first overhead view does not stall on this program; it is never drawn
+    this.warmup = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), this.material);
     this.showPart = source => {
       const part = this.parts.get(source);
       if (part) part.mesh.visible = source.material.visible !== false;

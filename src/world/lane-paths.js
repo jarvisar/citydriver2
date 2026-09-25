@@ -134,11 +134,12 @@ function turning(nav, edge, direction, next) {
   }
   if (!candidates.length) candidates.push(between(start0, end0));
   // How many metres of the car leave the carriageway: its centre, or its
-  // inside flank, half a car toward the corner, which is what meets the kerb
-  const offRoad = path => {
+  // inside flank, half a car toward the corner, which is what meets the kerb.
+  // Counting stops once the curve is well past losing (more than `enough`).
+  const offRoad = (path, enough = Infinity) => {
     const first = path.pose(0), last = path.pose(path.length), side = Math.sign(first.tx * last.ty - first.ty * last.tx) || 1;
     let off = 0;
-    for (let d = 0; d <= path.length; d += .5) {
+    for (let d = 0; d <= path.length && off <= enough; d += .5) {
       const p = path.pose(d), u = p.u - p.ty * side * CLEARANCE * .7, v = p.s + p.tx * side * CLEARANCE * .7;
       if (surfaceAt(p.s, p.u) !== 'road' || surfaceAt(v, u) !== 'road') off += .5;
     }
@@ -146,10 +147,16 @@ function turning(nav, edge, direction, next) {
   };
   // At a car's turning circle or wider, on the carriageway all the way round,
   // the widest; failing that, the one that leaves it least. A turning circle
-  // that brushes a kerb still beats a pirouette that does not.
+  // that brushes a kerb still beats a pirouette that does not. Leaving the
+  // road only lowers a score, so a curve that could not beat the best so far
+  // even on the road all the way round is never walked, and one is walked only
+  // until it has lost by a clear metre: the same curve wins either way.
   let best = null, bestScore = -Infinity;
   for (const path of candidates) {
-    const score = (path.radius >= SNUG ? 1000 : 0) - offRoad(path) * 20 + Math.min(path.radius, 40) - path.length * .01;
+    const onRoad = (path.radius >= SNUG ? 1000 : 0) + Math.min(path.radius, 40) - path.length * .01;
+    if (!(onRoad > bestScore)) continue;
+    const off = offRoad(path, (onRoad - bestScore) / 20 + 1);
+    const score = (path.radius >= SNUG ? 1000 : 0) - off * 20 + Math.min(path.radius, 40) - path.length * .01;
     if (score > bestScore) { bestScore = score; best = path; }
   }
   return best;

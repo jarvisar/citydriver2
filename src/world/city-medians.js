@@ -62,6 +62,7 @@ export function cityMedians(nav = navGraph()) {
     list.push(median);
     index.add(polygon, median);
   }
+  index.seal();
   medians = { nav, list, index };
   return medians;
 }

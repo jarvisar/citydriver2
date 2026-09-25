@@ -4,8 +4,9 @@ import * as THREE from 'three';
 import { CitydriverWorld, CityChunk } from '../src/world/citydriver-world.js';
 import { planLot } from '../src/world/city-buildings.js';
 import { cityTrees } from '../src/world/city-assets.js';
-import { cityCell, CITY } from '../src/world/city.js';
+import { cityCell, CITY, CITY_CELL } from '../src/world/city.js';
 import { journeyStart, PAVEMENT_LEVEL, roadAt } from '../src/world/city-route.js';
+import { setResidentWindow } from '../src/world/resident.js';
 import { insidePolygon, distanceToPolyline } from '../src/mapgen/polygon-util.js';
 import { collideScenery } from '../src/collision.js';
 import { DrivingController } from '../src/vehicle.js';
@@ -144,5 +145,80 @@ test('roofs follow the buildings under them and trees keep their crowns off the 
       chunk.dispose();
     }
     assert.ok(trees > 2000, `${trees} trees`);
+  } finally { world.dispose(); }
+});
+
+// Basic detail keeps one ring of detailed chunks. Crossing into a cell used to
+// build its new ring at once, a long stall on a phone; the ring starts a whole
+// cell ahead, so it streams over later frames, is built ahead of time when
+// the car is heading for it, and what the car has just left is kept aside.
+test('at the lowest detail the ring ahead streams in, is built ahead of time, and the ring left behind is kept', () => {
+  setResidentWindow({ behind: 1, ahead: 3 });
+  const scene = new THREE.Scene(), world = new CitydriverWorld(scene);
+  try {
+    const start = journeyStart(), cell = cityCell(start.s, start.u), s = (cell.iz + .5) * CITY_CELL, middle = (cell.ix + .5) * CITY_CELL;
+    const key = (ix, iz) => `${ix},${iz}`, column = ix => [-1, 0, 1].map(dz => key(ix, cell.iz + dz));
+    world.update(s, middle); while (world.pending.length) world.update(s, middle);
+    assert.equal(world.radius, 1); assert.equal(world.chunks.size, 9);
+    const left = column(cell.ix - 1).map(k => world.chunks.get(k));
+    // A metre into the next cell east: the new column is a cell ahead and waits
+    world.update(s, (cell.ix + 1) * CITY_CELL + 1, { budgetMs: 0 });
+    assert.deepEqual(world.pending.map(next => next.key).sort(), column(cell.ix + 2).sort());
+    assert.ok(column(cell.ix + 2).every(k => !world.chunks.has(k)), 'nothing a cell ahead is built at once');
+    for (const chunk of left) {
+      assert.ok(world.spare.get(chunk.index) === chunk && !chunk.group.parent, 'the column left behind is kept out of the scene');
+      assert.ok(world.distant.get(chunk.index).group.parent && world.distant.get(chunk.index).group.visible, 'and its skyline is back');
+    }
+    // Near enough for its colliders to reach the car, a chunk is built at once
+    world.update(s, (cell.ix + 2) * CITY_CELL - 70, { budgetMs: 0 });
+    assert.ok(world.chunks.has(key(cell.ix + 2, cell.iz)));
+    assert.equal(world.distant.get(key(cell.ix + 2, cell.iz)).group.parent, null, 'the skyline under it leaves the scene');
+    // Back again: the column left behind returns as it was, with no build
+    world.update(s, middle, { budgetMs: 0 });
+    assert.equal(world.pending.length, 0);
+    for (const chunk of left) assert.equal(world.chunks.get(chunk.index), chunk);
+    // Heading west in spare frame time, the column beyond is built ahead of the car
+    for (let u = middle; u > cell.ix * CITY_CELL + 4; u -= 10) world.update(s, u, { budgetMs: 1000 });
+    assert.ok(column(cell.ix - 2).every(k => world.spare.has(k)), 'the column ahead is ready');
+    world.update(s, cell.ix * CITY_CELL - 1, { budgetMs: 0 });
+    assert.equal(world.pending.length, 0, 'crossing into the next cell needs no build');
+    assert.ok(column(cell.ix - 2).every(k => world.chunks.has(k)));
+    assert.ok(world.spare.size <= world.spareLimit);
+  } finally { world.dispose(); setResidentWindow(); }
+  assert.equal(world.spare.size, 0);
+});
+
+test('whole chunks are culled only when neither the camera nor the sun could draw any of their meshes', () => {
+  const scene = new THREE.Scene(), world = new CitydriverWorld(scene);
+  try {
+    const start = journeyStart();
+    world.update(start.s, start.u); while (world.pending.length) world.update(start.s, start.u);
+    scene.updateMatrixWorld(true);
+    const camera = new THREE.PerspectiveCamera(60, 1.6, 1, 300);
+    camera.position.set(start.u, 30, -start.s); camera.lookAt(start.u + 100, 24, -start.s); camera.updateMatrixWorld();
+    const sun = new THREE.OrthographicCamera(-60, 60, 60, -60, 1, 500);
+    sun.position.set(start.u - 110, 240, -start.s + 100); sun.lookAt(start.u, 24, -start.s); sun.updateMatrixWorld();
+    const frustum = c => new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(c.projectionMatrix, c.matrixWorldInverse));
+    const view = frustum(camera), shadow = frustum(sun);
+    world.cull(camera, shadow);
+    const drawn = [...world.chunks.values(), ...[...world.distant.values()].filter(chunk => chunk.group.parent)];
+    let hidden = 0;
+    for (const chunk of drawn) {
+      if (chunk.group.visible) continue;
+      hidden++;
+      for (const mesh of chunk.group.children) assert.ok(!view.intersectsObject(mesh) && !shadow.intersectsObject(mesh), `${mesh.name} of ${chunk.index} was visible`);
+    }
+    assert.ok(hidden > drawn.length / 2 && hidden < drawn.length, `${hidden} of ${drawn.length} chunks culled`);
+    // Out of range, the skyline is not in the scene at all
+    for (const chunk of world.distant.values()) if (!chunk.group.parent) assert.equal(chunk.group.visible, false);
+    // A headset's pair of eyes is left to the renderer
+    world.cull(new THREE.ArrayCamera([camera]), shadow);
+    assert.ok(drawn.every(chunk => chunk.group.visible));
+    // The streets are tiled, so the renderer can leave out those off screen
+    for (const name of ['ground', 'roads', 'walls']) {
+      const tiles = world.staticGroup.children.filter(mesh => mesh.name === `citydriver-${name}`);
+      assert.ok(tiles.length > 10, `${tiles.length} ${name} tiles`);
+      assert.ok(tiles.filter(tile => view.intersectsObject(tile)).length < tiles.length / 4, `most ${name} tiles off screen`);
+    }
   } finally { world.dispose(); }
 });

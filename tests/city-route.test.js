@@ -67,3 +67,29 @@ test('the car drives forward from the start and stays on the road surface', () =
     assert.ok(onRoadAt(car.s, car.u), 'left the road while driving straight');
   } finally { car.disposeModel(); }
 });
+
+test('the pavement index answers as a full point-in-polygon test, before and after it is sealed', async () => {
+  const { PolygonIndex } = await import('../src/world/city.js');
+  let seed = 7; const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const index = new PolygonIndex(32), polygons = [];
+  for (let k = 0; k < 40; k++) {
+    const cx = (random() - .5) * 400, cy = (random() - .5) * 400, n = 5 + Math.floor(random() * 80), polygon = [];
+    for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2, r = 10 + random() * 60; polygon.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r }); }
+    index.add(polygon, k); polygons.push(polygon);
+  }
+  // (one trimmed in place after it was indexed, as the city trims promenades)
+  polygons[3].splice(0, polygons[3].length, ...polygons[3].filter((p, i) => i % 2 === 0));
+  const full = (x, y) => {
+    for (const { polygon, value, b } of index.cells.get(Math.floor(x / 32) * 65536 + Math.floor(y / 32)) ?? []) {
+      if (x >= b.minX && x <= b.maxX && y >= b.minY && y <= b.maxY && insidePolygon({ x, y }, polygon)) return value;
+    }
+    return null;
+  };
+  const points = [];
+  for (let i = 0; i < 20000; i++) points.push([(random() - .5) * 560, (random() - .5) * 560]);
+  for (const polygon of polygons) for (const p of polygon) for (const d of [0, 1e-9, -1e-6, .01]) points.push([p.x + d, p.y - d]);
+  for (const [x, y] of points) assert.equal(index.find(x, y), full(x, y));
+  index.seal();
+  for (const [x, y] of points) assert.equal(index.find(x, y), full(x, y), `at ${x},${y}`);
+  assert.ok(CITY.pavement.sealed, 'the city seals its pavement once its kerbs are final');
+});

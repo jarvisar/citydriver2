@@ -71,5 +71,30 @@ export class Surface {
     geometry.computeBoundingSphere();
     return geometry;
   }
+  // The same faces as build(), cut into square tiles by where each face's
+  // middle falls, each tile in its first-drawn order: the renderer can leave
+  // out the tiles off screen. Faces wider than a tile (the island's underlay,
+  // long straight roads) would stretch a tile's bounds, so they are kept together.
+  tiles(size) {
+    const p = this.positions, count = p.length / 9, tiles = new Map(), wide = [];
+    for (let face = 0; face < count; face++) {
+      const o = face * 9, x0 = p[o], x1 = p[o + 3], x2 = p[o + 6], z0 = p[o + 2], z1 = p[o + 5], z2 = p[o + 8];
+      if (Math.max(x0, x1, x2) - Math.min(x0, x1, x2) > size || Math.max(z0, z1, z2) - Math.min(z0, z1, z2) > size) { wide.push(face); continue; }
+      const key = `${Math.floor((x0 + x1 + x2) / 3 / size)},${Math.floor((z0 + z1 + z2) / 3 / size)}`;
+      if (!tiles.has(key)) tiles.set(key, []);
+      tiles.get(key).push(face);
+    }
+    const attributes = [['position', this.positions, 3], ['normal', this.normals, 3], ['color', this.colors, 3], ...(this.flows ? [['flowDirection', this.flows, 2]] : [])];
+    return [...tiles.values(), wide].filter(faces => faces.length).map(faces => {
+      const geometry = new THREE.BufferGeometry();
+      for (const [name, values, size] of attributes) {
+        const stride = size * 3, array = new Float32Array(faces.length * stride);
+        faces.forEach((face, i) => { for (let k = 0; k < stride; k++) array[i * stride + k] = values[face * stride + k]; });
+        geometry.setAttribute(name, new THREE.BufferAttribute(array, size));
+      }
+      geometry.computeBoundingSphere();
+      return geometry;
+    });
+  }
   get empty() { return this.positions.length === 0; }
 }

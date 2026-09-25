@@ -51,6 +51,16 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   const sun = new THREE.DirectionalLight('#fff1db', 2.5); sun.castShadow = true;
   sun.shadow.camera.near = 1; sun.shadow.camera.far = 650; sun.shadow.normalBias = .65; sun.shadow.bias = -.0003; sun.shadow.radius = 2;
   scene.add(sun); scene.add(sun.target);
+  // Whatever can leave out whole groups of meshes (the city's chunks) does so
+  // here, inside every render of the scene: after its matrices are updated and
+  // before the camera's and the sun's passes walk it, with both their frustums.
+  const cullers = new Set();
+  scene.onBeforeRender = (renderer, scene, camera) => {
+    if (!cullers.size) return;
+    sun.shadow.updateMatrices(sun);
+    const shadow = renderer.shadowMap.enabled && sun.castShadow ? sun.shadow.getFrustum() : null;
+    for (const cull of cullers) cull(camera, shadow);
+  };
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 1200);
   const thirdPerson = new ThirdPersonCamera();
   const firstPerson = new FirstPersonCamera();
@@ -202,7 +212,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   // while the browser compiles shaders, which phones feel the most.
   function precompile(warmupObjects = []) {
     const warmup = new THREE.Group(), fog = scene.fog, lens = activeCamera(), pending = [];
-    for (const object of warmupObjects) warmup.add(object);
+    for (const object of [...warmupObjects, carSilhouette.warmup]) warmup.add(object);
     const parallel = renderer.extensions.has('KHR_parallel_shader_compile');
     try {
       for (const variant of [null, drivingFog]) {
@@ -219,5 +229,6 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   let desktopView;
   function enterVR() { desktopView = view; setView(views.findIndex(view => view.thirdPerson)); }
   function exitVR() { if (desktopView !== undefined) setView(desktopView); desktopView = undefined; }
-  return { renderer, scene, graphics, ambientOcclusion, vrCamera, render, precompile, enterVR, exitVR, setView, toggleAO() { return graphics.toggleAmbientOcclusion(); }, get camera() { return activeCamera(); }, update, resize, recordFrame, setJourney, setWeather, get viewLabel() { return views[view].label; }, toggleView() { return setView((view + 1) % views.length); }, snap() { initialized = false; thirdPerson.snap(); firstPerson.snap(); } };
+  function addCuller(cull) { cullers.add(cull); return () => cullers.delete(cull); }
+  return { renderer, scene, graphics, ambientOcclusion, vrCamera, render, precompile, addCuller, enterVR, exitVR, setView, toggleAO() { return graphics.toggleAmbientOcclusion(); }, get camera() { return activeCamera(); }, update, resize, recordFrame, setJourney, setWeather, get viewLabel() { return views[view].label; }, toggleView() { return setView((view + 1) % views.length); }, snap() { initialized = false; thirdPerson.snap(); firstPerson.snap(); } };
 }

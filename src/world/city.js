@@ -104,25 +104,53 @@ class WaterMask {
 }
 
 // Polygons by cell, answering "which of these contains the point?"
+// A kerb can have hundreds of corners, but only the few edges near a cell can
+// change the answer for a point in it (insidePolygon's ray runs off in +x).
+// Once the polygons are final (the city trims some promenades in place after
+// indexing them), seal() keeps just those edges in each cell, the same way
+// round, so the answer is the same and much quicker to reach.
 export class PolygonIndex {
-  constructor(cell = 32) { this.cell = cell; this.cells = new Map(); }
+  constructor(cell = 32) { this.cell = cell; this.cells = new Map(); this.sealed = false; }
   add(polygon, value) {
     if (polygon.length < 3) return;
-    const b = polygonBounds(polygon), entry = { polygon, value, b };
+    const b = polygonBounds(polygon);
     for (let cx = Math.floor(b.minX / this.cell); cx <= Math.floor(b.maxX / this.cell); cx++) {
       for (let cy = Math.floor(b.minY / this.cell); cy <= Math.floor(b.maxY / this.cell); cy++) {
-        const key = cx * 65536 + cy;
+        const key = cx * 65536 + cy, entry = { polygon, value, b, cx, cy, edges: null };
         if (!this.cells.has(key)) this.cells.set(key, []);
         this.cells.get(key).push(entry);
+        if (this.sealed) this.cellEdges(entry);
       }
     }
+  }
+  seal() {
+    for (const list of this.cells.values()) for (const entry of list) this.cellEdges(entry);
+    this.sealed = true;
+  }
+  // (with a metre's margin round the cell for rounding at its edges)
+  cellEdges(entry) {
+    const { polygon, cx, cy } = entry, n = polygon.length, edges = [];
+    const x0 = cx * this.cell - 1, y0 = cy * this.cell - 1, y1 = (cy + 1) * this.cell + 1;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const a = polygon[i], c = polygon[j];
+      if (Math.max(a.x, c.x) < x0 || Math.max(a.y, c.y) < y0 || Math.min(a.y, c.y) > y1) continue;
+      edges.push(a.x, a.y, c.x, c.y);
+    }
+    entry.edges = new Float64Array(edges);
   }
   find(x, y) {
     const list = this.cells.get(Math.floor(x / this.cell) * 65536 + Math.floor(y / this.cell));
     if (!list) return null;
-    for (const { polygon, value, b } of list) {
+    for (const { polygon, value, b, edges } of list) {
       if (x < b.minX || x > b.maxX || y < b.minY || y > b.maxY) continue;
-      if (insidePolygon({ x, y }, polygon)) return value;
+      if (!edges) { if (insidePolygon({ x, y }, polygon)) return value; continue; }
+      // insidePolygon, over this cell's edges
+      let inside = false;
+      for (let k = 0; k < edges.length; k += 4) {
+        const xi = edges[k], yi = edges[k + 1], xj = edges[k + 2], yj = edges[k + 3];
+        if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+      }
+      if (inside) return value;
     }
     return null;
   }
@@ -457,6 +485,7 @@ export function buildCity(seed = SEED) {
   // (a scrap of footway left by the rounding is no walk)
   for (const bridge of bridges) bridge.footways = bridge.footways.filter(footway => calcPolygonArea(footway.polygon) > 20);
   for (const bridge of bridges) for (const footway of bridge.footways) pavement.add(footway.polygon, { kind: 'bridge' });
+  pavement.seal();
   return {
     ...map, minX, minY, maxX, maxY, margin,
     land, seaWater, riverWater, riverCentre, shores, walls, quays: walks, mask, downtown, inRiver, parks: map.parks, parkPlans: parks,

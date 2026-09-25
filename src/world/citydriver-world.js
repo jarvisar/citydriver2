@@ -37,7 +37,27 @@ const GREENS = ['#63924d', '#80a85c', '#4f8054', '#93ab65'];
 const SIGNAL_GREEN = new THREE.Color('#62d996'), SIGNAL_AMBER = new THREE.Color('#ffd571'), SIGNAL_RED = new THREE.Color('#ed654b'), SIGNAL_OFF = new THREE.Color('#293538');
 // Distant chunks further than this many cells from the car are not drawn at all.
 const DISTANT_VISIBLE = 4;
+// A detailed chunk this near the car is built at once, whatever the frame
+// budget: a venue's grounds put colliders up to ~65 m beyond their own cell.
+// The ring a car crosses into starts a whole cell away, so there is time to
+// build it over several frames before it gets this close.
+const URGENT_REACH = 80;
+// The static streets are cut into tiles this size, so the renderer can leave
+// out the tiles off screen instead of drawing the whole island every frame.
+const STATIC_TILE = CITY_CELL * 3;
 const pick = (items, random) => items[Math.floor(random() * items.length)];
+const cullFrustum = new THREE.Frustum(), cullMatrix = new THREE.Matrix4(), cullSphere = new THREE.Sphere(), meshSphere = new THREE.Sphere();
+// A sphere round every mesh of a finished chunk, in the chunk's own frame;
+// null if one of them is never culled
+function chunkBounds(group) {
+  const bounds = new THREE.Sphere();
+  for (const mesh of group.children) {
+    const sphere = mesh.isInstancedMesh ? mesh.boundingSphere : mesh.geometry?.boundingSphere;
+    if (mesh.frustumCulled === false || !sphere) return null;
+    bounds.union(meshSphere.copy(sphere).applyMatrix4(mesh.matrix));
+  }
+  return bounds;
+}
 
 function batchFlags(key, material) {
   const flags = {
@@ -179,6 +199,8 @@ function* renderBatchSteps(group, batches, east = 0, start = 0) {
     if (!items.length || merged.has(batchKey)) continue;
     const mesh = new THREE.InstancedMesh(geometry, material, items.length); mesh.name = `citydriver-${batchKey}`;
     for (let i = 0; i < items.length; i++) {
+      // (a big batch, such as a block's window frames, spans several steps)
+      if (i && i % 500 === 0) yield;
       const item = items[i];
       const matrix = cityItemMatrix(item, east, start, transform.matrix);
       mesh.setMatrixAt(i, matrix); tint.set(item.color); mesh.setColorAt(i, tint);
@@ -247,7 +269,7 @@ export class CityChunk {
   *buildSteps() {
     yield* buildCityBuildingSteps(this);
     yield;
-    this.buildFurniture(); yield;
+    yield* this.furnitureSteps(); yield;
     this.buildLife(); yield;
     this.mapFeatures(); yield;
     buildGrassFringe(this); yield;
@@ -357,8 +379,11 @@ export class CityChunk {
     this.features.trees.push({ x, s, scale });
     this.post(x, s, .28);
   }
-  buildFurniture() {
-    for (const piece of this.furniture) {
+  buildFurniture() { for (const _ of this.furnitureSteps()) { /* all at once */ } }
+  // A busy street's furniture, a few dozen pieces per step of a streamed build
+  *furnitureSteps() {
+    for (const [index, piece] of this.furniture.entries()) {
+      if (index && index % 40 === 0) yield;
       const x = piece.u - this.east, s = piece.s - this.start;
       if (buildMonument(this, piece, x, s)) continue;
       if (piece.kind === 'lamp') { this.prop('lamp', x, s, piece.yaw); this.post(x, s, .25); }
@@ -541,6 +566,7 @@ export class CityChunk {
       this.group.add(finishBatchMesh(mesh, { castShadow: true, receiveShadow: true, ambientOcclusion: true }, true));
     }
     this.bodies = null;
+    yield;
     yield* renderBatchSteps(this.group, this.batches, this.east, this.start);
     this.signalMesh = this.group.getObjectByName('citydriver-signal-lens');
     this.peopleMesh = this.group.getObjectByName('citydriver-residents');
@@ -600,6 +626,10 @@ export class CitydriverWorld {
     this.distantGroup = new THREE.Group(); this.distantGroup.name = 'citydriver-distant-city'; this.distantGroup.matrixAutoUpdate = false;
     scene.add(this.distantGroup);
     this.distant = new Map(); this.distantPending = [];
+    // Detailed chunks the car has left, kept out of the scene for a while, and
+    // the ones built ahead of it: crossing back over a cell edge, or into the
+    // cell it was heading for, needs no build at all
+    this.spare = new Map(); this.prefetching = null;
     for (let ix = CITY.ix0; ix <= CITY.ix1; ix++) for (let iz = CITY.iz0; iz <= CITY.iz1; iz++) this.distantPending.push({ ix, iz, key: `${ix},${iz}` });
   }
   inCity(ix, iz) { return ix >= CITY.ix0 && ix <= CITY.ix1 && iz >= CITY.iz0 && iz <= CITY.iz1; }
@@ -655,65 +685,190 @@ export class CitydriverWorld {
   }
   buildStatic() {
     const ground = new Surface(), roads = new Surface(), paths = new Surface(), water = new Surface(), walls = new Surface();
-    const add = (surface, material, { castShadow = false, receiveShadow = true, ambientOcclusion = true, name = 'static' } = {}) => {
+    // The big surfaces are tiled (see STATIC_TILE); paths and water are small
+    const add = (surface, material, { castShadow = false, receiveShadow = true, ambientOcclusion = true, name = 'static', tiled = false } = {}) => {
       if (surface.empty) return null;
-      const mesh = new THREE.Mesh(surface.build(), material);
-      mesh.name = `citydriver-${name}`; mesh.castShadow = castShadow; mesh.receiveShadow = receiveShadow;
-      if (!ambientOcclusion) mesh.userData.ambientOcclusion = false;
-      stableShadowDepth(mesh); mesh.matrixAutoUpdate = false; mesh.updateMatrix();
-      this.staticGroup.add(mesh);
-      return mesh;
+      const meshes = (tiled ? surface.tiles(STATIC_TILE) : [surface.build()]).map(geometry => {
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.name = `citydriver-${name}`; mesh.castShadow = castShadow; mesh.receiveShadow = receiveShadow;
+        if (!ambientOcclusion) mesh.userData.ambientOcclusion = false;
+        stableShadowDepth(mesh); mesh.matrixAutoUpdate = false; mesh.updateMatrix();
+        this.staticGroup.add(mesh);
+        return mesh;
+      });
+      return meshes[0];
     };
     buildStreetSurfaces({ ground, roads, paths, water, walls }, this.nav, this.bridges);
-    this.groundMesh = add(ground, this.materials.ground, { name: 'ground' });
-    this.roadMesh = add(roads, this.materials.road, { name: 'roads' });
+    add(ground, this.materials.ground, { name: 'ground', tiled: true });
+    add(roads, this.materials.road, { name: 'roads', tiled: true });
     add(paths, this.materials.ground, { name: 'paths' });
     this.waterMesh = add(water, this.materials.water, { name: 'water', ambientOcclusion: false });
-    add(walls, this.materials.ground, { name: 'walls', castShadow: true });
+    add(walls, this.materials.ground, { name: 'walls', castShadow: true, tiled: true });
   }
   update(s, u, { budgetMs = Infinity } = {}) {
     const deadline = performance.now() + budgetMs;
     const cell = cityCell(s, u), window = residentWindow();
     const radius = window.ahead >= 5 ? 3 : window.ahead >= 4 ? 2 : 1;
+    this.track(s, u);
     if (this.center !== cell.key || this.radius !== radius) {
-      this.center = cell.key; this.radius = radius;
+      // After a jump (the first frame, a reset, a new route) the whole
+      // collision neighbourhood is built before the car moves
+      const last = this.centerCell;
+      this.jumped = !last || Math.max(Math.abs(last.ix - cell.ix), Math.abs(last.iz - cell.iz)) > 1;
+      this.center = cell.key; this.centerCell = cell; this.radius = radius;
       for (const [key, chunk] of this.chunks) {
         if (Math.abs(chunk.ix - cell.ix) > radius || Math.abs(chunk.iz - cell.iz) > radius) {
-          chunk.dispose(); this.chunks.delete(key);
-          const distant = this.distant.get(key); if (distant) distant.group.visible = true;
+          this.chunks.delete(key); chunk.group.removeFromParent(); this.spare.set(key, chunk);
         }
       }
       this.pending = [];
       for (let ix = cell.ix - radius; ix <= cell.ix + radius; ix++) for (let iz = cell.iz - radius; iz <= cell.iz + radius; iz++) {
         const key = `${ix},${iz}`;
-        if (this.inCity(ix, iz) && !this.chunks.has(key)) this.pending.push({ ix, iz, key, distance: Math.max(Math.abs(ix - cell.ix), Math.abs(iz - cell.iz)) });
+        if (!this.inCity(ix, iz) || this.chunks.has(key)) continue;
+        const spare = this.spare.get(key);
+        if (spare) { this.spare.delete(key); this.place(spare); continue; }
+        this.pending.push({ ix, iz, key, distance: Math.max(Math.abs(ix - cell.ix), Math.abs(iz - cell.iz)), gap: this.gap(ix, iz, s, u) });
       }
-      this.pending.sort((a, b) => a.distance - b.distance || a.iz - b.iz || a.ix - b.ix);
-      if (this.building && !this.pending.some(next => next.key === this.building.index)) { this.building.dispose(); this.building = null; }
+      this.pending.sort((a, b) => a.distance - b.distance || a.gap - b.gap || a.iz - b.iz || a.ix - b.ix);
+      // A chunk built ahead of time for a cell the car has now reached goes on building as needed
+      if (this.prefetching && this.pending.some(next => next.key === this.prefetching.index) && !this.building) { this.building = this.prefetching; this.prefetching = null; }
+      if (this.building) {
+        const at = this.pending.findIndex(next => next.key === this.building.index);
+        if (at < 0) { this.building.dispose(); this.building = null; }
+        else if (at > 0 && this.pending[at].distance === this.pending[0].distance) this.pending.unshift(...this.pending.splice(at, 1));
+      }
+      const ahead = this.prefetching;
+      if (ahead && !this.pending.some(next => next.key === ahead.index) && !this.prefetchable(ahead.ix, ahead.iz)) { ahead.dispose(); this.prefetching = null; }
+      this.trimSpare(s, u);
       // The skyline fills in from the car outward, and is only drawn where the fog can show it
       this.distantPending.sort((a, b) => Math.hypot(a.ix - cell.ix, a.iz - cell.iz) - Math.hypot(b.ix - cell.ix, b.iz - cell.iz));
-      for (const chunk of this.distant.values()) chunk.group.visible = !this.chunks.has(chunk.index) && Math.max(Math.abs(chunk.ix - cell.ix), Math.abs(chunk.iz - cell.iz)) <= radius + DISTANT_VISIBLE;
+      for (const chunk of this.distant.values()) this.showDistant(chunk, !this.chunks.has(chunk.index) && Math.max(Math.abs(chunk.ix - cell.ix), Math.abs(chunk.iz - cell.iz)) <= radius + DISTANT_VISIBLE);
     }
     let built = 0;
+    // A chunk the car is about to reach is built now, whatever the budget
+    for (let i = 0; i < this.pending.length; i++) {
+      const next = this.pending[i];
+      if (next.distance > 1 || !(this.jumped || this.gap(next.ix, next.iz, s, u) < URGENT_REACH)) continue;
+      const chunk = this.claim(next.key) ?? new CityChunk(this, next.ix, next.iz, false, true);
+      chunk.buildUntil();
+      this.pending.splice(i--, 1); this.place(chunk); built++;
+    }
+    this.jumped = false;
+    // and the rest nearest first, within the budget
     while (this.pending.length) {
-      const next = this.pending[0], urgent = next.distance <= 1;
-      if (!urgent && built > 0 && performance.now() >= deadline) break;
-      if (!this.building || this.building.index !== next.key) { this.building?.dispose(); this.building = new CityChunk(this, next.ix, next.iz, false, true); }
-      if (!this.building.buildUntil(urgent ? Infinity : deadline)) break;
+      const next = this.pending[0];
+      if (built > 0 && performance.now() >= deadline) break;
+      if (this.building?.index !== next.key) {
+        const started = this.claim(next.key);
+        this.building?.dispose(); this.building = started ?? new CityChunk(this, next.ix, next.iz, false, true);
+      }
+      if (!this.building.buildUntil(deadline)) break;
       this.pending.shift();
       const chunk = this.building; this.building = null;
-      chunk.group.position.set(chunk.east, 0, -chunk.start); chunk.group.updateMatrix();
-      this.chunks.set(chunk.index, chunk); this.scene.add(chunk.group);
-      const distant = this.distant.get(chunk.index); if (distant) distant.group.visible = false;
-      built++;
+      this.place(chunk); built++;
     }
+    // then, in what time is left, the chunks the car is heading for
+    if (!this.pending.length && Number.isFinite(budgetMs)) this.prefetch(s, u, deadline);
     while (this.distantPending.length && (!Number.isFinite(budgetMs) || performance.now() < deadline)) {
       const next = this.distantPending.shift();
       const chunk = new CityChunk(this, next.ix, next.iz, true);
       chunk.group.position.set(chunk.east, 0, -chunk.start); chunk.group.updateMatrix();
-      chunk.group.visible = !this.chunks.has(next.key) && Math.max(Math.abs(chunk.ix - cell.ix), Math.abs(chunk.iz - cell.iz)) <= radius + DISTANT_VISIBLE;
-      this.distantGroup.add(chunk.group); this.distant.set(next.key, chunk);
+      this.distant.set(next.key, chunk);
+      this.showDistant(chunk, !this.chunks.has(next.key) && Math.max(Math.abs(chunk.ix - cell.ix), Math.abs(chunk.iz - cell.iz)) <= radius + DISTANT_VISIBLE);
     }
+  }
+  // How far a point is from a cell's square
+  gap(ix, iz, s, u) {
+    const du = Math.max(ix * CITY_CELL - u, 0, u - (ix + 1) * CITY_CELL), ds = Math.max(iz * CITY_CELL - s, 0, s - (iz + 1) * CITY_CELL);
+    return Math.hypot(du, ds);
+  }
+  // A detailed chunk into the scene, over its skyline
+  place(chunk) {
+    chunk.group.position.set(chunk.east, 0, -chunk.start); chunk.group.updateMatrix();
+    chunk.group.visible = true;
+    this.chunks.set(chunk.index, chunk); this.scene.add(chunk.group);
+    const distant = this.distant.get(chunk.index); if (distant) this.showDistant(distant, false);
+  }
+  // A skyline chunk out of range or under a detailed chunk leaves the scene,
+  // so the renderer does not walk its meshes every frame
+  showDistant(chunk, shown) {
+    chunk.group.visible = shown;
+    if (shown && !chunk.group.parent) this.distantGroup.add(chunk.group);
+    else if (!shown && chunk.group.parent) chunk.group.removeFromParent();
+  }
+  // A chunk being built already, for the budget or ahead of the car
+  claim(key) {
+    for (const slot of ['building', 'prefetching']) {
+      const chunk = this[slot];
+      if (chunk?.index === key) { this[slot] = null; return chunk; }
+    }
+    return null;
+  }
+  // The way the car has been going, over the last few metres
+  track(s, u) {
+    const moved = this.trail ? Math.hypot(s - this.trail.s, u - this.trail.u) : Infinity;
+    if (moved > 60) { this.trail = { s, u }; this.heading = null; return; }
+    if (moved < 8) return;
+    this.heading = { s: (s - this.trail.s) / moved, u: (u - this.trail.u) / moved };
+    this.trail = { s, u };
+  }
+  // A cell of the ring just outside the detailed square, not built yet
+  prefetchable(ix, iz) {
+    const cell = this.centerCell, key = `${ix},${iz}`;
+    return this.inCity(ix, iz) && !this.chunks.has(key) && !this.spare.has(key)
+      && Math.max(Math.abs(ix - cell.ix), Math.abs(iz - cell.iz)) === this.radius + 1;
+  }
+  get spareLimit() { return 2 * (2 * this.radius + 1); }
+  // Keep the nearest spare chunks, and none that are far from the car
+  trimSpare(s, u) {
+    const cell = this.centerCell;
+    const spares = [...this.spare.values()].map(chunk => ({ chunk, gap: this.gap(chunk.ix, chunk.iz, s, u) })).sort((a, b) => a.gap - b.gap);
+    spares.forEach(({ chunk }, i) => {
+      if (i < this.spareLimit && Math.max(Math.abs(chunk.ix - cell.ix), Math.abs(chunk.iz - cell.iz)) <= this.radius + 2) return;
+      this.spare.delete(chunk.index); chunk.dispose();
+    });
+  }
+  // Build, into the spare chunks, the nearest chunk the car will want once it
+  // crosses into the cell it is heading for
+  prefetch(s, u, deadline) {
+    if (performance.now() >= deadline) return;
+    if (!this.prefetching) {
+      if (!this.heading) return;
+      const ahead = cityCell(s + this.heading.s * CITY_CELL, u + this.heading.u * CITY_CELL);
+      if (ahead.key === this.center) return;
+      let target = null;
+      for (let ix = ahead.ix - this.radius; ix <= ahead.ix + this.radius; ix++) for (let iz = ahead.iz - this.radius; iz <= ahead.iz + this.radius; iz++) {
+        if (!this.prefetchable(ix, iz)) continue;
+        const gap = this.gap(ix, iz, s, u);
+        if (!target || gap < target.gap) target = { ix, iz, gap };
+      }
+      if (!target) return;
+      // (not when it would only push out a nearer spare chunk)
+      if (this.spare.size >= this.spareLimit && [...this.spare.values()].every(chunk => this.gap(chunk.ix, chunk.iz, s, u) <= target.gap)) return;
+      this.prefetching = new CityChunk(this, target.ix, target.iz, false, true);
+    }
+    if (!this.prefetching.buildUntil(deadline)) return;
+    const chunk = this.prefetching; this.prefetching = null;
+    this.spare.set(chunk.index, chunk); this.trimSpare(s, u);
+  }
+  // Whole chunks that neither the camera nor the sun's shadow can see are
+  // hidden before the renderer walks their meshes one by one. A chunk is
+  // hidden only when the sphere round all its meshes is outside both
+  // frustums, so no mesh the renderer would have drawn is left out.
+  cull(camera, shadow = null) {
+    // (a headset's pair of eyes is left to the renderer)
+    const view = camera && !camera.isArrayCamera
+      ? cullFrustum.setFromProjectionMatrix(cullMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse), THREE.WebGLCoordinateSystem, camera.reversedDepth)
+      : null;
+    const seen = chunk => {
+      if (!view) return true;
+      if (chunk.bounds === undefined) chunk.bounds = chunkBounds(chunk.group);
+      if (!chunk.bounds) return true;
+      cullSphere.copy(chunk.bounds).applyMatrix4(chunk.group.matrixWorld);
+      return view.intersectsSphere(cullSphere) || Boolean(shadow?.intersectsSphere(cullSphere));
+    };
+    for (const chunk of this.chunks.values()) chunk.group.visible = seen(chunk);
+    for (const chunk of this.distant.values()) if (chunk.group.parent) chunk.group.visible = seen(chunk);
   }
   setWetness(amount) {
     const wet = Math.max(0, Math.min(1, amount));
@@ -751,7 +906,8 @@ export class CitydriverWorld {
   }
   dispose() {
     for (const chunk of this.chunks.values()) chunk.dispose(); this.chunks.clear(); this.pending = [];
-    this.building?.dispose(); this.building = null;
+    for (const chunk of this.spare.values()) chunk.dispose(); this.spare.clear();
+    this.building?.dispose(); this.building = null; this.prefetching?.dispose(); this.prefetching = null;
     for (const chunk of this.distant.values()) chunk.dispose(); this.distant.clear(); this.distantPending = [];
     this.distantGroup.removeFromParent();
     for (const mesh of this.staticGroup.children) if (!mesh.isInstancedMesh) mesh.geometry.dispose(); else mesh.dispose();
