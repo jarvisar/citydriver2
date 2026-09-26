@@ -1,6 +1,7 @@
 import Vector from '../mapgen/vector.js';
 import { SEED } from './route.js';
-import { generateCityMap, carriagewayScore, ROAD_PROFILES, SIDEWALK } from '../mapgen/generate.js';
+import { generateCityStages, finish, carriagewayScore, ROAD_PROFILES, SIDEWALK } from '../mapgen/generate.js';
+import { throughStages } from '../loading-status.js';
 import { FIELD_TYPE } from '../mapgen/basis-field.js';
 import { shoreRuns } from '../mapgen/shore.js';
 import { difference, intersection, region, solids, growRound, union, clean, strictly, withoutHoles } from '../mapgen/booleans.js';
@@ -331,9 +332,11 @@ function layDecks(bridges, land, around) {
   return decks;
 }
 
-export function buildCity(seed = SEED) {
+export function buildCity(seed = SEED) { return finish(buildCityStages(seed)); }
+// The same in stages, as the map's (see generateCityStages)
+export function* buildCityStages(seed = SEED) {
   const styleName = (district, downtown) => downtown < DOWNTOWN ? 'Midtown' : district ?? 'Market district';
-  const map = generateCityMap({ seed, width: CITY_WIDTH, height: CITY_HEIGHT,
+  const map = yield* generateCityStages({ seed, width: CITY_WIDTH, height: CITY_HEIGHT,
     districts: { styles: DISTRICT_STYLES, downtown: 'Midtown', prefer: DISTRICT_PREFER, winding: { 'Old town': OLD_TOWN_NOISE } },
     lots: { style: (centre, district, downtown) => ({ ...LOT_STYLES[styleName(district, downtown)] }) },
     streets: { style: (point, district, downtown) => STREET_STYLES[styleName(district, downtown)] } });
@@ -480,6 +483,7 @@ export function buildCity(seed = SEED) {
     walks.push({ points: [], halfWidth: QUAY / 2, polygon: piece.outer, road: null, filler: true });
   }
   for (const walk of walks) pavement.add(walk.polygon, { kind: 'quay', road: walk.road });
+  yield 'bridges';
   // Bridges: each run of a road over the water, carried a few metres onto the
   // banks, with a raised footway along both edges of its deck (where the road
   // has room outside its lanes) that meets the promenades and pavements at
@@ -591,13 +595,15 @@ export function buildCity(seed = SEED) {
     // (cleaned to the millimetre, so no edge that meets a road moves off it)
     const pieces = clean(union(solids([walk.polygon])), .001);
     const bounds = polygonBounds(walk.polygon), near = polygon => { const b = polygonBounds(polygon); return b.maxX > bounds.minX - 1 && b.minX < bounds.maxX + 1 && b.maxY > bounds.minY - 1 && b.minY < bounds.maxY + 1; };
-    const neighbours = solids([...walks.filter(other => other !== walk).map(other => other.polygon), ...map.blocks.map(block => block.kerb), ...bridges.flatMap(bridge => bridge.footways.map(footway => footway.polygon))].filter(near));
+    // (the pavement round it, gathered only for a scrap against the road)
+    let neighbours = null;
+    const around = () => neighbours ??= solids([...walks.filter(other => other !== walk).map(other => other.polygon), ...map.blocks.map(block => block.kerb), ...bridges.flatMap(bridge => bridge.footways.map(footway => footway.polygon))].filter(near));
     const opened = region(growRound(region(growRound(region(pieces), -THIN / 2)), THIN / 2));
     // (a needle, however little ground it covers, whatever it meets; not the
     // crumbs the opening leaves in every corner)
     const needle = scrap => hairline(scrap.outer) && perimeter(scrap.outer) > 1.2;
     const scraps = difference(region(pieces), opened).filter(scrap => needle(scrap) || (calcPolygonArea(scrap.outer) > .05 && touchesRoad(scrap.outer) &&
-      !intersection(region(growRound([scrap.outer], .05)), neighbours).some(touch => calcPolygonArea(touch.outer) > .001)));
+      !intersection(region(growRound([scrap.outer], .05)), around()).some(touch => calcPolygonArea(touch.outer) > .001)));
     if (!scraps.length && pieces.length === 1 && pieces[0].outer.length === walk.polygon.length) continue;
     const kept = (scraps.length ? clean(difference(region(pieces), region(scraps)), .001) : pieces)
       // (a pinhole where a needle met the edge at a point is no hole)
@@ -627,7 +633,8 @@ export function buildCity(seed = SEED) {
   };
 }
 
-export const CITY = buildCity(SEED);
+// (built stage by stage through the loading screen)
+export const CITY = await throughStages(buildCityStages(SEED));
 
 const downtownDistance = (s, u) => Math.hypot(u - CITY.downtown.u, s - CITY.downtown.s) / Math.max(1, CITY.downtown.radius);
 // The district whose style a point's architecture follows

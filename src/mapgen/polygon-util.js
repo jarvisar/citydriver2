@@ -52,6 +52,47 @@ export function insidePolygon(point, polygon) {
   }
   return inside;
 }
+// insidePolygon for a big ring asked about many points (the sea, the river,
+// the ring road's line, as the streets are traced): its edges sorted once
+// into horizontal bands, so a point tests only the edges across its band.
+// It is the same test on every edge that can cross the point's ray, so the
+// same answer to the bit. A ring is known by identity, so it must not change
+// in place once asked about.
+const ringBands = new WeakMap();
+export function insideIndexed(point, polygon) {
+  const n = polygon.length;
+  if (n < 48) return insidePolygon(point, polygon);
+  let index = ringBands.get(polygon);
+  if (!index || index.n !== n) ringBands.set(polygon, index = bandEdges(polygon));
+  const { minY, maxY, scale, last, starts, list, edges } = index, x = point.x, y = point.y;
+  // (no edge crosses a ray above or below the ring, or a NaN one)
+  if (!(y >= minY && y <= maxY)) return false;
+  const band = Math.min(last, Math.floor((y - minY) * scale));
+  let inside = false;
+  for (let k = starts[band], end = starts[band + 1]; k < end; k++) {
+    const e = list[k] * 4, xi = edges[e], yi = edges[e + 1], xj = edges[e + 2], yj = edges[e + 3];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+// (an edge only crosses rays within its own span of y, and the bands are a
+// monotonic function of y, so each band lists every edge that can)
+function bandEdges(polygon) {
+  const n = polygon.length, edges = new Float64Array(n * 4);
+  let minY = Infinity, maxY = -Infinity;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    edges.set([polygon[i].x, polygon[i].y, polygon[j].x, polygon[j].y], i * 4);
+    minY = Math.min(minY, polygon[i].y); maxY = Math.max(maxY, polygon[i].y);
+  }
+  const bands = Math.ceil(n / 4), last = bands - 1, scale = bands / (maxY - minY || 1);
+  const bandOf = y => Math.min(last, Math.floor((y - minY) * scale)), counts = new Int32Array(bands + 1);
+  for (let i = 0; i < n; i++) for (let b = bandOf(Math.min(edges[i * 4 + 1], edges[i * 4 + 3])), top = bandOf(Math.max(edges[i * 4 + 1], edges[i * 4 + 3])); b <= top; b++) counts[b + 1]++;
+  const starts = new Int32Array(bands + 1);
+  for (let b = 0; b < bands; b++) starts[b + 1] = starts[b] + counts[b + 1];
+  const list = new Int32Array(starts[bands]), fill = starts.slice(0, bands);
+  for (let i = 0; i < n; i++) for (let b = bandOf(Math.min(edges[i * 4 + 1], edges[i * 4 + 3])), top = bandOf(Math.max(edges[i * 4 + 1], edges[i * 4 + 3])); b <= top; b++) list[fill[b]++] = i;
+  return { n, minY, maxY, scale, last, starts, list, edges };
+}
 
 // Drops repeated consecutive vertices, including a closing repeat of the first.
 export function dedupePolygon(polygon, minDistance = 1e-6) {

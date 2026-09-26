@@ -8,7 +8,7 @@ import Graph from './graph.js';
 import PolygonFinder from './polygon-finder.js';
 import { FIELD_TYPE } from './basis-field.js';
 import { RoadIndex } from './road-index.js';
-import { averagePoint, calcPolygonArea, offsetPolygon, insidePolygon, polygonCentroid, bufferPolyline, polygonBounds, polylineLength } from './polygon-util.js';
+import { averagePoint, calcPolygonArea, offsetPolygon, insidePolygon, insideIndexed, polygonCentroid, bufferPolyline, polygonBounds, polylineLength } from './polygon-util.js';
 import { filletPolyline, closeLoop, ringRoad, clipInside, weldEnds, circuses, cleanNetwork, spreadJunctions, pruneNetwork, joinCorners, easeKinks, endJoints } from './road-network.js';
 import { frontageLots, throughLots, chamferAcute } from './lots.js';
 import { islandOutline, landAndWater, seaSideOf, roadFootprints } from './shore.js';
@@ -135,15 +135,24 @@ function layDistricts(options, origin, dimensions, onLand, downtown, noise2D, ra
   if (!landCells.length) landCells.push(Math.floor(count / 2));
   // Seeds: downtown's, then the others far from every seed so far and from the water
   const seeds = [];
-  const nearestLand = p => landCells.reduce((best, i) => centreOf(i).distanceTo(p) < centreOf(best).distanceTo(p) ? i : best);
+  // (each land cell's centre made once)
+  const landCentres = landCells.map(centreOf);
+  const nearestLand = p => {
+    let best = 0, bestDistance = landCentres[0].distanceTo(p);
+    for (let k = 1; k < landCells.length; k++) { const d = landCentres[k].distanceTo(p); if (d < bestDistance) { best = k; bestDistance = d; } }
+    return landCells[best];
+  };
   if (options.downtown && downtown) seeds.push(nearestLand(downtown));
   for (let k = 0; k < styles.length; k++) {
-    const scored = landCells.map(i => {
-      const p = centreOf(i), apart = seeds.length ? Math.min(...seeds.map(s => centreOf(s).distanceTo(p))) : 1e9;
+    const seedCentres = seeds.map(centreOf);
+    const scored = landCells.map((i, j) => {
+      const p = landCentres[j], apart = seeds.length ? Math.min(...seedCentres.map(c => c.distanceTo(p))) : 1e9;
       return [Math.min(apart, shore[i] * cell * 3), i];
-    }).sort((a, b) => b[0] - a[0]);
-    // one of the best few, so the same coast doesn't always give the same seeds
-    const best = scored[0][0], choices = scored.filter(([score]) => score >= best * .85);
+    });
+    // one of the best few, so the same coast doesn't always give the same
+    // seeds (only they are sorted, best first, ties in cell order)
+    const best = scored.reduce((most, [score]) => Math.max(most, score), -Infinity);
+    const choices = scored.filter(([score]) => score >= best * .85).sort((a, b) => b[0] - a[0]);
     seeds.push(choices[Math.floor(random() * choices.length)][1]);
   }
   // Styles to seeds: the arrangement the styles like best, with a little chance
@@ -230,11 +239,21 @@ function merge(base, extra) {
   return out;
 }
 
-export function generateCityMap(options = {}) {
+// A city run straight through its stages
+export function generateCityMap(options = {}) { return finish(generateCityStages(options)); }
+// A staged build run to its end, its stages passed over
+export function finish(stages) {
+  for (;;) { const { done, value } = stages.next(); if (done) return value; }
+}
+
+// The city in stages: yields the name of each as it begins, so a page can
+// show what it is building (see loading-status.js), and returns the city
+export function* generateCityStages(options = {}) {
   const o = merge(DEFAULT_OPTIONS, options), seed = o.seed >>> 0, random = mulberry32(seed);
   const timings = {}, started = performance.now();
   let mark = started;
   const lap = name => { const now = performance.now(); timings[name] = Math.round(now - mark); mark = now; };
+  yield 'coast';
   const { width, height } = o;
   const origin = new Vector(-width / 2, -height / 2), dimensions = new Vector(width, height);
   const field = new TensorField({ ...o.noise }, random);
@@ -258,7 +277,7 @@ export function generateCityMap(options = {}) {
   // on the domain and the sea, so the parks can already be closed by it.
   const ring = o.closed ? ringRoad(origin, dimensions, { ...o.ring, noise: field.noise2D }) : null;
   const ringArea = ring ? offsetPolygon(ring.slice(0, -1), 3) : null;
-  const insideRing = ring ? p => insidePolygon(p, ringArea) : () => true;
+  const insideRing = ring ? p => insideIndexed(p, ringArea) : () => true;
   let ringRuns = [];
   if (ring) {
     // Start the loop on land so a run never wraps round its first point; it
@@ -273,6 +292,7 @@ export function generateCityMap(options = {}) {
     }
   }
   lap('water');
+  yield 'streets';
   const radial = field.basisFields.find(basis => basis.FIELD_TYPE === FIELD_TYPE.Radial);
   const downtownDistance = p => radial ? Math.hypot(p.x - radial.centre.x, p.y - radial.centre.y) / Math.max(1, radial._size) : 2;
   // The neighbourhoods (not the tensor field's grids: with their random sizes
@@ -341,6 +361,7 @@ export function generateCityMap(options = {}) {
   const bigParks = pickParks(major.allStreamlinesSimple.concat(main.allStreamlinesSimple, water.streamlinesWithSecondaryRoad, ringRuns), o.parks.big, o.parks.clusterBig, o.parks.bigArea);
   field.parks = bigParks.slice();
   const minor = roads(minorParams, [water, main, major, ...(edge ? [edge] : [])], false, BEND_RADIUS.minor); lap('minor');
+  yield 'junctions';
 
   let roadList = [];
   for (const points of main.allStreamlinesSimple) roadList.push({ kind: 'main', points });
@@ -489,6 +510,7 @@ export function generateCityMap(options = {}) {
   // coast road's and the river's channel. The city stands on its blocks and
   // its roads with their promenades: bare land on the shore past them (where
   // the ring and the coast road round a corner) is sea.
+  yield 'waterfront';
   let shore = null;
   if (ring) {
     let coast = null;
@@ -502,6 +524,7 @@ export function generateCityMap(options = {}) {
       keep: [...finder.polygons, ...bigParks, ...roadFootprints(roadList, road => road.profile.halfWidth + o.shore.quay + .5)] }), bounds };
   }
   lap('shore');
+  yield 'pavements';
   // Small parks and squares: whole blocks, well apart, away from the water
   const parks = bigParks.map((polygon, i) => ({ polygon, kind: 'park', block: -1, layout: parkLayouts[i] }));
   // The garden in the middle of each circus

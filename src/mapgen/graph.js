@@ -12,10 +12,12 @@ export class Node {
   }
 }
 
+// Cells keyed by number, within a million cells of the origin
+const cellKey = (cx, cy) => cx * 0x200000 + cy;
 // A hash of cells holding nodes: what MapGenerator asked of d3-quadtree.
 class PointIndex {
   constructor(cellSize) { this.cellSize = cellSize; this.cells = new Map(); this.items = new Set(); }
-  key(x, y) { return `${Math.floor(x / this.cellSize)},${Math.floor(y / this.cellSize)}`; }
+  key(x, y) { return cellKey(Math.floor(x / this.cellSize), Math.floor(y / this.cellSize)); }
   add(node) {
     const key = this.key(node.value.x, node.value.y);
     let cell = this.cells.get(key);
@@ -34,7 +36,7 @@ class PointIndex {
     const y0 = Math.floor((y - radius) / this.cellSize), y1 = Math.floor((y + radius) / this.cellSize);
     let best, bestDistance = Infinity;
     for (let cx = x0; cx <= x1; cx++) for (let cy = y0; cy <= y1; cy++) {
-      const cell = this.cells.get(`${cx},${cy}`);
+      const cell = this.cells.get(cellKey(cx, cy));
       if (!cell) continue;
       for (const node of cell) {
         const d = (node.value.x - x) ** 2 + (node.value.y - y) ** 2;
@@ -56,7 +58,7 @@ export function findIntersections(segments, cellSize = 40) {
     const x0 = Math.floor(Math.min(segment.from.x, segment.to.x) / cellSize), x1 = Math.floor(Math.max(segment.from.x, segment.to.x) / cellSize);
     const y0 = Math.floor(Math.min(segment.from.y, segment.to.y) / cellSize), y1 = Math.floor(Math.max(segment.from.y, segment.to.y) / cellSize);
     for (let cx = x0; cx <= x1; cx++) for (let cy = y0; cy <= y1; cy++) {
-      const key = `${cx},${cy}`;
+      const key = cellKey(cx, cy);
       let cell = cells.get(key);
       if (!cell) { cell = []; cells.set(key, cell); }
       cell.push(segment);

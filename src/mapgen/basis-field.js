@@ -18,8 +18,13 @@ export class BasisField {
 }
 
 export class Grid extends BasisField {
+  #turned = null; #cos = 0; #sin = 0;
   constructor(centre, size, decay, theta) { super(centre, size, decay); this._theta = theta; this.FIELD_TYPE = FIELD_TYPE.Grid; }
-  getTensor() { return new Tensor(1, [Math.cos(2 * this._theta), Math.sin(2 * this._theta)]); }
+  // (the same everywhere: its sine and cosine are worked out once)
+  getTensor() {
+    if (this.#turned !== this._theta) { this.#turned = this._theta; this.#cos = Math.cos(2 * this._theta); this.#sin = Math.sin(2 * this._theta); }
+    return new Tensor(1, [this.#cos, this.#sin]);
+  }
 }
 
 export class Radial extends BasisField {

@@ -24,6 +24,7 @@ import { NightLighting } from './night-lighting.js';
 import { LooseProps } from './loose-props.js';
 import { cityDistrict, nearestLanePose, journeyStart, lanePose, roadAt } from './world/city-route.js';
 import { CITY } from './world/city.js';
+import { loadingStage } from './loading-status.js';
 import { navGraph } from './world/nav-graph.js';
 import { CityGuide } from './city-guide.js';
 import { WorldMap, DISTRICT_COLORS } from './city-world-map.js';
@@ -123,6 +124,7 @@ async function boot() {
     window.addEventListener('resize', () => { needsRender = true; });
     document.addEventListener('visibilitychange', () => { if (!document.hidden) needsRender = true; });
     const journey = 'city';
+    await loadingStage('furniture');
     const world = new JOURNEYS[journey].World(scene);
     rendering.addCuller((camera, shadow) => world.cull(camera, shadow));
     const weather = new CityWeather(scene);
@@ -907,12 +909,17 @@ async function boot() {
       }
       updateFPS(timestamp, rendered);
     }
+    // The streets round the car, then the skyline, each named on the loading screen
+    await loadingStage('buildings');
+    world.update(vehicle.s, vehicle.u, { skyline: false });
+    while (world.pending.length) world.update(vehicle.s, vehicle.u, { skyline: false });
+    await loadingStage('skyline');
     world.update(vehicle.s, vehicle.u);
-    while (world.pending.length) world.update(vehicle.s, vehicle.u);
     applyWeather();
     buildCarCards(); buildPaintSwatches(); updateCarUi();
     vehicle.render(0, world.origin); traffic.render(1, world.origin); rendering.update(vehicle.car, 1, world.origin); updateHud(); updateJourneyUi(); updateViewUi(); updateGraphicsUi();
     nightLighting.update(world, vehicle, traffic, weather.state.lightLevel);
+    await loadingStage('graphics');
     await rendering.precompile([...world.warmupObjects(), ...taxiView.warmupObjects()]);
     try { taxiView.navigation.prepare(); } catch { /* The first fare tries again. */ }
     changingJourney = false;

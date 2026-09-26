@@ -12,7 +12,7 @@ import { cityItemMatrix, cityRigidFrame, cityAffinePoint, itemFrame } from './ci
 import { addSurfacePolygon } from './city-surfaces.js';
 import { buildGrassFringe } from './city-grass.js';
 import { createWaterMaterial } from './city-water.js';
-import { Surface } from './surface.js';
+import { Surface, setColor } from './surface.js';
 import { cityWalker, walkerFloat, WALKER_COLORS, createWalkerMaterial, walkerAppearance, setWalkerAppearance, pairWalkers, offsetWalkerPose } from './city-life.js';
 import { applyWalkerHop, walkerTravelTime, holdWalkerTravel } from './pedestrian-reactions.js';
 import { stableShadowDepth } from './shadow-depth.js';
@@ -33,6 +33,10 @@ const transform = new THREE.Object3D();
 const residentItem = { p: [0, 0, 0], scale: [1, 1, 1], yaw: 0, roll: 0 };
 const residentFloat = {};
 const tint = new THREE.Color();
+// A structure's batch key, made once for each (a key made afresh for every
+// window of every building is hashed afresh by every lookup)
+const structureKeys = new Map();
+const structureKey = key => { let made = structureKeys.get(key); if (made === undefined) structureKeys.set(key, made = `structure-${key}`); return made; };
 const dryRoad = new THREE.Color('#666c70'), wetRoad = new THREE.Color('#424e58');
 // A lit room seen by day is only a warmer pane among the dark ones; the
 // window's own cream shows as the light fails (see city-weather.js)
@@ -80,7 +84,8 @@ function finishBatchMesh(mesh, { castShadow, receiveShadow, ambientOcclusion }, 
   mesh.updateMatrix();
   mesh.matrixAutoUpdate = false;
   if (mesh.isInstancedMesh) mesh.computeBoundingSphere();
-  else mesh.geometry.computeBoundingSphere();
+  // (a surface's geometry comes with its sphere)
+  else if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
   return mesh;
 }
 
@@ -133,7 +138,7 @@ function* mergeBatchSteps(entries, east, start) {
       matrix.toArray(matrices, k * 16);
       const [e0, e1, e2, , e4, e5, e6, , e8, e9, e10, , e12, e13, e14] = matrix.elements.map(f);
       const sx = e0 * e0 + e1 * e1 + e2 * e2, sy = e4 * e4 + e5 * e5 + e6 * e6, sz = e8 * e8 + e9 * e9 + e10 * e10;
-      tint.set(item.color);
+      setColor(tint, item.color);
       const r = f(tint.r), g = f(tint.g), b = f(tint.b);
       for (let i = 0, j = 0; i < count; i++, j += 3) {
         const o = (vertex + i) * 3, x = p[j], y = p[j + 1], z = p[j + 2];
@@ -209,7 +214,7 @@ function* renderBatchSteps(group, batches, east = 0, start = 0) {
       if (i && i % 500 === 0) yield;
       const item = items[i];
       const matrix = cityItemMatrix(item, east, start, transform.matrix);
-      mesh.setMatrixAt(i, matrix); tint.set(item.color); mesh.setColorAt(i, tint);
+      mesh.setMatrixAt(i, matrix); mesh.setColorAt(i, setColor(tint, item.color));
       if (item.wakeable) item.render = { mesh, index: i };
       if (item.signTile !== undefined) mesh.setColorAt(i, tint.setRGB(item.signTile, 0, 0));
       if (key === 'residents') setWalkerAppearance(mesh, i, item.appearance);
@@ -306,11 +311,12 @@ export class CityChunk {
   }
   layoutFrame(s, u) { return cityRigidFrame(s, u); }
   item(key, geometry, material, p, scale = [1, 1, 1], color = '#ffffff', yaw = 0, roll = 0, structure = this.buildingStructure === true) {
-    if (structure) key = `structure-${key}`;
-    if (!this.batches.has(key)) this.batches.set(key, { geometry, material, items: [], structure });
+    if (structure) key = structureKey(key);
+    let batch = this.batches.get(key);
+    if (!batch) this.batches.set(key, batch = { geometry, material, items: [], structure });
     const anchor = this.layoutAnchor ?? { s: this.start - p[2], u: this.east + p[0] };
     const item = { p, scale, color, yaw, roll, anchor, frame: this.layoutPlacement ?? this.layoutFrame(anchor.s, anchor.u) };
-    this.batches.get(key).items.push(item);
+    batch.items.push(item);
     return item;
   }
   rigid(x, s, build, placement = null) {
@@ -759,7 +765,9 @@ export class CitydriverWorld {
     this.waterMesh = add(water, this.materials.water, { name: 'water', ambientOcclusion: false });
     add(walls, this.materials.ground, { name: 'walls', castShadow: true, tiled: true });
   }
-  update(s, u, { budgetMs = Infinity } = {}) {
+  // (`skyline: false` leaves the skyline for a later call, so the loading
+  // screen can say which it is building)
+  update(s, u, { budgetMs = Infinity, skyline = true } = {}) {
     const deadline = performance.now() + budgetMs;
     const cell = cityCell(s, u), window = residentWindow();
     const radius = window.ahead >= 5 ? 3 : window.ahead >= 4 ? 2 : 1;
@@ -823,7 +831,7 @@ export class CitydriverWorld {
     }
     // then, in what time is left, the chunks the car is heading for
     if (!this.pending.length && Number.isFinite(budgetMs)) this.prefetch(s, u, deadline);
-    while (this.distantPending.length && (!Number.isFinite(budgetMs) || performance.now() < deadline)) {
+    while (skyline && this.distantPending.length && (!Number.isFinite(budgetMs) || performance.now() < deadline)) {
       const next = this.distantPending.shift();
       const chunk = new CityChunk(this, next.ix, next.iz, true);
       chunk.group.position.set(chunk.east, 0, -chunk.start); chunk.group.updateMatrix();

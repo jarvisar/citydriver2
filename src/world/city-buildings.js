@@ -291,6 +291,14 @@ export function wallHasOutlook(ring, i, neighbours) {
   return [ring, ...neighbours].every(polygon => {
     const other = polygonBounds(polygon);
     if (other.maxX < bounds.minX || other.minX > bounds.maxX || other.maxY < bounds.minY || other.minY > bounds.maxY) return true;
+    // (nor a plot wholly to one side of the strip, along the wall or out
+    // from it, by more than the booleans' millimetres could close)
+    let first = Infinity, last = -Infinity, near = Infinity, far = -Infinity;
+    for (const p of polygon) {
+      const along = (p.x - a.x) * tx + (p.y - a.y) * ty, out = (p.x - a.x) * ty - (p.y - a.y) * tx;
+      first = Math.min(first, along); last = Math.max(last, along); near = Math.min(near, out); far = Math.max(far, out);
+    }
+    if (last < .6 - .002 || first > length - .6 + .002 || far < .05 - .002 || near > 3 + .002) return true;
     return !intersection([strip], [polygon]).some(piece => calcPolygonArea(piece.outer) > .01);
   });
 }

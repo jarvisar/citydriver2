@@ -1,6 +1,6 @@
 import Tensor from './tensor.js';
 import { Grid, Radial, FIELD_TYPE } from './basis-field.js';
-import { insidePolygon } from './polygon-util.js';
+import { insideIndexed } from './polygon-util.js';
 import { createNoise2D } from './simplex-noise.js';
 
 const smoothstep = t => { const c = Math.max(0, Math.min(1, t)); return c * c * (3 - 2 * c); };
@@ -110,12 +110,12 @@ export default class TensorField {
     return this.noise2D(point.x / noiseSize, point.y / noiseSize) * noiseAngle * Math.PI / 180;
   }
   onLand(point) {
-    const inSea = insidePolygon(point, this.sea);
+    const inSea = insideIndexed(point, this.sea);
     if (this.ignoreRiver) return !inSea;
-    return !inSea && !insidePolygon(point, this.river);
+    return !inSea && !insideIndexed(point, this.river);
   }
   inParks(point) {
-    for (const p of this.parks) if (insidePolygon(point, p)) return true;
+    for (const p of this.parks) if (insideIndexed(point, p)) return true;
     return false;
   }
 }

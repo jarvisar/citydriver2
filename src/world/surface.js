@@ -1,20 +1,58 @@
 import * as THREE from 'three';
 import { dedupePolygon, offsetPolyline, signedArea } from '../mapgen/polygon-util.js';
 
+// target.set(value), with each CSS string or hex number parsed once: Color.set
+// parses a string afresh every call, and a city's faces and props ask for a
+// few thousand colours millions of times. (A string Color.set can't read
+// leaves the target as it was, as before.)
+const parsed = new Map();
+export function setColor(target, value) {
+  if (typeof value !== 'string' && typeof value !== 'number') return target.set(value);
+  let color = parsed.get(value);
+  if (!color) {
+    color = new THREE.Color(NaN, NaN, NaN).set(value);
+    if (Number.isNaN(color.r)) return target.set(value);
+    parsed.set(value, color);
+  }
+  return target.copy(color);
+}
+
 // Flat-shaded static geometry: every triangle carries its own face normal
 // and colour, so the whole ground, the roads, the water or a cell's building
 // bodies are one draw each. Points are {x, y} on the map (x east, y north).
+// (Faces go straight into typed blocks at full precision, each twice the
+// last up to a limit, never copied as they fill and joined once when built.
+// `size` floats of each are used.)
 export class Surface {
-  constructor() { this.positions = []; this.normals = []; this.colors = []; this.flows = null; this.color = new THREE.Color(); }
+  constructor() { this.size = 0; this.blocks = []; this.block = null; this.room = 0; this.flows = null; this.color = new THREE.Color(); }
   face(ax, ay, az, bx, by, bz, cx, cy, cz, color, flow = null) {
     const ux = bx - ax, uy = by - ay, uz = bz - az, vx = cx - ax, vy = cy - ay, vz = cz - az;
     let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
     const length = Math.hypot(nx, ny, nz) || 1; nx /= length; ny /= length; nz /= length;
-    this.positions.push(ax, ay, az, bx, by, bz, cx, cy, cz);
-    const { r, g, b } = this.color.set(color);
-    for (let i = 0; i < 3; i++) { this.normals.push(nx, ny, nz); this.colors.push(r, g, b); }
+    if (!this.room) this.addBlock();
+    const block = this.block, o = block.used, p = block.positions, n = block.normals, c = block.colors;
+    p[o] = ax; p[o + 1] = ay; p[o + 2] = az; p[o + 3] = bx; p[o + 4] = by; p[o + 5] = bz; p[o + 6] = cx; p[o + 7] = cy; p[o + 8] = cz;
+    const { r, g, b } = setColor(this.color, color);
+    for (let k = o; k < o + 9; k += 3) { n[k] = nx; n[k + 1] = ny; n[k + 2] = nz; c[k] = r; c[k + 1] = g; c[k + 2] = b; }
+    block.used = o + 9; this.room -= 9; this.size += 9;
     if (flow) { this.flows ??= []; for (let i = 0; i < 3; i++) this.flows.push(flow[0], flow[1]); }
   }
+  addBlock() {
+    const floats = 9 * 256 * 2 ** Math.min(6, this.blocks.length);
+    this.block = { used: 0, positions: new Float64Array(floats), normals: new Float64Array(floats), colors: new Float64Array(floats) };
+    this.blocks.push(this.block); this.room = floats;
+  }
+  // All the blocks' values of one attribute, end to end
+  joined(name, Type = Float32Array) {
+    const out = new Type(this.size);
+    let at = 0;
+    for (const block of this.blocks) { out.set(block[name].subarray(0, block.used), at); at += block.used; }
+    return out;
+  }
+  // The faces so far, each attribute end to end (a copy, to read)
+  get positions() { return this.joined('positions', Float64Array); }
+  get normals() { return this.joined('normals', Float64Array); }
+  get colors() { return this.joined('colors', Float64Array); }
   // Horizontal triangle with its normal up (or down), whichever way the points wind.
   flat(a, b, c, y, color, flow = null, up = true) {
     const cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
@@ -64,9 +102,9 @@ export class Surface {
   }
   build() {
     const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(this.positions, 3));
-    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(this.normals, 3));
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute(this.colors, 3));
+    geometry.setAttribute('position', new THREE.BufferAttribute(this.joined('positions'), 3));
+    geometry.setAttribute('normal', new THREE.BufferAttribute(this.joined('normals'), 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(this.joined('colors'), 3));
     if (this.flows) geometry.setAttribute('flowDirection', new THREE.Float32BufferAttribute(this.flows, 2));
     geometry.computeBoundingSphere();
     return geometry;
@@ -78,25 +116,27 @@ export class Surface {
   // they are kept together. (Up to a whole tile across, they swelled a tile's
   // bounding sphere half as big again, and a view took in a tile or two more.)
   tiles(size) {
-    const p = this.positions, count = p.length / 9, tiles = new Map(), wide = [];
+    const p = this.joined('positions', Float64Array), count = this.size / 9, tiles = new Map(), wide = [];
     for (let face = 0; face < count; face++) {
       const o = face * 9, x0 = p[o], x1 = p[o + 3], x2 = p[o + 6], z0 = p[o + 2], z1 = p[o + 5], z2 = p[o + 8];
       if (Math.max(x0, x1, x2) - Math.min(x0, x1, x2) > size / 4 || Math.max(z0, z1, z2) - Math.min(z0, z1, z2) > size / 4) { wide.push(face); continue; }
-      const key = `${Math.floor((x0 + x1 + x2) / 3 / size)},${Math.floor((z0 + z1 + z2) / 3 / size)}`;
-      if (!tiles.has(key)) tiles.set(key, []);
-      tiles.get(key).push(face);
+      // (tiles keyed by number, within a million tiles of the origin)
+      const key = Math.floor((x0 + x1 + x2) / 3 / size) * 0x200000 + Math.floor((z0 + z1 + z2) / 3 / size);
+      let tile = tiles.get(key);
+      if (!tile) tiles.set(key, tile = []);
+      tile.push(face);
     }
-    const attributes = [['position', this.positions, 3], ['normal', this.normals, 3], ['color', this.colors, 3], ...(this.flows ? [['flowDirection', this.flows, 2]] : [])];
+    const attributes = [['position', p, 3], ['normal', this.joined('normals'), 3], ['color', this.joined('colors'), 3], ...(this.flows ? [['flowDirection', this.flows, 2]] : [])];
     return [...tiles.values(), wide].filter(faces => faces.length).map(faces => {
       const geometry = new THREE.BufferGeometry();
       for (const [name, values, size] of attributes) {
         const stride = size * 3, array = new Float32Array(faces.length * stride);
-        faces.forEach((face, i) => { for (let k = 0; k < stride; k++) array[i * stride + k] = values[face * stride + k]; });
+        for (let i = 0, to = 0; i < faces.length; i++) for (let from = faces[i] * stride, end = from + stride; from < end;) array[to++] = values[from++];
         geometry.setAttribute(name, new THREE.BufferAttribute(array, size));
       }
       geometry.computeBoundingSphere();
       return geometry;
     });
   }
-  get empty() { return this.positions.length === 0; }
+  get empty() { return this.size === 0; }
 }

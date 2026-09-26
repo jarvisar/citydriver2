@@ -384,7 +384,11 @@ function unswerve(roads, { fixed, reach = 35, window = 3, minRadius = 20 } = {})
     for (const atStart of [false, true]) {
       const line = atStart ? points.slice().reverse() : points, total = polylineLength(line);
       if (total < reach + 20) continue;
-      const at = d => { const slice = slicePolyline(line, 0, Math.max(1e-6, total - d)); return slice[slice.length - 1]; };
+      // (each point asked for three times, as a bend's middle and either end: found once)
+      const found = new Map(), at = d => {
+        if (!found.has(d)) { const slice = slicePolyline(line, 0, Math.max(1e-6, total - d)); found.set(d, slice[slice.length - 1]); }
+        return found.get(d);
+      };
       // The furthest tight bend from the end, within reach of it
       let furthest = -1;
       for (let d = window; d <= reach; d += 1) {

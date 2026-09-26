@@ -319,7 +319,14 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
   }
   // (a stop line or a row of teeth that would fall on a crosswalk, where two
   // junctions are close, is left out: the crosswalk marks where to stop)
-  const crosswalks = cityCrosswalks(nav), onCrosswalk = mark => crosswalks.some(walk => convexOverlap(walk.outline, mark, .02));
+  // (only a crosswalk whose bounds reach the mark's can: two convex outlines
+  // apart are apart along some edge's normal)
+  const crosswalks = cityCrosswalks(nav), bounds = crosswalks.map(walk => polygonBounds(walk.outline));
+  const onCrosswalk = mark => {
+    const b = polygonBounds(mark);
+    return crosswalks.some((walk, i) => bounds[i].minX <= b.maxX && bounds[i].maxX >= b.minX && bounds[i].minY <= b.maxY && bounds[i].maxY >= b.minY
+      && convexOverlap(walk.outline, mark, .02));
+  };
   for (const [node, control] of controls) {
     const shape = geometry.get(node.id);
     for (const [edge, approach] of control.approaches) {

@@ -4,7 +4,9 @@ import Vector from './vector.js';
 // major eigenvector points along the local street direction, the minor one
 // across it.
 export default class Tensor {
-  constructor(r, matrix) { this.r = r; this.matrix = matrix; this.oldTheta = false; this._theta = this.calculateTheta(); }
+  // (its angle is worked out when first asked for: most tensors are only
+  // weighed and added, and never asked)
+  constructor(r, matrix) { this.r = r; this.matrix = matrix; this.oldTheta = true; this._theta = 0; }
   static get zero() { return new Tensor(0, [0, 0]); }
   get theta() {
     if (this.oldTheta) { this._theta = this.calculateTheta(); this.oldTheta = false; }

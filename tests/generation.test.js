@@ -74,3 +74,18 @@ test('reloading a seed reproduces the city; different seeds change the streets a
     previous = world;
   }
 });
+
+test('the city is built in stages, each with a line on the loading screen, into the city built straight through', async () => {
+  const { CITY, buildCityStages } = await import('../src/world/city.js');
+  const { LOADING_STAGES } = await import('../src/loading-status.js');
+  const steps = buildCityStages(CITY.seed), stages = [];
+  let step;
+  while (!(step = steps.next()).done) stages.push(step.value);
+  assert.deepEqual(stages, ['coast', 'streets', 'junctions', 'waterfront', 'pavements', 'bridges']);
+  // (and the world's own, named from main.js)
+  for (const stage of [...stages, 'furniture', 'buildings', 'skyline', 'graphics']) assert.ok(LOADING_STAGES[stage], stage);
+  const city = step.value, points = rings => rings.map(ring => ring.map(p => [p.x, p.y]));
+  assert.deepEqual(points(city.lots), points(CITY.lots));
+  assert.deepEqual(points(city.land.map(piece => piece.outer)), points(CITY.land.map(piece => piece.outer)));
+  assert.deepEqual(points(city.quays.map(walk => walk.polygon)), points(CITY.quays.map(walk => walk.polygon)));
+});

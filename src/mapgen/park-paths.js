@@ -20,10 +20,11 @@ export const PARK_PATH = { overshoot: .6, step: 4 };
 
 const v = (x, y) => new Vector(x, y);
 
-// Distance from p to the nearest edge of a closed polygon
-function edgeDistance(p, polygon) {
+// Distance from p to the nearest edge of a closed polygon (or, once it is no
+// more than `least`, some distance no more than that)
+function edgeDistance(p, polygon, least = -Infinity) {
   let best = Infinity;
-  for (let i = 0, n = polygon.length; i < n; i++) {
+  for (let i = 0, n = polygon.length; i < n && best > least; i++) {
     const a = polygon[i], b = polygon[(i + 1) % n], dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1;
     const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
     best = Math.min(best, Math.hypot(p.x - a.x - dx * t, p.y - a.y - dy * t));
@@ -39,10 +40,10 @@ export function deepestPoint(polygon) {
   for (let pass = 0; pass < 3; pass++) {
     const steps = 18;
     for (let i = 0; i <= steps; i++) for (let j = 0; j <= steps; j++) {
-      const p = v(cx - w / 2 + w * i / steps, cy - h / 2 + h * j / steps);
-      if (!insidePolygon(p, polygon)) continue;
-      const d = edgeDistance(p, polygon);
-      if (d > bestDistance) { bestDistance = d; best = p; }
+      // (a point no deeper than the best so far is given up on at its first
+      // edge that near)
+      const p = v(cx - w / 2 + w * i / steps, cy - h / 2 + h * j / steps), d = edgeDistance(p, polygon, bestDistance);
+      if (d > bestDistance && insidePolygon(p, polygon)) { bestDistance = d; best = p; }
     }
     if (!best) break;
     cx = best.x; cy = best.y; w /= 5; h /= 5;
