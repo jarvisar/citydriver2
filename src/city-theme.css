@@ -37,8 +37,10 @@ body[data-controller=true] #app :is(button, input, select):focus {
 }
 #app kbd { border-color: var(--city-line); background: #ffffff09; color: inherit; }
 
-/* HUD panels share a finish in both free drive and taxi mode. */
-#app :is(.city-hud, .drive-actions, .city-guide, .taxi-task, .taxi-dash, .controls, #stick-help, .location) {
+/* HUD panels share a finish in both free drive and taxi mode. The stick's
+   caption is named apart: an id inside :is() would lend every class in the
+   list its weight, and the pause screen's plain location could not undo it. */
+#app :is(.city-hud, .drive-actions, .city-guide, .taxi-task, .taxi-dash, .controls, .location), #app #stick-help {
   color: var(--city-text); background: var(--city-glass); border-color: var(--city-line);
   box-shadow: var(--city-shadow); backdrop-filter: blur(12px);
 }
@@ -172,6 +174,18 @@ body[data-controller=true] #app #city-map-open::before { content: 'VIEW'; margin
 #app .taxi-task #toast { border: 0; box-shadow: none; }
 #app :is(.error, .loading) { background: var(--city-panel); color: var(--city-text); }
 #app .error button { background: var(--city-accent); color: var(--city-on-accent); border-color: var(--city-accent); border-radius: var(--city-control-radius); }
+/* A big screen draws the HUD and menus larger, the way a game's interface
+   grows with the display: one step at desktop sizes, more at 1440p and 4K.
+   Zoom keeps each panel's own layout, as though on a smaller screen; a
+   height taken from the window is divided by the scale to stay inside it. */
+@media (min-width: 1600px) and (min-height: 1000px) {
+  :root { --ui-scale: 1.15; }
+  #app :is(.topbar, .taxi-hud, .taxi-task, .taxi-dash, .city-guide, .controls, .pause-content, .taxi-result-card, .chooser),
+  #app :is(#taxi-buttons, #toast, #fps-counter, #vr-error, #taxi-fleet-dialog) { zoom: var(--ui-scale); }
+  #app :is(.chooser, .taxi-result-card), #app #taxi-fleet-dialog { max-height: calc((100dvh - var(--ui-top) - var(--ui-bottom)) / var(--ui-scale)); }
+}
+@media (min-width: 2200px) and (min-height: 1300px) { :root { --ui-scale: 1.35; } }
+@media (min-width: 3000px) and (min-height: 1800px) { :root { --ui-scale: 1.7; } }
 @media (forced-colors: active) {
   #app :is(.audio-channel input, #pixel-density) { appearance: auto; accent-color: auto; }
 }

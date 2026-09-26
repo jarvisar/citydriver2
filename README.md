@@ -44,8 +44,8 @@ Every visit generates a new city. Add `?seed=4817` to the URL to load the same c
 | Autodrive (free drive) | H | D-pad Up |
 | Fullscreen | F | D-pad Down (while driving) |
 | Sound | Pause menu | Pause menu |
-| City map | M, or Full map on the street map | View / Share |
-| Street map (show / hide) | Its Hide button | |
+| City map | M, or City map on the street map | View / Share |
+| Street map (show / hide) | Its arrow button | |
 | Menus | Tab, Enter | D-pad or left stick to choose, A / Cross to select, B / Circle to go back |
 
 On touch screens, use the stick to drive, hold Boost, and tap Drift while steering in chase view. Release the stick to stop.

@@ -61,7 +61,7 @@ body[data-journey=city] .paint-shop { background: #fff6; }
 /* A fixed label column keeps the bars in one line down the card, and a capped
    width stops them stretching across a wide phone row. */
 .car-meters { display: block; margin-top: 10px; max-width: 232px; }
-.car-meter { display: grid; grid-template-columns: 74px minmax(0, 1fr); align-items: center; gap: 10px; margin-top: 5px; font-size: 10px; letter-spacing: .2px; opacity: .62; }
+.car-meter { display: grid; grid-template-columns: 74px minmax(0, 1fr); align-items: center; gap: 10px; margin-top: 5px; font-size: 11px; letter-spacing: .2px; opacity: .62; }
 .car-meter-track { height: 3px; border-radius: 2px; background: #25473e2b; overflow: hidden; }
 .car-meter-track > span { display: block; height: 100%; border-radius: 2px; background: var(--ink); }
 @media (max-width: 600px) {
@@ -73,6 +73,11 @@ body[data-journey=city] .paint-shop { background: #fff6; }
   .car-card-plain { display: flex; padding: 13px 14px; }
   .car-card .chooser-card-title { font-size: 12px; }
   .car-card { grid-template-columns: 130px 1fr; }
-  .car-meter { grid-template-columns: 66px minmax(0, 1fr); gap: 8px; font-size: 9px; margin-top: 4px; }
+  .car-meter { grid-template-columns: 72px minmax(0, 1fr); gap: 8px; font-size: 11px; margin-top: 4px; }
   .car-meters { margin-top: 8px; max-width: 190px; }
+}
+/* A wide screen shows four cars to a row, so more of the garage is in view. */
+@media (min-width: 1200px) and (min-height: 700px) {
+  #car-dialog { width: min(1180px, calc(100% - var(--ui-left) - var(--ui-right))); }
+  #car-dialog .car-options { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }

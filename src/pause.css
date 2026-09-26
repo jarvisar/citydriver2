@@ -1,13 +1,26 @@
-/* Pause layout only; colors and control finishes come from the existing UI. */
-.pause-overlay { padding: calc(var(--header-clear) + 12px) max(16px, var(--ui-right)) max(24px, var(--ui-bottom)) max(16px, var(--ui-left)); scrollbar-width: thin; }
+/* Pause layout only; colors and control finishes come from the existing UI.
+   The settings come in three groups (driving, the city, sound and display):
+   one column on a phone and side by side where the screen has room. The
+   header is a bar pinned to the top, so Resume stays in reach however far
+   the settings scroll. */
+.pause-overlay { padding: 0 max(16px, var(--ui-right)) max(24px, var(--ui-bottom)) max(16px, var(--ui-left)); scrollbar-width: thin; }
 .pause-content { width: 380px; max-width: 100%; margin: 0 auto; }
-.pause-header { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px 16px; margin-bottom: 24px; }
-.pause-overlay .pause-header .location { position: static; grid-column: 1 / -1; justify-self: start; width: auto; max-width: 100%; min-width: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; backdrop-filter: none; text-shadow: none; }
+.pause-header {
+  position: sticky; top: 0; z-index: 1;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 16px;
+  margin-bottom: 20px; padding: max(16px, var(--ui-top)) 0 12px;
+  /* (the bar runs the full width of the screen, behind the column) */
+  background: #101e28; box-shadow: 0 0 0 100vmax #101e28, 0 1px 0 100vmax var(--city-line); clip-path: inset(0 -100vmax -1px);
+}
+.pause-header h2 { grid-area: 1 / 1; }
+.pause-header .start-button { grid-area: 1 / 2 / span 2; }
+.pause-overlay .pause-header .location { position: static; grid-area: 2 / 1; justify-self: start; width: auto; max-width: 100%; min-width: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; backdrop-filter: none; text-shadow: none; }
+.pause-header .location-copy { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 0 10px; }
 .pause-header .location > svg { display: none; }
 .pause-header .location-title { font-size: 12px; font-weight: 650; }
 .pause-header .location-sub { max-width: none; font-size: 14px; font-weight: 500; opacity: 1; }
 .pause-header :is(h2, .location-copy), .pause-settings h3 { text-shadow: 0 1px 3px var(--cream); }
-.pause-header h2 { margin: 0; font-size: 36px; line-height: 1.15; }
+.pause-header h2 { margin: 0; font-size: 32px; line-height: 1.15; }
 .pause-header .start-button { min-width: 0; min-height: 48px; margin: 0; padding: 12px 16px; gap: 12px; }
 .pause-header .start-button span { font-size: 14px; white-space: nowrap; }
 .pause-header .wheel-icon { width: 24px; height: 24px; }
@@ -35,15 +48,46 @@
 .graphics-toggle:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 body[data-controller=true] .pause-settings input:focus { outline: 2px solid var(--ink); outline-offset: 3px; }
 
-/* A short landscape viewport has room beside the controls, not above them. */
-@media (min-width: 560px) and (max-height: 560px) {
-  .pause-overlay { padding-top: var(--header-clear); }
-  .pause-content { display: grid; grid-template-columns: minmax(0, 180px) minmax(0, 380px); align-items: start; justify-content: center; gap: 28px; width: 700px; }
-  .pause-header { position: sticky; top: 0; grid-template-columns: 1fr; gap: 16px; margin: 0; }
-  .pause-header .location { grid-row: 2; }
-  .pause-header h2 { font-size: 30px; }
-  .pause-header .start-button { justify-content: center; }
-  .pause-settings { gap: 18px; }
+/* A taxi run has no autodrive and always has traffic, so neither switch shows. */
+body[data-mode=taxi] .pause-panel :is(#autodrive, #traffic) { display: none; }
+/* Two groups side by side, then three. Of the two columns, one holds a
+   single long group: the discoveries in free drive, the shift goals in a
+   taxi run. The other takes the two short ones. */
+.pause-column { display: contents; }
+@media (min-width: 560px) {
+  .pause-header { grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 20px; }
+  .pause-overlay .pause-header .location { grid-area: 1 / 2; }
+  .pause-header .start-button { grid-area: 1 / 3; }
+}
+@media (min-width: 640px), (min-width: 560px) and (orientation: landscape) {
+  .pause-content { width: 720px; }
+  .pause-settings { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto 1fr; align-items: start; column-gap: 24px; }
+  .pause-column { display: grid; gap: 22px; align-content: start; min-width: 0; }
+  .pause-column:nth-child(1) { grid-area: 1 / 1; }
+  .pause-column:nth-child(2) { grid-area: 1 / 2 / span 2; }
+  .pause-column:nth-child(3) { grid-area: 2 / 1; }
+  body[data-mode=taxi] .pause-column:nth-child(1) { grid-area: 1 / 1 / span 2; }
+  body[data-mode=taxi] .pause-column:nth-child(2) { grid-area: 1 / 2; }
+  body[data-mode=taxi] .pause-column:nth-child(3) { grid-area: 2 / 2; }
+  .pause-settings > :not(.pause-column) { grid-column: 1 / -1; }
+}
+@media (min-width: 1000px) {
+  .pause-content { width: 1100px; }
+  .pause-settings { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: auto; column-gap: 28px; }
+  .pause-column:nth-child(n), body[data-mode=taxi] .pause-column:nth-child(n) { grid-row: 1; grid-column: auto; }
+}
+/* A narrow phone keeps the bar to two lines: the game's name is on the
+   title screen already. */
+@media (max-width: 420px) {
+  .pause-header .location-title { display: none; }
+}
+/* A short screen keeps the bar low. */
+@media (max-height: 560px) {
+  .pause-header { margin-bottom: 14px; padding: max(10px, var(--ui-top)) 0 8px; }
+  .pause-header h2 { font-size: 28px; }
+  .pause-header .start-button { min-height: 44px; padding-block: 8px; }
+  .pause-settings { gap: 16px; }
+  .pause-column { gap: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .graphics-toggle .settings-chevron { transition: none; } }
 
@@ -56,6 +100,6 @@ body[data-controller=true] .pause-settings input:focus { outline: 2px solid var(
 .shift-goals .goal-copy { display: grid; gap: 2px; min-width: 0; }
 .shift-goals strong { font-weight: 600; }
 .shift-goals li[data-done=true] strong { text-decoration: line-through; opacity: .8; }
-.shift-goals small { font-size: 10px; opacity: .72; }
+.shift-goals small { font-size: 11px; opacity: .72; }
 #goals-summary { margin: 10px 0 0; }
 #goals-summary:empty { display: none; }

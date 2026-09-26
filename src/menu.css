@@ -33,7 +33,7 @@ body { --action: #263f4b; --action-hover: #3d5f6b; --ink: #253e49; --cream: #f4f
   margin: 3px 0 18px; font-family: 'Arial Rounded MT Bold', 'Trebuchet MS', 'Segoe UI', sans-serif;
   font-size: clamp(48px, 6.2vw, 80px); font-weight: 750; line-height: 1; letter-spacing: -.055em;
 }
-#welcome .eyebrow { display: flex; justify-content: center; gap: 15px; font-size: clamp(9px, 1vw, 11px); font-weight: 650; letter-spacing: .34em; line-height: 1.5; }
+#welcome .eyebrow { display: flex; justify-content: center; gap: 15px; font-size: clamp(11px, 1vw, 13px); font-weight: 650; letter-spacing: .34em; line-height: 1.5; }
 #welcome .eyebrow::before, #welcome .eyebrow::after { content: ''; width: 23px; height: 1px; background: currentColor; opacity: .8; flex-shrink: 0; }
 .menu-actions { display: flex; flex-direction: column; align-items: center; margin-top: 32px; max-width: 100%; }
 .start-button {
@@ -87,7 +87,7 @@ button svg:not(.chooser-art) { stroke-linecap: round; stroke-linejoin: round; }
 .pause-panel, .graphics-panel, #enter-vr-pause { width: 360px; }
 .panel-button, .panel-toggle, .graphics-levels button { border-radius: 12px; border-color: var(--ui-line); min-height: 44px; }
 .graphics-levels button { padding-inline: 10px; }
-.pause-panel h3, .graphics-panel h3, .paint-shop h3, .garage-subheading { font-size: 10px; letter-spacing: 1.6px; }
+.pause-panel h3, .graphics-panel h3, .paint-shop h3, .garage-subheading { font-size: 11px; letter-spacing: 1.6px; }
 .location, .paint-shop { border-radius: 16px; }
 .controls { border-radius: 999px; }
 .dismiss-control-help svg { width: 18px; height: 18px; }
@@ -97,7 +97,7 @@ button svg:not(.chooser-art) { stroke-linecap: round; stroke-linejoin: round; }
   #welcome { top: max(calc(var(--ui-top) + 66px), 15dvh); bottom: max(calc(var(--ui-bottom) + 28px), 23dvh); }
   #welcome .wordmark { font-size: clamp(46px, 10.8vw, 64px); margin-bottom: 15px; }
   #welcome .start-button { min-height: 76px; }
-  #welcome .eyebrow { font-size: 9px; gap: 12px; letter-spacing: .28em; }
+  #welcome .eyebrow { font-size: 11px; gap: 12px; letter-spacing: .28em; }
 }
 @media (max-width: 760px), (max-height: 560px) {
   .pause-overlay .location { margin: 0 0 18px; }
@@ -107,7 +107,7 @@ button svg:not(.chooser-art) { stroke-linecap: round; stroke-linejoin: round; }
   #welcome { top: calc(var(--ui-top) + 54px); bottom: calc(var(--ui-bottom) + 12px); }
   #welcome .brand-mark { width: 56px; }
   #welcome .wordmark { font-size: 44px; margin: 2px 0 12px; }
-  #welcome .eyebrow { font-size: 8px; }
+  #welcome .eyebrow { font-size: 11px; }
   #welcome .start-button { min-height: 60px; padding: 12px 26px; font-size: 22px; width: 242px; }
   #welcome .wheel-icon { width: 32px; height: 32px; }
   #welcome .start-button.menu-secondary { width: 146px; margin-top: 9px; padding: 6px 14px; font-size: 13px; }
@@ -119,10 +119,16 @@ button svg:not(.chooser-art) { stroke-linecap: round; stroke-linejoin: round; }
   #welcome { top: calc(var(--ui-top) + 56px); bottom: calc(var(--ui-bottom) + 8px); }
   #welcome .brand-mark { width: 48px; }
   #welcome .wordmark { font-size: 40px; }
-  #welcome .eyebrow { gap: 8px; font-size: 7px; }
+  #welcome .eyebrow { gap: 8px; font-size: 11px; }
   #welcome .eyebrow::before, #welcome .eyebrow::after { width: 14px; }
   .menu-actions { margin-top: 12px; }
   #welcome .start-button { min-height: 54px; font-size: 20px; }
   #welcome .start-button.menu-secondary { margin-top: 7px; padding-block: 6px; font-size: 13px; }
+}
+/* A short landscape screen sets the name beside the buttons rather than
+   above them, so both fit with the street still in view between them. */
+@media (orientation: landscape) and (max-height: 400px) {
+  #welcome { top: var(--ui-top); bottom: var(--ui-bottom); flex-direction: row; justify-content: center; align-items: center; gap: clamp(24px, 8vw, 96px); }
+  .menu-actions { margin-top: 0; }
 }
 #welcome > .controller-hint { position: relative; margin: 18px auto 0; padding: 6px 38px 6px 12px; width: fit-content; max-width: 100%; text-align: center; border-radius: 8px; }

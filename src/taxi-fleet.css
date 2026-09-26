@@ -2,17 +2,17 @@
 #taxi-fleet-dialog::backdrop { background: #0a141bd9; backdrop-filter: blur(8px); }
 #taxi-fleet-dialog .chooser-heading { display: flex; align-items: center; justify-content: space-between; background: #17262f; z-index: 1; }
 #taxi-fleet-dialog h2 { margin: 4px 0; font-size: 26px; letter-spacing: -.7px; }
-#taxi-fleet-dialog .eyebrow { color: #ffd238; font-size: 10px; }
+#taxi-fleet-dialog .eyebrow { color: #ffd238; font-size: 11px; }
 #taxi-fleet-dialog .icon-button { color: #f5f1de; font-size: 28px; }
 .fleet-summary { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 18px 0 22px; }
 .fleet-summary p { max-width: 460px; color: #bfcac8; font-size: 13px; line-height: 1.6; margin: 0; }
 .fleet-wallet { text-align: right; white-space: nowrap; }
-.fleet-wallet span { display: block; color: #bfcac8; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; }
+.fleet-wallet span { display: block; color: #bfcac8; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }
 #fleet-balance { font-size: 30px; color: #ffd238; font-variant-numeric: tabular-nums; }
 .taxi-fleet-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .taxi-fleet-card { display: flex; flex-direction: column; padding: 16px; background: #20333d; border: 1px solid #52636a; border-radius: 12px; }
 .taxi-fleet-card[data-selected=true] { border-color: #ffd238; box-shadow: inset 0 3px #ffd238; }
-.fleet-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 24px; font-size: 9px; color: #c7d1cd; }
+.fleet-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 24px; font-size: 11px; color: #c7d1cd; }
 .fleet-card-top span:last-child { color: #ffd238; font-weight: 800; }
 .taxi-fleet-card .car-art { width: 100%; height: 116px; margin: 4px 0 8px; background: radial-gradient(ellipse at center, #ffffff0c, transparent 70%); }
 .taxi-fleet-card h3 { margin: 0; font-size: 22px; letter-spacing: -.5px; }
@@ -45,10 +45,11 @@
 #fleet-feedback { min-height: 18px; margin: 8px 0 0; color: #a4e887; font-size: 12px; }
 #fleet-save { color: #ffd238; font-size: 12px; }
 #taxi-result-bank { color: #ffd238; line-height: 1.6; }
-.taxi-result-card { max-height: calc(100dvh - 32px); overflow-y: auto; box-sizing: border-box; }
+.taxi-result-card { max-height: calc(100dvh - var(--ui-top) - var(--ui-bottom)); overflow-y: auto; box-sizing: border-box; }
 #pause-fleet[hidden], #change-car[hidden] { display: none; }
 @media (max-width: 680px) {
   #taxi-fleet-dialog { padding: 18px; }
+  #taxi-fleet-dialog h2 { font-size: 22px; }
   .fleet-summary { align-items: flex-start; gap: 12px; }
   .fleet-summary p { font-size: 12px; }
   #fleet-balance { font-size: 25px; }

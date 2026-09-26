@@ -188,8 +188,12 @@ async function boot() {
     const hereText = () => `You are in ${cityDistrict(vehicle.s, vehicle.u)}`;
     function drawWorldMap() {
       if (!worldMapDialog.open) return;
-      // as wide as the dialog, or as the window's height leaves room for
-      const room = Math.max(220, window.innerHeight - 250);
+      // as wide as its column, or as tall as the dialog leaves room for once
+      // its heading, and the key when that sits below the map, are counted
+      const body = worldMapCanvas.closest('.world-map-body'), key = body.lastElementChild;
+      const below = getComputedStyle(body).gridTemplateColumns.split(' ').length < 2;
+      const chrome = worldMapDialog.offsetHeight - body.offsetHeight + (below ? key.offsetHeight + parseFloat(getComputedStyle(body).rowGap) : 0);
+      const room = Math.max(140, parseFloat(getComputedStyle(worldMapDialog).maxHeight) - chrome - 2);
       worldMapCanvas.style.width = `${Math.floor(Math.min(worldMapCanvas.parentElement.clientWidth, room * worldMap.aspect))}px`;
       worldMap.draw(worldMapCanvas, vehicle);
     }

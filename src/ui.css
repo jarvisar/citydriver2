@@ -28,7 +28,7 @@ body[data-controller=true] .controller-hint { display: block; }
 .controls { padding: 3px 10px; }
 .controls button { min-height: 44px; padding: 0 5px; }
 .controls .control-label { font-size: 12px; }
-.chooser-current { font-size: 9px; letter-spacing: 1.3px; }
+.chooser-current { font-size: 11px; letter-spacing: 1.3px; }
 .start-button { font-size: 14px; }
 .pause-overlay p { font-size: 14px; }
 @media (min-width: 761px) {
@@ -87,7 +87,7 @@ body[data-controller=true] .controller-hint { display: block; }
   .chooser-art { height: 100%; min-height: 112px; object-fit: cover; }
   .chooser-card-copy { padding: 14px 12px; }
   .chooser-card-title { font-size: 14px; }
-  .chooser-current { font-size: 8px; letter-spacing: 1px; margin-top: 10px; }
+  .chooser-current { font-size: 11px; letter-spacing: 1px; margin-top: 10px; }
 }
 
 @media (max-width: 760px) and (any-pointer: coarse) {

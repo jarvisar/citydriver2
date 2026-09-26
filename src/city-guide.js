@@ -33,7 +33,8 @@ export class CityGuide {
     this.expanded = expanded; this.canvas.hidden = !expanded;
     $('city-guide').dataset.expanded = String(expanded);
     $('city-map-toggle').setAttribute('aria-expanded', String(expanded));
-    $('city-map-toggle').textContent = expanded ? 'Hide' : 'Show map';
+    $('city-map-toggle').setAttribute('aria-label', expanded ? 'Hide map' : 'Show map');
+    $('city-map-toggle').title = expanded ? 'Hide map' : 'Show map';
     $('taxi-offer').hidden = !expanded || !this.taxi?.running || !$('taxi-offer').textContent;
     // Draw immediately so opening the map never exposes an empty canvas.
     if (expanded) {

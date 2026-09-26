@@ -31,7 +31,8 @@ body[data-controller=true] .pause-overlay button:focus { outline: 2px solid var(
 #app:has(#pause-overlay:not([hidden])) :is(.bottom-bar, .touch-controls, .welcome),
 #app:has(.chooser[open]) :is(.topbar, .bottom-bar, .touch-controls, .welcome, #pause-overlay, #toast) { visibility: hidden; pointer-events: none; }
 #app:has(.welcome:not(.hidden)) #pause { display: none; }
-#app:has(#pause-overlay:not([hidden])) #pause { display: flex; visibility: visible; pointer-events: auto; }
+/* The pause screen's own Resume takes over from the toolbar's button. */
+#app:has(#pause-overlay:not([hidden])) .drive-actions { display: none; }
 .welcome {
   --panel-top: max(var(--header-clear), calc(50% - 220px));
   top: var(--panel-top); bottom: auto; left: var(--ui-left); transform: none;
@@ -234,7 +235,7 @@ body[data-controller=true] .drive-actions { display: none; }
    keeps a 44px tap target through a halo, so it can look small. */
 #stick-help {
   display: flex; align-items: center; gap: 8px;
-  width: max-content; max-width: min(230px, 62vw);
+  width: max-content; max-width: min(290px, 72vw);
   padding: 8px 8px 8px 13px; line-height: 1.45;
 }
 /* Both lines start together so the arrows line up as a legend. */
