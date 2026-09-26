@@ -7,7 +7,7 @@ import { CARS, DEFAULT_CAR, DRAG, ROUTE_PAINT, carEntry, carStats } from './cars
 import { createShapeCar } from './car-models.js';
 import { createFormulaCar } from './formula-model.js';
 import { createSpecialCar } from './special-models.js';
-import { collisionImpulse, footprintMass, leadingPoint, rock, rockFrom } from './impact.js';
+import { collisionImpulse, footprintMass, heft, leadingPoint, rock, rockFrom, SCENERY_SURFACE } from './impact.js';
 import { steerCurve, steeringResponse, driftDirection, turnRate, corneringLoad, travelHeading } from './handling.js';
 
 const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: .74, flatShading: true, ...extra });
@@ -152,11 +152,13 @@ export const impassable = ground => ground.blocked;
 // slide within about half a second, the turn a little sooner. The fastest a
 // blow can set the car turning, in radians a second.
 const SLIDE_GRIP = 5, SPIN_GRIP = 8, SPIN_MOST = 5;
-// Walls, trees and kerbside furniture give nothing back but a little bounce,
-// and scrape a car sliding along them.
-const SCENERY = { bounce: .25, friction: .2 };
 // A blow slower than this (m/s where they meet) is a touch, not a crash.
 const TOUCH = 1;
+// Pushing another car, the engine can only drive as hard as the tyres grip
+// (m/s²), however quick the car is, so weight decides who moves whom: a truck
+// bulldozes a hatchback, the taxi shoves one aside, and a light racer cannot
+// shift a van. PUSHING is how long, in seconds, a touch counts as a push.
+const PUSH_GRIP = 9, PUSHING = .15;
 // How far the body leans, in radians, when the tyres are giving everything.
 const LEAN = .105;
 // A handbrake tap leaves the slide available for this long, so the button and
@@ -184,7 +186,7 @@ export class DrivingController {
     // and the swing it leaves the body with.
     this.knock = { x: 0, z: 0, spin: 0 }; this.jolt = { pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 };
     // The turn the driver is making, and how shaken the view is (0 to 1).
-    this.yawRate = 0; this.trauma = 0;
+    this.yawRate = 0; this.trauma = 0; this.pushing = 0;
     this.audioTelemetry = { speed: 0, throttle: 0, brake: 0, offRoad: 0, steer: 0, handbrake: 0, slip: 0, impact: 0, impactSerial: 0, scrape: 0 };
     const pose = () => ({ position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), bodyPitch: 0, bodyRoll: 0, wheelSpin: 0, steer: 0, slip: 0 });
     this.previousPose = pose(); this.currentPose = pose();
@@ -230,7 +232,7 @@ export class DrivingController {
   }
   reset() {
     this.speed = 0; this.steer = 0; this.weight = 0; this.load = 0; this.driftArmed = 0; this.knock.x = this.knock.z = this.knock.spin = 0;
-    Object.assign(this.jolt, { pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 }); this.yawRate = 0; this.trauma = 0; this.audioTelemetry.scrape = 0;
+    Object.assign(this.jolt, { pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 }); this.yawRate = 0; this.trauma = 0; this.pushing = 0; this.audioTelemetry.scrape = 0;
     // A generated street network has no lane at u = 2.4: settle into the nearest lane instead.
     if (this.route.nearestLane) { const pose = this.route.nearestLane(this.s, this.u, this.heading); this.s = pose.s; this.u = pose.u; this.heading = pose.heading; }
     else { this.u = 2.4; this.heading = this.route.frame(this.s).angle; }
@@ -308,16 +310,17 @@ export class DrivingController {
   // Another car gives way as far as its weight allows. This one is put back
   // outside it and takes its share of the blow (see impact.js and strike).
   resolveTrafficCollision(dx, dz, dvx = 0, dvz = 0, spin = 0, impact = Math.hypot(dvx, dvz), scrape = 0) {
-    this.strike(dvx, dvz, spin, impact, scrape);
+    this.strike(dvx, dvz, spin, impact, scrape); this.pushing = PUSHING;
     this.shift(dx, dz);
     if (!this.freeDriving) this.u = clamp(this.u, ...this.route.bounds(this.s));
     this.placeAfterCollision();
   }
-  // How the car moves as a body, for a blow to read: its velocity, and the
-  // turn both the tyres and any earlier knock are giving it.
+  // How the car moves as a body, for a blow to read: its velocity, the turn
+  // both the tyres and any earlier knock are giving it, and what it weighs
+  // against another car (see heft).
   motion() {
     const p = this.groundedPosition, v = this.velocity;
-    return { x: p.x, z: p.z, heading: this.heading, halfWidth: this.spec.width / 2, halfLength: this.spec.length / 2, mass: this.spec.mass, vx: v.x, vz: v.z, spin: this.yawRate + this.knock.spin };
+    return { x: p.x, z: p.z, heading: this.heading, halfWidth: this.spec.width / 2, halfLength: this.spec.length / 2, mass: heft(this.spec.mass, true), vx: v.x, vz: v.z, spin: this.yawRate + this.knock.spin };
   }
   // Standing scenery gives nothing. The car is put back outside it along the
   // contact normal and takes the whole blow at `point`, where they touch: a
@@ -328,7 +331,7 @@ export class DrivingController {
   resolveSceneryCollision(nx, nz, depth, dt, point = null) {
     const car = this.motion(), normal = { x: nx, z: nz };
     point ??= leadingPoint(car, normal);
-    const blow = collisionImpulse(car, { x: point.x, z: point.z, vx: 0, vz: 0, mass: Infinity }, normal, point, SCENERY);
+    const blow = collisionImpulse(car, { x: point.x, z: point.z, vx: 0, vz: 0, mass: Infinity }, normal, point, SCENERY_SURFACE);
     if (blow) this.strike(blow.a.x, blow.a.z, blow.a.spin, blow.closing, blow.slide);
     // Away from the road (s, u) is not a rigid frame, so the push is carried
     // back through the route's own mapping rather than the road's angle.
@@ -445,6 +448,10 @@ export class DrivingController {
     }
     this.boosting = boosting && !parkingBrake && !brake;
     if (this.boosting) { acceleration += stats.acceleration * .9; pedals += stats.acceleration * .9; }
+    if (this.pushing > 0) {
+      this.pushing = Math.max(0, this.pushing - dt);
+      if (acceleration * Math.sign(this.speed || acceleration) > PUSH_GRIP) acceleration = Math.sign(acceleration) * PUSH_GRIP;
+    }
     const oldSpeed = this.speed;
     const boostCoast = Math.max(0, this.speed - stats.topSpeed - stats.braking * .4 * dt);
     this.speed = clamp(this.speed + acceleration * dt, touch ? 0 : -stats.reverseSpeed, stats.topSpeed + (boosting ? 10 : boostCoast));

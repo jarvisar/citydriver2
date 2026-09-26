@@ -95,24 +95,35 @@ function insideConvex(p, polygon) {
   return true;
 }
 
-// The car against whatever stands in the chunks around it. Nearly every
-// footprint is turned away by two subtractions, so a chunk's few hundred cost
-// less than posing one traffic car.
-export function collideScenery(player, chunks, dt) {
-  const p = player.groundedPosition, halfWidth = player.spec.width / 2, halfLength = player.spec.length / 2;
-  const reach = Math.hypot(halfWidth, halfLength), center = Math.floor(player.s / CHUNK_LENGTH);
-  const nearby = player.route.grid ? chunks.values() : [chunks.get(center - 1), chunks.get(center), chunks.get(center + 1)];
-  for (const chunk of nearby) {
+// Whatever stands in `chunks` that a car's footprint overlaps, handed to
+// `visit(contact, solid)` one at a time. `box()` answers where the car is now,
+// since each contact may move it. Nearly every footprint is turned away by two
+// subtractions, so a chunk's few hundred cost less than posing one traffic car.
+// A parked car knocked loose (`woken`) is no longer scenery.
+export function sceneryContacts(box, chunks, visit) {
+  let car = box();
+  const reach = Math.hypot(car.halfWidth, car.halfLength);
+  for (const chunk of chunks) {
     const bounds = chunk?.collisionBounds;
-    if (bounds && (p.x + reach < bounds.minX || p.x - reach > bounds.maxX || p.z + reach < bounds.minZ || p.z - reach > bounds.maxZ)) continue;
+    if (bounds && (car.x + reach < bounds.minX || car.x - reach > bounds.maxX || car.z + reach < bounds.minZ || car.z - reach > bounds.maxZ)) continue;
     const colliders = chunk?.features?.colliders;
     if (!colliders) continue;
     for (const solid of colliders) {
-      if (Math.abs(solid.z - p.z) > reach + solid.reach || Math.abs(solid.x - p.x) > reach + solid.reach) continue;
-      const car = { x: p.x, z: p.z, heading: player.heading, halfWidth, halfLength };
+      if (solid.woken || Math.abs(solid.z - car.z) > reach + solid.reach || Math.abs(solid.x - car.x) > reach + solid.reach) continue;
       const contact = solid.heading === undefined && !solid.corners ? postContact(car, solid) : footprintContact(car, solid.corners ? solid : boxOutline(solid));
-      if (!contact) continue;
-      player.resolveSceneryCollision(contact.x, contact.z, contact.depth, dt, contact.point);
+      if (contact) { visit(contact, solid); car = box(); }
     }
   }
+}
+// The player's car against the chunks around it. A parked car it touches may
+// be knocked loose (`wake`, see CityTraffic.wake), and then it is a car to
+// push rather than a wall.
+export function collideScenery(player, chunks, dt, wake = null) {
+  const halfWidth = player.spec.width / 2, halfLength = player.spec.length / 2, center = Math.floor(player.s / CHUNK_LENGTH);
+  const nearby = player.route.grid ? chunks.values() : [chunks.get(center - 1), chunks.get(center), chunks.get(center + 1)];
+  const box = () => ({ x: player.groundedPosition.x, z: player.groundedPosition.z, heading: player.heading, halfWidth, halfLength });
+  sceneryContacts(box, nearby, (contact, solid) => {
+    if (solid.parked && wake?.(solid)) return;
+    player.resolveSceneryCollision(contact.x, contact.z, contact.depth, dt, contact.point);
+  });
 }

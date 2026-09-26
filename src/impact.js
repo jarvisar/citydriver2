@@ -7,7 +7,9 @@
 // (a wall, a tree) is a body of infinite mass at the point of contact.
 
 // Cars crumple far more than they rebound, and scrape as they slide past.
-export const CAR_SURFACE = { bounce: .2, friction: .3 };
+// Walls, trees and kerbside furniture give nothing back but a little bounce,
+// and scrape a car sliding along them.
+export const CAR_SURFACE = { bounce: .2, friction: .3 }, SCENERY_SURFACE = { bounce: .25, friction: .2 };
 // Below this closing speed a touch does not bounce at all, so a car leaning on
 // another, or on a wall, rests against it instead of chattering; the full
 // bounce comes in by twice this.
@@ -95,4 +97,28 @@ export function rock(jolt, dt) {
   if (Math.abs(jolt.pitch) + Math.abs(jolt.roll) > 1e-3 || Math.abs(jolt.pitchRate) + Math.abs(jolt.rollRate) > .01) return true;
   jolt.pitch = jolt.roll = jolt.pitchRate = jolt.rollRate = 0;
   return false;
+}
+
+// What a car weighs in a blow with another. Differences in mass count for a
+// little more than they would, and the player's car for a little more again,
+// so a truck ploughs through traffic and the taxi shoves a hatchback aside,
+// while a light racer still bounces off a van.
+export const heft = (mass, player = false) => mass ** 1.3 * (player ? 1.3 : 1);
+
+// A car knocked loose, skidding on its own tyres: its shaken driver has the
+// brakes locked, and a crashed car stops a little quicker than a clean skid
+// would, so they take speed along its heading at `grip.roll` (m/s²) and
+// scrub any slide across it at `grip.side`, each only as far as stopping it.
+// (Brakes off, a spinning car would roll away wherever it came to face.) The
+// spin dies away by `grip.spin` rad/s² and a share each second. Positions are
+// left to the caller.
+export const LOOSE_GRIP = { roll: 10, side: 10, spin: 5 }, HANDBRAKE_GRIP = { roll: 10, side: 11, spin: 5 };
+export function skid(body, heading, dt, grip = LOOSE_GRIP) {
+  const fx = Math.sin(heading), fz = -Math.cos(heading);
+  let along = body.vx * fx + body.vz * fz, across = body.vx * Math.cos(heading) + body.vz * Math.sin(heading);
+  along -= Math.sign(along) * Math.min(Math.abs(along), grip.roll * dt);
+  across -= Math.sign(across) * Math.min(Math.abs(across), grip.side * dt);
+  body.vx = fx * along + Math.cos(heading) * across; body.vz = fz * along + Math.sin(heading) * across;
+  body.spin -= Math.sign(body.spin) * Math.min(Math.abs(body.spin), grip.spin * dt);
+  body.spin *= Math.exp(-dt * 1.5);
 }

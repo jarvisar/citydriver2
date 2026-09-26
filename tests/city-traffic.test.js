@@ -181,7 +181,8 @@ test('autodrive never loses its way: it never whips round, circles on the spot o
   }
 });
 
-// One or two cars pinned to a long, plain street near the start, the rest out of the way
+// Cars pinned to a long, plain street near the start, the rest out of the
+// way: [along, speed, model name] each
 function pinnedStreet(player, cars) {
   const traffic = new CityTraffic(new THREE.Scene(), player.route, player.s, 'city', player.u), start = journeyStart();
   const edge = traffic.nav.edges.filter(e => e.kind !== 'path' && e.length > 160 && !e.profile.median).sort((a, b) => {
@@ -190,41 +191,90 @@ function pinnedStreet(player, cars) {
   })[0];
   for (const car of traffic.vehicles) { car.edge = null; car.car.visible = false; car.s = car.u = 1e6; car.position.set(1e6, 0, 1e6); }
   traffic.spawn = () => false; traffic.junctions.limit = () => Infinity;
-  const pinned = cars.map(([along, speed], i) => {
-    const car = traffic.vehicles[i];
-    Object.assign(car, { edge, direction: 1, along, lane: edge.profile.lane, next: null, turn: null, after: null, stopWait: 0, jolt: null, dazed: 0, shoved: false });
+  const used = new Set(), pinned = cars.map(([along, speed, model = 'hatchback']) => {
+    const car = traffic.vehicles.find(c => c.spec.name === model && !used.has(c));
+    used.add(car);
+    Object.assign(car, { edge, direction: 1, along, lane: edge.profile.lane, next: null, turn: null, after: null, stopWait: 0, loose: null, recover: null, rock: null, dazed: 0, shoved: false, tries: 0, stranded: 0 });
     car.cruiseSpeed = car.speed = speed; car.pace = speed / edge.profile.speed; car.car.visible = true;
     traffic.choose(car); traffic.pose(car);
     return car;
   });
   return { traffic, edge, pinned };
 }
+// The player's car square to the lane at `along`, `across` metres to its left and `ahead` metres on
+function besideLane(traffic, edge, player, along, across, ahead, speed) {
+  const rail = traffic.nav.pose(edge, along, 1, edge.profile.lane), h = rail.heading;
+  player.s = rail.s + Math.sin(h) * across + Math.cos(h) * ahead; player.u = rail.u - Math.cos(h) * across + Math.sin(h) * ahead;
+  player.heading = player.slideHeading = h + Math.PI / 2; player.speed = speed; player.update(0, {});
+}
+// A side-on hit at 18 m/s: how far the struck car was thrown before it came
+// to rest, and the player's speed just after
+function tBone(id, model) {
+  const player = new DrivingController(citydriverRoute, journeyStart(), id);
+  player.toggleFreeDriving();
+  const { traffic, edge, pinned: [car] } = pinnedStreet(player, [[40, 10, model]]);
+  try {
+    besideLane(traffic, edge, player, 40, 9, 5, 18);
+    let from = null, thrown = 0, after = null;
+    for (let i = 0; i < 120 * 4; i++) {
+      player.update(1 / 120, { forward: i < 60 }); traffic.update(1 / 120, player);
+      if (car.loose && !from) { from = { s: car.s, u: car.u }; after = i + 36; }
+      if (i === after) after = Math.hypot(player.velocity.x, player.velocity.z);
+      if (from) thrown = Math.max(thrown, Math.hypot(car.s - from.s, car.u - from.u));
+    }
+    return { thrown, speed: after };
+  } finally { traffic.dispose(); player.disposeModel(); }
+}
 
-test('a car struck side-on is shoved off its line, turned and rocked, then steers back and drives on', () => {
+test('a car struck side-on is knocked loose, skids to rest, then steers back onto its lane and drives on', () => {
   const player = new DrivingController(citydriverRoute, journeyStart(), 'taxi');
   player.toggleFreeDriving();
   const { traffic, edge, pinned: [car] } = pinnedStreet(player, [[40, 12]]);
   try {
-    // From across the street, square to the car and a little ahead of it
-    const rail = traffic.nav.pose(edge, 40, 1, edge.profile.lane), h = rail.heading;
-    player.s = rail.s + Math.sin(h) * 9 + Math.cos(h) * 5.5; player.u = rail.u - Math.cos(h) * 9 + Math.sin(h) * 5.5;
-    player.heading = player.slideHeading = h + Math.PI / 2; player.speed = 17; player.update(0, {});
-    const impacts = player.audioTelemetry.impactSerial;
-    let shoved = 0, turned = 0, rocked = 0;
-    for (let i = 0; i < 120 * 10; i++) {
-      player.update(1 / 120, { forward: i < 120 }); traffic.update(1 / 120, player);
-      const line = traffic.nav.pose(car.edge, car.along, car.direction, car.lane);
-      shoved = Math.max(shoved, Math.hypot(car.s - line.s, car.u - line.u));
-      turned = Math.max(turned, Math.abs(car.heading - car.laneHeading));
-      rocked = Math.max(rocked, Math.abs(car.jolt?.roll ?? 0));
+    besideLane(traffic, edge, player, 40, 9, 5.5, 17);
+    const impacts = player.audioTelemetry.impactSerial, seen = new Set();
+    let spun = 0, rocked = 0, restedOff = 0;
+    for (let i = 0; i < 120 * 16; i++) {
+      player.update(1 / 120, { forward: i < 120, brake: i >= 120 }); traffic.update(1 / 120, player);
+      const state = car.loose ? 'loose' : car.recover ? 'back' : 'lane';
+      if (state === 'back' && !seen.has('back')) {
+        const line = traffic.nav.pose(edge, car.along, 1, car.lane);
+        restedOff = Math.hypot(car.s - line.s, car.u - line.u);
+      }
+      seen.add(state);
+      if (car.loose) spun = Math.max(spun, Math.abs(Math.atan2(Math.sin(car.heading - car.laneHeading), Math.cos(car.heading - car.laneHeading))));
+      rocked = Math.max(rocked, Math.abs(car.rock?.roll ?? 0));
       assert.ok([car.s, car.u, car.heading, car.speed].every(Number.isFinite));
-      assert.equal(surfaceAt(car.s, car.u), 'road', 'never shoved off the carriageway');
+      assert.notEqual(surfaceAt(car.s, car.u), 'water');
     }
     assert.ok(player.audioTelemetry.impactSerial > impacts, 'they met');
-    assert.ok(shoved > .8 && turned > .2 && rocked > .02, `shoved ${shoved} m, turned ${turned}, rocked ${rocked}`);
-    assert.equal(car.jolt, null, 'back on its line');
-    assert.ok(car.speed > 3, `driving on at ${car.speed} m/s`);
+    assert.ok(seen.has('loose') && seen.has('back'), [...seen].join());
+    assert.ok(spun > .5 && rocked > .02 && restedOff > 2, `spun ${spun}, rocked ${rocked}, came to rest ${restedOff} m off its lane`);
+    assert.ok(!car.loose && !car.recover && car.speed > 3, `back in its lane at ${car.speed} m/s`);
   } finally { traffic.dispose(); player.disposeModel(); }
+});
+
+test('weight decides a side-on hit: a truck throws a hatchback further than the taxi does, and a light racer barely shifts a van', () => {
+  const taxi = tBone('taxi', 'hatchback'), truck = tBone('rig', 'hatchback'), racer = tBone('taxiFormula', 'van'), taxiVan = tBone('taxi', 'van');
+  assert.ok(truck.thrown > taxi.thrown && taxi.thrown > taxiVan.thrown && taxiVan.thrown > racer.thrown, JSON.stringify({ taxi, truck, taxiVan, racer }));
+  assert.ok(truck.speed > 16 && truck.speed > taxi.speed && taxi.speed > racer.speed, 'and the heavier car carries on the faster');
+});
+
+test('pushing another car goes only as hard as the tyres grip: a truck shoves a stopped van aside, a light racer cannot', () => {
+  const shove = id => {
+    const player = new DrivingController(citydriverRoute, journeyStart(), id);
+    player.toggleFreeDriving();
+    const { traffic, edge, pinned: [van] } = pinnedStreet(player, [[40, 0, 'van']]);
+    try {
+      van.cruiseSpeed = 0;
+      besideLane(traffic, edge, player, 40, 1.05 + player.spec.length / 2 + .3, 0, 2);
+      const from = { s: van.s, u: van.u };
+      for (let i = 0; i < 120 * 3; i++) { player.update(1 / 120, { forward: true }); traffic.update(1 / 120, player); }
+      return Math.hypot(van.s - from.s, van.u - from.u);
+    } finally { traffic.dispose(); player.disposeModel(); }
+  };
+  const truck = shove('rig'), racer = shove('taxiFormula');
+  assert.ok(truck > 5 && racer < 1.5, `truck ${truck} m, racer ${racer} m`);
 });
 
 test('a car shoved into the one ahead knocks it on, and the two are kept apart', () => {
@@ -233,12 +283,13 @@ test('a car shoved into the one ahead knocks it on, and the two are kept apart',
   const { traffic, edge, pinned: [behind, ahead] } = pinnedStreet(player, [[50, 8], [57, 8]]);
   try {
     const rail = traffic.nav.pose(edge, 50, 1, edge.profile.lane), h = rail.heading;
-    player.s = rail.s - Math.cos(h) * 14; player.u = rail.u - Math.sin(h) * 14; player.heading = player.slideHeading = h; player.speed = 30; player.update(0, {});
+    // From behind and a little to one side, so the blow sets the first car turning
+    player.s = rail.s - Math.cos(h) * 14 + Math.sin(h) * 1.3; player.u = rail.u - Math.sin(h) * 14 - Math.cos(h) * 1.3; player.heading = player.slideHeading = h; player.speed = 30; player.update(0, {});
     const box = car => ({ x: car.position.x, z: car.position.z, heading: car.heading, halfWidth: car.spec.width / 2 - .05, halfLength: car.spec.length / 2 - .1 });
     let knocked = false;
     for (let i = 0; i < 120 * 4; i++) {
       player.update(1 / 120, { forward: i < 60 }); traffic.update(1 / 120, player);
-      knocked ||= Boolean(ahead.jolt);
+      knocked ||= Boolean(ahead.rock || ahead.loose);
       const contact = trafficContact(box(behind), box(ahead));
       assert.ok(!contact || contact.depth < .2, `overlapping by ${contact?.depth}`);
       for (const car of [behind, ahead]) assert.ok([car.s, car.u, car.heading, car.speed].every(Number.isFinite));

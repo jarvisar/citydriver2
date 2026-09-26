@@ -123,7 +123,7 @@ function* mergeBatchSteps(entries, east, start) {
   const index = vertexCount > 65535 ? new Uint32Array(indexCount) : new Uint16Array(indexCount);
   const f = Math.fround;
   let vertex = 0, next = 0;
-  const record = {};
+  const record = {}, wakeable = [];
   for (const [batchKey, { geometry, items }] of entries) {
     const matrices = record[batchKey] = new Float32Array(items.length * 16);
     const count = geometry.attributes.position.count, source = geometry.index?.array;
@@ -150,6 +150,7 @@ function* mergeBatchSteps(entries, east, start) {
       }
       if (source) for (let i = 0; i < source.length; i++) index[next++] = vertex + source[i];
       else for (let i = 0; i < count; i++) index[next++] = vertex + i;
+      if (item.wakeable) wakeable.push(item.render = { start: vertex, count });
       vertex += count;
     }
     yield;
@@ -161,6 +162,7 @@ function* mergeBatchSteps(entries, east, start) {
   geometry.setIndex(new THREE.BufferAttribute(index, 1));
   const mesh = new THREE.Mesh(geometry, mergedMaterials.get(batches[0].material));
   mesh.name = 'citydriver-merged'; mesh.userData.batches = record;
+  for (const render of wakeable) render.mesh = mesh;
   mesh.dispose = () => { geometry.dispose(); mesh.dispatchEvent({ type: 'dispose' }); };
   return mesh;
 }
@@ -208,6 +210,7 @@ function* renderBatchSteps(group, batches, east = 0, start = 0) {
       const item = items[i];
       const matrix = cityItemMatrix(item, east, start, transform.matrix);
       mesh.setMatrixAt(i, matrix); tint.set(item.color); mesh.setColorAt(i, tint);
+      if (item.wakeable) item.render = { mesh, index: i };
       if (item.signTile !== undefined) mesh.setColorAt(i, tint.setRGB(item.signTile, 0, 0));
       if (key === 'residents') setWalkerAppearance(mesh, i, item.appearance);
     }
@@ -220,6 +223,26 @@ function* renderBatchSteps(group, batches, east = 0, start = 0) {
     group.add(finishBatchMesh(mesh, flags, structure));
     yield;
   }
+}
+
+// A parked car knocked loose leaves its bay empty: its instance, or its stretch
+// of a merged mesh, is folded to a point until it is put back.
+const folded = new THREE.Matrix4().makeScale(0, 0, 0);
+function hideItem(item, hidden) {
+  const render = item.render;
+  if (!render || Boolean(render.hidden) === hidden) return;
+  render.hidden = hidden;
+  if (render.mesh.isInstancedMesh) {
+    render.saved ??= render.mesh.getMatrixAt(render.index, new THREE.Matrix4());
+    render.mesh.setMatrixAt(render.index, hidden ? folded : render.saved);
+    render.mesh.instanceMatrix.needsUpdate = true;
+    return;
+  }
+  const position = render.mesh.geometry.attributes.position, from = render.start * 3, to = (render.start + render.count) * 3;
+  render.saved ??= position.array.slice(from, to);
+  if (hidden) for (let i = from; i < to; i += 3) position.array.set(render.saved.subarray(0, 3), i);
+  else position.array.set(render.saved, from);
+  position.addUpdateRange(from, to - from); position.needsUpdate = true;
 }
 
 function resources() {
@@ -474,11 +497,21 @@ export class CityChunk {
       else if (piece.kind === 'mooring') this.prop('mooring-line', x, s, piece.yaw, WATER_LEVEL, [piece.span / 1.45, 1, 1]);
       else if (piece.kind === 'parked') {
         const model = parkedCars[piece.model], spec = TRAFFIC_MODELS.find(m => m.name === piece.model);
-        if (!this.distant) {
-          this.item(`parked-paint-${piece.model}`, model.paint, this.materials.solid, [x, ROAD_LEVEL, -s], [1, 1, 1], PARKED_PAINTS[piece.colour % PARKED_PAINTS.length], piece.yaw);
-          this.item(`parked-trim-${piece.model}`, model.trim, this.materials.props, [x, ROAD_LEVEL, -s], [1, 1, 1], '#ffffff', piece.yaw);
-        }
+        if (this.distant) continue;
+        const colour = PARKED_PAINTS[piece.colour % PARKED_PAINTS.length], items = [
+          this.item(`parked-paint-${piece.model}`, model.paint, this.materials.solid, [x, ROAD_LEVEL, -s], [1, 1, 1], colour, piece.yaw),
+          this.item(`parked-trim-${piece.model}`, model.trim, this.materials.props, [x, ROAD_LEVEL, -s], [1, 1, 1], '#ffffff', piece.yaw),
+        ];
         this.rigid(x, s, () => this.solid(x, s, spec.width, spec.length), itemFrame(piece.s, piece.u, piece.yaw));
+        // A car can knock it loose (see CityTraffic.wake): which car it is,
+        // which way its nose points, and its bay emptied or filled again
+        for (const item of items) item.wakeable = true;
+        this.features.colliders.at(-1).parked = {
+          model: piece.model, colour, nose: { u: -Math.sin(piece.yaw), s: Math.cos(piece.yaw) },
+          get ready() { return items.every(item => item.render?.mesh); },
+          get hidden() { return items.every(item => item.render?.hidden); },
+          hide(hidden = true) { for (const item of items) hideItem(item, hidden); },
+        };
       }
       else if (piece.kind === 'bandstand') { this.prop('bandstand', x, s, piece.yaw); this.post(x, s, 5.4); }
       else if (piece.kind === 'rim') this.post(x, s, piece.radius);

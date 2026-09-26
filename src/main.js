@@ -761,8 +761,9 @@ async function boot() {
       if (taxi.running) state = taxi.controls(dt, state);
       vehicle.update(dt, state);
       if (started) updateControlHelp(vehicle.speed);
-      collideScenery(vehicle, world.chunks, dt);
-      traffic.update(dt, vehicle);
+      // A parked car the player hits is knocked loose, while there is traffic to take it
+      collideScenery(vehicle, world.chunks, dt, traffic.enabled ? collider => traffic.wake(collider) : null);
+      traffic.update(dt, vehicle, world.chunks);
       if (started && taxi.running) {
         taxi.update(dt, vehicle, traffic.enabled ? traffic.vehicles : []);
         for (const event of taxi.drainEvents()) {

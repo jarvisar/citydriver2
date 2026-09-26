@@ -9,6 +9,7 @@ import { journeyStart, roadAt } from '../src/world/city-route.js';
 import { setResidentWindow } from '../src/world/resident.js';
 import { insidePolygon, distanceToPolyline } from '../src/mapgen/polygon-util.js';
 import { collideScenery } from '../src/collision.js';
+import { CityTraffic } from '../src/city-traffic.js';
 import { DrivingController } from '../src/vehicle.js';
 import { citydriverRoute } from '../src/world/city-route.js';
 
@@ -221,4 +222,41 @@ test('whole chunks are culled only when neither the camera nor the sun could dra
       assert.ok(tiles.filter(tile => view.intersectsObject(tile)).length < tiles.length / 4, `most ${name} tiles off screen`);
     }
   } finally { world.dispose(); }
+});
+
+test('a parked car the player runs into is knocked loose, and put back in its bay once the player has gone', () => {
+  const scene = new THREE.Scene(), world = new CitydriverWorld(scene);
+  const car = new DrivingController(citydriverRoute, journeyStart(), 'rig');
+  const traffic = new CityTraffic(scene, citydriverRoute, car.s, 'city', car.u);
+  try {
+    car.toggleFreeDriving();
+    world.update(car.s, car.u); while (world.pending.length) world.update(car.s, car.u);
+    // The nearest parked car, met square at its tail from a few metres behind
+    const parked = [...world.chunks.values()].flatMap(c => c.features.colliders).filter(c => c.parked?.ready)
+      .sort((a, b) => Math.hypot(a.x - car.u, -a.z - car.s) - Math.hypot(b.x - car.u, -b.z - car.s))[0];
+    assert.ok(parked, 'a parked car near the start');
+    const nose = parked.parked.nose, back = 2.6 + car.spec.length / 2 + 1;
+    car.u = parked.x - nose.u * back; car.s = -parked.z - nose.s * back; car.heading = car.slideHeading = Math.atan2(nose.u, nose.s); car.speed = 8; car.update(0, {});
+    traffic.vehicles.forEach(c => { c.edge = null; c.car.visible = false; c.position.set(1e6, 0, 1e6); });
+    traffic.spawn = () => false;
+    const from = { x: parked.x, z: parked.z };
+    let stand = null;
+    for (let i = 0; i < 120 * 2; i++) {
+      car.update(1 / 120, { forward: i < 60 });
+      collideScenery(car, world.chunks, 1 / 120, c => traffic.wake(c));
+      traffic.update(1 / 120, car, world.chunks);
+      stand ??= traffic.woken.find(c => c.parked === parked);
+    }
+    assert.ok(stand && parked.woken, 'knocked loose');
+    assert.ok(Math.hypot(stand.u - from.x, -stand.s - from.z) > 1, 'and shoved along');
+    assert.equal(stand.car.visible, true);
+    assert.equal(parked.parked.hidden, true, 'its bay stands empty while it is out of it');
+    // Once the player is far off it goes back where it was
+    car.s += 400; car.update(0, {});
+    traffic.update(1 / 120, car, world.chunks);
+    assert.equal(parked.woken, false);
+    assert.equal(stand.parked, null);
+    assert.equal(stand.car.visible, false);
+    assert.equal(parked.parked.hidden, false);
+  } finally { traffic.dispose(); world.dispose(); car.disposeModel(); }
 });
