@@ -112,6 +112,7 @@ export class DriveAudio {
     if (!this.audible) {
       this.shiftSerial = state.shiftSerial;
       if (Number.isFinite(telemetry.impactSerial)) this.impactSerial = telemetry.impactSerial;
+      if (scene?.props) scene.props.sounds.length = 0;
     }
     if (!force && (!this.audible || this.context.state !== 'running' || now - this.lastUpdate < 1 / 30)) return;
     this.lastUpdate = now;
@@ -143,6 +144,7 @@ export class DriveAudio {
     this.ambience(state, now, scene);
     if (this.audible) {
       this.effects(telemetry, state, now);
+      this.furniture(scene);
       this.director.update(this, state, now, scene);
     }
     this.updateTraffic(scene);
@@ -181,6 +183,26 @@ export class DriveAudio {
         if (telemetry.impact > 6) this.graph.event('road', { duration: .2, frequency: 1600, endFrequency: 380, level: Math.min(.13, (telemetry.impact - 6) * .009), attack: .004 });
       }
     }
+  }
+  // Street furniture knocked flying, and landing (see LooseProps): a post
+  // rings, timber cracks, a bin or a chair clatters, quieter further off
+  furniture(scene) {
+    const props = scene?.props, player = scene?.player;
+    if (!props?.sounds.length) return;
+    const heading = scene.heading ?? player?.heading ?? 0;
+    for (const { kind, strength, x, z } of props.sounds) {
+      const dx = x - (player?.groundedPosition?.x ?? x), dz = z - (player?.groundedPosition?.z ?? z), distance = Math.hypot(dx, dz);
+      const loud = Math.min(1, strength / 14) * Math.max(0, 1 - distance / 70) ** 2;
+      if (!(loud > .02)) continue;
+      const pan = Math.min(.95, Math.max(-.95, (dx * Math.cos(heading) + dz * Math.sin(heading)) / Math.max(6, distance * .55)));
+      const event = (pool, duration, frequency, endFrequency, level, attack = .004) => this.graph.event(pool, { duration, frequency, endFrequency, level: level * loud, pan, attack });
+      if (kind === 'metal') { event('clang', .7, 620, 575, .05, .003); event('clang', .45, 1710, 1640, .022, .003); event('smash', .14, 1900, 650, .06, .003); }
+      else if (kind === 'wood') event('smash', .22, 950, 260, .12);
+      else if (kind === 'bin') event('smash', .18, 560, 180, .1);
+      else if (kind === 'light') event('smash', .1, 2100, 900, .05, .003);
+      else if (kind === 'splash') event('smash', .55, 1300, 380, .08, .03);
+    }
+    props.sounds.length = 0;
   }
   updateTraffic(scene) {
     const player = scene?.player, fleet = scene?.traffic?.enabled ? scene.traffic.vehicles : [];

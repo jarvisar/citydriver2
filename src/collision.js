@@ -115,15 +115,15 @@ export function sceneryContacts(box, chunks, visit) {
     }
   }
 }
-// The player's car against the chunks around it. A parked car it touches may
-// be knocked loose (`wake`, see CityTraffic.wake), and then it is a car to
-// push rather than a wall.
+// The player's car against the chunks around it. A parked car or a piece of
+// street furniture it touches may be knocked loose (`wake(solid, contact)`,
+// see CityTraffic.wake and LooseProps.hit), and then it is no longer a wall.
 export function collideScenery(player, chunks, dt, wake = null) {
   const halfWidth = player.spec.width / 2, halfLength = player.spec.length / 2, center = Math.floor(player.s / CHUNK_LENGTH);
   const nearby = player.route.grid ? chunks.values() : [chunks.get(center - 1), chunks.get(center), chunks.get(center + 1)];
   const box = () => ({ x: player.groundedPosition.x, z: player.groundedPosition.z, heading: player.heading, halfWidth, halfLength });
   sceneryContacts(box, nearby, (contact, solid) => {
-    if (solid.parked && wake?.(solid)) return;
+    if ((solid.parked || solid.prop) && wake?.(solid, contact)) return;
     player.resolveSceneryCollision(contact.x, contact.z, contact.depth, dt, contact.point);
   });
 }

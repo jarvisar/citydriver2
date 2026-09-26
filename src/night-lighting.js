@@ -76,13 +76,15 @@ export class NightLighting {
     if (!this.group.visible) return;
     const origin = world.origin, x = player.car.position.x, z = player.car.position.z - origin;
     // Refresh nearby lamps only after meaningful movement or streaming changes.
+    // (and when a lamp is knocked down or put back: see LooseProps)
     const refresh = this.world !== world || this.center !== world.center || this.chunkCount !== world.chunks.size
-      || Math.hypot(x - this.lastX, z - this.lastZ) > 6;
+      || this.lampRevision !== world.lampRevision || Math.hypot(x - this.lastX, z - this.lastZ) > 6;
     if (refresh) {
-      this.world = world; this.center = world.center; this.chunkCount = world.chunks.size;
+      this.world = world; this.center = world.center; this.chunkCount = world.chunks.size; this.lampRevision = world.lampRevision;
       this.lastX = x; this.lastZ = z;
       const candidates = [];
       for (const chunk of world.chunks.values()) for (const lamp of chunk.features.lamps ?? []) {
+        if (lamp.item?.render?.hidden) continue;
         const distance = Math.hypot(lamp.x - x, lamp.z - z);
         if (distance < RANGE) candidates.push({ lamp, distance });
       }

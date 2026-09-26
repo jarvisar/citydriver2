@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Parts, cityAssets } from './city-assets.js';
 import { PAVEMENT_LEVEL as G } from './city-route.js';
 import { clock } from './city-detail-assets.js';
@@ -70,23 +71,14 @@ function stall(colour) {
   p.box([0, .45, -.75], [3, .9, .8], '#7d6650');
   return p.finish();
 }
-// A cafe table for four under a parasol
-function cafe(colour) {
+// A cafe table for four under a parasol: the table and parasol, a chair, and
+// where each chair stands, so a car can scatter them (see LooseProps). The
+// whole set stands as one piece until then.
+function cafeTable(colour) {
   const p = new Parts(), iron = '#3d4246';
   p.cylinder([0, .035, 0], .27, .3, .07, iron, 8);
   p.cylinder([0, .37, 0], .05, .05, .74, iron, 5);
   p.cylinder([0, .75, 0], .55, .55, .05, '#e9e4d6', 12);
-  for (let k = 0; k < 4; k++) {
-    const a = k * Math.PI / 2, x = Math.cos(a) * 1.05, z = Math.sin(a) * 1.05;
-    const ca = Math.cos(a), sa = Math.sin(a), turn = Math.PI / 2 - a;
-    const at = (side, back, y) => [x - sa * side + ca * back, y, z + ca * side + sa * back];
-    p.box([x, .44, z], [.46, .06, .44], '#85745d', [0, turn, 0]);
-    for (const side of [-.18, .18]) for (const back of [-.17, .17]) {
-      const h = back > 0 ? .85 : .42;
-      p.box(at(side, back, h / 2), [.045, h, .045], iron, [0, turn, 0]);
-    }
-    p.box(at(0, .17, .73), [.46, .24, .05], '#85745d', [0, turn, 0]);
-  }
   p.cylinder([0, 1.69, 0], .03, .03, 1.88, '#d8d2c0', 5);
   const canopy = [], point = (k, r, y) => [Math.cos(k * Math.PI / 6) * r, y, Math.sin(k * Math.PI / 6) * r];
   for (let k = 0; k < 12; k++) {
@@ -95,6 +87,27 @@ function cafe(colour) {
   }
   p.add(fabric(canopy), [0, 0, 0], colour);
   return p.finish();
+}
+// A chair facing the table along local -z, its back at +z
+function cafeChair() {
+  const p = new Parts(), iron = '#3d4246';
+  p.box([0, .44, 0], [.46, .06, .44], '#85745d');
+  for (const side of [-.18, .18]) for (const back of [-.17, .17]) {
+    const h = back > 0 ? .85 : .42;
+    p.box([side, h / 2, back], [.045, h, .045], iron);
+  }
+  p.box([0, .73, .17], [.46, .24, .05], '#85745d');
+  return p.finish();
+}
+const chair = cafeChair();
+const seats = [0, 1, 2, 3].map(k => {
+  const a = k * Math.PI / 2;
+  return new THREE.Matrix4().makeRotationY(Math.PI / 2 - a).setPosition(Math.cos(a) * 1.05, 0, Math.sin(a) * 1.05);
+});
+function cafe(colour) {
+  const table = cafeTable(colour), whole = mergeGeometries([table, ...seats.map(at => chair.clone().applyMatrix4(at))]);
+  whole.computeBoundingSphere();
+  return { whole, table, chair, seats };
 }
 
 // A low flowering clump: green flanks and a softly domed patch of colour.
@@ -218,14 +231,19 @@ export function buildMonument(c, piece, x, s) {
     c.post(x, s, piece.pool ?? 1.4 * k);
     return true;
   }
+  // A car can knock a stall over, and scatter a cafe's chairs (see LooseProps)
   if (piece.kind === 'stall') {
-    c.item(`square-stall-${piece.colour}`, template(`stall-${piece.colour}`, () => stall(piece.colour)), c.materials.props, [x, G, -s], [1, 1, 1], '#ffffff', yaw);
+    const geometry = template(`stall-${piece.colour}`, () => stall(piece.colour));
+    const item = c.item(`square-stall-${piece.colour}`, geometry, c.materials.props, [x, G, -s], [1, 1, 1], '#ffffff', yaw);
     solid(3.4, 2.6);
+    c.knockable?.([item], [{ kind: 'stall', geometry }]);
     return true;
   }
   if (piece.kind === 'cafe') {
-    c.item(`square-cafe-${piece.colour}`, template(`cafe-${piece.colour}`, () => cafe(piece.colour)), c.materials.props, [x, G, -s], [1, 1, 1], '#ffffff', yaw);
+    const set = template(`cafe-${piece.colour}`, () => cafe(piece.colour));
+    const item = c.item(`square-cafe-${piece.colour}`, set.whole, c.materials.props, [x, G, -s], [1, 1, 1], '#ffffff', yaw);
     c.post(x, s, 1.2);
+    c.knockable?.([item], [{ kind: 'table', geometry: set.table }, ...set.seats.map(at => ({ kind: 'chair', geometry: set.chair, at }))]);
     return true;
   }
   if (piece.kind === 'bed') {

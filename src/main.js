@@ -21,6 +21,7 @@ import { SEED } from './world/route.js';
 import { resolveWorldSeed } from './world/generation.js';
 import { CityWeather } from './world/city-weather.js';
 import { NightLighting } from './night-lighting.js';
+import { LooseProps } from './loose-props.js';
 import { cityDistrict, nearestLanePose, journeyStart, lanePose, roadAt } from './world/city-route.js';
 import { CITY } from './world/city.js';
 import { navGraph } from './world/nav-graph.js';
@@ -143,6 +144,9 @@ async function boot() {
     const openWelcomeMenu = () => !started && !paused && !$('#welcome').classList.contains('hidden') ? $('#welcome') : null;
     scene.add(vehicle.car);
     const traffic = new Traffic(scene, vehicle.route, vehicle.s, journey, vehicle.u);
+    // Street furniture knocked loose (see loose-props.js), which loose traffic can knock over too
+    const props = new LooseProps(scene, world.materials.props);
+    traffic.props = props;
     const pedestrianContacts = new PedestrianContacts();
     const nightLighting = new NightLighting(scene);
     // The weather's light, sky and wet roads, on the scene and every car
@@ -227,7 +231,7 @@ async function boot() {
     });
     worldMapCanvas.addEventListener('pointerleave', () => { $('#world-map-status').textContent = hereText(); });
     $('#close-fleet').addEventListener('click', () => fleetDialog.close());
-    const soundScene = { player: vehicle, traffic, interior: false, heading: 0 };
+    const soundScene = { player: vehicle, traffic, props, interior: false, heading: 0 };
     const autodrive = new Autodrive();
     const touchControls = $('.touch-controls');
     let touchControlsTimer;
@@ -641,7 +645,7 @@ async function boot() {
     window.addEventListener('focus', () => audio.setHidden(hidden()));
     window.addEventListener('pointerdown', () => audio.unlock(), { capture: true, passive: true });
     window.addEventListener('keydown', () => audio.unlock(), { capture: true });
-    window.addEventListener('pagehide', event => { audio.setHidden(true); if (!event.persisted) { nightLighting.dispose(); world.dispose(); weather.dispose(); traffic.dispose(); taxiView.dispose(); void audio.dispose().catch(() => {}); } });
+    window.addEventListener('pagehide', event => { audio.setHidden(true); if (!event.persisted) { nightLighting.dispose(); props.dispose(); world.dispose(); weather.dispose(); traffic.dispose(); taxiView.dispose(); void audio.dispose().catch(() => {}); } });
     window.addEventListener('pageshow', () => { audio.setHidden(document.hidden); needsRender = true; });
     $('#scene').addEventListener('webglcontextlost', event => { event.preventDefault(); setPaused(true); toast('Graphics lost. Reload to restart.'); });
     $('#scene').addEventListener('webglcontextrestored', () => { needsRender = true; });
@@ -761,9 +765,11 @@ async function boot() {
       if (taxi.running) state = taxi.controls(dt, state);
       vehicle.update(dt, state);
       if (started) updateControlHelp(vehicle.speed);
-      // A parked car the player hits is knocked loose, while there is traffic to take it
-      collideScenery(vehicle, world.chunks, dt, traffic.enabled ? collider => traffic.wake(collider) : null);
+      // Furniture the player hits may be knocked flying, and a parked car
+      // knocked loose while there is traffic to take it
+      collideScenery(vehicle, world.chunks, dt, (collider, contact) => collider.prop ? props.hit(collider, contact, vehicle) : traffic.enabled && traffic.wake(collider));
       traffic.update(dt, vehicle, world.chunks);
+      props.update(dt, vehicle, traffic, world.chunks);
       if (started && taxi.running) {
         taxi.update(dt, vehicle, traffic.enabled ? traffic.vehicles : []);
         for (const event of taxi.drainEvents()) {
@@ -791,7 +797,7 @@ async function boot() {
       if (running) {
         time += dt;
         world.update(vehicle.s, vehicle.u, { budgetMs: 3 }); vehicle.render(frameClock.alpha, world.origin);
-        traffic.render(frameClock.alpha, world.origin);
+        traffic.render(frameClock.alpha, world.origin); props.render(frameClock.alpha, world.origin);
         pedestrianContacts.update(vehicle, traffic, time);
         rendering.update(vehicle.car, dt, world.origin); world.animate(time, traffic.time, vr.active ? null : rendering.camera, pedestrianContacts);
         taxiView.render(taxi, vehicle, world.origin, time, pedestrianContacts);
@@ -831,7 +837,7 @@ async function boot() {
     renderer.setAnimationLoop(frame);
     void vr.detect();
     // Development-only inspection surface for automated driving and streaming checks.
-    if (import.meta.env.DEV) window.__citydriver = { seed: SEED, city: CITY, nav: navGraph(), lanePose, roadAt, nearestLanePose, vehicle, traffic, weather, autodrive, audio, graphics, vr, cityGuide, taxi, taxiView, beginTaxi, beginFree, get gameMode() { return gameMode; }, world, rendering, input, action, chooseCar, applyPaint, get carId() { return carId; }, get paint() { return paint; }, get journey() { return journey; }, get changingJourney() { return changingJourney; }, get paused() { return paused; }, get started() { return started; } };
+    if (import.meta.env.DEV) window.__citydriver = { seed: SEED, city: CITY, nav: navGraph(), lanePose, roadAt, nearestLanePose, vehicle, traffic, props, nightLighting, weather, autodrive, audio, graphics, vr, cityGuide, taxi, taxiView, beginTaxi, beginFree, get gameMode() { return gameMode; }, world, rendering, input, action, chooseCar, applyPaint, get carId() { return carId; }, get paint() { return paint; }, get journey() { return journey; }, get changingJourney() { return changingJourney; }, get paused() { return paused; }, get started() { return started; } };
   } catch (error) { console.error('Could not start Citydriver:', error); $('#loading').classList.add('loaded'); $('#error').hidden = false; }
 }
 boot();

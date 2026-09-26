@@ -396,8 +396,42 @@ function streetTree(variant) {
   return { bark, leaves, radius };
 }
 
+// A blue P on a post, the panel across local x and read from either side
+// along local z, so it can come loose as one piece
+function parkingSign() {
+  const p = new Parts(), cream = '#f2f0e6';
+  p.box([0, 1.09, 0], [.08, 2.18, .08], galvanised);
+  p.box([0, 2.6, 0], [.78, .84, .04], cream);
+  p.box([0, 2.6, 0], [.7, .76, .058], '#2f5f9a');
+  for (const side of [-1, 1]) {
+    const letter = (u, v, w, h) => p.box([u * side, 2.6 + v, .042 * side], [w, h, .02], cream);
+    letter(-.1, 0, .09, .46); letter(.01, .19, .24, .08); letter(.01, .01, .24, .08); letter(.12, .1, .08, .26);
+  }
+  return p.finish();
+}
+
 export const cityTrees = [streetTree(0), streetTree(1)];
-export const cityAssets = { lamp: lampPost(), signal: trafficSignal(), stop: stopSign(), yield: yieldSign(), bench: bench(), shelter: busShelter(), railing: railing(), bollard: bollard(), manhole: manhole(), tank: waterTank(), kiosk: kiosk(), bin: litterBin(), 'mooring-line': mooringLine(), lantern: parkLantern(), bandstand: bandstand(), 'signal-head': signalHead(), 'signal-mast': signalMast() };
+export const cityAssets = { lamp: lampPost(), signal: trafficSignal(), stop: stopSign(), yield: yieldSign(), bench: bench(), shelter: busShelter(), railing: railing(), bollard: bollard(), manhole: manhole(), tank: waterTank(), kiosk: kiosk(), bin: litterBin(), 'mooring-line': mooringLine(), lantern: parkLantern(), bandstand: bandstand(), 'signal-head': signalHead(), 'signal-mast': signalMast(), 'parking-sign': parkingSign() };
+// A mast-arm signal as one piece to knock loose: its pole, the arm out along
+// local -x over the lanes and a head at each of `mast`'s distances along it.
+// Made when one is first knocked down, and kept for the next with the same arm.
+const masts = new Map();
+export function signalMastPiece(mast) {
+  const key = mast.map(along => along.toFixed(2)).join();
+  if (masts.has(key)) return masts.get(key);
+  const length = Math.max(...mast) + .6, flat = g => { const copy = g.index ? g.toNonIndexed() : g.clone(); copy.deleteAttribute('uv'); return copy; };
+  const arm = new Parts();
+  arm.box([-length / 2, MAST_HEIGHT - .2, 0], [length, .2, .2], iron);
+  const parts = [flat(cityAssets['signal-mast']), flat(arm.finish()), ...mast.map(along => flat(cityAssets['signal-head']).translate(-along, MAST_HEIGHT - .95, 0))];
+  const geometry = mergeGeometries(parts);
+  for (const part of parts) part.dispose();
+  geometry.computeBoundingSphere();
+  masts.set(key, geometry);
+  return geometry;
+}
+// A median's lamp column, an arm over each carriageway, as one piece to knock loose
+export const twinLamp = mergeGeometries([cityAssets.lamp.clone(), cityAssets.lamp.clone().rotateY(Math.PI)]);
+twinLamp.computeBoundingSphere();
 
 // Parked cars reuse the traffic fleet's bodies: the paint shell carries a
 // per-instance colour and everything else keeps its own baked colours.

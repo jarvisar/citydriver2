@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { CITY, cityCell, CITY_CELL } from './city.js';
 import { ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL } from './city-route.js';
 import { HarbourBoats } from './city-boats.js';
-import { cityAssets, cityTrees, LANTERN_HEIGHT, SIGNAL_LENSES, MAST_HEIGHT, parkedCars, PARKED_PAINTS, boatModels } from './city-assets.js';
+import { cityAssets, cityTrees, twinLamp, signalMastPiece, LANTERN_HEIGHT, SIGNAL_LENSES, MAST_HEIGHT, parkedCars, PARKED_PAINTS, boatModels } from './city-assets.js';
 import { TRAFFIC_MODELS } from '../traffic-models.js';
 import { seededRandom, randomAt } from './route.js';
 import { residentWindow } from './resident.js';
@@ -330,7 +330,7 @@ export class CityChunk {
     if (!this.distant) this.features.colliders.push({ logicalPolygon: points.map(([x, s]) => [this.east + x, this.start + s]) });
   }
   box(x, y, s, width, height, depth, color, kind = 'solid', yaw = 0, roll = 0) {
-    this.item(kind, boxGeometry, this.materials[kind], [x, y, -s], [width, height, depth], color, yaw, roll);
+    return this.item(kind, boxGeometry, this.materials[kind], [x, y, -s], [width, height, depth], color, yaw, roll);
   }
   // A sign's painted face centred at (x, y, s), looking along its yaw (see
   // faceYaw), with its board `back` metres behind it: the sign's own
@@ -376,8 +376,27 @@ export class CityChunk {
   }
   post(x, s, radius) { if (!this.distant) this.features.colliders.push({ x: this.east + x, z: -this.start - s, reach: radius, anchor: this.layoutAnchor, frame: this.layoutPlacement }); }
   prop(name, x, s, yaw = 0, y = PAVEMENT_LEVEL, scale = [1, 1, 1]) {
+    if (this.distant) return null;
+    return this.item(name, cityAssets[name], this.materials.props, [x, y, -s], scale, '#ffffff', yaw, 0, ['shelter', 'tank', 'kiosk', 'bandstand'].includes(name));
+  }
+  // The furniture just given a collider can be knocked loose (see
+  // LooseProps): the pieces that come away, each a kind, a model and where it
+  // stands in the first item's frame, and the items hidden while it is loose.
+  // A lamp's light goes out with it (see NightLighting).
+  knockable(items, pieces) {
     if (this.distant) return;
-    this.item(name, cityAssets[name], this.materials.props, [x, y, -s], scale, '#ffffff', yaw, 0, ['shelter', 'tank', 'kiosk', 'bandstand'].includes(name));
+    const world = this.world, east = this.east, start = this.start;
+    for (const item of items) item.wakeable = true;
+    this.features.colliders.at(-1).prop = {
+      items, pieces,
+      matrix(target) {
+        cityItemMatrix(items[0], east, start, target);
+        target.elements[12] += east; target.elements[14] -= start;
+        return target;
+      },
+      get ready() { return items.every(item => item.render?.mesh); },
+      hide(hidden = true) { for (const item of items) hideItem(item, hidden); world.lampRevision++; },
+    };
   }
   tree(x, s, scale = 7) {
     // An address owns its tree: extra garden trees in a detailed chunk must
@@ -398,9 +417,14 @@ export class CityChunk {
       if (index && index % 40 === 0) yield;
       const x = piece.u - this.east, s = piece.s - this.start;
       if (buildMonument(this, piece, x, s)) continue;
-      if (piece.kind === 'lamp') { this.prop('lamp', x, s, piece.yaw); this.post(x, s, .25); }
+      // Posts, signs, bins and benches can be knocked loose; trees, railings,
+      // shelters and the mast signals over the road stand firm
+      if (piece.kind === 'lamp') { const lamp = this.prop('lamp', x, s, piece.yaw); this.post(x, s, .25); this.knockable([lamp], [{ kind: 'lamp', geometry: cityAssets.lamp }]); }
       // Two lamps back to back on one column, an arm over each carriageway
-      else if (piece.kind === 'median-lamp') { for (const yaw of [piece.yaw, piece.yaw + Math.PI]) this.prop('lamp', x, s, yaw); this.post(x, s, .25); }
+      else if (piece.kind === 'median-lamp') {
+        const lamps = [piece.yaw, piece.yaw + Math.PI].map(yaw => this.prop('lamp', x, s, yaw));
+        this.post(x, s, .25); this.knockable(lamps, [{ kind: 'lamp', geometry: twinLamp }]);
+      }
       else if (piece.kind === 'tree') {
         this.tree(x, s, piece.scale);
         if (piece.pit && !this.distant) {
@@ -412,8 +436,12 @@ export class CityChunk {
           }
         }
       }
-      else if (piece.kind === 'bench') { this.prop('bench', x, s, piece.yaw); this.rigid(x, s, () => this.solid(x, s, .7, 2), itemFrame(piece.s, piece.u, piece.yaw)); }
-      else if (piece.kind === 'bin') { this.prop('bin', x, s); this.post(x, s, .36); }
+      else if (piece.kind === 'bench') {
+        const bench = this.prop('bench', x, s, piece.yaw);
+        this.rigid(x, s, () => this.solid(x, s, .7, 2), itemFrame(piece.s, piece.u, piece.yaw));
+        this.knockable([bench], [{ kind: 'bench', geometry: cityAssets.bench }]);
+      }
+      else if (piece.kind === 'bin') { const bin = this.prop('bin', x, s); this.post(x, s, .36); this.knockable([bin], [{ kind: 'bin', geometry: cityAssets.bin }]); }
       else if (piece.kind === 'bollard') { this.prop('bollard', x, s); this.post(x, s, .16); }
       else if (piece.kind === 'railing') {
         // (a quay's lengths are all four metres; a bridge's are fitted between its posts)
@@ -423,47 +451,44 @@ export class CityChunk {
         this.rigid(x, s, () => this.solid(x, s, piece.parapet ? PARAPET : .24, length), itemFrame(piece.s, piece.u, piece.yaw));
       }
       else if (piece.kind === 'sign') this.standingSign(discoverySignFor(piece.type, piece.variant), x, s, piece.yaw, piece.width ?? 4.2, piece.bottom ?? 1.9);
-      else if (piece.kind === 'stop' || piece.kind === 'yield') { this.prop(piece.kind, x, s, piece.yaw); this.post(x, s, .12); }
+      else if (piece.kind === 'stop' || piece.kind === 'yield') {
+        const sign = this.prop(piece.kind, x, s, piece.yaw); this.post(x, s, .12);
+        this.knockable([sign], [{ kind: 'sign', geometry: cityAssets[piece.kind] }]);
+      }
+      // A blue P on a post, read from along the street both ways (yaw lays
+      // the panel across the pavement)
       else if (piece.kind === 'parking-sign') {
-        // A blue P on a post, read from along the street both ways (yaw lays
-        // the panel across the pavement)
-        this.box(x, PAVEMENT_LEVEL + 1.09, s, .08, 2.18, .08, '#9da3a6');
-        this.box(x, PAVEMENT_LEVEL + 2.6, s, .78, .84, .04, '#f2f0e6', 'solid', piece.yaw);
-        this.box(x, PAVEMENT_LEVEL + 2.6, s, .7, .76, .058, '#2f5f9a', 'solid', piece.yaw);
-        if (!this.distant) for (const side of [-1, 1]) {
-          const letter = (u, v, w, h) => {
-            const across = u * side, px = x + Math.cos(piece.yaw) * across + piece.tx * .042 * side, ps = s + Math.sin(piece.yaw) * across + piece.ty * .042 * side;
-            this.box(px, PAVEMENT_LEVEL + 2.6 + v, ps, w, h, .02, '#f2f0e6', 'solid', piece.yaw);
-          };
-          letter(-.1, 0, .09, .46); letter(.01, .19, .24, .08); letter(.01, .01, .24, .08); letter(.12, .1, .08, .26);
-        }
-        this.post(x, s, .1);
+        const sign = this.prop('parking-sign', x, s, piece.yaw); this.post(x, s, .1);
+        this.knockable([sign], [{ kind: 'sign', geometry: cityAssets['parking-sign'] }]);
       }
       else if (piece.kind === 'signal') {
         const yaw = piece.yaw, cos = Math.cos(yaw), sin = Math.sin(yaw);
         // A head `along` metres out along local -x from the pole, its middle lamp `height` up
         const head = (along, height) => {
-          if (this.distant) return;
-          const hx = x - along * cos, hs = s - along * sin, indices = [];
+          if (this.distant) return [];
+          const hx = x - along * cos, hs = s - along * sin, indices = [], lenses = [];
           for (const dy of SIGNAL_LENSES) {
-            this.item('signal-lens', signalLens, this.materials.lens, [hx + sin * .215, PAVEMENT_LEVEL + height + dy, -hs + cos * .215], [.105, .105, 1], '#293538', yaw);
+            lenses.push(this.item('signal-lens', signalLens, this.materials.lens, [hx + sin * .215, PAVEMENT_LEVEL + height + dy, -hs + cos * .215], [.105, .105, 1], '#293538', yaw));
             indices.push(this.batches.get('signal-lens').items.length - 1);
           }
           this.features.signals.push({ axis: piece.axis, indices });
+          return lenses;
         };
         if (piece.mast) {
-          // A tall pole with its arm out over the lanes and a head above each
-          const length = Math.max(...piece.mast) + .6;
-          this.prop('signal-mast', x, s, yaw);
-          if (!this.distant) this.box(x - length / 2 * cos, PAVEMENT_LEVEL + MAST_HEIGHT - .2, s - length / 2 * sin, length, .2, .2, '#3d4246', 'solid', yaw);
-          for (const along of piece.mast) {
-            if (!this.distant) this.item('signal-head', cityAssets['signal-head'], this.materials.props, [x - along * cos, PAVEMENT_LEVEL + MAST_HEIGHT - .95, -(s - along * sin)], [1, 1, 1], '#ffffff', yaw);
-            head(along, MAST_HEIGHT - .95);
+          // A tall pole with its arm out over the lanes and a head above each,
+          // which comes down all together, dark (see signalMastPiece)
+          const length = Math.max(...piece.mast) + .6, mast = piece.mast, items = [this.prop('signal-mast', x, s, yaw)];
+          if (!this.distant) items.push(this.box(x - length / 2 * cos, PAVEMENT_LEVEL + MAST_HEIGHT - .2, s - length / 2 * sin, length, .2, .2, '#3d4246', 'solid', yaw));
+          for (const along of mast) {
+            if (!this.distant) items.push(this.item('signal-head', cityAssets['signal-head'], this.materials.props, [x - along * cos, PAVEMENT_LEVEL + MAST_HEIGHT - .95, -(s - along * sin)], [1, 1, 1], '#ffffff', yaw));
+            items.push(...head(along, MAST_HEIGHT - .95));
           }
           this.post(x, s, .3);
+          this.knockable(items, [{ kind: 'mast', get geometry() { return signalMastPiece(mast); } }]);
         } else {
-          this.prop('signal', x, s, yaw); this.post(x, s, .15);
-          head(0, 4.6);
+          // (a pedestal signal knocked down goes dark)
+          const pole = this.prop('signal', x, s, yaw); this.post(x, s, .15);
+          this.knockable([pole, ...head(0, 4.6)], [{ kind: 'signal', geometry: cityAssets.signal }]);
         }
       }
       else if (piece.kind === 'shelter') { this.prop('shelter', x, s, piece.yaw); this.rigid(x, s, () => this.solid(x + .5, s, .6, 4), itemFrame(piece.s, piece.u, piece.yaw)); }
@@ -486,7 +511,7 @@ export class CityChunk {
         round(this, x, top + .35, s, .24, .7, .24, stone);
         this.post(x, s, 3.5 * k);
       }
-      else if (piece.kind === 'lantern') { this.prop('lantern', x, s); this.post(x, s, .2); }
+      else if (piece.kind === 'lantern') { const lantern = this.prop('lantern', x, s); this.post(x, s, .2); this.knockable([lantern], [{ kind: 'lantern', geometry: cityAssets.lantern }]); }
       // A boat's hull in its own paint, like a parked car's shell, and the
       // line to the quay of one moored alongside
       else if (piece.kind === 'boat' && !this.distant) {
@@ -591,7 +616,7 @@ export class CityChunk {
     const lights = (key, head, drop) => (this.batches.get(key)?.items ?? []).map(item => {
       const matrix = cityItemMatrix(item, this.east, this.start, transform.matrix);
       const point = head.clone().applyMatrix4(matrix);
-      return { kind: key, x: point.x + this.east, y: point.y, z: point.z - this.start, ground: point.y - drop, yaw: Math.atan2(matrix.elements[8], matrix.elements[10]) };
+      return { kind: key, x: point.x + this.east, y: point.y, z: point.z - this.start, ground: point.y - drop, yaw: Math.atan2(matrix.elements[8], matrix.elements[10]), item };
     });
     this.features.lamps = [...lights('lamp', new THREE.Vector3(-1.75, 7.36, 0), 7.36), ...lights('lantern', new THREE.Vector3(0, LANTERN_HEIGHT, 0), LANTERN_HEIGHT)];
     // The cell's building bodies are one flat-shaded mesh
@@ -652,6 +677,8 @@ export class CityChunk {
 export class CitydriverWorld {
   constructor(scene) {
     this.scene = scene; this.chunks = new Map(); this.origin = 0; this.center = null; this.radius = 0;
+    // Counts lamps knocked down or put back, for the night lighting to notice
+    this.lampRevision = 0;
     this.pending = []; this.building = null; this.materials = resources(); this.nav = navGraph();
     this.animationFrustum = new THREE.Frustum(); this.animationMatrix = new THREE.Matrix4(); this.animationSphere = new THREE.Sphere();
     this.prepareLots(); this.bridges = findBridges(); this.placeFurniture();

@@ -112,9 +112,10 @@ export function createSoundGraph(ctx) {
   // Fixed voice pools: a long session never accumulates oscillators, buffers,
   // onended callbacks or timers. Busy voices are skipped, never cut mid-note.
   const pools = {};
-  for (const [name, count, noisy] of [['ambience', 5, false], ['engine', 2, true], ['road', 2, true], ['weather', 2, true], ['music', 6, false]]) {
+  // (street furniture knocked flying rings, `clang`, and cracks, `smash`, over the road)
+  for (const [name, count, noisy] of [['ambience', 5, false], ['engine', 2, true], ['road', 2, true], ['weather', 2, true], ['music', 6, false], ['clang', 4, false], ['smash', 3, true]]) {
     pools[name] = Array.from({ length: count }, (_, index) => {
-      const pan = keep(ctx.createStereoPanner()); pan.connect(buses[name === 'weather' ? 'ambience' : name]);
+      const pan = keep(ctx.createStereoPanner()); pan.connect(buses[{ weather: 'ambience', clang: 'road', smash: 'road' }[name] ?? name]);
       const envelope = gain(0, pan);
       let frequency;
       if (noisy) {

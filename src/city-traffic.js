@@ -52,6 +52,8 @@ export class CityTraffic {
       made.car.visible = false; this.group.add(made.car);
       return { ...made, index: 100 + model * PARKED_POOL + k, parked: null, loose: null, rock: null, s: 0, u: 0, heading: 0, position: new THREE.Vector3(), previousPosition: new THREE.Vector3(), quaternion: new THREE.Quaternion(), previousQuaternion: new THREE.Quaternion() };
     }));
+    // Street furniture a loose car can knock over, when there is any (see LooseProps)
+    this.props = null;
     this.reset(route, s, journey, u);
   }
   reset(route, s, journey = 'city', u = 0) {
@@ -175,6 +177,9 @@ export class CityTraffic {
     const halfWidth = car.spec.width / 2, halfLength = car.spec.length / 2;
     sceneryContacts(() => ({ x: car.u, z: -car.s, heading: car.heading, halfWidth, halfLength }), chunks.values(), (contact, solid) => {
       if (solid.parked && this.wake(solid)) return;
+      // (and furniture it slides into flies, taking a little of its speed: see LooseProps)
+      const knocked = solid.prop && this.props?.knock(solid, contact, { ...this.motion(car), y: car.position.y, height: 1.5 });
+      if (knocked) { this.strike(car, knocked.x, knocked.z, knocked.spin); return; }
       const point = contact.point, blow = collisionImpulse(this.motion(car), { x: point.x, z: point.z, vx: 0, vz: 0, mass: Infinity }, contact, point, SCENERY_SURFACE);
       if (blow) this.strike(car, blow.a.x, blow.a.z, blow.a.spin);
       car.u += contact.x * (contact.depth + .005); car.s -= contact.z * (contact.depth + .005);
@@ -245,7 +250,7 @@ export class CityTraffic {
   // empty until the player has driven well away (see release)
   wake(collider) {
     const info = collider.parked;
-    if (!this.enabled || !info.ready) return false;
+    if (!this.enabled || !info?.ready) return false;
     const car = this.woken.find(c => !c.parked && c.spec.name === info.model);
     if (!car) return false;
     // Where it stands, and which way along its length its nose points
