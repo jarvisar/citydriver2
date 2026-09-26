@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import Vector from '../src/mapgen/vector.js';
 import { CITY, CITY_WIDTH, CITY_HEIGHT } from '../src/world/city.js';
 import { waterAt } from '../src/world/city-route.js';
-import { islandOutline, landAndWater } from '../src/mapgen/shore.js';
+import { islandOutline, landAndWater, seaSideOf } from '../src/mapgen/shore.js';
 import { ringRoad } from '../src/mapgen/road-network.js';
 import { insidePolygon, distanceToPolyline, interiorPoint, segmentIntersection, calcPolygonArea } from '../src/mapgen/polygon-util.js';
 
@@ -97,6 +97,31 @@ test('a river that loops and runs out past the harbour still leaves land and wat
     const count = [...land, ...sea, ...river].filter(piece => inPiece(p, piece)).length;
     assert.equal(count, 1, `${count} surfaces at ${x},${y}`);
   }
+});
+
+test('a coast round an inlet, leaving by the shore it came in by, takes no strip off that shore', () => {
+  // (seed 639546082: the line from one end of the coast to the other ran
+  // along the north shore, a little inland of it, and carried on west it cut
+  // off the ring road and its promenade, which became a bridge)
+  const island = [[-1000, -800], [1000, -800], [1000, 800], [-1000, 800]].map(([x, y]) => new Vector(x, y));
+  const line = [[1060, 900], [900, 700], [700, 300], [500, 100], [300, 300], [400, 700], [520, 860]].map(([x, y]) => new Vector(x, y));
+  const bounds = { minX: -3000, minY: -3000, maxX: 3000, maxY: 3000 };
+  const { land, sea } = landAndWater({ island, coast: { line, reach: 15, seaSide: -1 }, bounds });
+  for (const [x, y] of [[-800, 780], [-300, 790], [100, 785], [-900, 0], [0, -700], [900, 0]]) assert.ok(land.some(piece => inPiece({ x, y }, piece)), `land at ${x},${y}`);
+  for (const [x, y] of [[540, 400], [700, 790], [500, 200]]) assert.ok(sea.some(piece => inPiece({ x, y }, piece)), `inlet at ${x},${y}`);
+});
+
+test('the sea is on the side of the coast that cuts off less of the city, however little that is', () => {
+  // (seeds 248, 1959669599, 2382780353 and 117: a point 30 m off the coast
+  // fell outside the domain, the sea was taken to be on the other side, and
+  // the harbour took the whole island, every road a bridge)
+  const origin = new Vector(-1440, -1080), size = new Vector(2880, 2160), line = points => points.map(([x, y]) => new Vector(x, y));
+  const corner = line([[-1462, 1064], [-1320, 1076], [-1190, 1087]]);
+  assert.equal(seaSideOf(corner, origin, size), 1, 'a corner clipped');
+  assert.equal(seaSideOf(corner.slice().reverse(), origin, size), -1, 'a corner clipped, the other way');
+  assert.equal(seaSideOf(line([[-1442, -195], [-1436, -60], [-1442, 66]]), origin, size), 1, 'a sliver along an edge');
+  assert.equal(seaSideOf(line([[-1460, 77], [-600, 900], [0, 1070], [600, 1060], [1462, 1025]]), origin, size), 1, 'across, close to an edge in the middle');
+  assert.equal(seaSideOf(line([[-1460, -300], [0, -500], [1460, -300]]), origin, size), -1, 'across the south');
 });
 
 test('a point inside a U-shaped polygon is inside it, as its centroid is not', () => {

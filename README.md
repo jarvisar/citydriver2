@@ -18,6 +18,7 @@ This is the sequel to [Citydriver](https://github.com/jarvisar/citydriver). The 
 - Taxi mode with group fares, shift goals, driver ranks and cabs to buy
 - Weather and night driving
 - Keyboard, controller and touch screen support
+- VR headsets such as Meta Quest, through WebXR
 - Can be installed and played offline
 
 ## How to Play
@@ -49,6 +50,25 @@ Every visit generates a new city. Add `?seed=4817` to the URL to load the same c
 | Menus | Tab, Enter | D-pad or left stick to choose, A / Cross to select, B / Circle to go back |
 
 On touch screens, use the stick to drive, hold Boost, and tap Drift while steering in chase view. Release the stick to stop.
+
+### VR
+
+In a headset's browser, such as the Meta Quest Browser, select **Enter VR** on the main menu or the pause menu. VR starts on a menu with the car standing still. Menus open in front of the player and the HUD sits below the car. Point at a menu with either controller and pull the trigger, or use a thumbstick and A.
+
+| Action | Quest controllers |
+| --- | --- |
+| Accelerate | Right trigger |
+| Brake / reverse | Left trigger |
+| Steer | Left thumbstick |
+| Boost | Right grip |
+| Drift / handbrake | Left grip |
+| Camera | A |
+| Pause | B, Y or left thumbstick click |
+| Reset car | X |
+| Recenter view | Right thumbstick click |
+| Menus | Point and pull the trigger, or a thumbstick to choose and A / X to select. B / Y to go back |
+
+The pause menu has a comfort vignette that darkens the edges of the view in sharp turns. It is on by default. VR needs an HTTPS page. See [VR](docs/vr.md) for more details.
 
 ## Local Installation
 
@@ -89,6 +109,8 @@ npm run test:smoke
 
 To draw a city as an SVG map, run `npm run city:svg -- 4817 city.svg`.
 
+To try VR without a headset, add `?xr` to the dev server's URL. This emulates a Meta Quest 3 in the browser. `node scripts/vr-review.mjs` enters VR this way, steps through every headset menu and saves screenshots to `.artifacts/vr-review`.
+
 ## Deployment
 
 Pushes to `main` are tested and deployed to GitHub Pages by GitHub Actions, using `/citydriver2/` as the base path. When setting up a fork, go to **Settings → Pages** and set **Source** to **GitHub Actions**.
@@ -102,6 +124,7 @@ Pushes to `main` are tested and deployed to GitHub Pages by GitHub Actions, usin
 - [Taxi fleet](docs/taxi-fleet.md)
 - [Driving HUD](docs/driving-hud.md)
 - [UI styles](docs/ui-style.md)
+- [VR](docs/vr.md)
 - [Audio](docs/audio.md)
 - [Performance](docs/performance.md)
 

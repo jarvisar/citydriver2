@@ -28,3 +28,33 @@ test('3D compass points directly to the destination relative to each camera head
   } finally { arrow.dispose(); }
   assert.equal(arrow.scene.children.length, 0);
 });
+
+test('in a headset the arrow floats over the car, tilted to the camera and pointing at the drop-off', () => {
+  const arrow = new DestinationArrow(), scene = new THREE.Scene(), car = new THREE.Object3D(), face = new THREE.Vector3(), toCamera = new THREE.Vector3();
+  scene.add(arrow.headset); car.position.set(12, 1, -40);
+  const vehicle = { s: 40, u: 12, heading: .4 }, camera = new THREE.PerspectiveCamera();
+  try {
+    for (const bearing of [0, 1.1, -2.5]) {
+      const run = { running: true, status: 'driving', target: { s: vehicle.s + Math.cos(bearing) * 300, u: vehicle.u + Math.sin(bearing) * 300 } };
+      for (const heading of [0, 2.2]) {
+        camera.position.set(car.position.x - Math.sin(heading) * 14, 5.5, car.position.z + Math.cos(heading) * 14);
+        camera.lookAt(car.position); camera.updateMatrixWorld();
+        arrow.float(run, vehicle, car, camera, { visible: true });
+        assert.equal(arrow.headset.visible, true);
+        assert.ok(arrow.headset.position.y > car.position.y + 3, 'clear of the roof');
+        // Turned as the card's arrow is, under a lens facing the camera's way
+        assert.ok(Math.abs(Math.sin(arrow.headsetArrow.rotation.y - (heading - bearing))) < 1e-6);
+        assert.ok(Math.abs(Math.sin(arrow.headset.rotation.y + heading)) < 1e-6);
+        arrow.headset.updateMatrixWorld(true);
+        face.set(0, 1, 0).transformDirection(arrow.headsetArrow.matrixWorld);
+        toCamera.subVectors(camera.position, arrow.headset.position).normalize();
+        assert.ok(face.dot(toCamera) > .4, 'its top faces the camera, rather than edge on');
+      }
+    }
+    arrow.float({ running: true, status: 'pickup', target: null }, vehicle, car, camera, { visible: true });
+    assert.equal(arrow.headset.visible, false, 'no drop-off, no arrow');
+    arrow.float({ running: true, status: 'driving', target: { s: 0, u: 0 } }, vehicle, car, camera, { visible: false });
+    assert.equal(arrow.headset.visible, false, 'only in a headset');
+  } finally { arrow.dispose(); }
+  assert.equal(arrow.headset.parent, null);
+});

@@ -11,7 +11,7 @@ import { RoadIndex } from './road-index.js';
 import { averagePoint, calcPolygonArea, offsetPolygon, insidePolygon, polygonCentroid, bufferPolyline, polygonBounds, polylineLength } from './polygon-util.js';
 import { filletPolyline, closeLoop, ringRoad, clipInside, weldEnds, circuses, cleanNetwork, spreadJunctions, pruneNetwork, joinCorners, easeKinks, endJoints } from './road-network.js';
 import { frontageLots, throughLots, chamferAcute } from './lots.js';
-import { islandOutline, landAndWater } from './shore.js';
+import { islandOutline, landAndWater, seaSideOf } from './shore.js';
 import { insetPolygon, difference, solids } from './booleans.js';
 import { CLASS_PROFILES, PROFILES, assignProfiles } from './road-hierarchy.js';
 import { parkLayout, deepestPoint } from './park-paths.js';
@@ -492,10 +492,7 @@ export function generateCityMap(options = {}) {
   if (ring) {
     let coast = null;
     if (coastLine && water.seaPolygon.length >= 3) {
-      const probe = coastLine[Math.floor(coastLine.length / 2)], next = coastLine[Math.floor(coastLine.length / 2) + 1] ?? coastLine[coastLine.length - 2];
-      const dx = next.x - probe.x, dy = next.y - probe.y, length = Math.hypot(dx, dy) || 1;
-      const left = new Vector(probe.x - dy / length * 30, probe.y + dx / length * 30);
-      coast = { line: coastLine, reach: ROAD_PROFILES.coast.halfWidth + o.shore.quay, seaSide: insidePolygon(left, water.seaPolygon) ? 1 : -1 };
+      coast = { line: coastLine, reach: ROAD_PROFILES.coast.halfWidth + o.shore.quay, seaSide: seaSideOf(coastLine, new Vector(origin.x, origin.y), new Vector(width, height)) };
     }
     const island = islandOutline(ring, CLASS_PROFILES.ring.halfWidth + o.shore.quay);
     const river = water.hasRiver && water.riverCentre?.length > 1 ? { centre: water.riverCentre, halfWidth: waterParams.riverSize - waterParams.riverBankSize } : null;

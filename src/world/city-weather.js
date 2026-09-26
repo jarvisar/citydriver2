@@ -13,13 +13,13 @@ for (let i = middlePhases.length - 1; i > 0; i--) {
   [middlePhases[i], middlePhases[j]] = [middlePhases[j], middlePhases[i]];
 }
 export const WEATHER_CYCLE = Object.freeze(['sunset', ...middlePhases, 'night']);
-const NUMBER_KEYS = ['rain', 'snow', 'wetness', 'lightLevel', 'windowGlow', 'cloudCover', 'skyIntensity', 'sunIntensity', 'exposure', 'fogNear', 'fogFar', 'drivingFogNear', 'drivingFogFar', 'sunX', 'sunY', 'sunZ'];
+const NUMBER_KEYS = ['rain', 'snow', 'stars', 'wetness', 'lightLevel', 'windowGlow', 'cloudCover', 'skyIntensity', 'sunIntensity', 'exposure', 'fogNear', 'fogFar', 'drivingFogNear', 'drivingFogFar', 'sunX', 'sunY', 'sunZ'];
 const COLOR_KEYS = ['background', 'fogColor', 'skyColor', 'groundColor', 'sunColor', 'cloudColor'];
 const clamp = value => Math.max(0, Math.min(1, value));
 const ease = value => { const t = clamp(value); return t * t * (3 - 2 * t); };
 
 function preset(label, values) {
-  const result = { label, snow: 0, ...values };
+  const result = { label, snow: 0, stars: 0, ...values };
   for (const key of COLOR_KEYS) result[key] = new THREE.Color(result[key]);
   return result;
 }
@@ -28,7 +28,8 @@ function preset(label, values) {
 // night. Golden hour, rain, snow and overcast skies are still daylight.
 // windowGlow is how brightly the lit rooms show through their windows: a
 // faint warmth by day, more as the light fails, and full at night.
-// cloudCover is the share of the sky's clouds out (see sky-clouds.js).
+// cloudCover is the share of the sky's clouds out (see sky-clouds.js), and
+// stars how brightly the starfield shows between them: only at night.
 export const WEATHER_PRESETS = {
   clear: preset('Day', { rain: 0, wetness: 0, lightLevel: 0, windowGlow: 0, cloudCover: .42, cloudColor: '#ffffff',
     background: '#b6d5e8', fogColor: '#c9dbe2', skyColor: '#c9e2f2', groundColor: '#717977', sunColor: '#fff0d5',
@@ -48,8 +49,8 @@ export const WEATHER_PRESETS = {
   sunset: preset('Golden hour', { rain: 0, wetness: .12, lightLevel: 0, windowGlow: .4, cloudCover: .5, cloudColor: '#ffdcc4',
     background: '#d8c2b4', fogColor: '#d9c8b8', skyColor: '#c5d6e7', groundColor: '#777685', sunColor: '#ffd09a',
     skyIntensity: 1.65, sunIntensity: 3.1, exposure: .82, fogNear: 340, fogFar: 740, drivingFogNear: 170, drivingFogFar: 395, sunX: -210, sunY: 105, sunZ: 140 }),
-  night: preset('Night', { rain: 0, wetness: 0, lightLevel: 1, windowGlow: 1, cloudCover: .35, cloudColor: '#9aa8c2',
-    background: '#202d49', fogColor: '#34405a', skyColor: '#97b3dc', groundColor: '#3c425b', sunColor: '#c3d7f4',
+  night: preset('Night', { rain: 0, wetness: 0, lightLevel: 1, windowGlow: 1, stars: 1, cloudCover: .35, cloudColor: '#6f7c96',
+    background: '#111a30', fogColor: '#222c44', skyColor: '#97b3dc', groundColor: '#3c425b', sunColor: '#c3d7f4',
     skyIntensity: .88, sunIntensity: .75, exposure: .68, fogNear: 240, fogFar: 615, drivingFogNear: 100, drivingFogFar: 335, sunX: 130, sunY: 220, sunZ: -130 }),
 };
 

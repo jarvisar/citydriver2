@@ -1,5 +1,5 @@
 import Vector from './vector.js';
-import { insidePolygon, offsetPolylineClean, offsetPolygon, signedArea } from './polygon-util.js';
+import { insidePolygon, offsetPolylineClean, offsetPolygon, signedArea, calcPolygonArea, lineRectanglePolygon } from './polygon-util.js';
 import { union, difference, intersection, region, solids, clean, grow } from './booleans.js';
 
 // Where the land ends. The city is an island with a harbour's edge all
@@ -28,13 +28,21 @@ export function islandOutline(ring, reach) {
   return offsetPolygon(loop, reach);
 }
 
-// The sea side of a line that crosses the world: the line carried far out at
-// both ends and closed round the far side. It may fold; the booleans do not mind.
-function seaBeyond(line, side, reach = 20000) {
-  const a = line[0], b = line[line.length - 1], dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy) || 1;
-  const tx = dx / length, ty = dy / length, nx = -ty * side, ny = tx * side;
-  const start = new Vector(a.x - tx * reach, a.y - ty * reach), end = new Vector(b.x + tx * reach, b.y + ty * reach);
-  return [start, ...line, end, new Vector(end.x + nx * reach, end.y + ny * reach), new Vector(start.x + nx * reach, start.y + ny * reach)];
+// The sea side of a line that crosses the world: the line carried straight
+// on out of `bounds` at both ends, the way each end runs (over its last
+// 20 m), and closed round the edge of `bounds`. Not on along the line from
+// one end to the other: a coast round an inlet leaves the city on the shore
+// it came in by, and that line runs along the shore, so carried on it cut a
+// strip off the island, ring road and all.
+function seaBeyond(line, side, bounds) {
+  const { minX, minY, maxX, maxY } = bounds, reach = Math.hypot(maxX - minX, maxY - minY);
+  const out = ends => {
+    const end = ends[0];
+    let k = 1;
+    while (k < ends.length - 1 && end.distanceTo(ends[k]) < 20) k++;
+    return end.clone().add(end.clone().sub(ends[k]).setLength(reach));
+  };
+  return lineRectanglePolygon(new Vector(minX, minY), new Vector(maxX - minX, maxY - minY), [out(line), ...line, out(line.slice().reverse())], side);
 }
 
 // The river from where it leaves the sea to where it reaches it again: its
@@ -58,10 +66,21 @@ function riverThrough(centre, onIsland, beyond = 60) {
   return line.slice(Math.max(0, first - steps), Math.min(line.length, last + steps + 1));
 }
 
-// The harbour's water: the sea side of the coast road's promenade
-export function harbourWater(coast) {
+// Which side of a coast line the sea is on, +1 its left or -1 its right: the
+// side that cuts off the smaller part of the domain, as the water generator
+// chose its sea. (Not whichever side a point a little way off the line is
+// in the sea: that missed a sliver of sea cut off a corner, or fell outside
+// the domain where the coast runs along its edge, and the harbour took the
+// whole island.)
+export function seaSideOf(line, origin, dimensions) {
+  const left = calcPolygonArea(lineRectanglePolygon(origin, dimensions, line, 1)), right = calcPolygonArea(lineRectanglePolygon(origin, dimensions, line, -1));
+  return left <= right ? 1 : -1;
+}
+
+// The harbour's water: the sea side of the coast road's promenade, within bounds
+export function harbourWater(coast, bounds) {
   if (!coast || coast.line.length < 2) return null;
-  return seaBeyond(offsetPolylineClean(coast.line, coast.seaSide * coast.reach), coast.seaSide);
+  return seaBeyond(offsetPolylineClean(coast.line, coast.seaSide * coast.reach), coast.seaSide, bounds);
 }
 
 // Land, sea and river for the whole world:
@@ -77,7 +96,7 @@ export function harbourWater(coast) {
 // outers), the island's dry land before the river, and the river's centre
 // line as used.
 export function landAndWater({ island, coast = null, river = null, bounds, keep = null }) {
-  const harbour = harbourWater(coast);
+  const harbour = harbourWater(coast, bounds);
   // The island less the harbour
   let dryPieces = harbour ? difference(region(union([island])), [harbour]) : union([island]);
   if (keep?.length) dryPieces = withoutTips(dryPieces, keep);

@@ -26,7 +26,27 @@ export class DestinationArrow {
     this.group = new THREE.Group(); this.group.name = 'destination-arrow';
     this.group.add(this.mesh); this.group.visible = false; this.scene.add(this.group);
     this.group.rotation.x = .85;
-    this.forward = new THREE.Vector3();
+    this.forward = new THREE.Vector3(); this.offset = new THREE.Vector3();
+    // A headset cannot see the card, so there a larger copy floats over the
+    // car, as in Crazy Taxi: at the car's own depth, clear of the road ahead.
+    this.headset = new THREE.Group(); this.headset.name = 'destination-arrow-headset'; this.headset.visible = false;
+    this.headsetArrow = new THREE.Mesh(this.geometry, this.material);
+    this.headsetArrow.userData.ambientOcclusion = false; this.headset.add(this.headsetArrow);
+  }
+  // Over the roof in the chase view; ahead of the bonnet from the driver's
+  // seat. Like the card's, it turns under a lens tilted towards it, so it is
+  // seen from above rather than edge on.
+  float(run, vehicle, car, camera, { visible = false, ahead = false } = {}) {
+    this.headset.visible = visible && run.running && run.status === 'driving' && Boolean(run.target);
+    if (!this.headset.visible) return;
+    camera.getWorldDirection(this.offset);
+    const cameraHeading = Math.atan2(this.offset.x, -this.offset.z);
+    this.headset.rotation.set(.55, -cameraHeading, 0, 'YXZ');
+    this.headsetArrow.rotation.y = cameraHeading - Math.atan2(run.target.u - vehicle.u, run.target.s - vehicle.s);
+    this.headset.position.copy(car.position);
+    if (ahead) this.headset.position.add(this.offset.set(Math.sin(vehicle.heading) * 9, 1.3, -Math.cos(vehicle.heading) * 9));
+    else this.headset.position.y += 3.6;
+    this.headset.scale.setScalar(ahead ? .6 : 1);
   }
   update(run, vehicle, camera) {
     this.group.visible = run.running && run.status === 'driving' && Boolean(run.target);
@@ -54,5 +74,5 @@ export class DestinationArrow {
     this.renderer.setSize(52, 52, false);
     this.renderer.compile(this.scene, this.camera);
   }
-  dispose() { this.geometry.dispose(); this.material.dispose(); this.group.removeFromParent(); this.renderer?.dispose(); }
+  dispose() { this.geometry.dispose(); this.material.dispose(); this.group.removeFromParent(); this.headset.removeFromParent(); this.renderer?.dispose(); }
 }

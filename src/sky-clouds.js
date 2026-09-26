@@ -8,7 +8,7 @@ import * as THREE from 'three';
 // the horizon, broad overhead, and passing slowly as the car drives. They
 // are drawn first and without depth, so everything else draws over them,
 // and fade into the sky's own colour in the distance. One instanced draw,
-// with no shadows and no AO prepass.
+// with no shadows and no AO prepass. The stars (below) share their group.
 const NEAR = 60, ALTITUDE = 750, SPAN = 12000, COUNT = 60;
 
 // A puff: a rounded low-poly lobe with its underside cut flat
@@ -44,6 +44,33 @@ function layout() {
   return clouds.sort((a, b) => a.threshold - b.threshold);
 }
 
+// Stars: fixed dots on the sky above 6 degrees, drawn on a sphere 90 m round
+// the lens (inside the nearest far plane), added onto the background before
+// the clouds, which cover them. One draw, only while the stars are out.
+const STAR_RADIUS = 90, STAR_COUNT = 700;
+
+function starfield() {
+  let state = 0x2f6b1d93;
+  const random = () => { state = (Math.imul(state ^ (state >>> 15), 1 | state) + 0x9e3779b9) >>> 0; return state / 4294967296; };
+  const positions = new Float32Array(STAR_COUNT * 3), colors = new Float32Array(STAR_COUNT * 3), low = Math.sin(THREE.MathUtils.degToRad(6));
+  for (let i = 0; i < STAR_COUNT; i++) {
+    const y = low + random() * (1 - low), flat = Math.sqrt(1 - y * y), angle = random() * Math.PI * 2;
+    positions.set([Math.cos(angle) * flat * STAR_RADIUS, y * STAR_RADIUS, Math.sin(angle) * flat * STAR_RADIUS], i * 3);
+    // (mostly faint, a few bright; a little blue or warm; dimmer in the haze low down)
+    const bright = (.25 + random() ** 3 * .75) * Math.min(1, (y - low) * 5 + .3), tint = random() - .5;
+    colors.set([bright * (1 + tint * .15), bright, bright * (1 - tint * .15)], i * 3);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const material = new THREE.PointsMaterial({ size: 2, sizeAttenuation: false, vertexColors: true, fog: false, toneMapped: false, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending });
+  const points = new THREE.Points(geometry, material);
+  points.name = 'sky-stars';
+  points.frustumCulled = false; points.renderOrder = -11;
+  points.userData.ambientOcclusion = false;
+  return points;
+}
+
 const wrap = value => value - Math.floor(value / SPAN + .5) * SPAN;
 
 export class SkyClouds {
@@ -70,6 +97,8 @@ export class SkyClouds {
     // (the instances carry the clouds' whole placement)
     this.group = new THREE.Group();
     this.group.add(this.mesh);
+    this.stars = starfield();
+    this.group.add(this.stars);
     scene.add(this.group);
     this.cover = -1; this.heavy = 1; this.wind = { x: 0, s: 0 };
     this.matrix = new THREE.Matrix4(); this.eye = new THREE.Vector3();
@@ -93,6 +122,8 @@ export class SkyClouds {
     this.material.color.lerp(state.cloudColor, blend);
     this.material.emissive.copy(this.material.color).multiplyScalar(.45 * Math.min(1, state.skyIntensity / 1.6) * Math.min(1, state.sunIntensity / 1.2));
     this.haze.value.copy(background);
+    this.stars.material.color.setScalar(state.stars ?? 0);
+    this.stars.visible = (state.stars ?? 0) > .01;
     if (dt > 0) { this.wind.x += dt * 9; this.wind.s += dt * 4; }
   }
   // Round the lens about to draw, each cloud where its place in the sky is
@@ -102,6 +133,7 @@ export class SkyClouds {
     this.group.visible = stereo || Boolean(camera.isPerspectiveCamera);
     if (!this.group.visible) return;
     const eye = camera.getWorldPosition(this.eye), u = eye.x, s = origin - eye.z;
+    this.stars.position.copy(eye);
     let index = 0;
     for (const cloud of this.clouds) {
       if (index >= this.mesh.count) break;

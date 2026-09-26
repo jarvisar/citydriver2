@@ -292,8 +292,9 @@ function rectangleExit(inside, outside, minX, minY, maxX, maxY) {
 
 // The smaller of the two regions a polyline cuts the rectangle into: the sea
 // side of a coastline. The line is expected to enter and leave the rectangle;
-// any excursion outside it in between is flattened onto the boundary.
-export function lineRectanglePolygon(origin, dimensions, line) {
+// any excursion outside it in between is flattened onto the boundary. Given
+// `side`, the region on the line's left (+1) or right (-1) instead.
+export function lineRectanglePolygon(origin, dimensions, line, side = 0) {
   const minX = origin.x, minY = origin.y, maxX = origin.x + dimensions.x, maxY = origin.y + dimensions.y;
   const inside = p => p.x > minX && p.x < maxX && p.y > minY && p.y < maxY;
   const first = line.findIndex(inside);
@@ -325,6 +326,9 @@ export function lineRectanglePolygon(origin, dimensions, line) {
     between.sort((a, b) => a.d - b.d);
     return dedupePolygon(chain.concat(between.map(item => item.corner)));
   };
+  // (round the boundary anticlockwise from where the line leaves, so the
+  // region is on its left)
+  if (side) return build(side > 0);
   const a = build(true), b = build(false);
   return calcPolygonArea(a) <= calcPolygonArea(b) ? a : b;
 }

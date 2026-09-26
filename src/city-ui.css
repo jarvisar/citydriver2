@@ -31,6 +31,7 @@
 }
 .weather-setting select:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 @media (any-pointer: coarse) { .weather-setting select { min-height: 44px; } }
+:root[data-headset=true] .weather-setting select { min-height: 44px; }
 .weather-note { margin: 7px 2px 0; font-size: 11px; line-height: 1.5; opacity: .8; }
 @media (max-width: 760px) {
   .city-hud { gap: 8px; padding: 7px 11px 7px 7px; border-radius: 15px; }

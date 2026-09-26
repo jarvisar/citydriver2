@@ -163,6 +163,9 @@ body[data-journey=city] .chooser-heading { background: #eef1f4; }
 @media (any-pointer: coarse) {
   .dismiss-control-help, .touch-controls .dismiss-control-help { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
 }
+/* A headset's own browser points with a controller ray, so its page takes the
+   touch screen's target sizes too (data-headset is set by main.js). */
+:root[data-headset=true] .dismiss-control-help { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
 
 /* One row of driving actions, pause included, sits at the top right. */
 :root { --header-clear: calc(var(--ui-top) + 76px); }

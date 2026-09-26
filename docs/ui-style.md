@@ -22,4 +22,6 @@ Use slate for secondary actions and yellow for primary actions and selections. U
 
 The action bar matches the district/compass panel's background, border, corners, font and height. The compass, steering stick and switches stay circular.
 
+The VR menus and HUD are drawn on canvases and can't read CSS, so `src/vr-status.js` copies these tokens into its `UI` object. Change both together. See [VR](vr.md).
+
 The district panel should shrink and cut off its text before it touches the action bar. Run `node scripts/hud-test.mjs` after changing touch sizes or layout. It checks for overlap in the header, expanded maps and controller layouts.

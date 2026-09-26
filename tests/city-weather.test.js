@@ -52,6 +52,23 @@ test('sky clouds grow with the cover and stay inside the nearest far plane', () 
   assert.equal(clouds.group.visible, false, 'no clouds over the overhead map');
 });
 
+test('stars come out only at night, overhead and inside the nearest far plane', () => {
+  for (const id of Object.keys(WEATHER_PRESETS)) assert.equal(sampleCityWeather(0, id).stars, id === 'night' ? 1 : 0, `${id} stars`);
+  const clouds = new SkyClouds(new THREE.Scene()), camera = new THREE.PerspectiveCamera(70, 1.6, .1, 206);
+  clouds.setWeather(sampleCityWeather(0, 'clear'), new THREE.Color());
+  assert.equal(clouds.stars.visible, false);
+  clouds.setWeather(sampleCityWeather(0, 'night'), new THREE.Color());
+  assert.equal(clouds.stars.visible, true);
+  camera.position.set(900, 26, 400); camera.updateMatrixWorld();
+  clouds.follow(camera);
+  assert.deepEqual(clouds.stars.position.toArray(), [900, 26, 400]);
+  const points = clouds.stars.geometry.attributes.position;
+  for (let i = 0; i < points.count; i++) {
+    assert.ok(points.getY(i) > 0);
+    assert.ok(Math.hypot(points.getX(i), points.getY(i), points.getZ(i)) < 200);
+  }
+});
+
 test('an explicitly selected golden hour stays fixed', () => {
   const weather = new CityWeather(new THREE.Scene(), { mode: 'sunset' });
   weather.update(WEATHER_INTERVAL * 12);

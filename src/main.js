@@ -68,7 +68,10 @@ try { const saved = localStorage.getItem(carStorageKey); if (saved && CARS[saved
 // It lasts the visit and is not stored: the fleet's own finishes are the thing
 // worth keeping, and Default hands them straight back.
 let paint = null;
+// A headset shows toasts in its own HUD (set up in boot).
+let echoToast = null;
 const toast = (message, tone = '') => {
+  echoToast?.(message, tone);
   const element = $('#toast');
   // Taxi feedback shares the instruction slot, keeping notifications off the road.
   const parent = gameMode === 'taxi' && started && !paused ? $('.taxi-task-copy') : $('#app');
@@ -91,8 +94,15 @@ async function boot() {
     const rendering = createRendering($('#scene'), graphics, { showCarSilhouette: () => started,
       beforeDraw: camera => taxiView.navigation.update(taxi, vehicle, camera) });
     const { renderer, scene } = rendering;
-    let vr;
-    const vrStatus = new VRStatus(rendering.vrCamera.camera);
+    let vr, vrHintTime = 0, vrMapCanvas = null, vrMapKey = 0;
+    const vrStatus = new VRStatus(rendering.vrCamera.camera, rendering.vrCamera.anchor);
+    echoToast = (message, tone) => { if (vr?.active) vrStatus.toast(message, tone); };
+    const comfortStorageKey = 'citydriver-vr-comfort', comfort = rendering.vrCamera.comfort;
+    try { comfort.enabled = localStorage.getItem(comfortStorageKey) !== 'off'; } catch { /* Storage is optional. */ }
+    function toggleComfort() {
+      comfort.enabled = !comfort.enabled; toast(`Comfort vignette ${comfort.enabled ? 'on' : 'off'}`);
+      try { localStorage.setItem(comfortStorageKey, comfort.enabled ? 'on' : 'off'); } catch { /* Keep it for this visit. */ }
+    }
     const hidden = () => vr?.active ? !vr.visible : document.hidden;
     const fpsCounter = $('#fps-counter');
     let fpsStart = null, fpsFrames = 0;
@@ -216,6 +226,8 @@ async function boot() {
       $('#world-map-status').textContent = hereText();
       worldMapDialog.showModal();
       drawWorldMap();
+      // (and once more for the headset's panel, which cannot show the page)
+      if (vr?.active) { vrMapCanvas ??= document.createElement('canvas'); vrMapCanvas.width = 940; worldMap.draw(vrMapCanvas, vehicle); vrMapKey++; }
       $('#close-world-map').focus();
     }
     $('#open-world-map').addEventListener('click', openWorldMap);
@@ -281,7 +293,7 @@ async function boot() {
       $('#reset').setAttribute('aria-label', $('#reset').title);
       updateCarUi();
     }
-    function recoverTaxi(penalty = false) {
+    function recoverCar(penalty = false) {
       const pose = nearestLanePose(vehicle.s, vehicle.u, vehicle.heading);
       vehicle.s = pose.s; vehicle.u = pose.u; vehicle.heading = pose.heading;
       haltCar();
@@ -293,7 +305,7 @@ async function boot() {
       if (changingJourney) return;
       if (freeTraffic === undefined || gameMode === 'free') freeTraffic = traffic.enabled;
       started = true; gameMode = 'taxi'; autodrive.reset(); vehicle.arcade = true;
-      vehicle.setCar(taxi.fleet.selected, { paint: taxi.fleet.liveryColor }); recoverTaxi(); traffic.setEnabled(true, vehicle);
+      vehicle.setCar(taxi.fleet.selected, { paint: taxi.fleet.liveryColor }); recoverCar(); traffic.setEnabled(true, vehicle);
       $('#traffic').setAttribute('aria-pressed', 'true'); $('#autodrive').setAttribute('aria-pressed', 'false');
       taxi.start(vehicle); taxiView.reset(); renderGoals(); $('#taxi-results').hidden = true; $('#welcome').classList.add('hidden');
       rendering.setView(4); updateViewUi(); setPaused(false); modeUi(); updateHud();
@@ -423,7 +435,7 @@ async function boot() {
       if (name === 'recenterVR') { rendering.vrCamera.recenter(); return; }
       if (vr?.active && name.startsWith('vrMenu')) {
         if (name === 'vrMenuConfirm') vrStatus.activate();
-        else vrStatus.move(name === 'vrMenuNext' ? 1 : -1);
+        else vrStatus.move(name);
         return;
       }
       if (name === 'fps') {
@@ -456,6 +468,8 @@ async function boot() {
         else if (name !== 'menuClose') moveMenuFocus(welcomeMenu, name);
         return;
       }
+      // The headset's title is a menu with nothing to pause.
+      if (vr?.active && !started && name === 'pause') return;
       // M or View / Share: the city map, from the drive or the pause screen
       if (name === 'map') { if ((started || paused) && taxi.status !== 'over') openWorldMap(); return; }
       if (name === 'nextJourney') return;
@@ -479,7 +493,9 @@ async function boot() {
       }
       if (name === 'pause') setPaused(!paused);
       if (name === 'reset') {
-        if (taxi.running) { recoverTaxi(true); return; }
+        if (taxi.running) { recoverCar(true); return; }
+        // A headset keeps its session: back on the road rather than a new city.
+        if (vr?.active) { recoverCar(); toast('Car reset'); return; }
         // The seed also initializes shared layouts and scenery at module load.
         // Reload with a fresh seed to regenerate the whole city consistently.
         const url = new URL(window.location.href);
@@ -523,17 +539,25 @@ async function boot() {
       onStart() {
         $('#vr-error').hidden = true;
         input.xrActive = true; input.clear();
+        vrStatus.attach(vr.session); vrHintTime = 0;
         rendering.enterVR(); rendering.update(vehicle.car, 0, world.origin); updateViewUi();
         rendering.vrCamera.recenter(); graphics.suspend();
-        setPaused(false); start();
+        // Holding the headset's own button recentres its space: the game's seat and panels follow.
+        renderer.xr.getReferenceSpace()?.addEventListener?.('reset', () => rendering.vrCamera.recenter());
+        // The headset opens on a menu with the car standing still: the title,
+        // or the pause menu Enter VR was chosen from. Nothing moves, and no
+        // shift clock runs, until the player has their bearings and says go.
+        if (started) setPaused(true); else haltCar();
         audio.setHidden(!vr.visible); needsRender = true;
         document.body.dataset.vr = 'true';
       },
       onEnd() {
         input.xrActive = false; input.clear();
-        vrStatus.update(null); graphics.suspend();
+        vrStatus.update(null); vrStatus.hud(null); graphics.suspend();
         rendering.exitVR(); rendering.update(vehicle.car, 0, world.origin); updateViewUi();
-        audio.setHidden(document.hidden); setPaused(true); needsRender = true;
+        // Back on the page, a drive waits paused and the title cruises on.
+        audio.setHidden(document.hidden); if (started) setPaused(true); else primeMenuDrive();
+        needsRender = true;
         document.body.dataset.vr = 'false';
       },
       onVisibility(visible) {
@@ -545,7 +569,23 @@ async function boot() {
         const message = error.name === 'NotAllowedError' ? 'VR permission was declined. Select Enter VR to try again.' : 'Could not enter VR. Try again in your headset browser.';
         $('#vr-error').textContent = message; $('#vr-error').hidden = false;
       },
+      onSupport: supported => headsetLayout(supported && headsetBrowser()),
     });
+    // A headset's own browser shows the page as a flat window whose
+    // controllers only point, so there Enter VR leads the title and the pause
+    // screen, and targets are touch-sized. A user agent is no feature test,
+    // but nothing else tells a Quest's browser from a desktop with a headset.
+    function headsetBrowser() { return /OculusBrowser|PicoBrowser|Wolvic|\bVR Safari\b|Mobile VR/.test(navigator.userAgent); }
+    function headsetLayout(on) {
+      if ((document.documentElement.dataset.headset === 'true') === on) return;
+      document.documentElement.dataset.headset = String(on);
+      $('#enter-vr').classList.toggle('menu-secondary', !on); $('#start').classList.toggle('menu-secondary', on);
+      if (on) { $('.menu-actions').prepend($('#enter-vr')); $('.pause-column').prepend($('#enter-vr-pause')); }
+      else { $('.menu-actions').append($('#enter-vr')); $('.graphics-panel').after($('#enter-vr-pause')); }
+    }
+    // WebXR needs a secure page, which a headset opening the dev server over
+    // the local network is not; say so rather than hide Enter VR unexplained.
+    if (headsetBrowser() && !window.isSecureContext) { $('#vr-error').textContent = 'VR needs a secure page. Open Citydriver over HTTPS to play in your headset.'; $('#vr-error').hidden = false; }
     $('#change-car').addEventListener('click', openCars);
     $('#close-cars').addEventListener('click', () => carDialog.close());
     let fullscreenPending = false;
@@ -703,6 +743,7 @@ async function boot() {
       text('#weather-label', weather.state.label);
       cityGuide.update(started && !paused && !changingJourney);
       taxiView.hud(taxi, vehicle, started && gameMode === 'free');
+      if (vr?.active) vrStatus.hud(vrHudModel());
     }
     function updateViewUi() {
       $('#view').title = `${rendering.viewLabel} · Change camera (V)`;
@@ -712,47 +753,85 @@ async function boot() {
       $('.stick-help-line').textContent = thirdPerson ? '↓ Brake · Release to stop' : 'Release to stop';
       $('#touch-stick').setAttribute('aria-label', thirdPerson ? 'Virtual joystick: up to accelerate, left and right to steer, down to brake or reverse, release to stop' : 'Virtual joystick');
     }
+    // The headset's menus: the page's own choices, drawn by VRStatus.
+    const VR_CONTROLS = 'Right trigger: gas · Left trigger: brake\nLeft stick: steer · Left grip: drift\nRight grip: boost · A: camera · B: pause';
+    const VR_POINTING = 'Point and pull the trigger, or use either stick and A · B: back';
     function vrMenuModel() {
       if (!vr.active) return null;
-      if (changingJourney) return { id: 'loading', title: 'Loading road…', items: [] };
-      const item = (label, name) => ({ label, activate: () => action(name) });
+      if (changingJourney) return { id: 'loading', title: 'Loading…', subtitle: 'Your drive will be ready shortly', items: [] };
+      const back = chooser => ({ label: 'Back', footer: true, activate: () => chooser.close() });
       const chooser = openChooser();
+      if (chooser === worldMapDialog) return { id: 'map', title: 'City map', subtitle: hereText(), image: vrMapCanvas, imageKey: vrMapKey, items: [back(chooser)], hint: 'B: back' };
       if (chooser) {
-        const cars = chooser === carDialog;
         const fleet = chooser === fleetDialog;
-        const buttons = fleet || cars ? [...chooser.querySelectorAll(fleet ? '[data-fleet-car]:not(:disabled), [data-livery]:not(:disabled)' : '[data-car], [data-paint]')] : [];
-        return { id: chooser.id, title: fleet ? 'Taxi fleet' : cars ? 'Garage & paint' : 'City map', items: [
-          { label: 'Back', activate: () => chooser.close() },
-          ...buttons.map(button => ({
-            label: (button.hasAttribute('data-paint') ? 'Paint: ' : button.hasAttribute('data-livery') ? 'Livery: ' : '') + (button.getAttribute('aria-label') ?? button.querySelector('.chooser-card-title')?.textContent ?? button.textContent).trim() + (button.getAttribute('aria-current') === 'true' || button.getAttribute('aria-checked') === 'true' ? ' ✓' : ''),
-            activate: () => button.click(),
-          })),
-        ] };
+        // Each of the page chooser's buttons, pressed as the page would press it
+        const buttons = [...chooser.querySelectorAll(fleet ? '[data-fleet-car], [data-livery]' : '[data-car], [data-paint]')];
+        const items = buttons.map(button => {
+          const [name, state = ''] = (button.getAttribute('aria-label') ?? button.querySelector('.chooser-card-title')?.textContent ?? button.textContent).trim().split(': ');
+          const { paint, livery, fleetCar } = button.dataset, swatch = paint === DEFAULT_PAINT ? ownPaint(carId) : paint ?? button.style.getPropertyValue('--swatch');
+          // A cab shows its price or that it is owned; a locked livery the rank that opens it.
+          const value = fleetCar ? state.startsWith('Buy') ? state.split(' · ')[1] : state === 'Select cab' ? 'Owned' : ''
+            : livery && button.disabled ? state.replace(/^unlocks at (.*) rank$/, '$1') : '';
+          return { label: name, value, swatch: swatch || undefined, group: fleet ? livery ? 'Livery' : 'Cabs' : paint ? 'Paint' : 'Cars',
+            current: ['aria-current', 'aria-checked', 'aria-pressed'].some(attribute => button.getAttribute(attribute) === 'true'), disabled: button.disabled, activate: () => button.click() };
+        });
+        return { id: chooser.id, title: fleet ? 'Taxi fleet' : 'Garage', subtitle: fleet ? `Fleet balance ${$('#fleet-balance').textContent} · Faster cabs fit more fares into a run` : 'Paint applies to all cars',
+          flow: true, items: [...items, back(chooser)], hint: VR_POINTING };
       }
-      if (taxi.status === 'over') return { id: 'taxi-results', title: `Time up · $${taxi.cash} · ${taxiLicense(taxi.cash).name}`, items: [
-        { label: 'Play again', activate: beginTaxi }, { label: 'Taxi fleet', activate: openFleet }, { label: 'Free drive', activate: beginFree }, item('Exit VR', 'exitVR'),
+      if (taxi.status === 'over') return { id: 'taxi-results', title: `Time up · ${$('#taxi-result-cash').textContent}`, subtitle: [$('#taxi-license-name').textContent, $('#taxi-result-best').textContent].join(' · '), hint: VR_POINTING, items: [
+        { label: 'Play again', primary: true, activate: beginTaxi }, { label: 'Taxi fleet', activate: openFleet }, { label: 'Free drive', activate: beginFree },
+        { label: 'Exit VR', footer: true, activate: () => action('exitVR') },
       ] };
-      if (!paused) return { id: 'driving', title: taxi.running ? `${Math.ceil(taxi.timeLeft)}s · $${taxi.cash} · ${taxi.status === 'pickup' ? 'Pick up' : taxi.target.name}` : '', items: [item('Pause', 'pause')] };
-      const modes = ['auto', 'high', 'balanced', 'smooth', 'basic'];
-      return { id: 'pause', title: 'Paused', items: [
-        { label: gameMode === 'taxi' ? 'Restart run' : 'Taxi run', activate: beginTaxi },
-        ...(gameMode === 'taxi' ? [{ label: 'Free drive', activate: beginFree }] : []),
-        item('Resume', 'pause'), item(`Camera: ${rendering.viewLabel}`, 'view'),
-        item(gameMode === 'taxi' ? 'Taxi fleet' : 'Garage & paint', 'car'),
-        item(`Autodrive: ${autodrive.enabled ? 'on' : 'off'}`, 'autodrive'),
-        { label: `Traffic: ${traffic.enabled ? 'on' : 'off'}`, activate: () => $('#traffic').click() },
-        item(`Sound: ${$('#sound').getAttribute('aria-pressed') === 'true' ? 'on' : 'off'}`, 'sound'),
-        { label: `Sound mix: ${audio.preset}`, activate: () => { const presets = ['balanced', 'scenic', 'night']; audio.setPreset(presets[(presets.indexOf(audio.preset) + 1) % presets.length]); refreshAudioMixer(); } },
-        { label: `Graphics: ${graphics.mode}`, activate: () => graphics.setMode(modes[(modes.indexOf(graphics.mode) + 1) % modes.length]) },
-        item('Reset car', 'reset'), item('Recenter view', 'recenterVR'), item('Exit VR', 'exitVR'),
+      if (!started) return { id: 'title', title: 'citydriver', wordmark: true, mark: $('.brand-mark'), subtitle: 'Pick up. Drop off. Beat the clock.', hint: VR_CONTROLS, items: [
+        { label: 'Start run', primary: true, activate: beginTaxi }, { label: 'Free drive', activate: beginFree },
+        { label: 'Exit VR', activate: () => action('exitVR') },
       ] };
+      if (!paused) return null;
+      const taxiMode = gameMode === 'taxi', cycle = (list, value) => list[(list.indexOf(value) + 1) % list.length];
+      const drive = (label, activate, extra) => ({ group: 'Driving', label, activate, ...extra });
+      const option = weatherSelect.options[weatherSelect.selectedIndex];
+      return { id: 'pause', title: 'Paused', subtitle: `${cityDistrict(vehicle.s, vehicle.u)} · ${hud.distance.textContent} mi driven`, columns: 2, hint: VR_CONTROLS, items: [
+        { label: 'Resume', primary: true, header: true, activate: () => setPaused(false) },
+        ...(taxiMode ? [drive('Restart run', beginTaxi), drive('Free drive', beginFree), drive('Taxi fleet', openFleet, { value: carEntry(taxi.fleet.selected).name })]
+          : [drive('Taxi run', beginTaxi), drive('Garage', openCars, { value: carEntry(carId).name }),
+            drive('Autodrive', () => action('autodrive'), { toggle: autodrive.enabled }), drive('Traffic', () => $('#traffic').click(), { toggle: traffic.enabled })]),
+        drive('Reset car', () => action('reset'), { value: taxi.running ? '−5 seconds' : '' }),
+        { group: 'The city', label: 'City map', value: cityDistrict(vehicle.s, vehicle.u), activate: openWorldMap },
+        { group: 'The city', label: 'Weather', value: option?.textContent, activate: () => { weatherSelect.selectedIndex = (weatherSelect.selectedIndex + 1) % weatherSelect.options.length; weatherSelect.dispatchEvent(new Event('change')); } },
+        { column: 1, group: 'View', label: 'Camera', value: rendering.viewLabel.replace(/ view$/, ''), activate: () => action('view') },
+        { column: 1, group: 'View', label: 'Recenter view', activate: () => action('recenterVR') },
+        { column: 1, group: 'View', label: 'Comfort vignette', toggle: comfort.enabled, activate: toggleComfort },
+        { column: 1, group: 'View', label: 'Graphics', value: graphics.auto ? 'Auto' : graphics.settings.label, activate: () => graphics.setMode(cycle(['auto', 'high', 'balanced', 'smooth', 'basic'], graphics.mode)) },
+        { column: 1, group: 'Sound', label: 'Sound', toggle: $('#sound').getAttribute('aria-pressed') === 'true', activate: () => action('sound') },
+        { column: 1, group: 'Sound', label: 'Sound mix', value: audio.preset[0].toUpperCase() + audio.preset.slice(1), activate: () => { audio.setPreset(cycle(['balanced', 'scenic', 'night'], audio.preset)); refreshAudioMixer(); } },
+        { label: 'Exit VR', footer: true, activate: () => action('exitVR') },
+      ] };
+    }
+    // The headset's HUD says what the page's HUD says: taxiView.hud() and
+    // updateHud() keep the page's current whether or not it is on screen.
+    function vrHudModel() {
+      if (!vr.active || !started || paused || changingJourney) return null;
+      const read = id => document.getElementById(id).textContent;
+      const hint = vrHintTime < 10 ? 'Right trigger: gas · Left trigger: brake · Left stick: steer · Grips: drift, boost · B: pause' : '';
+      if (!taxi.running) return { heading: read('city-heading'), place: read('city-location'), weather: read('weather-label'), hint };
+      const pickup = taxi.status === 'pickup', timer = $('#taxi-timer');
+      return { taxi: true, clock: read('taxi-clock'), urgent: $('#taxi-clock').dataset.urgent === 'true', cash: read('taxi-cash'), fares: read('taxi-fares'),
+        stage: [read('taxi-stage'), read('taxi-fare-status')].filter(Boolean).join(' · '), title: read('taxi-task-title'),
+        distance: pickup || $('#taxi-nav').hidden ? '' : read('taxi-nav-distance'),
+        detail: pickup ? [read('taxi-party'), read('taxi-task-detail')].filter(Boolean).join(' · ')
+          : read('taxi-task-detail') || read('taxi-next-stop') || [read('taxi-party'), read('taxi-combo')].filter(Boolean).join(' · '),
+        // (to the percent: each change redraws and uploads the HUD's texture)
+        timer: timer.hidden ? null : { text: read('taxi-timer'), tone: timer.dataset.rating, fraction: Math.round(parseFloat($('#taxi-timer-fill').style.width)) / 100 || 0 }, hint };
     }
     const simulate = dt => {
       let state = started ? input.state : {};
       if (autodrive.enabled && (state.forward || state.brake || state.left || state.right || state.handbrake || state.touchStick)) action('autodrive');
       // Cruise behind the welcome menu without toggling the player's setting
       // or showing a notification. Starting hands control straight to input.
-      if (!started || autodrive.enabled) state = autodrive.update(vehicle, traffic, started ? vehicle.stats.topSpeed : MENU_CRUISE_SPEED, dt);
+      // In a headset the title holds the car still: a drive nobody is
+      // steering makes for an uneasy start.
+      if (!started && vr.active) state = {};
+      else if (!started || autodrive.enabled) state = autodrive.update(vehicle, traffic, started ? vehicle.stats.topSpeed : MENU_CRUISE_SPEED, dt);
       if (state.touchStick) {
         if (rendering.camera.isPerspectiveCamera) {
           const touch = thirdPersonDrivingInput(state.touchStick);
@@ -785,7 +864,7 @@ async function boot() {
     };
     function frame(timestamp, xrFrame) {
       vrStatus.update(vrMenuModel());
-      if (vr.active) input.xr.update(vr.session.inputSources, { blocked: !vr.visible || changingJourney, paused });
+      if (vr.active) input.xr.update(vr.session.inputSources, { blocked: !vr.visible || changingJourney, paused: paused || vrStatus.visible });
       else {
         input.gamepad.update({ blocked: document.hidden || !document.hasFocus() || changingJourney, paused, menu: openChooser() ? 'chooser' : openPauseMenu() ? 'pause' : openWelcomeMenu() ? 'welcome' : false });
         const menu = input.gamepad.scroll && (openChooser() ?? openPauseMenu() ?? openWelcomeMenu());
@@ -796,6 +875,7 @@ async function boot() {
       const dt = frameClock.dt;
       if (running) {
         time += dt;
+        if (vr.active && started && Math.abs(vehicle.speed) > 2) vrHintTime += dt;
         world.update(vehicle.s, vehicle.u, { budgetMs: 3 }); vehicle.render(frameClock.alpha, world.origin);
         traffic.render(frameClock.alpha, world.origin); props.render(frameClock.alpha, world.origin);
         pedestrianContacts.update(vehicle, traffic, time);
@@ -803,6 +883,7 @@ async function boot() {
         taxiView.render(taxi, vehicle, world.origin, time, pedestrianContacts);
         applyWeather(dt);
       }
+      comfort.update(rendering.camera, vehicle.speed, running ? dt : 0, vr.active && running && started);
       soundScene.interior = rendering.viewLabel === 'First-person view';
       soundScene.lightning = weather.flash; soundScene.rain = weather.state.rain; soundScene.wetness = weather.state.wetness;
       const cameraMatrix = (vr.active ? rendering.vrCamera.camera : rendering.camera).matrixWorld.elements;
@@ -816,6 +897,7 @@ async function boot() {
       // drawing every headset frame so head tracking continues while stopped.
       const rendered = vr.active ? Boolean(xrFrame) : !document.hidden && (!paused || needsRender);
       if (rendered) {
+        taxiView.navigation.float(taxi, vehicle, vehicle.car, rendering.camera, { visible: vr.active, ahead: soundScene.interior });
         vrStatus.update(vrMenuModel());
         rendering.render(xrFrame, () => {
           vrStatus.point(xrFrame, renderer.xr.getReferenceSpace(), rendering.vrCamera.rig, vr.visible && !changingJourney);
@@ -835,9 +917,12 @@ async function boot() {
     try { taxiView.navigation.prepare(); } catch { /* The first fare tries again. */ }
     changingJourney = false;
     renderer.setAnimationLoop(frame);
+    // `?xr` in development emulates a Quest 3 (see xr-emulator.js).
+    const emulate = new URLSearchParams(window.location.search).get('xr');
+    if (import.meta.env.DEV && emulate !== null) (await import('./xr-emulator.js')).installXREmulator(emulate);
     void vr.detect();
     // Development-only inspection surface for automated driving and streaming checks.
-    if (import.meta.env.DEV) window.__citydriver = { seed: SEED, city: CITY, nav: navGraph(), lanePose, roadAt, nearestLanePose, vehicle, traffic, props, nightLighting, weather, autodrive, audio, graphics, vr, cityGuide, taxi, taxiView, beginTaxi, beginFree, get gameMode() { return gameMode; }, world, rendering, input, action, chooseCar, applyPaint, get carId() { return carId; }, get paint() { return paint; }, get journey() { return journey; }, get changingJourney() { return changingJourney; }, get paused() { return paused; }, get started() { return started; } };
+    if (import.meta.env.DEV) window.__citydriver = { seed: SEED, city: CITY, nav: navGraph(), lanePose, roadAt, nearestLanePose, vehicle, traffic, props, nightLighting, weather, autodrive, audio, graphics, vr, vrStatus, cityGuide, taxi, taxiView, beginTaxi, beginFree, get gameMode() { return gameMode; }, world, rendering, input, action, chooseCar, applyPaint, get carId() { return carId; }, get paint() { return paint; }, get journey() { return journey; }, get changingJourney() { return changingJourney; }, get paused() { return paused; }, get started() { return started; } };
   } catch (error) { console.error('Could not start Citydriver:', error); $('#loading').classList.add('loaded'); $('#error').hidden = false; }
 }
 boot();

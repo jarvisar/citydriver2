@@ -233,8 +233,8 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   function precompile(warmupObjects = []) {
     const warmup = new THREE.Group(), fog = scene.fog, lens = activeCamera(), pending = [];
     for (const object of [...warmupObjects, carSilhouette.warmup]) warmup.add(object);
-    const parallel = renderer.extensions.has('KHR_parallel_shader_compile'), skyVisible = clouds.group.visible;
-    clouds.group.visible = true;
+    const parallel = renderer.extensions.has('KHR_parallel_shader_compile'), skyVisible = clouds.group.visible, starsVisible = clouds.stars.visible;
+    clouds.group.visible = clouds.stars.visible = true;
     try {
       for (const variant of [null, drivingFog]) {
         scene.fog = variant;
@@ -243,7 +243,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
           else renderer.compile(target, lens, scene);
         }
       }
-    } finally { scene.fog = fog; clouds.group.visible = skyVisible; }
+    } finally { scene.fog = fog; clouds.group.visible = skyVisible; clouds.stars.visible = starsVisible; }
     return Promise.all(pending);
   }
   function setView(index) { view = index; updateFog(); thirdPerson.snap(); firstPerson.snap(); return views[view].label; }

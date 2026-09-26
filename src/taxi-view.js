@@ -26,6 +26,7 @@ const markerScale = 1.3;
 export class TaxiView {
   constructor(scene) {
     this.navigation = new DestinationArrow(globalThis.document ? $('taxi-arrow') : null);
+    scene.add(this.navigation.headset);
     this.measureTask = () => {
       const task = $('taxi-task');
       if (!task.hidden) $('app').style.setProperty('--taxi-task-bottom', `${task.getBoundingClientRect().bottom}px`);
@@ -81,7 +82,7 @@ export class TaxiView {
   // fare appears. They are never drawn.
   warmupObjects() {
     const { solid, glow } = this.markerMaterials('#ffd240'), badge = this.badge(1, '#ffd240');
-    return [new THREE.Mesh(this.ring, solid), new THREE.Mesh(this.beam, glow), ...(badge ? [new THREE.Sprite(badge)] : [])];
+    return [new THREE.Mesh(this.ring, solid), new THREE.Mesh(this.beam, glow), new THREE.Mesh(this.navigation.geometry, this.navigation.material), ...(badge ? [new THREE.Sprite(badge)] : [])];
   }
   rebuild(run) {
     const previousReactions = new Map(this.markers.map(marker => [marker.stop.id, marker.reactions]));

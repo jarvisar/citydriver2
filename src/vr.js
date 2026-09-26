@@ -1,6 +1,6 @@
 export class BrowserVR {
-  constructor({ renderer, buttons, onStart, onEnd, onVisibility, onError, canEnter = () => true, navigator = globalThis.navigator, secure = globalThis.isSecureContext }) {
-    Object.assign(this, { renderer, buttons, onStart, onEnd, onVisibility, onError, canEnter, navigator, secure });
+  constructor({ renderer, buttons, onStart, onEnd, onVisibility, onError, onSupport = () => {}, canEnter = () => true, navigator = globalThis.navigator, secure = globalThis.isSecureContext }) {
+    Object.assign(this, { renderer, buttons, onStart, onEnd, onVisibility, onError, onSupport, canEnter, navigator, secure });
     this.session = null;
     this.pending = false;
     this.supported = false;
@@ -36,7 +36,7 @@ export class BrowserVR {
   async check() {
     try { this.supported = await this.navigator.xr.isSessionSupported('immersive-vr'); }
     catch { this.supported = false; }
-    this.refresh();
+    this.refresh(); this.onSupport(this.supported);
   }
   async toggle() {
     if (this.pending || !this.supported || (!this.active && !this.canEnter())) return;
@@ -44,8 +44,9 @@ export class BrowserVR {
     try {
       if (this.session) { await this.session.end(); return; }
       // Call directly from the button's user gesture. A local reference space
-      // works seated or standing and does not depend on floor tracking.
-      const session = await this.navigator.xr.requestSession('immersive-vr', { requiredFeatures: ['local'], optionalFeatures: ['layers'] });
+      // works seated or standing and does not depend on floor tracking. Hands
+      // can point at the menus when the controllers are put down.
+      const session = await this.navigator.xr.requestSession('immersive-vr', { requiredFeatures: ['local'], optionalFeatures: ['layers', 'hand-tracking'] });
       this.session = session;
       session.addEventListener('end', this.ended);
       session.addEventListener('visibilitychange', this.visibilityChanged);
