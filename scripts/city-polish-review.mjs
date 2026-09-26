@@ -80,6 +80,22 @@ try {
           break;
         }
       }
+      // Ordinary entrances need their own close view as well as landmarks.
+      for (const type of ['townhouse', 'warehouse']) {
+        for (const lot of lots) {
+          const b = planLot({ east: 0, start: 0 }, lot);
+          if (b.kind !== 'building' || b.type !== type || b.shopfront) continue;
+          const front = b.footprint.map((a, i) => ({ a, q: b.footprint[(i + 1) % b.footprint.length], street: b.street[i] }))
+            .filter(f => f.street).sort((a, b) => Math.hypot(b.q.x - b.a.x, b.q.y - b.a.y) - Math.hypot(a.q.x - a.a.x, a.q.y - a.a.y))[0];
+          if (!front) continue;
+          const { a, q } = front, length = Math.hypot(q.x - a.x, q.y - a.y);
+          const x = (a.x + q.x) / 2, y = (a.y + q.y) / 2;
+          const p = g.nearestLanePose(y - (q.x - a.x) / length * 10, x + (q.y - a.y) / length * 10, 0, 25);
+          if (!p || Math.hypot(x - p.u, y - p.s) > 22) continue;
+          result.push({ name: `front-${type}`, ...p, heading: Math.atan2(x - p.u, y - p.s), view: 5 });
+          break;
+        }
+      }
       // Four different venues per seed cover the full catalogue in the default tour.
       const venues = Object.keys(CITY_PLACES).filter(type => !['park', 'plaza'].includes(type));
       for (let i = 0; i < 4; i++) {
@@ -91,7 +107,7 @@ try {
       result.push({ ...result.find(p => p.name === 'shopfront'), name: 'basic-shopfront', quality: 'basic' });
       // Public-space details, viewed from the closest ordinary driving lane.
       const furniture = [...g.world.furnitureByChunk.values()].flat();
-      for (const kind of ['shelter', 'bed', 'glasshouse', 'bandstand', 'cafe', 'stall']) {
+      for (const kind of ['shelter', 'bed', 'glasshouse', 'bandstand', 'bench', 'cafe', 'stall']) {
         const candidates = furniture.filter(f => f.kind === kind).map(f => {
           const p = g.nearestLanePose(f.s, f.u, 0, 100);
           return p && { f, p, distance: Math.hypot(f.s - p.s, f.u - p.u) };
@@ -100,10 +116,11 @@ try {
         if (chosen) {
           const { f, p } = chosen;
           result.push({ name: `detail-${kind}`, ...p, heading: Math.atan2(f.u - p.u, f.s - p.s), view: 5 });
-          if (kind === 'cafe' || kind === 'stall') {
+          if (['cafe', 'stall', 'bench', 'bandstand'].includes(kind)) {
             // Also inspect the actual furniture at eye height in its square.
-            const angle = (f.yaw ?? 0) + Math.PI / 4;
-            const u = f.u + Math.sin(angle) * 8, s = f.s - Math.cos(angle) * 8;
+            const angle = (f.yaw ?? 0) + (kind === 'bench' ? -Math.PI / 3 : Math.PI / 4);
+            const distance = kind === 'bandstand' ? 13 : kind === 'bench' ? 5 : 8;
+            const u = f.u + Math.sin(angle) * distance, s = f.s - Math.cos(angle) * distance;
             result.push({ name: `detail-${kind}-close`, u, s, heading: Math.atan2(f.u - u, f.s - s), view: 5 });
           }
         }

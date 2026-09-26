@@ -604,12 +604,41 @@ export function shopFront(c, b, facade, base, primary) {
   }
 }
 
+// A framed residential entrance: the leaf's rails and panels share a single
+// opaque face, so small inset details cannot flicker against a backing box.
+function frontDoor(c, b, f, offset, head) {
+  const bottom = .12, height = head - bottom, paint = b.variation % 2 ? '#655044' : b.accent;
+  const panel = new THREE.Color(paint).multiplyScalar(.72), trim = b.type === 'townhouse' || b.type === 'brick' ? creamTrim : '#b3c5bc';
+  const frameKind = c.distant ? 'inlay' : 'solid';
+  for (const side of [-1, 1]) f.add(offset + side * .635, G + bottom + height / 2, .15, .12, height, .18, trim, frameKind, true);
+  f.add(offset, G + head + .065, .15, 1.39, .13, .18, trim, frameKind, true);
+  // Two wide panels read from the opposite kerb. Some doors have upper
+  // glazing; the building's existing variation chooses it without new draws.
+  const rows = [[.16, paint], [.67, panel], [.16, paint], [height - 1.17, b.variation % 2 ? panel : '#42616a'], [.18, paint]];
+  for (const side of [-1, 1]) f.add(offset + side * .495, G + bottom + height / 2, .21, .16, height, 0, paint, 'inlay');
+  let y = bottom;
+  for (const [h, colour] of rows) {
+    f.add(offset, G + y + h / 2, .21, .83, h, 0, colour, 'inlay');
+    y += h;
+  }
+  f.add(offset + (b.variation % 2 ? -.45 : .45), G + 1.15, .28, .07, .18, .08, '#ccb88c');
+}
+
 // The ground floor along a street: a shopfront with its sign and awnings, a
 // loading bay, or a front door with windows either side.
-function groundFloor(c, b, f, base, primary, random) {
+export function groundFloor(c, b, f, base, primary, random) {
   const { span } = f;
-  f.add(0, G + .08, .3, span + .4, .16, .8, '#d5c19e', 'solid', true);
-  f.add(0, G + .24, .06, span + .12, .48, .16, '#939b98', 'solid', true);
+  const entry = entrance(b, span, primary), canopy = Math.min(9, span * .55);
+  const staffSide = b.variation % 2 ? 1 : -1;
+  const staff = b.type === 'warehouse' && primary && span / 2 - canopy / 2 > 3 ? staffSide * (canopy / 2 + 1.5) : null;
+  // The projecting base course must stop at the threshold. Shopfronts have
+  // their own continuous frames and sills, including the upstairs entrance.
+  if (!entry?.shop) {
+    const openings = [entry && { offset: entry.offset, width: entry.width }, staff !== null && { offset: staff, width: 1.45 }].filter(Boolean);
+    const footing = { ...f, clear: [...f.clear, ...openings.map(p => ({ from: p.offset - p.width / 2, to: p.offset + p.width / 2, bottom: G - 1, top: G + .6 }))] };
+    footing.add(0, G + .08, .3, span + .4, .16, .8, '#d5c19e', 'solid', true);
+    footing.add(0, G + .24, .06, span + .12, .48, .16, '#939b98', 'solid', true);
+  }
   if (b.shopfront && span >= 5) shopFront(c, b, f, base, primary);
   else if (b.type === 'office' || b.type === 'atrium') {
     // A glazed lobby with its mullions, a double door and a canopy
@@ -621,19 +650,18 @@ function groundFloor(c, b, f, base, primary, random) {
       f.add(0, G + 3.05, 1.1, 4.2, .18, 2.2, '#b6c9c8', 'solid', true);
     }
   } else if (b.type === 'warehouse') {
-    const door = Math.min(8, span * .5), canopy = Math.min(9, span * .55);
-    f.add(0, G + 1.6, .17, door, 2.9, .1, '#455b61', 'glass');
+    const door = Math.min(8, span * .5);
+    f.add(0, G + 1.525, .17, door, 3.05, .1, '#455b61', 'glass');
     f.add(0, G + 3.3, .3, canopy, .35, .7, b.accent, 'solid', true);
     for (let y = .6; y < 3; y += .4) f.add(0, G + y, .24, Math.min(7.8, span * .49), .06, .05, '#85968f');
     // Beside the loading door on the main front, a door for the people who
     // work there, and along the rest of a long front a row of high windows
-    const side = b.variation % 2 ? 1 : -1, staff = primary && span / 2 - canopy / 2 > 3 ? side * (canopy / 2 + 1.5) : null;
     if (staff !== null) {
       f.add(staff, G + 1.15, .12, 1.05, 2.3, .12, b.accent);
       f.add(staff, G + 2.45, .2, 1.45, .14, .5, '#85968f', 'solid', true);
     }
     for (const way of [-1, 1]) {
-      const from = canopy / 2 + (staff !== null && way === side ? 3.4 : 1.4), to = span / 2 - 1, count = Math.floor((to - from) / 3.4);
+      const from = canopy / 2 + (staff !== null && way === staffSide ? 3.4 : 1.4), to = span / 2 - 1, count = Math.floor((to - from) / 3.4);
       for (let k = 0; k < count; k++) {
         const offset = way * (from + (to - from) * (k + .5) / count);
         f.add(offset, G + 3.05, .075, 2, 1.3, .11, '#b3c5bc');
@@ -648,7 +676,7 @@ function groundFloor(c, b, f, base, primary, random) {
     const head = tall ? 2.6 : 2.3;
     const door = entrance(b, span, primary), doorOffset = door ? door.offset : span * .3 * (b.variation % 2 ? 1 : -1);
     if (door) {
-      f.add(doorOffset, G + head / 2, .12, 1.15, head, .12, b.variation % 2 ? '#4d3f36' : b.accent);
+      frontDoor(c, b, f, doorOffset, head);
       if (tall) {
         f.add(doorOffset, G + 3.3, .075, 1.45, 1.35, .11, frame);
         f.add(doorOffset, G + 3.3, .17, 1.15, 1.1, .08, '#435b65', 'glass');

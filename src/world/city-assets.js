@@ -133,11 +133,14 @@ function yieldSign() {
 function bench() {
   const p = new Parts();
   for (const z of [-.8, .8]) {
-    p.box([0, .24, z], [.5, .48, .08], darkIron);
-    p.box([.28, .62, z], [.08, .45, .08], darkIron);
+    p.box([-.21, .22, z], [.07, .44, .07], darkIron);
+    p.box([.24, .5, z], [.07, 1, .07], darkIron);
+    p.box([0, .41, z], [.55, .06, .07], darkIron);
   }
-  p.box([0, .47, 0], [.55, .07, 1.9], timber);
-  p.box([.3, .84, 0], [.07, .42, 1.9], timber);
+  // Broad timber slats with daylight below and between them; the same small
+  // footprint and one shared prop mesh as the former slab-sided bench.
+  for (const x of [-.19, 0, .19]) p.box([x, .47, 0], [.17, .07, 1.9], timber);
+  for (const y of [.73, .94]) p.box([.27 + (y - .73) * .12, y, 0], [.06, .17, 1.9], timber, [0, 0, -.12]);
   return p.finish();
 }
 // A bus shelter: a flat roof on two posts with a glass back and a stop sign.
@@ -245,17 +248,21 @@ function parkLantern() {
 // and a copper-green roof. About 5.4 m round; the gap in the rail faces +z.
 function bandstand() {
   const p = new Parts(), white = '#eee8da', stone = '#cdc4ae';
-  p.cylinder([0, .3, 0], 5.2, 5.5, .6, stone, 8);
-  p.cylinder([0, .64, 0], 5, 5, .08, '#b8ad96', 8);
-  const post = k => { const a = k / 8 * Math.PI * 2; return [Math.sin(a) * 4.5, Math.cos(a) * 4.5]; };
+  // Shallow octagonal steps stay inside the original platform. Turn the
+  // columns half a bay so a pair frames the entrance instead of blocking it.
+  for (let i = 0; i < 4; i++) {
+    const radius = 5.5 - i * .25;
+    p.cylinder([0, .17 * (i + .5), 0], radius, radius, .17, i === 3 ? '#b8ad96' : stone, 8, [0, Math.PI / 8, 0]);
+  }
+  const post = k => { const a = (k + .5) / 8 * Math.PI * 2; return [Math.sin(a) * 4.4, Math.cos(a) * 4.4]; };
   for (let k = 0; k < 8; k++) {
     const [x, z] = post(k), [nx, nz] = post(k + 1);
-    p.cylinder([x, 2.3, z], .14, .16, 3.3, white, 6);
+    p.cylinder([x, 2.315, z], .14, .16, 3.27, white, 6);
     // A rail between the columns, open to the front
-    if (k !== 0 && k !== 7) for (const y of [1.05, 1.6]) p.beam([x, y, z], [nx, y, nz], .045, white, 4);
+    if (k !== 7) for (const y of [1.05, 1.6]) p.beam([x, y, z], [nx, y, nz], .045, white, 4);
   }
-  p.cylinder([0, 4.05, 0], 5.5, 5.5, .3, white, 8);
-  p.cone([0, 5.3, 0], 5.9, 2.2, '#557f6b', 8);
+  p.cylinder([0, 4.05, 0], 5.5, 5.5, .3, white, 8, [0, Math.PI / 8, 0]);
+  p.add(new THREE.ConeGeometry(5.9, 2.2, 8), [0, 5.3, 0], '#557f6b', [0, Math.PI / 8, 0]);
   p.cylinder([0, 6.6, 0], .07, .07, .6, darkIron, 5);
   p.cone([0, 7, 0], .22, .35, '#b89a55', 6);
   return p.finish();

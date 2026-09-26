@@ -50,8 +50,23 @@ function stall(colour) {
     const f = [x, roofAt(1.55) - .22, 1.55], h = [x + .6, roofAt(1.55) - .22, 1.55];
     p.add(fabric([[a, d, e], [a, e, b], [d, f, h], [d, h, e]]), [0, 0, 0], i % 2 ? cream : colour);
   }
-  const fruit = ['#d9503f', '#e9b23b', '#8fb34a', '#e98a3c'];
-  for (let i = 0; i < 4; i++) p.add(new THREE.IcosahedronGeometry(.28, 0), [-1.15 + i * .77, 1.2, .5], fruit[(i + colour.length) % 4]);
+  // Modest fruit in three timber trays, rather than four oversized balls.
+  // Everything is baked into the stall template, never separate instances.
+  const fruit = ['#c96246', '#d8af51', '#819d4e', '#d58c43'];
+  const variant = parseInt(colour.replace('#', ''), 16) >>> 0;
+  for (let i = 0; i < 3; i++) {
+    const x = (i - 1) * 1.03;
+    p.box([x, 1.1, .53], [.96, .08, .86], '#68543d');
+    for (const side of [-1, 1]) {
+      p.box([x + side * .455, 1.19, .53], [.05, .1, .86], '#b29368');
+      p.box([x, 1.19, .53 + side * .405], [.86, .1, .05], '#b29368');
+    }
+    for (let row = 0; row < 2; row++) for (let col = 0; col < 3; col++) {
+      const g = new THREE.IcosahedronGeometry(.135, 0), size = .9 + .05 * ((col + row + i) % 3);
+      g.scale(size, size * .85, size);
+      p.add(g, [x + (col - 1) * .28 + (row ? .025 : -.015), 1.25, .34 + row * .36], fruit[(i + variant) % fruit.length], [0, col + row * .7, 0]);
+    }
+  }
   p.box([0, .45, -.75], [3, .9, .8], '#7d6650');
   return p.finish();
 }

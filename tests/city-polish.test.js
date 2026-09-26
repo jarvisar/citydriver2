@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { wallHasOutlook, edgeFacade, edgeWindows, shopAwning, shopFront } from '../src/world/city-buildings.js';
+import { wallHasOutlook, edgeFacade, edgeWindows, shopAwning, shopFront, groundFloor } from '../src/world/city-buildings.js';
 import { CityChunk } from '../src/world/citydriver-world.js';
 import { seededRandom } from '../src/world/route.js';
 import { Surface } from '../src/world/surface.js';
@@ -15,6 +15,48 @@ import { cityTrees, parkedCars } from '../src/world/city-assets.js';
 import { buildHedge } from '../src/world/city-detail-assets.js';
 
 const rectangle = (x, y, w, h) => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
+
+test('projecting facade courses leave domestic, lobby and loading thresholds clear', () => {
+  for (const distant of [false, true]) for (const type of ['townhouse', 'brick', 'apartment', 'warehouse', 'office']) for (const primary of [false, true]) for (const variation of [0, 1]) {
+    const pieces = [], c = { distant, bodies: new Surface(), materials: {}, item() {},
+      box(x, y, s, w, h, d, colour) { pieces.push({ x, y, s, w, h, d, colour }); } };
+    const f = edgeFacade(c, { x: 0, y: 0 }, { x: 24, y: 0 });
+    groundFloor(c, { type, variation, accent: '#386f73', shopfront: false }, f, type === 'townhouse' ? 3.6 : 5.4, primary, seededRandom(1));
+    const courses = pieces.filter(p => p.colour === '#d5c19e' || p.colour === '#939b98');
+    const openings = type === 'warehouse' ? [[12, 8], ...(primary ? [[12 + (variation ? 1 : -1) * 6, 1.05]] : [])]
+      : type === 'office' ? primary ? [[12, 2.4]] : [] : [[12 + (primary ? 0 : 7.2 * (variation ? 1 : -1)), 1.15]];
+    assert.ok(courses.length, 'keep the stone footing beside the entrances');
+    for (const [x, width] of openings) for (const p of courses) {
+      assert.ok(p.x + p.w / 2 <= x - width / 2 || p.x - p.w / 2 >= x + width / 2, `${type}: no raised strip across the doorway`);
+    }
+    assert.equal(f.clear.length, 0, 'temporary threshold cuts do not remove the door or the upper windows');
+    if (type === 'warehouse' && !distant) {
+      const shutter = pieces.find(p => p.w === 8 && p.colour === '#455b61');
+      assert.ok(Math.abs(shutter.y - shutter.h / 2 - PAVEMENT_LEVEL) < 1e-8, 'the loading shutter reaches the ground');
+    }
+  }
+});
+
+test('residential door panels tile one opaque face from the doorstep to the head at both detail levels', () => {
+  for (const distant of [false, true]) for (const variation of [0, 1, 2, 3]) for (const base of [3.6, 5.4]) {
+    const c = { distant, bodies: new Surface(), materials: {}, box() {}, item() {} };
+    const f = edgeFacade(c, { x: 0, y: 0 }, { x: 20, y: 0 });
+    groundFloor(c, { type: 'townhouse', variation, accent: '#386f73' }, f, base, true, seededRandom(1));
+    const p = c.bodies.positions, bottom = PAVEMENT_LEVEL + .12, top = PAVEMENT_LEVEL + (base > 4 ? 2.6 : 2.3);
+    let area = 0, low = Infinity, high = -Infinity;
+    for (let i = 0; i < p.length; i += 9) {
+      if (![2, 5, 8].every(k => Math.abs(p[i + k] - .21) < 1e-8)) continue;
+      area += Math.abs((p[i + 3] - p[i]) * (p[i + 7] - p[i + 1]) - (p[i + 6] - p[i]) * (p[i + 4] - p[i + 1])) / 2;
+      for (let j = 0; j < 9; j += 3) {
+        assert.ok(Math.abs(p[i + j] - 10) <= .575 + 1e-8, 'panels stay inside the jambs');
+        low = Math.min(low, p[i + j + 1]); high = Math.max(high, p[i + j + 1]);
+      }
+    }
+    assert.ok(Math.abs(low - bottom) < 1e-8 && Math.abs(high - top) < 1e-8, 'the leaf meets the doorstep and head');
+    assert.ok(Math.abs(area - 1.15 * (top - bottom)) < 1e-8, 'panels and rails fill the opening once, without layered backing faces');
+  }
+});
+
 test('refined tree crowns fit existing planting clearances and parked tyres retain road contact', () => {
   for (const tree of cityTrees) {
     const g = tree.leaves, p = g.attributes.position;
