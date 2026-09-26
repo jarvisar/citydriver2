@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CITY, QUAY } from '../src/world/city.js';
-import { deckEdges, onDeck, bridgePiers } from '../src/world/city-streets.js';
+import { deckEdges, onDeck, bridgePiers, COPING_TOP } from '../src/world/city-streets.js';
 import { insidePolygon, polygonBounds, distanceToPolyline, bufferPolyline } from '../src/mapgen/polygon-util.js';
 
 // Bridges as the city lays them (see layDecks in city.js and deckEdges in
@@ -73,6 +73,26 @@ test('a deck\'s railing follows its edge over the water, facing the water, unbro
     }
   }
   assert.ok(pieces > 0, 'the bridges have railings');
+});
+
+test('a railing on a coping is a timber truss from post to post, its panels even and its chord over the coping', () => {
+  let panels = 0;
+  for (const { rail, truss, y } of deckEdges()) {
+    // (a promenade's railing is the quay's own)
+    if (y !== COPING_TOP) { assert.equal(truss.length, 0, 'a truss along a promenade'); continue; }
+    assert.equal(truss.length, rail.spans.length, 'a truss over every span');
+    truss.forEach((nodes, k) => {
+      const span = rail.spans[k], at = `${span[0].x.toFixed(1)},${span[0].y.toFixed(1)}`;
+      assert.ok(Math.hypot(nodes[0].x - span[0].x, nodes[0].y - span[0].y) < 1e-6 && Math.hypot(nodes.at(-1).x - span.at(-1).x, nodes.at(-1).y - span.at(-1).y) < 1e-6, `a truss short of its posts at ${at}`);
+      for (let i = 0; i < nodes.length - 1; i++) {
+        const a = nodes[i], b = nodes[i + 1], length = Math.hypot(b.x - a.x, b.y - a.y);
+        panels++;
+        assert.ok(length < 16.5 && length > .5, `a truss panel ${length.toFixed(1)} m long at ${at}`);
+        for (let t = .1; t < 1; t += .1) assert.ok(distanceToPolyline({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }, span) < .3, `a truss's chord off its coping at ${at}`);
+      }
+    });
+  }
+  assert.ok(panels > 0, 'the bridges have trusses');
 });
 
 test('piers stand in the water, under a deck', () => {

@@ -58,7 +58,7 @@ export const COLOURS = {
   road: '#666c70', marking: '#d8bd80', line: '#d7d8c9', stripe: '#deddd0', stop: '#e1dfce',
   pavement: '#acafa8', kerb: '#9a9d98', lawn: '#79a05a', median: '#779757', medianKerb: '#c3bfab',
   quay: '#b3aea0', land: '#8e9b6a', path: '#b9ad8e', plaza: '#c2b9a3', flags: '#b1a78f', coping: '#c9c1ad', crossing: '#9c9e97',
-  deck: '#8f8b80', deckUnder: '#6f6b63', pier: '#7d7a72',
+  deck: '#8f8b80', deckUnder: '#6f6b63', pier: '#7d7a72', cap: '#d6cfbd', timber: '#a37758', iron: '#3d4246',
 };
 // A park pond's water, a little below its lawn and clear of the ground under
 // it however its waves move
@@ -456,7 +456,7 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
   // Under all that is paved over the water, the deck (see layDecks in
   // city.js): its underside, its face along each edge over the water, and
   // along the top of that the quays' own stone coping, lipped a little over
-  // the face, with a post at each end of its railing (see deckEdges)
+  // the face (see deckEdges)
   for (const deck of CITY.decks) walls.polygon(deck.outer, DECK_BOTTOM, COLOURS.deckUnder, null, false, deck.holes);
   for (const { run, line, closed, rail } of deckEdges()) {
     walls.wall(closed ? [...run, run[0]] : run, COPING_BOTTOM, DECK_BOTTOM, COLOURS.deck);
@@ -472,11 +472,27 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
       walls.wall([inner[0], outer[0]], COPING_TOP, ROAD_LEVEL - .02, COLOURS.coping);
       walls.wall([outer.at(-1), inner.at(-1)], COPING_TOP, ROAD_LEVEL - .02, COLOURS.coping);
     }
-    for (const post of rail.posts) {
-      const { x, y, tx, ty } = post, h = RAIL_POST / 2, square = [[-h, -h], [h, -h], [h, h], [-h, h]].map(([a, b]) => ({ x: x + tx * a - ty * b, y: y + ty * a + tx * b }));
-      walls.prism(square, COPING_TOP, COPING_TOP + 1.12, COLOURS.coping);
-      walls.polygon(square, COPING_TOP + 1.12, COLOURS.coping);
+  }
+  // and on the coping a bridge's rail (see deckEdges): the parapet, a stone
+  // block at each post and the truss standing on them
+  for (const { rail, truss, closed } of deckEdges()) {
+    for (const span of rail.spans ?? []) {
+      const left = offsetPolyline(span, PARAPET / 2), right = offsetPolyline(span, -PARAPET / 2);
+      const capLeft = offsetPolyline(span, PARAPET / 2 + .05), capRight = offsetPolyline(span, -PARAPET / 2 - .05), capTop = PARAPET_TOP + .08;
+      walls.wall(left.slice().reverse(), PARAPET_TOP, COPING_TOP, COLOURS.coping); walls.wall(right, PARAPET_TOP, COPING_TOP, COLOURS.coping);
+      walls.wall(capLeft.slice().reverse(), capTop, PARAPET_TOP - .02, COLOURS.cap); walls.wall(capRight, capTop, PARAPET_TOP - .02, COLOURS.cap);
+      for (let i = 0; i < span.length - 1; i++) {
+        walls.flat(capLeft[i], capRight[i], capRight[i + 1], capTop, COLOURS.cap); walls.flat(capLeft[i], capRight[i + 1], capLeft[i + 1], capTop, COLOURS.cap);
+        walls.flat(capLeft[i], capRight[i], capRight[i + 1], PARAPET_TOP - .02, COLOURS.cap, null, false); walls.flat(capLeft[i], capRight[i + 1], capLeft[i + 1], PARAPET_TOP - .02, COLOURS.cap, null, false);
+      }
     }
+    for (const { x, y, tx, ty } of rail.posts) {
+      const square = h => [[-h, -h], [h, -h], [h, h], [-h, h]].map(([a, b]) => ({ x: x + tx * a - ty * b, y: y + ty * a + tx * b }));
+      walls.prism(square(.3), COPING_TOP, BLOCK_TOP - .1, COLOURS.coping);
+      walls.prism(square(.36), BLOCK_TOP - .1, BLOCK_TOP, COLOURS.cap);
+      walls.polygon(square(.36), BLOCK_TOP, COLOURS.cap); walls.polygon(square(.36), BLOCK_TOP - .1, COLOURS.cap, null, false);
+    }
+    if (truss.length) trussAlong(walls, truss, closed);
   }
   // Piers, each with a cap under the deck (see bridgePiers)
   for (const { outline } of bridgePiers()) {
@@ -532,12 +548,16 @@ const offsetRun = (line, closed, distance) => closed ? offsetPolyline([line.at(-
 // on at each end past the bank, where it stands on paving, to close the
 // corner with the quay's coping; and a railing. Along a promenade carried
 // over the water the railing is the quay's own, as far in from the edge and
-// carried on to meet it on the bank; elsewhere it stands on the coping, in
-// lengths fitted end to end between a stone post at each end and at each
-// sharp turn, whatever it passes (a footway, or the road where a junction
-// reaches out over the water).
+// carried on to meet it on the bank; elsewhere it stands on the coping,
+// whatever it passes (a footway, or the road where a junction reaches out
+// over the water): a stone parapet between a block at each end and at each
+// sharp turn, and a timber truss on them, as Citydriver 1's bridges had.
 export const COPING_TOP = PAVEMENT_LEVEL + .2;
 const COPING_BOTTOM = PAVEMENT_LEVEL - .2, COPING_WIDTH = .55, COPING_LIP = .06, RAIL_IN = .25, QUAY_RAIL_IN = 1.1, RAIL_POST = .42, RAIL_LENGTH = 4;
+// (a bridge's rail: a stone parapet with a timber truss standing on it,
+// posts every TRUSS_PANEL or so and braced corner to corner between them)
+export const PARAPET = .45, PARAPET_TOP = PAVEMENT_LEVEL + 1.05, TRUSS_TOP = PAVEMENT_LEVEL + 6.6;
+const TRUSS_PANEL = 11, BLOCK_TOP = PARAPET_TOP + .32, TRUSS_POST = .5, TRUSS_WIDE = .55, CHORD = .46, CHORD_WIDE = .48, BRACE_WIDE = .38, BRACE_DEEP = .3;
 const DECK_BOTTOM = ROAD_LEVEL - 1.4;
 let edges = null;
 export function deckEdges() {
@@ -571,10 +591,107 @@ export function deckEdges() {
     const straight = points => closed ? simplify([...points, points[0]], .2).slice(0, -1) : simplify(points, .2);
     const rail = quay ? railAlong(straight(closed ? offsetRun(run, true, QUAY_RAIL_IN) : carryOn(offsetPolyline(run, QUAY_RAIL_IN), 2, 0)), closed, false)
       : railAlong(straight(offsetRun(line, closed, RAIL_IN)), closed, true);
-    list.push({ run, line, closed, rail, y: quay ? PAVEMENT_LEVEL : COPING_TOP });
+    list.push({ run, line, closed, rail, y: quay ? PAVEMENT_LEVEL : COPING_TOP, truss: quay ? [] : (rail.spans ?? []).map(trussNodes) });
   }
   edges = { decks: CITY.decks, list };
   return list;
+}
+// A bridge's truss over its spans' panel points, in timber: a post at each
+// (those at the ends and corners on the stone blocks), a chord along the top,
+// mitred round the bends and corners and carried a little past the posts at
+// an open end, and a brace across each panel from post to post, zigzagging
+// up and down from each end of a span so its two halves mirror each other,
+// and crossed in the middle panel of an odd number
+function trussAlong(surface, spans, closed) {
+  const top = TRUSS_TOP + CHORD / 2, under = TRUSS_TOP - CHORD / 2, same = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) < 1e-6;
+  const dir = (a, b) => { const l = Math.hypot(b.x - a.x, b.y - a.y) || 1; return { x: (b.x - a.x) / l, y: (b.y - a.y) / l }; };
+  // (spans meeting at a corner post are one chord, and a ring of them closes)
+  const chains = [];
+  for (const nodes of spans) {
+    const chain = chains.at(-1);
+    if (chain && same(chain.nodes.at(-1), nodes[0])) { chain.posts.add(chain.nodes.length - 1); chain.nodes.push(...nodes.slice(1)); }
+    else chains.push({ nodes: nodes.slice(), posts: new Set([0]) });
+    chains.at(-1).posts.add(chains.at(-1).nodes.length - 1);
+  }
+  const ring = closed && chains.length === 1 && same(chains[0].nodes[0], chains[0].nodes.at(-1));
+  for (const { nodes, posts } of chains) {
+    const count = nodes.length - 1;
+    const first = dir(nodes[0], nodes[1]), last = dir(nodes[count - 1], nodes[count]), past = TRUSS_POST / 2 + .12;
+    const line = ring ? nodes.slice(0, -1) : [{ x: nodes[0].x - first.x * past, y: nodes[0].y - first.y * past }, ...nodes.slice(1, -1), { x: nodes[count].x + last.x * past, y: nodes[count].y + last.y * past }];
+    const left = ring ? offsetRun(line, true, CHORD_WIDE / 2) : offsetPolyline(line, CHORD_WIDE / 2), right = ring ? offsetRun(line, true, -CHORD_WIDE / 2) : offsetPolyline(line, -CHORD_WIDE / 2);
+    if (ring) { left.push(left[0]); right.push(right[0]); }
+    else { surface.wall([left[0], right[0]], top, under, COLOURS.timber); surface.wall([right.at(-1), left.at(-1)], top, under, COLOURS.timber); }
+    surface.wall(left.slice().reverse(), top, under, COLOURS.timber); surface.wall(right, top, under, COLOURS.timber);
+    for (let i = 0; i < left.length - 1; i++) {
+      surface.flat(left[i], right[i], right[i + 1], top, COLOURS.timber); surface.flat(left[i], right[i + 1], left[i + 1], top, COLOURS.timber);
+      surface.flat(left[i], right[i], right[i + 1], under, COLOURS.timber, null, false); surface.flat(left[i], right[i + 1], left[i + 1], under, COLOURS.timber, null, false);
+    }
+    // (the posts, square to the chord either side; once where a ring closes)
+    nodes.forEach((p, i) => {
+      if (ring && i === count) return;
+      const back = i > 0 ? i - 1 : ring ? count - 1 : null, on = i < count ? i + 1 : null;
+      const a = back === null ? dir(p, nodes[on]) : dir(nodes[back], p), b = on === null ? dir(nodes[back], p) : dir(p, nodes[on]);
+      const l = Math.hypot(a.x + b.x, a.y + b.y) || 1, tx = (a.x + b.x) / l, ty = (a.y + b.y) / l, h = TRUSS_POST / 2, w = TRUSS_WIDE / 2;
+      const box = grow => [[-h, -w], [h, -w], [h, w], [-h, w]].map(([s, n]) => ({ x: p.x + tx * (s + Math.sign(s) * grow) - ty * (n + Math.sign(n) * grow), y: p.y + ty * (s + Math.sign(s) * grow) + tx * (n + Math.sign(n) * grow) }));
+      // (standing in an iron shoe)
+      const foot = posts.has(i) ? BLOCK_TOP : PARAPET_TOP + .08, shoe = foot + .24;
+      // (its top closed where a corner's post reaches out from under the chord)
+      surface.prism(box(0), shoe, under + .02, COLOURS.timber);
+      surface.polygon(box(0), under + .02, COLOURS.timber);
+      surface.prism(box(.035), foot, shoe, COLOURS.iron);
+      surface.polygon(box(.035), shoe, COLOURS.iron);
+    });
+  }
+  // (the braces, span by span)
+  const low = PARAPET_TOP + .3;
+  for (const nodes of spans) {
+    const count = nodes.length - 1;
+    for (let k = 0; k < count; k++) {
+      const a = nodes[k], b = nodes[k + 1], crossed = count % 2 && k === (count - 1) / 2, rises = (count % 2 && k > count / 2 ? k - 1 : k) % 2 === 0;
+      if (crossed || rises) brace(surface, a, low, b, under);
+      if (crossed || !rises) brace(surface, a, under, b, low);
+    }
+  }
+}
+// A straight timber from a (at height ha) to b, BRACE_WIDE across and
+// BRACE_DEEP within the upright plane it leans in; its ends are in posts
+function brace(surface, a, ha, b, hb) {
+  const A = [a.x, ha, -a.y], B = [b.x, hb, -b.y], length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  const across = [-(b.y - a.y) / length, 0, -(b.x - a.x) / length], axis = [B[0] - A[0], B[1] - A[1], B[2] - A[2]];
+  const cross = (u, v) => [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+  const deep = cross(axis, across), l = Math.hypot(...deep); deep.forEach((v, i) => { deep[i] = v / l; });
+  const at = (P, s, d) => P.map((v, i) => v + across[i] * s * BRACE_WIDE / 2 + deep[i] * d * BRACE_DEEP / 2);
+  // (each long face as two triangles wound to face `out`)
+  for (const [s, d, out] of [[1, 0, across], [-1, 0, across.map(v => -v)], [0, 1, deep], [0, -1, deep.map(v => -v)]]) {
+    const u = s ? [s, s] : [1, -1], v = d ? [d, d] : [-1, 1];
+    const p = at(A, u[0], v[0]), q = at(A, u[1], v[1]), r = at(B, u[1], v[1]), t = at(B, u[0], v[0]);
+    const n = cross(q.map((c, i) => c - p[i]), r.map((c, i) => c - p[i])), [m, o] = n[0] * out[0] + n[1] * out[1] + n[2] * out[2] < 0 ? [t, q] : [q, t];
+    surface.face(...p, ...m, ...r, COLOURS.timber); surface.face(...p, ...r, ...o, COLOURS.timber);
+  }
+}
+// A truss's panel points along a span, from post to post: at every bend of
+// more than ten degrees, and between them as near TRUSS_PANEL apart as
+// they fit while each chord keeps to the coping round a curve
+function trussNodes(span) {
+  const turn = i => {
+    const a = span[i - 1], b = span[i], c = span[i + 1];
+    return Math.abs(Math.atan2((b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x), (b.x - a.x) * (c.x - b.x) + (b.y - a.y) * (c.y - b.y)));
+  };
+  const keys = [0];
+  for (let i = 1; i < span.length - 1; i++) if (turn(i) > Math.PI / 18) keys.push(i);
+  keys.push(span.length - 1);
+  const nodes = [{ x: span[0].x, y: span[0].y }];
+  for (let k = 0; k < keys.length - 1; k++) {
+    const part = span.slice(keys[k], keys[k + 1] + 1), length = polylineLength(part), at = d => pointAlong(part, d) ?? part.at(-1);
+    const strays = count => Array.from({ length: count }, (_, n) => {
+      const a = at(length * n / count), b = at(length * (n + 1) / count);
+      return Math.max(0, ...slicePolyline(part, length * n / count, length * (n + 1) / count).map(p => distanceToPolyline(p, [a, b])));
+    });
+    let count = Math.max(1, Math.round(length / TRUSS_PANEL));
+    while (length / count > TRUSS_PANEL / 2 && Math.max(...strays(count)) > .3) count++;
+    for (let n = 1; n <= count; n++) { const p = at(length * n / count); nodes.push({ x: p.x, y: p.y }); }
+  }
+  return nodes;
 }
 // A railing along a line: in lengths fitted end to end, each a chord of the
 // line, so they meet round a curve, and split where it bends; with posts, a
@@ -647,7 +764,11 @@ function railAlong(line, closed, withPosts) {
       if (l > .05) pieces.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, tx: (b.x - a.x) / l, ty: (b.y - a.y) / l, length: l });
     }
   }
-  return { line: points, posts, pieces };
+  // (and from post to post, over any gentler bends, the line a truss spans)
+  const ends = splits.filter(posted);
+  if (closed && withPosts) ends.push(points.length - 1);
+  const spans = ends.slice(1).map((end, k) => points.slice(ends[k], end + 1));
+  return { line: points, posts, pieces, spans };
 }
 // Whether a point is on a deck, or within a few centimetres of one: where
 // a deck meets the bank, the shore under it
@@ -1018,9 +1139,10 @@ export function placeStreetFurniture(nav, bridges, add) {
   }
   // Bridges: the railing along each edge of a deck over the water, on its
   // coping or along its promenade, all the way round a corner where two
-  // bridges meet (see deckEdges)
-  for (const { rail, y } of deckEdges()) for (const piece of rail.pieces) {
-    add({ kind: 'railing', u: piece.x, s: piece.y, yaw: faceYaw(piece.tx, piece.ty), y, length: piece.length });
+  // bridges meet (see deckEdges); on a coping only to stop a car, since the
+  // parapet and its truss are drawn with the coping
+  for (const { rail, y, truss } of deckEdges()) for (const piece of rail.pieces) {
+    add({ kind: 'railing', u: piece.x, s: piece.y, yaw: faceYaw(piece.tx, piece.ty), y, length: piece.length, ...(truss.length ? { parapet: true } : {}) });
   }
   // Parks and squares: what a square is for (its fountain, tower, sculptures,
   // glasshouse or stalls) or a park's fountain or bandstand in the middle,

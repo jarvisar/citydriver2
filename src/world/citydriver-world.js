@@ -21,7 +21,7 @@ import { signalLens, round } from './city-detail-assets.js';
 import { buildMonument } from './city-monuments.js';
 import { cityPlaces } from '../city-exploration.js';
 import { basinRim, basinWater } from './city-public-space-geometry.js';
-import { buildStreetSurfaces, placeStreetFurniture, findBridges } from './city-streets.js';
+import { buildStreetSurfaces, placeStreetFurniture, findBridges, PARAPET } from './city-streets.js';
 import { offsetPolygon, calcPolygonArea, averagePoint } from '../mapgen/polygon-util.js';
 
 const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
@@ -390,8 +390,9 @@ export class CityChunk {
       else if (piece.kind === 'railing') {
         // (a quay's lengths are all four metres; a bridge's are fitted between its posts)
         const length = piece.length ?? 4;
-        this.prop('railing', x, s, piece.yaw, piece.y ?? PAVEMENT_LEVEL, [1, 1, length / 4]);
-        this.rigid(x, s, () => this.solid(x, s, .24, length), itemFrame(piece.s, piece.u, piece.yaw));
+        // (and a bridge's parapet, drawn with the streets, only stops the car)
+        if (!piece.parapet) this.prop('railing', x, s, piece.yaw, piece.y ?? PAVEMENT_LEVEL, [1, 1, length / 4]);
+        this.rigid(x, s, () => this.solid(x, s, piece.parapet ? PARAPET : .24, length), itemFrame(piece.s, piece.u, piece.yaw));
       }
       else if (piece.kind === 'sign') this.standingSign(discoverySignFor(piece.type, piece.variant), x, s, piece.yaw, piece.width ?? 4.2, piece.bottom ?? 1.9);
       else if (piece.kind === 'stop' || piece.kind === 'yield') { this.prop(piece.kind, x, s, piece.yaw); this.post(x, s, .12); }
