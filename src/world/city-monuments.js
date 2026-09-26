@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Parts, cityAssets } from './city-assets.js';
 import { PAVEMENT_LEVEL as G } from './city-route.js';
 import { clock } from './city-detail-assets.js';
-import { vaultGeometry } from './city-roofs.js';
+import { vaultGeometry, vaultRibs } from './city-roofs.js';
 import { basinRim, basinWater } from './city-public-space-geometry.js';
 import { balancingBeam, standingBeam, STANDING_BEAM } from './city-sculptures.js';
 import { itemFrame } from './city-layout-render.js';
@@ -124,6 +124,7 @@ export function buildMonument(c, piece, x, s) {
     c.box(x, G + 1 + H / 2, s, w - .5, H, d - .5, '#8fb9b5', 'glass', yaw);
     c.box(x, G + 1 + H + .12, s, w - .1, .24, d - .1, TRIM, 'solid', yaw);
     c.item('roof-vault', vaultGeometry, c.materials.glass, [x, G + 1 + H + .2, -s], [d / 2 - .25, rise, w - .5], '#8fb9b5', yaw + Math.PI / 2);
+    vaultRibs(c, x, s, d / 2 - .25, rise, w - .5, G + 1 + H + .2, yaw + Math.PI / 2, G + 1);
     for (const end of [-1, 1]) {
       const [ex, es] = at(end * (w / 2 - .3), 0);
       c.item('landmark-gable', gable, c.materials.glass, [ex, G + 1 + H + .2, -es], [d / 2 - .35, rise - .1, 1], '#8fb9b5', yaw + Math.PI / 2 + (end < 0 ? Math.PI : 0));
@@ -139,12 +140,7 @@ export function buildMonument(c, piece, x, s) {
       c.box(dx, G + .07, ds, 2.8, .14, .65, STONE, 'solid', yaw);
     }
     if (!c.distant) {
-      // White glazing bars down the walls and a lantern along the ridge
-      for (let along = -w / 2 + 2.5; along < w / 2 - 1; along += 2.5) for (const side of [-1, 1]) {
-        if (Math.abs(along) < 1.5) continue;
-        const [bx, bs] = at(along, side * (d / 2 - .22));
-        c.box(bx, G + 1 + H / 2, bs, .14, H, .14, '#eef0e8', 'solid', yaw);
-      }
+      // A lantern along the ridge; the wall bars align with the roof ribs.
       c.box(x, G + 1 + H + rise + .2, s, w - 2, .5, 1.6, '#eef0e8', 'solid', yaw);
       // and palms and ferns inside
       for (let along = -w / 2 + 3; along < w / 2 - 2; along += 5) {

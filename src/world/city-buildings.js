@@ -11,6 +11,7 @@ import { union, intersection } from '../mapgen/booleans.js';
 import { simplify } from '../mapgen/simplify.js';
 import { itemFrame } from './city-layout-render.js';
 import { lotWithoutDrive } from './city-yards.js';
+import { buildHedge } from './city-detail-assets.js';
 
 // Buildings follow their lots. A lot is one plot of a block's frontage strip
 // (see mapgen/lots.js) and knows which of its edges face the street, which
@@ -66,6 +67,7 @@ const TILES = {
   'Warehouse district': ['#8b9396', '#7c8688', '#948f86'],
 };
 const signGeometry = new THREE.PlaneGeometry(1, 1);
+const DOMESTIC_GLASS = ['#506971', '#405a65', '#617980'], OFFICE_GLASS = ['#638793', '#567783', '#71929b'];
 
 const ccw = polygon => signedArea(polygon) < 0 ? polygon.slice().reverse() : polygon;
 const local = (polygon, c) => polygon.map(p => ({ x: p.x - c.east, y: p.y - c.start }));
@@ -253,7 +255,12 @@ export function edgeFacade(c, a, b) {
       if (w < 1 && h > 3) pieces = pieces.filter(r => r.y1 - r.y0 >= Math.min(2.2, h - .01));
       for (const r of pieces) {
         const p = point((r.x0 + r.x1) / 2, outward), pw = r.x1 - r.x0, ph = r.y1 - r.y0, py = (r.y0 + r.y1) / 2;
-        if (c.distant && (kind === 'glass' || kind === 'lit')) c.item(`distant-${kind}`, signGeometry, c.materials[kind], [p.x, py, -p.s], [pw, ph, 1], color, yaw);
+        if (kind === 'inlay') {
+          // Opaque inserts share the body's draw and need just two faces.
+          const left = point(r.x0, outward + d / 2), right = point(r.x1, outward + d / 2);
+          c.bodies.face(left.x, r.y0, -left.s, right.x, r.y0, -right.s, right.x, r.y1, -right.s, color);
+          c.bodies.face(left.x, r.y0, -left.s, right.x, r.y1, -right.s, left.x, r.y1, -left.s, color);
+        } else if (c.distant && (kind === 'glass' || kind === 'lit')) c.item(`distant-${kind}`, signGeometry, c.materials[kind], [p.x, py, -p.s], [pw, ph, 1], color, yaw);
         else c.box(p.x, py, p.s, pw, ph, d, color, kind, yaw);
       }
     } };
@@ -427,7 +434,7 @@ export function edgeWindows(c, b, f, bottom, floors, random) {
     if (modern) f.add(0, y - 1.42, .1, span + .1, .28, .3, '#b6c9c8', 'solid', true);
     if (b.type === 'deco' && floor === floors - 1) f.add(0, y + 1.55, .2, span + .4, .35, .5, '#ded2b8', 'solid', true);
     for (let bay = 0; bay < bays; bay++) {
-      const offset = (bay - (bays - 1) / 2) * spacing, lit = random() < .1;
+      const offset = (bay - (bays - 1) / 2) * spacing, occupancy = random(), lit = occupancy < .1;
       // Balconies stack over one another, with a glazed door down to the
       // deck. The other bays keep their ordinary windows and sills.
       const balcony = b.type === 'apartment' && f.street && bay % 3 === b.variation % 3;
@@ -435,7 +442,15 @@ export function edgeWindows(c, b, f, bottom, floors, random) {
       // (no window, sill or balcony behind a sign)
       if (f.clear.length && f.blocked(offset, y - .3, windowWidth + 1.2, h + 1.2)) continue;
       f.add(offset, centre, .075, windowWidth + .25, height + .25, .11, frame);
-      f.add(offset, centre, .17, windowWidth, height, .09, lit ? '#e3c38d' : modern ? '#5e8a9a' : '#3e5663', lit ? 'lit' : 'glass');
+      // Quiet changes of glazing and partly lowered blinds break the repeated
+      // black grid. Reuse this window's existing draw, never the city's stream.
+      const palette = modern ? OFFICE_GLASS : DOMESTIC_GLASS;
+      const glass = palette[Math.min(2, Math.floor(occupancy * 3))];
+      const blind = !lit && !loft && !balcony && occupancy > .73 ? height * (occupancy > .9 ? .43 : .23) : 0;
+      // The blind occupies its own part of the opening, with no overlapping
+      // glazing faces or close parallel layers to flicker down the street.
+      f.add(offset, centre - blind / 2, .17, windowWidth, height - blind, .09, lit ? '#e3c38d' : glass, lit ? 'lit' : 'glass');
+      if (blind) f.add(offset, centre + (height - blind) / 2, .17, windowWidth, blind, c.distant ? 0 : .09, modern ? '#a5b3ad' : '#c5baa3', 'inlay');
       if (loft || b.variation === 1) f.add(offset, y, .25, .09, h, .07, frame);
       if (!modern && !balcony) f.add(offset, y - h / 2 - .14, .25, windowWidth + .44, .14, .48, frame);
       if (b.type === 'townhouse') {
@@ -445,9 +460,17 @@ export function edgeWindows(c, b, f, bottom, floors, random) {
       if (b.type === 'loft') f.add(offset, y, .265, windowWidth, .12, .1, '#c8bda8');
       if (balcony) {
         f.add(offset, y - 1.58, .68, windowWidth + 1.1, .2, 1.5, '#d1c9b5', 'solid', true);
-        f.add(offset, y - 1.03, 1.36, windowWidth + 1.1, .9, .12, b.accent, 'solid', true);
-        for (const edge of [-1, 1]) f.add(offset + edge * (windowWidth + .95) / 2, y - 1.03, .65, .1, .9, 1.3, b.accent);
-        if ((floor + bay + b.variation) % 3 === 0) f.add(offset, y - .58, 1.13, windowWidth * .7, .24, .38, '#6e8856');
+        // Lower privacy panels with an open handrail above: a balcony reads
+        // as usable space instead of a coloured box pasted onto the wall.
+        f.add(offset, y - 1.18, 1.36, windowWidth + 1.1, .6, .12, b.accent, 'solid', true);
+        f.add(offset, y - .57, 1.36, windowWidth + 1.16, .08, .12, '#495b5c');
+        for (const edge of [-1, 1]) {
+          const end = offset + edge * (windowWidth + .95) / 2;
+          f.add(end, y - 1.18, .65, .1, .6, 1.3, b.accent);
+          f.add(end, y - .73, 1.36, .07, .32, .08, '#495b5c');
+          f.add(end, y - .57, .65, .08, .08, 1.3, '#495b5c');
+        }
+        if ((floor + bay + b.variation) % 3 === 0) f.add(offset, y - .84, 1.13, windowWidth * .7, .24, .38, '#6e8856');
       }
     }
   }
@@ -771,7 +794,8 @@ function frontGarden(c, b, ring, primary, random) {
       const to = Math.min(length - .1, cut.along - cut.half);
       if (to - from > .6) {
         const mid = (from + to) / 2, x = a.x + tx * mid - ty * inset, y = a.y + ty * mid + tx * inset, yaw = Math.atan2(ty, tx);
-        c.box(x, G + height / 2, y, to - from, height, depth, colour, 'solid', yaw);
+        if (civic) c.box(x, G + height / 2, y, to - from, height, depth, colour, 'solid', yaw);
+        else buildHedge(c.bodies, x, G, y, to - from, height, depth, colour, yaw);
         if (civic) c.box(x, G + height + .04, y, to - from + .06, .08, depth + .1, '#e0d6bf', 'solid', yaw);
         c.rigid(x, y, () => c.solid(x, y, to - from, depth), itemFrame(c.start + y, c.east + x, yaw));
       }

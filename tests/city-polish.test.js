@@ -12,6 +12,7 @@ import { intersection, region } from '../src/mapgen/booleans.js';
 import { buildLandmark } from '../src/world/city-landmarks.js';
 import { cityPlaces } from '../src/city-exploration.js';
 import { cityTrees, parkedCars } from '../src/world/city-assets.js';
+import { buildHedge } from '../src/world/city-detail-assets.js';
 
 const rectangle = (x, y, w, h) => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
 test('refined tree crowns fit existing planting clearances and parked tyres retain road contact', () => {
@@ -91,6 +92,37 @@ test('stacked balconies have doors meeting their decks and leave ordinary window
       assert.equal(decks.filter(p => p.x === deck.x).length, 3, 'balconies align through all three storeys');
     }
     assert.ok(pieces.some(p => p.d === .48), 'ordinary window bays retain their sills');
+  }
+});
+
+test('blinds meet the glazing without overlapping it and retain the window random budget', () => {
+  for (const distant of [false, true]) for (const type of ['office', 'brick', 'loft', 'apartment']) {
+    const pieces = [], f = { span: 28, street: true, clear: [], add(x, y, out, w, h, d, colour, kind = 'solid') { pieces.push({ x, y, out, w, h, d, kind }); } };
+    let draws = 0;
+    edgeWindows({ distant }, { type, variation: 0, accent: '#386f73' }, f, 5, 3, () => { draws++; return .95; });
+    const glass = pieces.filter(p => p.kind === 'glass'), blinds = pieces.filter(p => p.kind === 'inlay');
+    assert.equal(draws, glass.length, 'one existing draw per window');
+    assert.equal(blinds.length > 0, type !== 'loft', 'industrial windows keep clear glazing');
+    for (const blind of blinds) {
+      const pane = glass.find(p => p.x === blind.x && Math.abs(p.y + p.h / 2 - (blind.y - blind.h / 2)) < 1e-8);
+      assert.ok(pane, 'glazing ends exactly where the blind starts');
+      assert.equal(pane.w, blind.w);
+      assert.equal(blind.out + blind.d / 2, pane.out + (distant ? 0 : pane.d / 2), 'inserts share the visible glazing plane');
+    }
+  }
+});
+
+test('softened hedges keep the existing footprint and bake into twenty opaque faces', () => {
+  const yaw = .7, width = 17, depth = .7, height = .95, bodies = new Surface();
+  buildHedge(bodies, 23, PAVEMENT_LEVEL, -31, width, height, depth, '#587745', yaw);
+  assert.equal(bodies.positions.length / 9, 20);
+  for (let i = 0; i < bodies.positions.length; i += 3) {
+    const x = bodies.positions[i] - 23, z = bodies.positions[i + 2] - 31, y = bodies.positions[i + 1] - PAVEMENT_LEVEL;
+    const along = x * Math.cos(yaw) - z * Math.sin(yaw), across = x * Math.sin(yaw) + z * Math.cos(yaw);
+    assert.ok(Math.abs(along) <= width / 2 + 1e-6 && Math.abs(across) <= depth / 2 + 1e-6);
+    assert.ok(y >= -1e-6 && y <= height + 1e-6);
+    if (y > height - 1e-6) assert.ok(Math.abs(across) < depth * .4, 'shoulders taper towards the crown');
+    assert.ok(Math.abs(Math.hypot(...bodies.normals.slice(i, i + 3)) - 1) < 1e-6);
   }
 });
 

@@ -1,5 +1,32 @@
 import * as THREE from 'three';
 import { Parts } from './city-assets.js';
+import { compactGeometry } from './compact-geometry.js';
+
+// Clipped foliage still has a broad top, but its shoulders taper instead of
+// meeting in the sharp right angles of a concrete wall. Twenty shared faces.
+const hedgeProfile = new THREE.Shape();
+hedgeProfile.moveTo(-.5, 0); hedgeProfile.lineTo(.5, 0);
+hedgeProfile.lineTo(.5, .73); hedgeProfile.lineTo(.32, 1);
+hedgeProfile.lineTo(-.32, 1); hedgeProfile.lineTo(-.5, .73); hedgeProfile.closePath();
+export const clippedHedge = new THREE.ExtrudeGeometry(hedgeProfile, { depth: 1, steps: 1, bevelEnabled: false });
+clippedHedge.translate(0, 0, -.5); clippedHedge.rotateY(Math.PI / 2);
+compactGeometry(clippedHedge);
+
+export function buildHedge(bodies, x, y, s, width, height, depth, colour, yaw) {
+  // Bake into the existing body surface. A separate hedge instance batch on
+  // every garden chunk costs more draws than these twenty faces are worth.
+  const p = clippedHedge.attributes.position, indices = clippedHedge.index;
+  const cos = Math.cos(yaw), sin = Math.sin(yaw), triangle = new Array(9);
+  for (let i = 0; i < indices.count; i += 3) {
+    for (let k = 0; k < 3; k++) {
+      const j = indices.getX(i + k), u = p.getX(j) * width, v = p.getZ(j) * depth;
+      triangle[k * 3] = x + cos * u + sin * v;
+      triangle[k * 3 + 1] = y + p.getY(j) * height;
+      triangle[k * 3 + 2] = -s - sin * u + cos * v;
+    }
+    bodies.face(...triangle, colour);
+  }
+}
 
 // Shared, static templates: modest facets for recognizable silhouettes, with
 // trim baked into the same instance instead of separate meshes per detail.

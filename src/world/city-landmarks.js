@@ -5,7 +5,7 @@ import { edgeFacade, edgeWindows, shopAwning, cornice, convexHull, exitDistance 
 import { landmarkSite, venueFootprint } from './landmark-site.js';
 import { discoverySignFor, signCore } from './city-signs.js';
 import { round, clock, fireEngine } from './city-detail-assets.js';
-import { roofWedge, vaultGeometry } from './city-roofs.js';
+import { roofWedge, vaultGeometry, vaultRibs } from './city-roofs.js';
 import { basinRim, basinWater } from './city-public-space-geometry.js';
 import { balancingBeam, standingBeam, STANDING_BEAM } from './city-sculptures.js';
 import { grassArea } from './city-grass.js';
@@ -243,6 +243,7 @@ export function buildLandmark(c, lot, place) {
     // (its eaves a little proud of the walls all round: the vault's edge dips
     // below its base, and flush it would share the top of each wall's face)
     c.item('roof-vault', vaultGeometry, material, [p.x, base, -p.s], [width / 2 + .15, rise, depth + .3], roofColour, faceYaw(nx, ny));
+    if (material === c.materials.glass) vaultRibs(c, p.x, p.s, width / 2 + .15, rise, depth + .3, base, faceYaw(nx, ny), G + 1);
     for (const end of [-1, 1]) {
       const q = at(0, end * (depth / 2 - .08));
       c.item(end < 0 ? 'landmark-gable-front' : 'landmark-gable', gable, end < 0 && material === c.materials.solid ? c.materials.glass : material, [q.x, base, -q.s], [width / 2 - .1, rise - .1, 1], end < 0 ? '#8fb3b4' : endColour, end < 0 ? facing : facing + Math.PI);
