@@ -3,7 +3,7 @@ import { SEED } from './route.js';
 import { generateCityMap, carriagewayScore, ROAD_PROFILES, SIDEWALK } from '../mapgen/generate.js';
 import { FIELD_TYPE } from '../mapgen/basis-field.js';
 import { shoreRuns } from '../mapgen/shore.js';
-import { difference, intersection, region, solids, growRound, union, clean, strictly } from '../mapgen/booleans.js';
+import { difference, intersection, region, solids, growRound, union, clean, strictly, withoutHoles } from '../mapgen/booleans.js';
 import { endJoints, slicePolyline } from '../mapgen/road-network.js';
 import { simplify } from '../mapgen/simplify.js';
 import { insidePolygon, offsetPolylineClean, bufferPolyline, averagePoint, calcPolygonArea,
@@ -159,8 +159,11 @@ export class PolygonIndex {
 
 // Rounds the sharp convex corners of a kerb line. Returns the rounded polygon
 // and, for each corner, the sliver of roadway the rounding hands back.
+// (Points a few centimetres apart are one: a corner the booleans left as two
+// such points had a short edge either side of each and was never rounded,
+// leaving a needle of pavement kerbed along both sides.)
 export function roundCorners(input, radius, minTurn = .35) {
-  let polygon = dedupePolygon(input, .01);
+  let polygon = dedupePolygon(input, .1);
   if (polygon.length < 3) return { polygon, patches: [] };
   if (signedArea(polygon) < 0) polygon = polygon.slice().reverse();
   const n = polygon.length, out = [], patches = [];
@@ -464,13 +467,13 @@ export function buildCity(seed = SEED) {
     const inTile = intersection(land.map(piece => piece.outer), [tile]);
     if (inTile.length) bare.push(...difference(region(inTile), land.flatMap(piece => piece.holes), covered.filter((ring, i) => boxes[i].maxX > x0 && boxes[i].minX < x1 && boxes[i].maxY > y0 && boxes[i].minY < y1)));
   }
-  for (const piece of union(region(bare))) {
-    // (a piece round something else would be paved over it; a scrap a few
-    // square metres across against a road, the notch where two roads meet
-    // end to end at an angle, is carriageway)
-    // (and a hairline, where two outlines differ by a rounding, just closes
-    // the seam)
-    if (piece.holes.length) continue;
+  // (a piece round something else, a traffic island at a bridge's end, is cut
+  // across it into pieces that are not: paved whole, it would pave over the
+  // island too, and skipped it was left bare)
+  for (const piece of union(region(bare)).flatMap(withoutHoles)) {
+    // (a scrap a few square metres across against a road, the notch where
+    // two roads meet end to end at an angle, is carriageway; and a hairline,
+    // where two outlines differ by a rounding, just closes the seam)
     if (hairline(piece.outer)) { cornerPatches.push(piece.outer); continue; }
     const waterside = piece.outer.some(p => mask.at(p.x + 2, p.y) || mask.at(p.x - 2, p.y) || mask.at(p.x, p.y + 2) || mask.at(p.x, p.y - 2));
     if (!waterside || (calcPolygonArea(piece.outer) < 4 && touchesRoad(piece.outer))) { cornerPatches.push(piece.outer); continue; }

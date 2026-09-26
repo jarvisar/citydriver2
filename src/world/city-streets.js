@@ -877,6 +877,32 @@ export function harbourRoutes() {
   return harbourCache;
 }
 
+// Where a park's name board may stand, best first: just inside its lawn by
+// the gate, round the lawn's edge either way from the point nearest the gate
+// (following the edge where it bends: straight on, a spot soon left a round
+// lawn, and those near the gate of a circus's garden are all in the junctions
+// round it), and failing those, further in (where a circus's junctions reach
+// round its garden's whole edge). Each is the board's middle (u, y), which way
+// is out of the lawn (ox, oy) and the board's two ends.
+export function* lawnSpots(lawn, gate, width = 3.6) {
+  const edge = [...lawn, lawn[0]];
+  let best = null;
+  for (let i = 0, round = 0; i < lawn.length; i++) {
+    const a = edge[i], b = edge[i + 1], dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy), l2 = length * length || 1;
+    const t = Math.max(0, Math.min(1, ((gate.x - a.x) * dx + (gate.y - a.y) * dy) / l2)), d = Math.hypot(a.x + dx * t - gate.x, a.y + dy * t - gate.y);
+    if (!best || d < best.d) best = { d, at: round + length * t };
+    round += length;
+  }
+  const around = polylineLength(edge);
+  for (const inset of [2.4, 5, 8]) for (const along of [4, -4, 6.5, -6.5, 9, -9, 12, -12, 16, -16, 20, -20, 25, -25]) {
+    const p = pointAlong(edge, ((best.at + along) % around + around) % around) ?? pointAlong(edge, 0);
+    let ox = p.ty, oy = -p.tx;
+    if (insidePolygon({ x: p.x + ox * .5, y: p.y + oy * .5 }, lawn)) { ox = -ox; oy = -oy; }
+    const u = p.x - ox * inset, y = p.y - oy * inset;
+    yield { u, y, ox, oy, width, ends: [-1, 1].map(k => ({ x: u + p.tx * k * (width / 2 + .3), y: y + p.ty * k * (width / 2 + .3) })) };
+  }
+}
+
 export function placeStreetFurniture(nav, bridges, add) {
   const geometry = junctionGeometry(nav), controls = junctionControls(nav);
   // Junction zones: nothing stands on a corner or in a crosswalk's path
@@ -1001,23 +1027,10 @@ export function placeStreetFurniture(nav, bridges, add) {
   for (const place of places) {
     const entry = place.park === undefined ? null : parkEntries.get(place.park), lawn = entry?.park.lawn;
     if (!(lawn?.length >= 3)) continue;
-    const e = place.entrance;
-    // The lawn's edge nearest the gate, and which way is out of the lawn there
-    let best = null;
-    for (let i = 0; i < lawn.length; i++) {
-      const a = lawn[i], b = lawn[(i + 1) % lawn.length], dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1;
-      const t = Math.max(0, Math.min(1, ((e.u - a.x) * dx + (e.s - a.y) * dy) / l2)), x = a.x + dx * t, y = a.y + dy * t, d = Math.hypot(x - e.u, y - e.s);
-      if (!best || d < best.d) best = { x, y, d, tx: dx / Math.sqrt(l2), ty: dy / Math.sqrt(l2) };
-    }
-    let ox = best.ty, oy = -best.tx;
-    if (insidePolygon({ x: best.x + ox * .5, y: best.y + oy * .5 }, lawn)) { ox = -ox; oy = -oy; }
-    // Along that edge either way from the gate, a spot on the lawn clear of
-    // the walks and whatever stands on it, with the board all on the lawn
+    // A spot on the lawn by its gate (see lawnSpots) clear of the walks and
+    // whatever stands on it, with the board all on the lawn
     const walkClear = (x, y) => { const road = CITY.roadIndex.nearest(x, y, 20, (segment, distance) => segment.road.kind === 'path' ? distance - segment.road.profile.halfWidth : Infinity); return !road || road.score > 1.4; };
-    const width = 3.6;
-    for (const along of [4, -4, 6.5, -6.5, 9, -9, 12, -12, 16, -16]) {
-      const u = best.x + best.tx * along - ox * 2.4, y = best.y + best.ty * along - oy * 2.4;
-      const ends = [-1, 1].map(k => ({ x: u + best.tx * k * (width / 2 + .3), y: y + best.ty * k * (width / 2 + .3) }));
+    for (const { u, y, ox, oy, ends, width } of lawnSpots(lawn, { x: place.entrance.u, y: place.entrance.s })) {
       if (![{ x: u, y }, ...ends].every(p => insidePolygon(p, lawn) && walkClear(p.x, p.y) && parkClear(entry, p.x, p.y, .6) && !inZone(p.x, p.y))) continue;
       if (!free(u, y, 3, 'sign')) continue;
       // (and the lamps and trees along the kerb keep out of the way between

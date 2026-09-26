@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { wallHasOutlook, edgeFacade, edgeWindows, shopAwning, shopFront, groundFloor, facadeRuns } from '../src/world/city-buildings.js';
+import { wallHasOutlook, edgeFacade, edgeWindows, shopAwning, shopFront, groundFloor, facadeRuns, cornice } from '../src/world/city-buildings.js';
 import { CityChunk } from '../src/world/citydriver-world.js';
 import { seededRandom } from '../src/world/route.js';
 import { Surface } from '../src/world/surface.js';
@@ -43,6 +43,31 @@ test('a curved front keeps its bays between its bends, with one pilaster at each
     // (no pane runs round a bend)
     for (const w of floor) assert.ok(Math.abs(w.f.local(w.x, w.s).offset) + w.w / 2 <= w.f.span / 2 + 1e-6, `${type}: a window across a bend`);
   }
+});
+
+test('a cornice never reaches past its lot, where the neighbour\'s is', () => {
+  // (seeds 3113444836 and 8675309: two neighbours' cornices overlapped in the
+  // 20 cm between their walls, their tops flickering through each other)
+  const ring = rectangle(0, 0, 12, 10), lot = rectangle(-.1, -1.5, 12.2, 13), top = 20, bodies = new Surface();
+  cornice(bodies, ring, top, '#ffffff', '#777777', '#999999', .65, [], () => .32, lot);
+  const p = bodies.positions, band = [];
+  for (let i = 0; i < p.length; i += 3) if (p[i + 1] > top - .31 && p[i + 1] < top + .13) band.push({ x: p[i], y: -p[i + 2] });
+  assert.ok(band.length && band.every(q => q.x > -.1 - 1e-6 && q.x < 12.1 + 1e-6), 'past a side lot line');
+  // (and it still overhangs the front and back, where the lot has room)
+  assert.ok(band.some(q => Math.abs(q.y + .32) < 1e-6) && band.some(q => Math.abs(q.y - 10.32) < 1e-6), 'no overhang front and back');
+});
+
+test('the streets\' tiles keep to their squares: a long face is drawn with the other long ones', () => {
+  // (seed 39: faces up to a whole tile across swelled a tile's bounding
+  // sphere half as big again, and a view took in more tiles than it showed)
+  const surface = new Surface(), size = 480;
+  for (let x = 0; x < 1440; x += 40) for (let y = 0; y < 1440; y += 40) surface.flat({ x, y }, { x: x + 30, y }, { x, y: y + 30 }, 24, '#777777');
+  surface.flat({ x: 100, y: 100 }, { x: 350, y: 100 }, { x: 100, y: 110 }, 24, '#777777');
+  const tiles = surface.tiles(size), across = (g, i) => { const p = g.attributes.position.array; return Math.max(Math.abs(p[i] - p[i + 3]), Math.abs(p[i] - p[i + 6]), Math.abs(p[i + 3] - p[i + 6])); };
+  const wide = tiles.filter(g => [...Array(g.attributes.position.count / 3).keys()].some(f => across(g, f * 9) > size / 4));
+  assert.equal(wide.length, 1, 'the long face in one group of its own kind');
+  assert.equal(wide[0].attributes.position.count, 3);
+  for (const g of tiles) if (g !== wide[0]) assert.ok(g.boundingSphere.radius < size * Math.SQRT1_2 + size / 8, `a tile ${g.boundingSphere.radius.toFixed(0)} m round`);
 });
 
 test('projecting facade courses leave domestic, lobby and loading thresholds clear', () => {

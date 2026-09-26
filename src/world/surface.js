@@ -73,13 +73,15 @@ export class Surface {
   }
   // The same faces as build(), cut into square tiles by where each face's
   // middle falls, each tile in its first-drawn order: the renderer can leave
-  // out the tiles off screen. Faces wider than a tile (the island's underlay,
-  // long straight roads) would stretch a tile's bounds, so they are kept together.
+  // out the tiles off screen. Faces more than a quarter of a tile across (the
+  // island's underlay, long straight roads) would stretch a tile's bounds, so
+  // they are kept together. (Up to a whole tile across, they swelled a tile's
+  // bounding sphere half as big again, and a view took in a tile or two more.)
   tiles(size) {
     const p = this.positions, count = p.length / 9, tiles = new Map(), wide = [];
     for (let face = 0; face < count; face++) {
       const o = face * 9, x0 = p[o], x1 = p[o + 3], x2 = p[o + 6], z0 = p[o + 2], z1 = p[o + 5], z2 = p[o + 8];
-      if (Math.max(x0, x1, x2) - Math.min(x0, x1, x2) > size || Math.max(z0, z1, z2) - Math.min(z0, z1, z2) > size) { wide.push(face); continue; }
+      if (Math.max(x0, x1, x2) - Math.min(x0, x1, x2) > size / 4 || Math.max(z0, z1, z2) - Math.min(z0, z1, z2) > size / 4) { wide.push(face); continue; }
       const key = `${Math.floor((x0 + x1 + x2) / 3 / size)},${Math.floor((z0 + z1 + z2) / 3 / size)}`;
       if (!tiles.has(key)) tiles.set(key, []);
       tiles.get(key).push(face);

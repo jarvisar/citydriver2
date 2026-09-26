@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { CITY, SIDEWALK } from '../src/world/city.js';
+import { CITY, SIDEWALK, roundCorners } from '../src/world/city.js';
 import { yardDrive } from '../src/world/city-yards.js';
 import { surfaceAt, onRoadAt, citydriverRoute, journeyStart, PAVEMENT_LEVEL } from '../src/world/city-route.js';
 import { navGraph } from '../src/world/nav-graph.js';
@@ -240,6 +240,16 @@ test('the street hierarchy: collectors between the avenues, marked by rank, and 
   }
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   assert.ok(counts.signal > 10 && counts.stop > total * .25 && (counts.all ?? 0) < total * .3, JSON.stringify(counts));
+});
+
+test('a sharp kerb corner is rounded however the booleans left its point', () => {
+  // (seed 3113444836: a corner left as two points 2 cm apart had a short
+  // edge beside each, was never rounded, and stood a needle of pavement
+  // kerbed on both sides out into the junction)
+  const kerb = [{ x: 0, y: 0 }, { x: 40, y: -12 }, { x: 40, y: 12 }, { x: .018, y: .004 }];
+  const { polygon, patches } = roundCorners(kerb, 5.5);
+  assert.ok(patches.length >= 1, 'rounded');
+  assert.ok(polygon.every(p => Math.hypot(p.x, p.y) > 1), 'no needle left at the point');
 });
 
 test('a block with no lot is a planted island: a lawn inside its kerb, with only planting on it', () => {

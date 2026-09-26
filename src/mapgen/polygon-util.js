@@ -131,10 +131,19 @@ export function removeLoops(points, window = 64) {
 export function offsetPolylineClean(points, distance) { return removeLoops(offsetPolyline(points, distance)); }
 
 // The area within `width` of a polyline, with flat ends: a river channel or a
-// road surface. Replaces a jsts line buffer with CAP_FLAT.
+// road surface. Replaces a jsts line buffer with CAP_FLAT. A line that comes
+// back to its start (a ring road) is a band all the way round, its start
+// joined as every other bend is and the two sides tied by a slit there: with
+// flat ends, a bend at its start left a notch outside it, and its last edge,
+// back to a start the dedupe had already dropped, was lost.
 export function bufferPolyline(line, width) {
   const points = dedupePolygon(line, 1e-6);
   if (points.length < 2) return [];
+  if (points.length > 2 && Math.hypot(line[0].x - line.at(-1).x, line[0].y - line.at(-1).y) <= .5) {
+    const n = points.length, round = [points[n - 1], ...points, points[0], points[1]];
+    const side = distance => removeLoops(offsetPolyline(round, distance).slice(1, n + 2));
+    return [...side(width), ...side(-width).reverse()];
+  }
   const left = offsetPolylineClean(points, width), right = offsetPolylineClean(points, -width).reverse();
   return dedupePolygon(left.concat(right));
 }

@@ -765,9 +765,14 @@ function cap(bodies, a, b, y, colour) {
 // A cornice, a parapet and the roof deck inside it, with the same again round
 // any courtyard. Returns the deck polygon and the holes in it.
 // A wall shared with the house next door carries its cornice only to the lot
-// line (`reach` gives each wall's), where the neighbour's meets it.
-export function cornice(bodies, ring, top, trim, roofColour, wall, parapet, courts = [], reach = null) {
-  const band = (reach && signedArea(ring) > 0 && offsetPolygonMapped(ring, (p, q, k) => reach(k))?.points) || offsetPolygon(ring, .32), courtBands = courts.map(court => offsetPolygon(court, -.32)).filter(p => p.length >= 3);
+// line (`reach` gives each wall's), where the neighbour's meets it; and no
+// cornice reaches past its lot (`within`) at all. (The reach alone let two
+// neighbours' cornices overlap where a wall stood nearer its lot line than
+// the district's setback, their tops flickering through each other.)
+export function cornice(bodies, ring, top, trim, roofColour, wall, parapet, courts = [], reach = null, within = null) {
+  let band = (reach && signedArea(ring) > 0 && offsetPolygonMapped(ring, (p, q, k) => reach(k))?.points) || offsetPolygon(ring, .32);
+  if (within?.length >= 3 && band.length >= 3) band = intersection([ccw(band)], [ccw(within)]).sort((p, q) => calcPolygonArea(q.outer) - calcPolygonArea(p.outer))[0]?.outer ?? band;
+  const courtBands = courts.map(court => offsetPolygon(court, -.32)).filter(p => p.length >= 3);
   if (band.length >= 3) { bodies.prism(band, top - .3, top + .12, trim); bodies.polygon(band, top + .12, trim, null, true, courtBands); }
   else bodies.polygon(ring, top + .12, trim, null, true, courtBands);
   for (const courtBand of courtBands) bodies.wall(ccw(courtBand), top + .12, top - .3, trim, true);
@@ -1156,7 +1161,7 @@ function buildBuilding(c, b) {
   if (b.roofType === 'gable') { gableRoof(c, b, bodies, ring, lowerTop, random); return; }
   const trim = b.type === 'office' ? '#b8cccd' : '#d6c9b1';
   const reach = k => b.party?.[k] && b.side < .32 ? b.side : .32;
-  let { deck, holes } = cornice(bodies, ring, lowerTop, trim, b.roof, b.wall, b.type === 'deco' ? 1.2 : .65, courts, reach), top = lowerTop;
+  let { deck, holes } = cornice(bodies, ring, lowerTop, trim, b.roof, b.wall, b.type === 'deco' ? 1.2 : .65, courts, reach, b.lotLocal), top = lowerTop;
   if (lower < b.floors) {
     const inset = Math.min(4, b.breadth * .15), upper = offsetPolygon(ring, -inset);
     if (upper.length >= 3 && calcPolygonArea(upper) > 50) {

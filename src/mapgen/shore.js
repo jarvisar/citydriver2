@@ -1,5 +1,5 @@
 import Vector from './vector.js';
-import { insidePolygon, offsetPolylineClean, offsetPolygon, signedArea, calcPolygonArea, lineRectanglePolygon } from './polygon-util.js';
+import { insidePolygon, offsetPolylineClean, offsetPolygon, signedArea, calcPolygonArea, lineRectanglePolygon, bufferPolyline } from './polygon-util.js';
 import { union, difference, intersection, region, solids, clean, grow } from './booleans.js';
 
 // Where the land ends. The city is an island with a harbour's edge all
@@ -126,6 +126,18 @@ export function landAndWater({ island, coast = null, river = null, bounds, keep 
   // time that grows with the square of them)
   const sea = channel ? difference(water, region(grow(region(riverWater), .002))) : difference([world], region(landPieces));
   return { land: landPieces, sea, river: riverWater, dry: dryPieces, riverCentre };
+}
+
+// What each road (not a park's path) covers with its promenade, reach(road)
+// either side of it, for landAndWater to keep: round at its ends, as a pen
+// that wide would draw it. (Square, the outside of a bend was left bare where
+// two roads met a metre or so apart, or a ring road's two ends met on a bend,
+// and it went to the sea as a tip, notching the promenade or biting into the
+// road.)
+export function roadFootprints(roads, reach) {
+  const disc = (p, radius) => Array.from({ length: 32 }, (_, k) => new Vector(p.x + Math.cos(k / 32 * Math.PI * 2) * radius, p.y + Math.sin(k / 32 * Math.PI * 2) * radius));
+  return roads.filter(road => road.kind !== 'path' && road.points.length > 1)
+    .flatMap(road => [bufferPolyline(road.points, reach(road)), disc(road.points[0], reach(road)), disc(road.points.at(-1), reach(road))]);
 }
 
 // The land less every piece of it outside `keep` that reaches the shore:

@@ -104,6 +104,9 @@ test('a kerb, a coping or a wall never stands up on its own in the road', () => 
     const [a, b] = edge, length = Math.hypot(b[0] - a[0], b[2] - a[2]), n = normal(t);
     for (let d = .5; d < length; d += 1) {
       const x = a[0] + (b[0] - a[0]) * d / length, z = a[2] + (b[2] - a[2]) * d / length;
+      // (only where the ground either side was built: a street's kerb runs on
+      // past the chunks looked at, and beside it there a block's paving isn't)
+      if (!chunks.some(c => x >= c.east + .1 && x < c.east + CITY_CELL - .1 && -z >= c.start + .1 && -z < c.start + CITY_CELL - .1)) continue;
       const front = surfacesAt(x + n.x * .06, z + n.z * .06)[0], back = surfacesAt(x - n.x * .06, z - n.z * .06)[0];
       if (front && back && front.y < top - .012 && back.y < top - .012) { fins.push([t.source, t.look, +x.toFixed(1), +(-z).toFixed(1)]); break; }
     }

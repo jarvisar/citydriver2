@@ -465,9 +465,11 @@ export class LooseProps {
     body.awake += dt; body.clatter = Math.max(0, body.clatter - dt);
     // Nearly still on the ground, it stops. It is judged by how far it has
     // gone lately rather than how fast it is going: a piece rocking on a kerb
-    // or balanced on a chair's back jitters without getting anywhere.
+    // or balanced on a chair's back jitters without getting anywhere. Slow,
+    // it is held down, unless it is sinking: a topple starts slow, and held,
+    // a post lying on its lamp's arm took seconds to roll off it.
     const slow = body.grounded && v.lengthSq() < .25 && w.lengthSq() < .5;
-    if (slow) { const hold = Math.exp(-dt * 6); v.multiplyScalar(hold); w.multiplyScalar(hold); }
+    if (slow && v.y > -.02) { const hold = Math.exp(-dt * 6); v.multiplyScalar(hold); w.multiplyScalar(hold); }
     const rest = body.rest;
     if (slow && rest.p.distanceToSquared(p) < .03 ** 2 && rest.q.angleTo(q) < .03) body.still += dt;
     else { rest.p.copy(p); rest.q.copy(q); body.still = 0; }
@@ -485,7 +487,10 @@ export class LooseProps {
       const y = p.y + r.y;
       if (y > TOP) continue;
       const x = p.x + r.x, z = p.z + r.z;
-      if (!(Math.abs(x - ground[i]) < .3 && Math.abs(z - ground[i + 1]) < .3)) { ground[i] = x; ground[i + 1] = z; ground[i + 2] = level(x, z); }
+      // (looked up again once it has moved 30 cm, and wherever it is no higher
+      // over the ground than a kerb: a kerb is a sharp step, and a point that
+      // had looked from the road just beyond it sank into the pavement)
+      if (y - ground[i + 2] < .2 || !(Math.abs(x - ground[i]) < .3 && Math.abs(z - ground[i + 1]) < .3)) { ground[i] = x; ground[i + 1] = z; ground[i + 2] = level(x, z); }
       // (none over the water; and a piece fallen below a bridge's deck stays below it)
       const depth = ground[i + 2] - y;
       if (!(depth > 0 && depth < 1)) continue;

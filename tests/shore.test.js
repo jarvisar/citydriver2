@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import Vector from '../src/mapgen/vector.js';
 import { CITY, CITY_WIDTH, CITY_HEIGHT } from '../src/world/city.js';
 import { waterAt } from '../src/world/city-route.js';
-import { islandOutline, landAndWater, seaSideOf } from '../src/mapgen/shore.js';
+import { islandOutline, landAndWater, seaSideOf, roadFootprints } from '../src/mapgen/shore.js';
 import { ringRoad } from '../src/mapgen/road-network.js';
 import { insidePolygon, distanceToPolyline, interiorPoint, segmentIntersection, calcPolygonArea } from '../src/mapgen/polygon-util.js';
 
@@ -122,6 +122,23 @@ test('the sea is on the side of the coast that cuts off less of the city, howeve
   assert.equal(seaSideOf(line([[-1442, -195], [-1436, -60], [-1442, 66]]), origin, size), 1, 'a sliver along an edge');
   assert.equal(seaSideOf(line([[-1460, 77], [-600, 900], [0, 1070], [600, 1060], [1462, 1025]]), origin, size), 1, 'across, close to an edge in the middle');
   assert.equal(seaSideOf(line([[-1460, -300], [0, -500], [1460, -300]]), origin, size), -1, 'across the south');
+});
+
+test('where two roads meet at an angle on the shore a metre apart, the promenade round the outside of the bend stays land', () => {
+  // (seeds 39, 253, 263 and others: the ring road ended 1.2 m from where the
+  // coast road began, their square ends left the outside of the bend to no
+  // road, and the sea took a notch out of the promenade there)
+  const island = [[-300, -300], [17, -300], [17, 300], [-300, 300]].map(([x, y]) => new Vector(x, y));
+  const roads = [
+    { kind: 'ring', points: [new Vector(0, 300), new Vector(0, .6)] },
+    { kind: 'coast', points: [new Vector(.3, -.6), new Vector(-150, -300)] },
+  ];
+  const block = [[-300, -300], [-20, -300], [-20, 300], [-300, 300]].map(([x, y]) => new Vector(x, y));
+  const bounds = { minX: -1000, minY: -1000, maxX: 1000, maxY: 1000 };
+  const { land } = landAndWater({ island, bounds, keep: [block, ...roadFootprints(roads, () => 17.5)] });
+  for (const [x, y] of [[10, -3], [14, -6], [8, -1], [15, 20]]) assert.ok(land.some(piece => inPiece({ x, y }, piece)), `land at ${x},${y}`);
+  // (and bare land beyond the reach of any road still goes to the sea)
+  assert.ok(!land.some(piece => inPiece({ x: 12, y: -200 }, piece)), 'a bare tip');
 });
 
 test('a point inside a U-shaped polygon is inside it, as its centroid is not', () => {

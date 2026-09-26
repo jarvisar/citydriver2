@@ -6,6 +6,7 @@ import { citydriverRoute, journeyStart, roadAt, surfaceAt, ROAD_LEVEL, PAVEMENT_
 import { DrivingController } from '../src/vehicle.js';
 import { collideScenery } from '../src/collision.js';
 import { LooseProps } from '../src/loose-props.js';
+import { cityAssets } from '../src/world/city-assets.js';
 
 // One city for every test here, built round the start
 let city = null;
@@ -18,7 +19,34 @@ function world() {
 }
 test.after(() => city?.world.dispose());
 const colliders = () => [...world().world.chunks.values()].flatMap(chunk => chunk.features.colliders);
-const nearest = (kind, test = () => true) => colliders().filter(c => c.prop?.ready && !c.woken && c.prop.pieces[0].kind === kind && test(c))
+// The nearest standing piece of a kind to the start that a car driven along
+// its street (see drive) meets: beside the carriageway, square off it, with
+// nothing else standing (a tree, a shelter) in the car's way over the last
+// ten metres to it. (Not one past a street's end or back in a square, which
+// the car would miss, nor one behind a tree, which would stop it short.)
+const besideStreet = c => {
+  const road = roadAt(-c.z, c.x, 40);
+  if (!road || road.distance > road.road.profile.halfWidth + 4 || Math.abs((c.x - road.x) * road.tx + (-c.z - road.y) * road.ty) > .05) return false;
+  const run = [{ x: c.x - road.tx * 10, y: -c.z - road.ty * 10 }, { x: c.x + road.tx * 3, y: -c.z + road.ty * 3 }];
+  return colliders().every(o => o === c || o.woken || Math.hypot(o.x - c.x, o.z - c.z) > 20 || distanceToSegment({ x: o.x, y: -o.z }, run) > 1.8 + o.reach);
+};
+// Whether a point is inside a collider, as a loose piece meets it (a convex
+// outline, a turned box or a post)
+const within = (c, x, z) => {
+  const dx = x - c.x, dz = z - c.z;
+  if (c.corners) return c.corners.every((a, i) => {
+    const b = c.corners[(i + 1) % c.corners.length], m = { x: (a.x + b.x) / 2 - c.x, z: (a.z + b.z) / 2 - c.z }, ex = b.z - a.z, ez = -(b.x - a.x), out = ex * m.x + ez * m.z < 0 ? -1 : 1;
+    return ((a.x - x) * ex + (a.z - z) * ez) * out > 0;
+  });
+  if (c.heading === undefined) return Math.hypot(dx, dz) < c.reach;
+  const cos = Math.cos(c.heading), sin = Math.sin(c.heading);
+  return Math.abs(dx * cos + dz * sin) < c.halfWidth && Math.abs(dx * sin - dz * cos) < c.halfLength;
+};
+const distanceToSegment = (p, [a, b]) => {
+  const dx = b.x - a.x, dy = b.y - a.y, t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy)));
+  return Math.hypot(p.x - a.x - dx * t, p.y - a.y - dy * t);
+};
+const nearest = (kind, test = () => true) => colliders().filter(c => c.prop?.ready && !c.woken && c.prop.pieces[0].kind === kind && besideStreet(c) && test(c))
   .sort((a, b) => Math.hypot(a.x - world().start.u, -a.z - world().start.s) - Math.hypot(b.x - world().start.u, -b.z - world().start.s))[0];
 // Every point of a loose piece above the ground under it
 function aboveGround(body) {
@@ -69,9 +97,52 @@ test('a lamp post hit at speed snaps and falls over, dark, and the car carries o
     const lost = (before - after) / before;
     assert.ok(lost > .05 && lost < .3, `the car lost ${(lost * 100).toFixed(0)}% of its speed`);
     assert.ok(light?.item.render.hidden, 'and its light is out');
-    assert.ok(props.sounds.length === 0 || props.sounds.every(s => ['metal'].includes(s.kind)));
+    // (the post's own clang, within its length of its foot: the car may run
+    // on into a bin further along)
+    assert.ok(props.sounds.filter(s => Math.hypot(s.x - lamp.x, s.z - lamp.z) < 7).every(s => ['metal'].includes(s.kind)), JSON.stringify(props.sounds));
     assert.ok(car.trauma < .3, 'a post is no wall: the camera barely shakes');
   } finally { props.reset(); props.dispose(); car.disposeModel(); }
+});
+
+test('a post landed on its lamp\'s arm rolls straight off it and lies still, not in slow motion', () => {
+  // (as one landed in seed 248: the jitter hold slowed the start of its roll
+  // so much that it took three seconds to lie flat)
+  const props = new LooseProps(new THREE.Scene(), new THREE.MeshBasicMaterial()), start = journeyStart();
+  const body = props.add({ kind: 'lamp', geometry: cityAssets.lamp }, new THREE.Matrix4());
+  try {
+    body.q.set(-.2245, .0896, -.6817, .6905).normalize();
+    body.p.set(start.u, ROAD_LEVEL + .489, -start.s); body.v.set(-.022, -.164, .043); body.w.set(.135, -.014, .048);
+    body.rest.p.copy(body.p); body.rest.q.copy(body.q);
+    let still = null;
+    for (let i = 0; i < 120 * 4 && still === null; i++) { props.step(body, 1 / 120, null); if (body.asleep) still = i / 120; }
+    assert.ok(still !== null && still < 2.5, `lay still after ${still} s`);
+    assert.ok(body.p.y - ROAD_LEVEL < .2 && aboveGround(body), 'flat on the road');
+  } finally { props.dispose(); }
+});
+
+test('a bin rolled over a kerb comes to rest on the pavement, not sunk into it', () => {
+  // (seed 3499445261: each point kept the ground it had looked up 30 cm
+  // back, the road's, and the bin lay 12 cm into the pavement)
+  const start = journeyStart(), road = roadAt(start.s, start.u, 40), nx = road.ty, ny = -road.tx;
+  // (out from the middle of the street, square to it, to its kerb)
+  let side = 0, reach = 0;
+  for (const k of [1, -1]) {
+    let t = 0;
+    while (t < 20 && surfaceAt(road.y + ny * k * t, road.x + nx * k * t) === 'road') t += .01;
+    if (t < 20) { side = k; reach = t; break; }
+  }
+  assert.ok(side, 'a kerb beside the start');
+  const kerb = { x: road.x + nx * side * reach, y: road.y + ny * side * reach };
+  for (const [back, speed] of [[.3, .8], [.25, 1.2], [.2, .6], [.15, 1]]) {
+    const props = new LooseProps(new THREE.Scene(), new THREE.MeshBasicMaterial());
+    const at = new THREE.Vector3(kerb.x - nx * side * back, ROAD_LEVEL + .35, -(kerb.y - ny * side * back));
+    const body = props.add({ kind: 'bin', geometry: cityAssets.bin }, new THREE.Matrix4().compose(at, new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI / 2)), new THREE.Vector3(1, 1, 1)));
+    try {
+      body.v.set(nx * side * speed, 0, -ny * side * speed);
+      for (let i = 0; i < 120 * 6 && !body.asleep; i++) props.step(body, 1 / 120, null);
+      assert.ok(body.asleep && aboveGround(body), `rolled from ${back} m short of the kerb at ${speed} m/s: ${body.asleep ? 'asleep' : 'awake'}, ${aboveGround(body) ? 'on' : 'in'} the ground`);
+    } finally { props.dispose(); }
+  }
 });
 
 test('a post stands firm against a slow nudge, as a wall would', () => {
@@ -146,9 +217,19 @@ test('a cafe table and its four chairs come loose as five pieces, and settle apa
   const props = new LooseProps(scene, built.materials.props), player = new DrivingController(citydriverRoute, journeyStart(), 'taxi');
   try {
     player.toggleFreeDriving(); player.s = piece.s + 60; player.u = piece.u; player.update(0, {});
-    const car = { x: cafe.x - 3, z: cafe.z, y: PAVEMENT_LEVEL, height: 1.5, heading: Math.PI / 2, halfWidth: .9, halfLength: 2.3, vx: 16, vz: 0, spin: 0, mass: 2.2 };
-    const blow = props.knock(cafe, { x: -1, z: 0, depth: .05, point: { x: cafe.x - 1.2, z: cafe.z } }, car);
-    assert.ok(blow && blow.x < 0, 'the car takes a little of the blow');
+    // (met from the side it has most room on: from the street, a table
+    // thrown into a shopfront a metre off was never thrown clear)
+    const all = [...built.chunks.values()].flatMap(chunk => chunk.features.colliders);
+    const room = a => {
+      const dx = Math.cos(a), dz = Math.sin(a);
+      let clear = 0;
+      for (let d = 1.5; d <= 8 && !all.some(c => c !== cafe && !c.woken && within(c, cafe.x + dx * d, cafe.z + dz * d)); d += .25) clear = d;
+      return clear;
+    };
+    const way = Array.from({ length: 8 }, (_, k) => k * Math.PI / 4).reduce((best, a) => room(a) > room(best) ? a : best, 0), dx = Math.cos(way), dz = Math.sin(way);
+    const car = { x: cafe.x - dx * 3, z: cafe.z - dz * 3, y: PAVEMENT_LEVEL, height: 1.5, heading: Math.atan2(dx, -dz), halfWidth: .9, halfLength: 2.3, vx: dx * 16, vz: dz * 16, spin: 0, mass: 2.2 };
+    const blow = props.knock(cafe, { x: -dx, z: -dz, depth: .05, point: { x: cafe.x - dx * 1.2, z: cafe.z - dz * 1.2 } }, car);
+    assert.ok(blow && blow.x * dx + blow.z * dz < 0, 'the car takes a little of the blow');
     assert.equal(cafe.prop.bodies.length, 5);
     assert.deepEqual(cafe.prop.bodies.map(b => b.piece.kind).sort(), ['chair', 'chair', 'chair', 'chair', 'table']);
     for (let i = 0; i < 120 * 5; i++) props.update(1 / 120, player, null, built.chunks);

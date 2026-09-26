@@ -66,8 +66,10 @@ const ARTERIAL = new Set(['main', 'major', 'ring', 'coast', 'riverbank']);
 // The collectors: long side streets that run well away from every avenue and
 // every other collector alongside them, the longest first, so they fall
 // between the avenues wherever those leave a neighbourhood without a through
-// road. Marks road.collector.
-export function chooseCollectors(roads, { gap = 210, minLength = 380, share = .6, step = 20 } = {}) {
+// road. Marks road.collector. Where the avenues are so close together that
+// that leaves under `least` of the side streets' length as collectors, more
+// are chosen a little nearer them, so every city has its through streets.
+export function chooseCollectors(roads, { gap = 210, minLength = 380, share = .6, step = 20, least = .02, nearer = .85 } = {}) {
   const cell = 70, reach = Math.ceil(gap / cell), grid = new Map(), key = (x, y) => `${x},${y}`;
   const add = samples => {
     for (const p of samples) {
@@ -89,12 +91,18 @@ export function chooseCollectors(roads, { gap = 210, minLength = 380, share = .6
   for (const road of roads) if (ARTERIAL.has(road.kind)) add(samplesAlong(road.points, step));
   const candidates = roads.filter(road => road.kind === 'minor' && !road.circus).map(road => ({ road, length: lengthOf(road.points) }))
     .filter(c => c.length >= minLength).sort((a, b) => b.length - a.length);
-  for (const { road } of candidates) {
-    const samples = samplesAlong(road.points, step);
-    if (samples.filter(p => clearance(p) >= gap).length < samples.length * share) continue;
-    road.collector = true;
-    add(samples);
-  }
+  const choose = clear => {
+    for (const { road } of candidates) {
+      if (road.collector) continue;
+      const samples = samplesAlong(road.points, step);
+      if (samples.filter(p => clearance(p) >= clear).length < samples.length * share) continue;
+      road.collector = true;
+      add(samples);
+    }
+  };
+  choose(gap);
+  const sides = roads.filter(road => road.kind === 'minor'), total = sides.reduce((sum, road) => sum + lengthOf(road.points), 0);
+  if (sides.filter(road => road.collector).reduce((sum, road) => sum + lengthOf(road.points), 0) < total * least) choose(gap * nearer);
   return roads;
 }
 

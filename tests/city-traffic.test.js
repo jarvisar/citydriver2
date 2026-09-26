@@ -185,7 +185,13 @@ test('autodrive never loses its way: it never whips round, circles on the spot o
 // way: [along, speed, model name] each
 function pinnedStreet(player, cars) {
   const traffic = new CityTraffic(new THREE.Scene(), player.route, player.s, 'city', player.u), start = journeyStart();
-  const edge = traffic.nav.edges.filter(e => e.kind !== 'path' && e.length > 160 && !e.profile.median).sort((a, b) => {
+  // (plain: straight over its first 100 m, within a metre, so no car slows
+  // there for a bend and meets a blow late)
+  const straight = e => {
+    const a = traffic.nav.pose(e, 0, 1, 0), b = traffic.nav.pose(e, 100, 1, 0), l = Math.hypot(b.u - a.u, b.s - a.s) || 1;
+    return Array.from({ length: 11 }, (_, k) => traffic.nav.pose(e, k * 10, 1, 0)).every(p => Math.abs((p.u - a.u) * (b.s - a.s) - (p.s - a.s) * (b.u - a.u)) / l < 1);
+  };
+  const edge = traffic.nav.edges.filter(e => e.kind !== 'path' && e.length > 160 && !e.profile.median && straight(e)).sort((a, b) => {
     const m = e => e.points[Math.floor(e.points.length / 2)];
     return Math.hypot(m(a).y - start.s, m(a).x - start.u) - Math.hypot(m(b).y - start.s, m(b).x - start.u);
   })[0];
@@ -207,20 +213,27 @@ function besideLane(traffic, edge, player, along, across, ahead, speed) {
   player.s = rail.s + Math.sin(h) * across + Math.cos(h) * ahead; player.u = rail.u - Math.cos(h) * across + Math.sin(h) * ahead;
   player.heading = player.slideHeading = h + Math.PI / 2; player.speed = speed; player.update(0, {});
 }
-// A side-on hit at 18 m/s: how far the struck car was thrown before it came
-// to rest, and the player's speed just after
+// A side-on hit, coasting into it from 18 m/s so every car meets it at the
+// same speed: how fast the blow sent the struck car across its lane, and the
+// player's speed just after. (Not how far it went: that was as far as the
+// buildings along the street let it, and on to wherever it drove back to its
+// lane from; and with the throttle held, a quick car hit harder than a heavy one.)
 function tBone(id, model) {
   const player = new DrivingController(citydriverRoute, journeyStart(), id);
   player.toggleFreeDriving();
   const { traffic, edge, pinned: [car] } = pinnedStreet(player, [[40, 10, model]]);
+  // (and the struck car holds its speed: braking for the player it saw
+  // coming, sooner for a longer car and on a bending street, it was met by a
+  // glancing blow or none)
+  traffic.following = () => Infinity;
   try {
     besideLane(traffic, edge, player, 40, 9, 5, 18);
-    let from = null, thrown = 0, after = null;
-    for (let i = 0; i < 120 * 4; i++) {
-      player.update(1 / 120, { forward: i < 60 }); traffic.update(1 / 120, player);
-      if (car.loose && !from) { from = { s: car.s, u: car.u }; after = i + 36; }
+    let thrown = 0, after = null;
+    for (let i = 0; i < 120 * 2; i++) {
+      player.update(1 / 120, {}); traffic.update(1 / 120, player);
+      if (car.loose) thrown = Math.max(thrown, Math.abs(car.loose.vx * Math.cos(car.laneHeading) + car.loose.vz * Math.sin(car.laneHeading)));
+      if (car.loose && after === null) after = i + 36;
       if (i === after) after = Math.hypot(player.velocity.x, player.velocity.z);
-      if (from) thrown = Math.max(thrown, Math.hypot(car.s - from.s, car.u - from.u));
     }
     return { thrown, speed: after };
   } finally { traffic.dispose(); player.disposeModel(); }
@@ -257,7 +270,7 @@ test('a car struck side-on is knocked loose, skids to rest, then steers back ont
 test('weight decides a side-on hit: a truck throws a hatchback further than the taxi does, and a light racer barely shifts a van', () => {
   const taxi = tBone('taxi', 'hatchback'), truck = tBone('rig', 'hatchback'), racer = tBone('taxiFormula', 'van'), taxiVan = tBone('taxi', 'van');
   assert.ok(truck.thrown > taxi.thrown && taxi.thrown > taxiVan.thrown && taxiVan.thrown > racer.thrown, JSON.stringify({ taxi, truck, taxiVan, racer }));
-  assert.ok(truck.speed > 16 && truck.speed > taxi.speed && taxi.speed > racer.speed, 'and the heavier car carries on the faster');
+  assert.ok(truck.speed > 14 && truck.speed > taxi.speed && taxi.speed > racer.speed, 'and the heavier car carries on the faster');
 });
 
 test('pushing another car goes only as hard as the tyres grip: a truck shoves a stopped van aside, a light racer cannot', () => {

@@ -5,12 +5,12 @@ import { CITY, cityCell } from '../src/world/city.js';
 import { cityPlaces, placeForBlock } from '../src/city-exploration.js';
 import { PLACE_TYPES } from '../src/world/city-places.js';
 import { cityParks, squareLayout, SQUARE_WALK } from '../src/world/city-parks.js';
-import { placeStreetFurniture, findBridges } from '../src/world/city-streets.js';
+import { placeStreetFurniture, findBridges, lawnSpots } from '../src/world/city-streets.js';
 import { discoverySignFor } from '../src/world/city-signs.js';
 import { navGraph } from '../src/world/nav-graph.js';
 import { planLot } from '../src/world/city-buildings.js';
 import { CitydriverWorld, CityChunk } from '../src/world/citydriver-world.js';
-import { insidePolygon, distanceToPolyline, averagePoint, calcPolygonArea } from '../src/mapgen/polygon-util.js';
+import { insidePolygon, distanceToPolyline, averagePoint, calcPolygonArea, polygonCentroid } from '../src/mapgen/polygon-util.js';
 
 const places = cityPlaces();
 const venues = places.filter(place => place.footprint);
@@ -88,6 +88,40 @@ test('every park and square has its sign by its gate, on its lawn and off its wa
       for (const feature of entry.features) assert.ok(Math.hypot(piece.u - feature.x, piece.s - feature.y) > feature.r, `a tree in the ${feature.kind}`);
     }
   }
+});
+
+test('a park is where the middle of its ground is, not where its outline\'s points crowd', () => {
+  // (seed 165: Meadow Park's point was the average of its outline's points,
+  // 170 m off its middle toward a finely curved side, and its drop-off
+  // 466 m from where the map showed it)
+  for (const place of places.filter(place => place.park !== undefined && !CITY.parkPlans[place.park].square)) {
+    const park = CITY.parkPlans[place.park].polygon, middle = polygonCentroid(park), at = { x: place.u, y: place.s };
+    assert.ok(insidePolygon(at, park), `${place.name} is off its park`);
+    if (insidePolygon(middle, park)) assert.ok(Math.hypot(at.x - middle.x, at.y - middle.y) < .01, `${place.name} is off its middle`);
+  }
+  // (and for a park with a long curved side the average would not do)
+  const curved = [{ x: 0, y: 0 }, { x: 400, y: 0 }, { x: 400, y: 300 }, ...Array.from({ length: 60 }, (_, k) => ({ x: Math.cos(Math.PI * k / 59) * 200 + 200, y: 300 + Math.sin(Math.PI * k / 59) * 40 })).slice(1, -1), { x: 0, y: 300 }];
+  assert.ok(Math.hypot(averagePoint(curved).y - polygonCentroid(curved).y) > 100, 'the average drifts toward the points');
+});
+
+test('a round garden has a spot for its sign by the gate, round its edge, and further in where the junctions round it take its edge', () => {
+  // (seed 248: Chime Terrace, a circus's garden, had none. The spots ran on
+  // straight from the gate and soon left the round lawn, and every one near
+  // the edge was in the corners of the junctions round the circus)
+  const lawn = Array.from({ length: 96 }, (_, k) => ({ x: Math.cos(k / 96 * Math.PI * 2) * 27, y: Math.sin(k / 96 * Math.PI * 2) * 27 }));
+  const on = p => insidePolygon(p, lawn), spots = [...lawnSpots(lawn, { x: 2, y: 37 })];
+  const first = spots[0];
+  assert.ok(Math.abs(Math.hypot(first.u, first.y) - (27 - 2.4)) < .1 && first.y > 20, 'first by the gate, just inside the edge');
+  assert.ok(first.oy > .9, 'facing out of the lawn, toward the gate');
+  // Every spot on the lawn, board and all, however far round from the gate
+  for (const spot of spots) assert.ok([{ x: spot.u, y: spot.y }, ...spot.ends].every(on), `a board off the lawn at ${spot.u.toFixed(1)},${spot.y.toFixed(1)}`);
+  // and with eight junctions round the circus reaching 18 m, over the whole
+  // edge, one clear of them all further in
+  const junctions = Array.from({ length: 8 }, (_, k) => ({ x: Math.cos((k + .5) * Math.PI / 4) * 36, y: Math.sin((k + .5) * Math.PI / 4) * 36 }));
+  const clear = p => junctions.every(j => Math.hypot(p.x - j.x, p.y - j.y) > 18), fits = spot => [{ x: spot.u, y: spot.y }, ...spot.ends].every(clear);
+  assert.ok(!spots.some(spot => Math.abs(Math.hypot(spot.u, spot.y) - (27 - 2.4)) < .1 && fits(spot)), 'the whole edge taken');
+  const spot = spots.find(fits);
+  assert.ok(spot && Math.hypot(spot.u, spot.y) < 27 - 2.4 && spot.y > 0, 'a spot further in, on the gate\'s side');
 });
 
 test('every venue is built as its landmark, with its name on it', () => {

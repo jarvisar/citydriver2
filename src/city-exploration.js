@@ -5,7 +5,7 @@ import { placeName } from './world/city-businesses.js';
 import { randomAt } from './world/route.js';
 import { landmarkSite, venueFits, venueFootprint, VENUE_SIZE } from './world/landmark-site.js';
 import { cityParks } from './world/city-parks.js';
-import { averagePoint, calcPolygonArea } from './mapgen/polygon-util.js';
+import { averagePoint, calcPolygonArea, polygonCentroid, interiorPoint, insidePolygon } from './mapgen/polygon-util.js';
 
 // Places worth a taxi ride. The open-air ones are the city's parks and
 // squares, each laid out as what it is (see world/city-parks.js). The rest
@@ -135,7 +135,11 @@ function buildPlaces() {
   const open = new Set();
   for (const entry of cityParks()) {
     const park = entry.park, type = entry.design ?? 'plaza', variant = nextVariant(type);
-    const centre = entry.plaza && park.square ? { x: entry.plaza.x, y: entry.plaza.y } : averagePoint(park.polygon);
+    // (a park's middle is the middle of its ground, not the average of its
+    // outline's points, which crowd round a bend: on a big park the drop-off
+    // was hundreds of metres from where the map showed it)
+    const middle = polygonCentroid(park.polygon);
+    const centre = entry.plaza && park.square ? { x: entry.plaza.x, y: entry.plaza.y } : insidePolygon(middle, park.polygon) ? middle : interiorPoint(park.polygon);
     // The drop-off is at a park's gate on its busiest street, or halfway
     // along a square's longest side
     let door;

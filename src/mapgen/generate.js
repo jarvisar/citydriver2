@@ -11,7 +11,7 @@ import { RoadIndex } from './road-index.js';
 import { averagePoint, calcPolygonArea, offsetPolygon, insidePolygon, polygonCentroid, bufferPolyline, polygonBounds, polylineLength } from './polygon-util.js';
 import { filletPolyline, closeLoop, ringRoad, clipInside, weldEnds, circuses, cleanNetwork, spreadJunctions, pruneNetwork, joinCorners, easeKinks, endJoints } from './road-network.js';
 import { frontageLots, throughLots, chamferAcute } from './lots.js';
-import { islandOutline, landAndWater, seaSideOf } from './shore.js';
+import { islandOutline, landAndWater, seaSideOf, roadFootprints } from './shore.js';
 import { insetPolygon, difference, solids } from './booleans.js';
 import { CLASS_PROFILES, PROFILES, assignProfiles } from './road-hierarchy.js';
 import { parkLayout, deepestPoint } from './park-paths.js';
@@ -248,7 +248,8 @@ export function generateCityMap(options = {}) {
   field.addRadial(randomLocation(), randomRange(random, width / 10, width / 5), randomRange(random, 50));
 
   const minorParams = { ...o.minor }, majorParams = { ...minorParams, ...o.major }, mainParams = { ...minorParams, ...o.main };
-  const waterParams = { ...minorParams, ...o.water };
+  // (two reaches of a river no nearer than both their bank roads need)
+  const waterParams = { riverApart: 2 * (o.water.riverSize + PROFILES.riverbank.halfWidth), ...minorParams, ...o.water };
   const integrator = new RK4Integrator(field, minorParams);
   const water = new WaterGenerator(integrator, origin, dimensions, waterParams, field, random);
   if (o.coast) water.createCoast();
@@ -498,8 +499,7 @@ export function generateCityMap(options = {}) {
     const river = water.hasRiver && water.riverCentre?.length > 1 ? { centre: water.riverCentre, halfWidth: waterParams.riverSize - waterParams.riverBankSize } : null;
     const bounds = { minX: origin.x - o.shore.sea, minY: origin.y - o.shore.sea, maxX: origin.x + width + o.shore.sea, maxY: origin.y + height + o.shore.sea };
     shore = { island, coast, ...landAndWater({ island, coast, river, bounds,
-      keep: [...finder.polygons, ...bigParks, ...endJoints(roadList, road => road.profile.halfWidth + o.shore.quay + .5, { round: true }),
-        ...roadList.filter(road => road.kind !== 'path').map(road => bufferPolyline(road.points, road.profile.halfWidth + o.shore.quay + .5))] }), bounds };
+      keep: [...finder.polygons, ...bigParks, ...roadFootprints(roadList, road => road.profile.halfWidth + o.shore.quay + .5)] }), bounds };
   }
   lap('shore');
   // Small parks and squares: whole blocks, well apart, away from the water

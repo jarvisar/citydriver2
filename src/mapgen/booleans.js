@@ -71,6 +71,17 @@ export function growRound(rings, distance, tolerance = .05) {
 // Pieces with their spikes (an edge out and straight back, left where two
 // shapes shared an edge) and near-collinear points within `tolerance` metres gone
 export const clean = (pieces, tolerance = .01) => union(region(pieces).map(ring => fromPath(ClipperLib.Clipper.CleanPolygon(toPath(ring), tolerance * SCALE))));
+// A piece cut straight across each of its holes into pieces with none, which
+// together cover it exactly: a ring of ground round something else (a
+// traffic island at a bridge's end) as pieces a single outline each can pave
+export function withoutHoles(piece) {
+  if (!piece.holes.length) return [piece];
+  const hole = piece.holes[0], x = hole.reduce((sum, p) => sum + p.x, 0) / hole.length;
+  const ys = piece.outer.map(p => p.y), xs = piece.outer.map(p => p.x), y0 = Math.min(...ys) - 1, y1 = Math.max(...ys) + 1;
+  return [[Math.min(...xs) - 1, x], [x, Math.max(...xs) + 1]]
+    .flatMap(([x0, x1]) => run(ClipperLib.ClipType.ctIntersection, region([piece]), [[{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }]]))
+    .flatMap(withoutHoles);
+}
 
 // A polygon stepped in by a distance per edge, always: where the offset
 // breaks (a waist too narrow for the step, a bend that folds it over) the

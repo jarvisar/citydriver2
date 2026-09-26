@@ -3,9 +3,28 @@ import { bufferPolyline, calcPolygonArea, lineRectanglePolygon, offsetPolylineCl
 import { filletPolyline, clipInside } from './road-network.js';
 import { simplify } from './simplify.js';
 
+// Whether a line comes back within `apart` of itself: two points on it
+// nearer than that, though a half turn that wide or more apart along it.
+// A river's bank roads either side of both reaches meet there, or the inner
+// bank of a bend tighter than the bank folds into a spike.
+export function doublesBack(line, apart) {
+  const points = [line[0]], along = [0];
+  for (let i = 1; i < line.length; i++) {
+    const a = line[i - 1], b = line[i], length = a.distanceTo(b), count = Math.max(1, Math.ceil(length / 5));
+    for (let k = 1; k <= count; k++) { points.push(a.clone().add(b.clone().sub(a).multiplyScalar(k / count))); along.push(along.at(-1) + length / count); }
+  }
+  const turn = Math.PI * apart / 2;
+  for (let i = 0, j = 0; i < points.length; i++) {
+    while (j < points.length && along[j] - along[i] < turn) j++;
+    for (let k = j; k < points.length; k++) if (points[i].distanceTo(points[k]) < apart) return true;
+  }
+  return false;
+}
+
 // Integrates polylines to create a coastline and a river, with controllable
 // noise. params extend the streamline params with coastNoise and riverNoise
-// ({ noiseEnabled, noiseSize, noiseAngle }), riverBankSize and riverSize.
+// ({ noiseEnabled, noiseSize, noiseAngle }), riverBankSize and riverSize, and
+// riverApart (see doublesBack).
 export default class WaterGenerator extends StreamlineGenerator {
   constructor(integrator, origin, worldDimensions, params, tensorField, random = Math.random) {
     super(integrator, origin, worldDimensions, params, random);
@@ -80,8 +99,10 @@ export default class WaterGenerator extends StreamlineGenerator {
       const smooth = filletPolyline(simplify(riverStreamline, 3), this.params.riverRadius ?? 90);
       centre = oldSea.length >= 3 ? clipInside(smooth, oldSea, .6, false).sort((a, b) => polylineLength(b) - polylineLength(a))[0] ?? null : smooth;
       // Nor is one that runs along the edge of the city, beside the ring road:
-      // it would leave the ring on a causeway two roads wide between river and sea
-      if (centre && polylineLength(centre) >= (this.params.riverMinLength ?? 600) && this.alongEdge(centre) <= (this.params.riverEdgeRun ?? 150)) { reached = true; break; }
+      // it would leave the ring on a causeway two roads wide between river and
+      // sea; nor one that doubles back on itself, with no room between its
+      // reaches for their banks
+      if (centre && polylineLength(centre) >= (this.params.riverMinLength ?? 600) && this.alongEdge(centre) <= (this.params.riverEdgeRun ?? 150) && !doublesBack(centre, this.params.riverApart ?? 2 * this.params.riverSize)) { reached = true; break; }
     }
     this.tensorField.sea = oldSea;
     this.tensorField.disableGlobalNoise();

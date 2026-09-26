@@ -596,10 +596,8 @@ const pointAt = (points, d) => { const slice = slicePolyline(points, 0, Math.max
 // and a step where the widths differ. A patch for each such joint covers
 // both ends: the hull of the two end sections, carried `into` each road a
 // little so its edges never lie exactly along the roads' own (a crack in a
-// union). width(road): the half width the patch spans for that road. With
-// `round`, a disc as wide as the narrower of the two is added, which covers
-// the joint itself however nearly straight on the roads meet.
-export function endJoints(roads, width = road => road.profile.halfWidth, { into = .5, round = false } = {}) {
+// union). width(road): the half width the patch spans for that road.
+export function endJoints(roads, width = road => road.profile.halfWidth, { into = .5 } = {}) {
   const ends = [];
   roads.forEach((road, r) => {
     const points = road.points, n = points.length;
@@ -622,7 +620,6 @@ export function endJoints(roads, width = road => road.profile.halfWidth, { into 
     const corners = [a.p];
     for (const { p, dx, dy, w } of [a, b]) for (const along of [0, into]) corners.push({ x: p.x + dx * along - dy * w, y: p.y + dy * along + dx * w }, { x: p.x + dx * along + dy * w, y: p.y + dy * along - dx * w });
     patches.push(hull(corners));
-    if (round) patches.push(Array.from({ length: 24 }, (_, k) => new Vector(a.p.x + Math.cos(k / 24 * Math.PI * 2) * Math.min(a.w, b.w), a.p.y + Math.sin(k / 24 * Math.PI * 2) * Math.min(a.w, b.w))));
   }
   return patches;
 }
