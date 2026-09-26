@@ -87,6 +87,8 @@ export function createSoundGraph(ctx) {
   const roughMod = oscillator(17, roughPulse);
   const wind = noiseLayer('lowpass', 1500, 100, 4.3, 1, buses.road, .65, windNoise);
   const skid = noiseLayer('bandpass', 1100, 650, 2.3, 1, buses.road, 3);
+  // Metal grinding along a wall or another car
+  const scrape = noiseLayer('bandpass', 1500, 380, 7.7, 1, buses.road, 1.6, contactNoise);
   const skidToneLevel = gain(0, buses.road);
   const skidTone = oscillator(1050, skidToneLevel);
   const bed = noiseLayer('lowpass', 440, 65, 0, .83, buses.ambience, .65, windNoise);
@@ -161,7 +163,7 @@ export function createSoundGraph(ctx) {
     compressor, buses: Object.fromEntries(Object.entries(buses).map(([name, node]) => [name, node.gain])),
     perspective: Object.fromEntries(Object.entries(perspective).map(([name, node]) => [name, node.frequency])),
     body, bodyLevel: bodyLevel.gain, combustion, intake, reverse, reverseLevel: reverseLevel.gain,
-    road, rough, roughPulse: roughPulse.gain, roughMod, wind, skid, skidTone, skidToneLevel: skidToneLevel.gain,
+    road, rough, roughPulse: roughPulse.gain, roughMod, wind, skid, skidTone, skidToneLevel: skidToneLevel.gain, scrape,
     bed, air, rain, insects, insectPulse: insectPulse.gain, insectMod, traffic, pads, event, silenceEvents,
     setEngine(profile) { engineBank.setProfile(profile); },
     nodeCount: nodes.length + engineBank.nodeCount, sourceCount: sources.length + engineBank.sourceCount,

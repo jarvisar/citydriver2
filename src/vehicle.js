@@ -7,7 +7,7 @@ import { CARS, DEFAULT_CAR, DRAG, ROUTE_PAINT, carEntry, carStats } from './cars
 import { createShapeCar } from './car-models.js';
 import { createFormulaCar } from './formula-model.js';
 import { createSpecialCar } from './special-models.js';
-import { footprintMass } from './impact.js';
+import { collisionImpulse, footprintMass, leadingPoint, rock, rockFrom } from './impact.js';
 import { steerCurve, steeringResponse, driftDirection, turnRate, corneringLoad, travelHeading } from './handling.js';
 
 const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: .74, flatShading: true, ...extra });
@@ -149,8 +149,14 @@ const STEEP = 1.2;
 const FOOTING = 2.5;
 export const impassable = ground => ground.blocked;
 // How fast the tyres take back what a collision knocked into the car: the
-// slide within about half a second, the turn a little sooner.
-const SLIDE_GRIP = 5, SPIN_GRIP = 8;
+// slide within about half a second, the turn a little sooner. The fastest a
+// blow can set the car turning, in radians a second.
+const SLIDE_GRIP = 5, SPIN_GRIP = 8, SPIN_MOST = 5;
+// Walls, trees and kerbside furniture give nothing back but a little bounce,
+// and scrape a car sliding along them.
+const SCENERY = { bounce: .25, friction: .2 };
+// A blow slower than this (m/s where they meet) is a touch, not a crash.
+const TOUCH = 1;
 // How far the body leans, in radians, when the tyres are giving everything.
 const LEAN = .105;
 // A handbrake tap leaves the slide available for this long, so the button and
@@ -174,9 +180,12 @@ export class DrivingController {
     // Where the car's weight is: -1 over the back under power, +1 over the nose on the brakes.
     this.weight = 0; this.load = 0;
     this.bodyPitch = 0; this.bodyRoll = 0; this.wheelSpin = 0;
-    // Motion a collision leaves the car with that its own drive did not make.
-    this.knock = { x: 0, z: 0, spin: 0 };
-    this.audioTelemetry = { speed: 0, throttle: 0, brake: 0, offRoad: 0, steer: 0, handbrake: 0, slip: 0, impact: 0, impactSerial: 0 };
+    // Motion a collision leaves the car with that its own drive did not make,
+    // and the swing it leaves the body with.
+    this.knock = { x: 0, z: 0, spin: 0 }; this.jolt = { pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 };
+    // The turn the driver is making, and how shaken the view is (0 to 1).
+    this.yawRate = 0; this.trauma = 0;
+    this.audioTelemetry = { speed: 0, throttle: 0, brake: 0, offRoad: 0, steer: 0, handbrake: 0, slip: 0, impact: 0, impactSerial: 0, scrape: 0 };
     const pose = () => ({ position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), bodyPitch: 0, bodyRoll: 0, wheelSpin: 0, steer: 0, slip: 0 });
     this.previousPose = pose(); this.currentPose = pose();
     this.update(0, {});
@@ -221,6 +230,7 @@ export class DrivingController {
   }
   reset() {
     this.speed = 0; this.steer = 0; this.weight = 0; this.load = 0; this.driftArmed = 0; this.knock.x = this.knock.z = this.knock.spin = 0;
+    Object.assign(this.jolt, { pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 }); this.yawRate = 0; this.trauma = 0; this.audioTelemetry.scrape = 0;
     // A generated street network has no lane at u = 2.4: settle into the nearest lane instead.
     if (this.route.nearestLane) { const pose = this.route.nearestLane(this.s, this.u, this.heading); this.s = pose.s; this.u = pose.u; this.heading = pose.heading; }
     else { this.u = 2.4; this.heading = this.route.frame(this.s).angle; }
@@ -267,57 +277,68 @@ export class DrivingController {
     knock.x *= slide; knock.z *= slide; knock.spin *= Math.exp(-dt * SPIN_GRIP);
     if (Math.hypot(knock.x, knock.z) < .05 && Math.abs(knock.spin) < .01) knock.x = knock.z = knock.spin = 0;
   }
-  // Another car gives way as far as its weight allows. This one is put back
-  // outside it and takes its share of the blow (see impact.js): the part along
-  // its heading becomes speed, though never through rest into the other
+  // A blow: a change of velocity and of turn (see impact.js), `impact` m/s
+  // where the two met and `scrape` m/s of sliding past. The part along the
+  // car's travel becomes speed, though never through rest into the other
   // direction, and the rest is a slide and a turn that carryKnock wears off.
-  resolveTrafficCollision(dx, dz, dvx = 0, dvz = 0, spin = 0) {
-    const impact = Math.hypot(dvx, dvz);
-    if (impact > .4) { this.audioTelemetry.impact = impact; this.audioTelemetry.impactSerial++; }
-    const cos = Math.cos(this.slideHeading ?? this.heading), sin = Math.sin(this.slideHeading ?? this.heading), along = dvx * sin - dvz * cos, across = dvx * cos + dvz * sin;
+  // The body rocks with it (see rock in impact.js).
+  strike(dvx, dvz, spin, impact, scrape = 0) {
+    if (impact > TOUCH) {
+      this.audioTelemetry.impact = impact; this.audioTelemetry.impactSerial++;
+      this.trauma = Math.min(1, this.trauma + (impact - TOUCH) / 28);
+    }
+    this.audioTelemetry.scrape = Math.max(this.audioTelemetry.scrape, scrape);
+    const heading = this.slideHeading ?? this.heading, cos = Math.cos(heading), sin = Math.sin(heading), along = dvx * sin - dvz * cos;
     const speed = this.speed < 0 ? Math.min(0, this.speed + along) : Math.max(0, this.speed + along), taken = speed - this.speed;
     this.knock.x += dvx - sin * taken; this.knock.z += dvz + cos * taken;
-    this.knock.spin = clamp(this.knock.spin + spin, -3, 3);
-    this.shift(dx, dz);
-    if (!this.freeDriving) this.u = clamp(this.u, ...this.route.bounds(this.s));
-    this.bodyPitch = clamp(this.bodyPitch - along * .003, -LEAN, LEAN); this.bodyRoll = clamp(this.bodyRoll - across * .006, -LEAN, LEAN);
+    this.knock.spin = clamp(this.knock.spin + spin, -SPIN_MOST, SPIN_MOST);
     this.speed = speed; this.audioTelemetry.speed = speed;
+    const bodyCos = Math.cos(this.heading), bodySin = Math.sin(this.heading);
+    rockFrom(this.jolt, dvx * bodySin - dvz * bodyCos, dvx * bodyCos + dvz * bodySin);
+  }
+  // Where the car stands now, after a collision has moved it: the one step
+  // that is not smooth motion.
+  placeAfterCollision() {
     const p = this.route.position(this.s, this.u);
     this.groundedPosition.set(p.x, p.y, p.z);
-    this.currentPose.position.copy(this.groundedPosition); this.currentPose.bodyPitch = this.bodyPitch; this.currentPose.bodyRoll = this.bodyRoll;
+    this.currentPose.position.copy(this.groundedPosition);
+    this.currentPose.bodyPitch = this.bodyPitch + this.jolt.pitch; this.currentPose.bodyRoll = this.bodyRoll + this.jolt.roll;
     this.render(0);
   }
+  // Another car gives way as far as its weight allows. This one is put back
+  // outside it and takes its share of the blow (see impact.js and strike).
+  resolveTrafficCollision(dx, dz, dvx = 0, dvz = 0, spin = 0, impact = Math.hypot(dvx, dvz), scrape = 0) {
+    this.strike(dvx, dvz, spin, impact, scrape);
+    this.shift(dx, dz);
+    if (!this.freeDriving) this.u = clamp(this.u, ...this.route.bounds(this.s));
+    this.placeAfterCollision();
+  }
+  // How the car moves as a body, for a blow to read: its velocity, and the
+  // turn both the tyres and any earlier knock are giving it.
+  motion() {
+    const p = this.groundedPosition, v = this.velocity;
+    return { x: p.x, z: p.z, heading: this.heading, halfWidth: this.spec.width / 2, halfLength: this.spec.length / 2, mass: this.spec.mass, vx: v.x, vz: v.z, spin: this.yawRate + this.knock.spin };
+  }
   // Standing scenery gives nothing. The car is put back outside it along the
-  // contact normal and keeps only the speed that runs along the face it hit,
-  // and while it is still moving it is turned toward that face, so a glancing
-  // blow slides off a wall instead of grinding to a halt against it.
-  resolveSceneryCollision(nx, nz, depth, dt) {
-    const heading = this.slideHeading ?? this.heading, direction = Math.sign(this.speed);
-    const fx = Math.sin(heading) * direction, fz = -Math.cos(heading) * direction;
-    const closing = -(fx * nx + fz * nz);
-    if (closing > 0) {
-      const impact = Math.abs(this.speed) * closing;
-      if (impact > .4) { this.audioTelemetry.impact = impact; this.audioTelemetry.impactSerial++; }
-      this.bodyPitch = clamp(this.bodyPitch + direction * impact * .003, -LEAN, LEAN);
-      this.speed *= Math.sqrt(Math.max(0, 1 - closing * closing)); this.audioTelemetry.speed = this.speed;
-      const turn = Math.atan2(fx + closing * nx, -fz - closing * nz) - Math.atan2(fx, -fz);
-      this.heading += Math.atan2(Math.sin(turn), Math.cos(turn)) * Math.min(1, Math.abs(this.speed) * dt * .6);
-    }
-    // Nor does it give to a car that another has knocked into it.
-    const into = this.knock.x * nx + this.knock.z * nz;
-    if (into < 0) { this.knock.x -= into * nx; this.knock.z -= into * nz; }
+  // contact normal and takes the whole blow at `point`, where they touch: a
+  // little bounce off the face, a scrape along it, and a turn when the blow
+  // lands away from its middle. A corner clipped at speed swings the car
+  // round; a glancing blow turns the nose back along the wall, so the car
+  // slides off it instead of grinding to a halt against it.
+  resolveSceneryCollision(nx, nz, depth, dt, point = null) {
+    const car = this.motion(), normal = { x: nx, z: nz };
+    point ??= leadingPoint(car, normal);
+    const blow = collisionImpulse(car, { x: point.x, z: point.z, vx: 0, vz: 0, mass: Infinity }, normal, point, SCENERY);
+    if (blow) this.strike(blow.a.x, blow.a.z, blow.a.spin, blow.closing, blow.slide);
     // Away from the road (s, u) is not a rigid frame, so the push is carried
     // back through the route's own mapping rather than the road's angle.
     const at = (s, u) => this.route.position(s, u, 0), p = at(this.s, this.u), a = at(this.s + 1, this.u), b = at(this.s, this.u + 1);
-    const sx = a.x - p.x, sz = a.z - p.z, ux = b.x - p.x, uz = b.z - p.z, det = sx * uz - sz * ux, push = depth + .025;
+    const sx = a.x - p.x, sz = a.z - p.z, ux = b.x - p.x, uz = b.z - p.z, det = sx * uz - sz * ux, push = depth + .005;
     const s = this.s + (nx * uz - nz * ux) * push / det, u = this.u + (sx * nz - sz * nx) * push / det;
     // A trunk on a quay must not shove the car over the edge behind it.
     if (!impassable(this.ground(s, u)) || impassable(this.ground(this.s, this.u))) { this.s = s; this.u = u; }
     if (!this.freeDriving) this.u = clamp(this.u, ...this.route.bounds(this.s));
-    const placed = this.route.position(this.s, this.u);
-    this.groundedPosition.set(placed.x, placed.y, placed.z);
-    this.currentPose.position.copy(this.groundedPosition); this.currentPose.bodyPitch = this.bodyPitch;
-    this.render(0);
+    this.placeAfterCollision();
   }
   // The ground under the car: its height, and its fall along and across the
   // road over about a wheelbase and a track. Free driving also asks whether
@@ -443,6 +464,7 @@ export class DrivingController {
     const transfer = clamp(-effort / (effort > 0 ? stats.acceleration : stats.braking), -1, 1);
     this.weight = dt ? THREE.MathUtils.damp(this.weight, transfer, 9, dt) : transfer;
     const yaw = turnRate(this.speed, this.steer, stats, looseness, this.driftAmount, this.weight);
+    this.yawRate = touch ? 0 : yaw;
     this.load = corneringLoad(this.speed, yaw, stats, looseness, this.weight);
     const frame = roadFrame(this.s);
     const assist = this.route.laneAssist !== false && (!this.freeDriving || looseness === 0);
@@ -460,7 +482,7 @@ export class DrivingController {
     const travelAngle = this.slideHeading - frame.angle;
     this.s += touch?.amount ? touch.along * step : Math.cos(travelAngle) * step / frame.scale;
     this.u += touch?.amount ? touch.across * step : Math.sin(travelAngle) * step;
-    this.carryKnock(dt);
+    this.carryKnock(dt); rock(this.jolt, dt);
     if (!touch && assist && Math.abs(difference) < 1.15) this.heading += (roadFrame(this.s).angle - frame.angle) * (1 - Math.abs(this.steer)) * .92;
     this.distance += Math.abs(step);
     if (!this.freeDriving) {
@@ -498,6 +520,8 @@ export class DrivingController {
     // Nothing below two fifths of its top speed, everything by the time the
     // needle is against the stop.
     this.car.userData.speedRush = clamp((Math.abs(this.speed) / stats.topSpeed - .4) / .6, 0, 1);
+    // A crash shakes the view, and that fades within about a second.
+    this.trauma = Math.max(0, this.trauma - dt * 1.4); this.car.userData.trauma = this.trauma;
     // Report actual driving effort for keyboard, analog triggers, and touch.
     // This is read-only telemetry: sound never feeds back into driving physics.
     this.audioTelemetry.speed = this.speed;
@@ -508,9 +532,12 @@ export class DrivingController {
     this.audioTelemetry.handbrake = input.handbrake ? 1 : 0;
     this.slip = Math.atan2(Math.sin(this.heading - this.slideHeading), Math.cos(this.heading - this.slideHeading));
     this.audioTelemetry.slip = Math.abs(this.slip);
+    // Scraping along a wall or a car sounds only while it goes on.
+    this.audioTelemetry.scrape *= Math.exp(-dt * 14);
     if (dt === 0) { this.audioTelemetry.impact = 0; this.reverseDelay = 0; this.drifting = false; }
     this.currentPose.position.copy(this.groundedPosition); this.currentPose.quaternion.copy(this.car.quaternion);
     for (const key of ['bodyPitch', 'bodyRoll', 'wheelSpin', 'steer', 'slip']) this.currentPose[key] = this[key];
+    this.currentPose.bodyPitch += this.jolt.pitch; this.currentPose.bodyRoll += this.jolt.roll;
     // Resets and route changes are teleports, so never blend from the old location.
     if (dt === 0) this.copyPose(this.previousPose, this.currentPose);
     this.render(0);

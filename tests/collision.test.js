@@ -130,3 +130,82 @@ test('a free-roaming car keeps its whole length back from a drop, not just its m
   assert.ok(Math.abs(car.speed) < 3);
   car.disposeModel();
 });
+
+test('a wall met head-on at speed throws the car back a little, and leaning on it is silent', () => {
+  const chunks = scenery(chunk => solidBox(chunk, 0, -40, 0, 10, 1));
+  const car = new DrivingController(straightRoute, { s: 24 });
+  try {
+    // Coasting in at 20 m/s in its lane: one blow, then a short roll back off the wall
+    car.u = 2.4; car.s = 39 - car.spec.length / 2 - 1; car.speed = 20; car.update(0, {});
+    const impacts = car.audioTelemetry.impactSerial;
+    let hit = null, furthest = 0;
+    for (let i = 0; i < 240; i++) {
+      car.update(1 / 120, {}); collideScenery(car, chunks, 1 / 120);
+      if (hit === null && car.audioTelemetry.impactSerial !== impacts) hit = car.s;
+      if (hit !== null) furthest = Math.max(furthest, hit - car.s);
+    }
+    assert.equal(car.audioTelemetry.impactSerial, impacts + 1, 'one crash, one sound');
+    assert.ok(furthest > .4 && furthest < 2.5, `bounced back ${furthest} m`);
+    assert.ok(Math.abs(car.heading) < 1e-9, 'a square hit does not turn the car');
+    // Pushing against it from a standstill neither bounces nor reports a crash
+    car.s = 39 - car.spec.length / 2 - .01; car.speed = 0; car.knock.x = car.knock.z = car.knock.spin = 0; car.update(0, {});
+    const leaning = car.audioTelemetry.impactSerial, s = car.s;
+    for (let i = 0; i < 360; i++) { car.update(1 / 120, { forward: true }); collideScenery(car, chunks, 1 / 120); }
+    assert.equal(car.audioTelemetry.impactSerial, leaning);
+    assert.ok(Math.abs(car.s - s) < .02 && overlap(car, chunks) < .05);
+  } finally { car.disposeModel(); }
+});
+
+test('a post met off centre swings the car round it, and one met square does not', () => {
+  const yawAfter = offset => {
+    const chunks = scenery(chunk => solidPost(chunk, 2.4 + offset, -30, .35));
+    const car = new DrivingController(straightRoute, { s: 24 });
+    try {
+      car.u = 2.4; car.s = 26; car.speed = 18; car.update(0, {});
+      for (let i = 0; i < 72; i++) { car.update(1 / 120, {}); collideScenery(car, chunks, 1 / 120); }
+      return car.heading;
+    } finally { car.disposeModel(); }
+  };
+  assert.ok(Math.abs(yawAfter(0)) < 1e-9);
+  // Caught by the right of its nose, the car pivots right; by the left, left
+  assert.ok(yawAfter(.5) > .25, `turned ${yawAfter(.5)}`);
+  assert.ok(yawAfter(-.5) < -.25);
+});
+
+test('a corner clipped by the edge of the nose glances the car aside instead of stopping it', () => {
+  const run = inside => {
+    // A parked car's corner, `inside` metres within the line of the car's right side
+    const car = new DrivingController(straightRoute, { s: 24 });
+    const chunks = scenery(chunk => solidBox(chunk, 2.4 + car.spec.width / 2 - inside + 1, -40, 0, 1, 2.2));
+    try {
+      car.u = 2.4; car.s = 30; car.speed = 24; car.update(0, {});
+      for (let i = 0; i < 180; i++) { car.update(1 / 120, {}); collideScenery(car, chunks, 1 / 120); }
+      const v = car.velocity;
+      return { speed: Math.hypot(v.x, v.z), heading: car.heading, s: car.s, x: car.groundedPosition.x - 2.4, hit: car.audioTelemetry.impactSerial > 0 };
+    } finally { car.disposeModel(); }
+  };
+  const clip = run(.12), square = run(.9);
+  assert.ok(clip.hit && clip.speed > 8 && clip.s > 44, `a clip kept ${clip.speed} m/s and reached s=${clip.s}`);
+  assert.ok(clip.heading < -.1 && clip.x < 0, 'turned and pushed away from the corner');
+  assert.ok(square.speed < 3 && square.s < 38, `a square hit kept ${square.speed} m/s`);
+});
+
+test('the body rocks after a blow, nose down into one from ahead, and settles', () => {
+  const car = new DrivingController(straightRoute, { s: 24 });
+  try {
+    car.speed = 15; car.update(0, {});
+    // Stopped by something ahead: the blow points back down the road (+z)
+    car.strike(0, 15, 0, 15);
+    assert.ok(car.trauma > .4, 'a crash shakes the view');
+    let lowest = 0;
+    for (let i = 0; i < 30; i++) {
+      car.update(1 / 120, {}); lowest = Math.min(lowest, car.jolt.pitch);
+      assert.ok(Math.abs(car.currentPose.bodyPitch - car.bodyPitch - car.jolt.pitch) < 1e-12, 'the pose shows it');
+    }
+    assert.ok(lowest < -.03, `the nose dipped ${lowest}`);
+    assert.ok(car.trauma > 0 && car.car.userData.trauma === car.trauma);
+    for (let i = 0; i < 360; i++) car.update(1 / 120, {});
+    assert.deepEqual(car.jolt, { pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 });
+    assert.equal(car.trauma, 0);
+  } finally { car.disposeModel(); }
+});

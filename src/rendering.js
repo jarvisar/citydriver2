@@ -19,6 +19,18 @@ export function fitFogDistance(camera, fog) {
   if (camera.far !== far) { camera.far = far; camera.updateProjectionMatrix(); }
 }
 
+// A slight turn of the lens, jittering a few times a second, that grows with
+// the square of how shaken the car is (0 to 1): under a degree even for the
+// hardest crash, and a knock barely stirs it. Keep it subtle. Two sines to
+// each axis never quite repeat.
+export function shakeCamera(camera, trauma, time, scale = 1) {
+  const shake = trauma * trauma * scale;
+  if (shake < 1e-4) return;
+  const wobble = (a, b) => Math.sin(time * a) * .6 + Math.sin(time * b + a) * .4;
+  camera.rotateY(.009 * shake * wobble(31, 47)); camera.rotateX(.007 * shake * wobble(37, 23)); camera.rotateZ(.0125 * shake * wobble(29, 41));
+  camera.updateMatrixWorld();
+}
+
 export function createRendering(canvas, graphics = new Graphics(), { showCarSilhouette = () => true, beforeDraw = () => {} } = {}) {
   stabilizeShadowFiltering();
   // Multisampling belongs to the context and cannot be changed later, so the
@@ -68,6 +80,10 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   const thirdPerson = new ThirdPersonCamera();
   const firstPerson = new FirstPersonCamera();
   let followedCar;
+  // A crash shakes the chase and driver's views: never a headset's, nor for
+  // anyone who prefers reduced motion.
+  const reducedMotion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+  let shakeTime = 0;
   const vrCamera = new XRCameraRig();
   scene.add(vrCamera.rig);
   renderer.xr.cameraAutoUpdate = false;
@@ -144,6 +160,8 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
     camera.userData.focusDistance = cameraOffset.length();
     if (views[view].thirdPerson) { thirdPerson.update(car, dt); target.copy(car.position); }
     if (views[view].firstPerson) { firstPerson.update(car, dt); target.copy(car.position); }
+    shakeTime += dt;
+    if ((views[view].thirdPerson || views[view].firstPerson) && !renderer.xr.isPresenting && !reducedMotion) shakeCamera(activeCamera(), car.userData.trauma ?? 0, shakeTime, views[view].firstPerson ? .6 : 1);
     sun.position.copy(target).add(sunOffset); sun.target.position.copy(target);
     fitSunShadow(activeCamera(), sun, 0, origin);
   }

@@ -135,6 +135,9 @@ export class DriveAudio {
     set(g.wind.level, state.windLevel * (1 + .09 * Math.sin(now * .71)), .4); set(g.wind.frequency, 650 + state.motion * 1350, .4);
     set(g.skid.level, state.skidLevel); set(g.skid.frequency, state.skidFrequency);
     set(g.skidTone.frequency, state.skidFrequency * 1.13); set(g.skidToneLevel, state.skidLevel * .12);
+    // Grinding along a wall or a car lasts as long as the contact does
+    const scrape = Math.min(1, Math.max(0, ((Number(telemetry.scrape) || 0) - 1.5) / 12));
+    set(g.scrape.level, this.audible ? scrape * .06 : 0, .03); set(g.scrape.frequency, 1150 + scrape * 900, .05); set(g.scrape.rate, .75 + scrape * .5, .05);
     const cabin = scene?.interior && !profile.open;
     for (const name of ['engine', 'road', 'ambience', 'traffic']) set(g.perspective[name], cabin ? name === 'engine' ? 2200 : 1600 : 14000, .35);
     this.ambience(state, now, scene);
@@ -174,6 +177,8 @@ export class DriveAudio {
       if (now - this.lastImpact > .3 && Number.isFinite(telemetry.impact) && telemetry.impact > .4) {
         this.lastImpact = now;
         this.graph.event('road', { duration: .32, frequency: 240, endFrequency: 65, level: Math.min(.3, telemetry.impact * .018), attack: .008 });
+        // and a hard one crunches as well as thuds
+        if (telemetry.impact > 6) this.graph.event('road', { duration: .2, frequency: 1600, endFrequency: 380, level: Math.min(.13, (telemetry.impact - 6) * .009), attack: .004 });
       }
     }
   }

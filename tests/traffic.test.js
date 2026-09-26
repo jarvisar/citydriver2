@@ -116,6 +116,20 @@ test('a blow lands where the cars overlap and conserves momentum and spin', () =
   assert.equal(collisionImpulse({ ...car, vz: -5 }, ahead, trafficContact(car, ahead), contactPoint(car, ahead)), null);
 });
 
+test('a slow touch does not bounce, and cars sliding past each other scrape', () => {
+  const car = { x: 0, z: 0, heading: 0, halfWidth: 1, halfLength: 2, vx: 0, vz: -11 }, ahead = { ...car, z: -3.9, vz: -10 };
+  // Nudged at 1 m/s they move off together, rather than chattering
+  const nudge = collisionImpulse(car, ahead, trafficContact(car, ahead), contactPoint(car, ahead));
+  assert.ok(Math.abs((-11 + nudge.a.z) - (-10 + nudge.b.z)) < 1e-9 && nudge.closing === 1);
+  // Side by side and closing across at 3 m/s while one passes the other at 8:
+  // the scrape slows the faster, speeds the slower, and keeps their momentum
+  const passing = { ...car, vx: 3, vz: -18 }, beside = { ...car, x: 1.95, vz: -10 };
+  const blow = collisionImpulse(passing, beside, trafficContact(passing, beside), contactPoint(passing, beside));
+  assert.ok(blow.slide > 7 && blow.a.z > 0 && blow.b.z < 0, 'the scrape runs against the way they pass');
+  assert.ok(Math.abs(blow.a.z + blow.b.z) < 1e-9 && Math.abs(blow.a.x + blow.b.x) < 1e-9);
+  assert.ok(blow.a.z < .3 * 1.2 * 3, 'never more than friction allows');
+});
+
 test('rear, head-on, reverse, and side impacts separate the cars and share the blow', () => {
   for (const scenario of ['rear', 'head-on', 'reverse', 'side']) {
     const { player, traffic } = setup();
@@ -143,9 +157,10 @@ test('rear, head-on, reverse, and side impacts separate the cars and share the b
       assert.equal(player.speed, 0);
       assert.ok(player.velocity.z < -3 && car.speed < 4, `${player.velocity.z} ${car.speed}`);
     } else {
-      // Into the side of a passing car: it is pushed across its lane and keeps its speed along the road.
+      // Into the side of a passing car: it is pushed across its lane, and the
+      // scrape takes some, never most, of its speed along the road.
       assert.ok(player.speed < 16 && player.speed > 8 && car.drift > 10, `${player.speed} ${car.drift}`);
-      assert.ok(Math.abs(car.speed - TRAFFIC_CRUISE_SPEED) < 1e-9);
+      assert.ok(car.speed < TRAFFIC_CRUISE_SPEED && car.speed > TRAFFIC_CRUISE_SPEED * .6, `${car.speed}`);
     }
     assert.ok(Math.abs(player.speed) <= Math.abs(speed) && player.audioTelemetry.impactSerial === impacts + 1, scenario);
     assert.equal(trafficContact(playerFootprint(player), footprint(car)), null, scenario);

@@ -3,13 +3,23 @@ import { randomAt, clamp } from './world/route.js';
 import { navGraph } from './world/nav-graph.js';
 import { createTrafficModels, TRAFFIC_MODELS, TRAFFIC_COLORS } from './traffic-models.js';
 import { trafficContact } from './traffic.js';
-import { collisionImpulse, contactPoint } from './impact.js';
+import { collisionImpulse, contactPoint, footprintMass, rock, rockFrom } from './impact.js';
 import { JunctionTraffic, approachControl } from './city-junctions.js';
 import { turnPath, approachSpeed, wayOn, bendSpeed } from './world/lane-paths.js';
-const up = new THREE.Vector3(0, 1, 0);
+const up = new THREE.Vector3(0, 1, 0), tilt = new THREE.Euler(0, 0, 0, 'YXZ');
 const SPAWN_CLEARANCE = 150, RECYCLE_BEHIND = 190, LOCAL_RADIUS = 380;
 // Following: braking for what is in the way, and the room left behind it
 const FOLLOW_DECEL = 5, FOLLOW_GAP = 2.2;
+// A struck car is shoved off its line, turned and rocked, and never further
+// than this: metres across its lane (less where the kerb or the parked cars
+// are nearer), metres along it, and radians of turn.
+const SHOVE_ACROSS = 1.6, SHOVE_ALONG = 2.5, TWIST = .6;
+// A shaken driver lifts off and rolls to a stop before driving on, for this
+// many seconds per m/s the blow changed the car's speed, and at most MOST.
+const DAZE = .1, DAZE_MOST = 1.6;
+// How far a struck car stands off its line and is turned, how fast either is
+// changing, and the swing of its body (see rock in impact.js)
+const jolted = car => car.jolt ??= { along: 0, across: 0, alongRate: 0, acrossRate: 0, yaw: 0, spin: 0, pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 };
 
 // A bounded fleet driving the generated streets: each car follows a nav
 // graph edge in its lane, picks a way on before each junction and turns onto
@@ -64,7 +74,7 @@ export class CityTraffic {
       // and never over a stop line, in a junction it has not claimed
       const control = approachControl(this.nav, edge, direction);
       if (control?.kind && edge.length - along < control.stopDistance + 6) continue;
-      Object.assign(car, { edge, direction, along, lane: edge.profile.lane, next: null, turn: null, after: null, stopWait: 0 });
+      Object.assign(car, { edge, direction, along, lane: edge.profile.lane, next: null, turn: null, after: null, stopWait: 0, jolt: null, dazed: 0, shoved: false });
       // Each driver keeps their own pace, a share of every street's speed
       car.pace = .75 + r(4) * .25; car.cruiseSpeed = edge.profile.speed * car.pace; car.speed = car.cruiseSpeed;
       // Knowing its way on from the start, a car is never placed past a turn it
@@ -83,10 +93,79 @@ export class CityTraffic {
   }
   pose(car) {
     const pose = car.turn && car.along > car.turn.start ? car.turn.pose(car.along - car.turn.start) : this.nav.pose(car.edge, car.along, car.direction, car.lane);
-    car.s = pose.s; car.u = pose.u; car.heading = pose.heading;
+    car.s = pose.s; car.u = pose.u; car.heading = car.laneHeading = pose.heading;
+    // Off its line and turned, where a blow has put it
+    const jolt = car.jolt;
+    if (jolt) {
+      const fx = Math.sin(pose.heading), fy = Math.cos(pose.heading);
+      car.u += fx * jolt.along + fy * jolt.across; car.s += fy * jolt.along - fx * jolt.across; car.heading += jolt.yaw;
+    }
     const p = this.route.position(car.s, car.u);
     car.position.set(p.x, p.y, p.z);
-    car.quaternion.setFromAxisAngle(up, -car.heading);
+    if (jolt) car.quaternion.setFromEuler(tilt.set(jolt.pitch, -car.heading, jolt.roll));
+    else car.quaternion.setFromAxisAngle(up, -car.heading);
+  }
+  // How a car moves as a body, for a blow to read: along its lane at its own
+  // speed, and however a knock has it sliding and turning
+  motion(car) {
+    const h = car.laneHeading, jolt = car.jolt, along = car.speed + (jolt?.alongRate ?? 0), across = jolt?.acrossRate ?? 0;
+    return { x: car.position.x, z: car.position.z, heading: car.heading, halfWidth: car.spec.width / 2, halfLength: car.spec.length / 2, mass: car.spec.mass ?? footprintMass(car.spec.width, car.spec.length),
+      vx: Math.sin(h) * along + Math.cos(h) * across, vz: -Math.cos(h) * along + Math.sin(h) * across, spin: jolt?.spin ?? 0 };
+  }
+  // A blow to a car (see impact.js). The part along its lane is speed, though
+  // never through rest; what is left, and the part across it, slide it off
+  // its line, and the turn twists it. Its body rocks, and its driver is shaken.
+  strike(car, dvx, dvz, spin) {
+    const h = car.laneHeading, along = dvx * Math.sin(h) - dvz * Math.cos(h), across = dvx * Math.cos(h) + dvz * Math.sin(h);
+    const jolt = jolted(car), speed = car.speed + along;
+    car.speed = Math.max(0, speed); car.shoved ||= car.speed > car.cruiseSpeed;
+    jolt.alongRate += Math.min(0, speed); jolt.acrossRate += across; jolt.spin = clamp(jolt.spin + spin, -3, 3);
+    rockFrom(jolt, along, across);
+    const blow = Math.hypot(dvx, dvz);
+    if (blow > 2) car.dazed = Math.max(car.dazed, Math.min(DAZE_MOST, blow * DAZE));
+  }
+  // Moved a little off its line, as when parted from a car it overlaps
+  shove(car, dx, dz) {
+    const h = car.laneHeading, jolt = jolted(car);
+    jolt.along += dx * Math.sin(h) - dz * Math.cos(h); jolt.across += dx * Math.cos(h) + dz * Math.sin(h);
+    this.hold(car);
+    this.pose(car);
+  }
+  // Within the room its street has: out to the kerb or the parked cars, in to
+  // the centre line or the median, and a little way along its lane
+  hold(car) {
+    const jolt = car.jolt, profile = car.edge.profile, half = car.spec.width / 2;
+    const out = clamp((profile.parking || profile.halfWidth) - car.lane - half - .2, .3, SHOVE_ACROSS);
+    const inside = clamp(car.lane - (profile.median || 0) - half + .3, .3, SHOVE_ACROSS);
+    if (jolt.across > out || jolt.across < -inside) { jolt.across = clamp(jolt.across, -inside, out); jolt.acrossRate = 0; }
+    if (Math.abs(jolt.along) > SHOVE_ALONG) { jolt.along = clamp(jolt.along, -SHOVE_ALONG, SHOVE_ALONG); jolt.alongRate = 0; }
+  }
+  // A struck car's driver steers it back to its line, and its body settles:
+  // damped springs, which a car nothing has hit never runs. The slide is
+  // scrubbed off within a few tenths of a second, the way back takes longer.
+  settle(car, dt) {
+    const jolt = car.jolt;
+    jolt.acrossRate -= (6 * jolt.across + 7 * jolt.acrossRate) * dt; jolt.across += jolt.acrossRate * dt;
+    jolt.alongRate -= (6 * jolt.along + 7 * jolt.alongRate) * dt; jolt.along += jolt.alongRate * dt;
+    this.hold(car);
+    jolt.spin -= (25 * jolt.yaw + 6 * jolt.spin) * dt;
+    jolt.yaw = clamp(jolt.yaw + jolt.spin * dt, -TWIST, TWIST);
+    const rocking = rock(jolt, dt);
+    if (!rocking && Math.abs(jolt.across) + Math.abs(jolt.along) < .005 && Math.abs(jolt.acrossRate) + Math.abs(jolt.alongRate) < .01 && Math.abs(jolt.yaw) < .002 && Math.abs(jolt.spin) < .01) car.jolt = null;
+  }
+  // A car knocked off its line can be knocked into another, which takes its
+  // share of the blow in turn; the two are parted by weight
+  knockOn(car) {
+    for (const other of this.vehicles) {
+      if (other === car || !other.edge || Math.abs(other.position.x - car.position.x) > 7 || Math.abs(other.position.z - car.position.z) > 7) continue;
+      const a = this.motion(car), b = this.motion(other), contact = trafficContact(a, b);
+      if (!contact) continue;
+      const share = b.mass / (a.mass + b.mass), depth = contact.depth + .005;
+      this.shove(car, contact.x * depth * share, contact.z * depth * share);
+      this.shove(other, -contact.x * depth * (1 - share), -contact.z * depth * (1 - share));
+      const blow = collisionImpulse(a, b, contact, contactPoint(a, b, contact));
+      if (blow) { this.strike(car, blow.a.x, blow.a.z, blow.a.spin); this.strike(other, blow.b.x, blow.b.z, blow.b.spin); }
+    }
   }
   // Which way on at the end of this edge, and the curve that takes it there.
   // Straight on is likelier; a dead end turns the car round.
@@ -226,22 +305,30 @@ export class CityTraffic {
     }
     for (const car of this.vehicles) {
       if (!car.edge) continue;
-      car.speed += clamp(car.targetSpeed - car.speed, -16 * dt, 3 * dt);
+      // Braking is for the road ahead. A car shoved past its cruising speed
+      // coasts back down to it, and a shaken driver lifts off and rolls to a
+      // stop before driving on; both still brake hard for anything ahead.
+      let target = car.targetSpeed, braking = 16;
+      if (car.dazed > 0) {
+        car.dazed = Math.max(0, car.dazed - dt); target = 0;
+        if (car.targetSpeed >= car.cruiseSpeed) braking = 4;
+      } else if (car.shoved && target >= car.cruiseSpeed) braking = 4;
+      car.speed += clamp(target - car.speed, -braking * dt, 3 * dt);
+      if (car.speed <= car.cruiseSpeed) car.shoved = false;
       car.along += car.speed * dt;
       if (car.along >= (car.turn ? car.turn.start + car.turn.length : car.edge.length)) this.advance(car);
+      if (car.jolt) this.settle(car, dt);
       this.pose(car);
       const p = player.groundedPosition;
       if (Math.abs(car.position.x - p.x) > 7 || Math.abs(car.position.z - p.z) > 7) continue;
-      const v = player.velocity;
-      const a = { x: p.x, z: p.z, heading: player.heading, halfWidth: player.spec.width / 2, halfLength: player.spec.length / 2, mass: player.spec.mass, vx: v.x, vz: v.z };
-      const b = { x: car.position.x, z: car.position.z, heading: car.heading, halfWidth: car.spec.width / 2, halfLength: car.spec.length / 2, mass: car.spec.mass, vx: Math.sin(car.heading) * car.speed, vz: -Math.cos(car.heading) * car.speed };
-      const contact = trafficContact(a, b);
-      if (contact) {
-        const blow = collisionImpulse(a, b, contact, contactPoint(a, b));
-        player.resolveTrafficCollision(contact.x * (contact.depth + .025), contact.z * (contact.depth + .025), blow?.a.x ?? 0, blow?.a.z ?? 0, blow?.a.spin ?? 0);
-        car.speed = Math.max(0, car.speed + (blow?.b.x ?? 0) * Math.sin(car.heading) - (blow?.b.z ?? 0) * Math.cos(car.heading));
-      }
+      const a = player.motion(), b = this.motion(car), contact = trafficContact(a, b);
+      if (!contact) continue;
+      // The player is moved clear, and the two share the blow by weight
+      const blow = collisionImpulse(a, b, contact, contactPoint(a, b, contact));
+      player.resolveTrafficCollision(contact.x * (contact.depth + .005), contact.z * (contact.depth + .005), blow?.a.x ?? 0, blow?.a.z ?? 0, blow?.a.spin ?? 0, blow?.closing ?? 0, blow?.slide ?? 0);
+      if (blow) this.strike(car, blow.b.x, blow.b.z, blow.b.spin);
     }
+    for (const car of this.vehicles) if (car.jolt && car.edge) this.knockOn(car);
   }
   render(alpha, origin = 0) {
     this.group.position.z = origin;

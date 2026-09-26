@@ -180,3 +180,69 @@ test('autodrive never loses its way: it never whips round, circles on the spot o
     } finally { traffic.dispose(); player.disposeModel(); }
   }
 });
+
+// One or two cars pinned to a long, plain street near the start, the rest out of the way
+function pinnedStreet(player, cars) {
+  const traffic = new CityTraffic(new THREE.Scene(), player.route, player.s, 'city', player.u), start = journeyStart();
+  const edge = traffic.nav.edges.filter(e => e.kind !== 'path' && e.length > 160 && !e.profile.median).sort((a, b) => {
+    const m = e => e.points[Math.floor(e.points.length / 2)];
+    return Math.hypot(m(a).y - start.s, m(a).x - start.u) - Math.hypot(m(b).y - start.s, m(b).x - start.u);
+  })[0];
+  for (const car of traffic.vehicles) { car.edge = null; car.car.visible = false; car.s = car.u = 1e6; car.position.set(1e6, 0, 1e6); }
+  traffic.spawn = () => false; traffic.junctions.limit = () => Infinity;
+  const pinned = cars.map(([along, speed], i) => {
+    const car = traffic.vehicles[i];
+    Object.assign(car, { edge, direction: 1, along, lane: edge.profile.lane, next: null, turn: null, after: null, stopWait: 0, jolt: null, dazed: 0, shoved: false });
+    car.cruiseSpeed = car.speed = speed; car.pace = speed / edge.profile.speed; car.car.visible = true;
+    traffic.choose(car); traffic.pose(car);
+    return car;
+  });
+  return { traffic, edge, pinned };
+}
+
+test('a car struck side-on is shoved off its line, turned and rocked, then steers back and drives on', () => {
+  const player = new DrivingController(citydriverRoute, journeyStart(), 'taxi');
+  player.toggleFreeDriving();
+  const { traffic, edge, pinned: [car] } = pinnedStreet(player, [[40, 12]]);
+  try {
+    // From across the street, square to the car and a little ahead of it
+    const rail = traffic.nav.pose(edge, 40, 1, edge.profile.lane), h = rail.heading;
+    player.s = rail.s + Math.sin(h) * 9 + Math.cos(h) * 5.5; player.u = rail.u - Math.cos(h) * 9 + Math.sin(h) * 5.5;
+    player.heading = player.slideHeading = h + Math.PI / 2; player.speed = 17; player.update(0, {});
+    const impacts = player.audioTelemetry.impactSerial;
+    let shoved = 0, turned = 0, rocked = 0;
+    for (let i = 0; i < 120 * 10; i++) {
+      player.update(1 / 120, { forward: i < 120 }); traffic.update(1 / 120, player);
+      const line = traffic.nav.pose(car.edge, car.along, car.direction, car.lane);
+      shoved = Math.max(shoved, Math.hypot(car.s - line.s, car.u - line.u));
+      turned = Math.max(turned, Math.abs(car.heading - car.laneHeading));
+      rocked = Math.max(rocked, Math.abs(car.jolt?.roll ?? 0));
+      assert.ok([car.s, car.u, car.heading, car.speed].every(Number.isFinite));
+      assert.equal(surfaceAt(car.s, car.u), 'road', 'never shoved off the carriageway');
+    }
+    assert.ok(player.audioTelemetry.impactSerial > impacts, 'they met');
+    assert.ok(shoved > .8 && turned > .2 && rocked > .02, `shoved ${shoved} m, turned ${turned}, rocked ${rocked}`);
+    assert.equal(car.jolt, null, 'back on its line');
+    assert.ok(car.speed > 3, `driving on at ${car.speed} m/s`);
+  } finally { traffic.dispose(); player.disposeModel(); }
+});
+
+test('a car shoved into the one ahead knocks it on, and the two are kept apart', () => {
+  const player = new DrivingController(citydriverRoute, journeyStart(), 'taxi');
+  player.toggleFreeDriving();
+  const { traffic, edge, pinned: [behind, ahead] } = pinnedStreet(player, [[50, 8], [57, 8]]);
+  try {
+    const rail = traffic.nav.pose(edge, 50, 1, edge.profile.lane), h = rail.heading;
+    player.s = rail.s - Math.cos(h) * 14; player.u = rail.u - Math.sin(h) * 14; player.heading = player.slideHeading = h; player.speed = 30; player.update(0, {});
+    const box = car => ({ x: car.position.x, z: car.position.z, heading: car.heading, halfWidth: car.spec.width / 2 - .05, halfLength: car.spec.length / 2 - .1 });
+    let knocked = false;
+    for (let i = 0; i < 120 * 4; i++) {
+      player.update(1 / 120, { forward: i < 60 }); traffic.update(1 / 120, player);
+      knocked ||= Boolean(ahead.jolt);
+      const contact = trafficContact(box(behind), box(ahead));
+      assert.ok(!contact || contact.depth < .2, `overlapping by ${contact?.depth}`);
+      for (const car of [behind, ahead]) assert.ok([car.s, car.u, car.heading, car.speed].every(Number.isFinite));
+    }
+    assert.ok(knocked, 'the car ahead took a blow too');
+  } finally { traffic.dispose(); player.disposeModel(); }
+});
