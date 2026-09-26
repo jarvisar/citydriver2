@@ -1,6 +1,6 @@
 // Repeatable driving-camera survey, with the same poses before and after edits.
 // node scripts/city-polish-review.mjs [outDir] [seed ...]
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { chromium } from '@playwright/test';
 import { createServer } from 'vite';
@@ -24,13 +24,14 @@ try {
     await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/?seed=${seed}`);
     await page.waitForFunction(() => document.querySelector('#loading.loaded') && window.__citydriver);
     await page.click('#free-drive');
-    const poses = await page.evaluate(async seedIndex => {
+    let poses = await page.evaluate(async seedIndex => {
       const g = window.__citydriver;
       const { cityStyleDistrict } = await import('/src/world/city.js');
       const { cityPlaces } = await import('/src/city-exploration.js');
       const { CITY_PLACES } = await import('/src/world/city-places.js');
       const { planLot } = await import('/src/world/city-buildings.js');
       const { cityParks } = await import('/src/world/city-parks.js');
+      const { yardDrive } = await import('/src/world/city-yards.js');
       if (!g.paused) g.action('pause');
       g.traffic.setEnabled(false);
       g.graphics.setMode('balanced'); g.graphics.setDensity(1);
@@ -81,7 +82,7 @@ try {
         }
       }
       // Ordinary entrances need their own close view as well as landmarks.
-      for (const type of ['townhouse', 'warehouse']) {
+      for (const type of ['townhouse', 'warehouse', 'office']) {
         for (const lot of lots) {
           const b = planLot({ east: 0, start: 0 }, lot);
           if (b.kind !== 'building' || b.type !== type || b.shopfront) continue;
@@ -95,6 +96,16 @@ try {
           result.push({ name: `front-${type}`, ...p, heading: Math.atan2(x - p.u, y - p.s), view: 5 });
           break;
         }
+      }
+      // Look at a car-park mouth from its own street, where painted bays
+      // must leave a gap for the approach across the pavement.
+      for (const block of g.city.blocks) {
+        const drive = yardDrive(block.index);
+        if (!drive) continue;
+        const { mouth: m } = drive, p = g.nearestLanePose(m.y, m.x, 0, 35);
+        if (!p || !g.roadAt(p.s, p.u)?.road.profile.parking) continue;
+        result.push({ name: 'driveway', ...p, heading: Math.atan2(m.x - p.u, m.y - p.s), view: 5 });
+        break;
       }
       // Four different venues per seed cover the full catalogue in the default tour.
       const venues = Object.keys(CITY_PLACES).filter(type => !['park', 'plaza'].includes(type));
@@ -141,6 +152,12 @@ try {
       result.push({ ...result[0], name: 'night', weather: 'night' });
       return result.filter(p => Number.isFinite(p.s)).map(({ name, s, u, heading, view, weather, quality }) => ({ name, s, u, heading, view, weather, quality }));
     }, seedIndex);
+    // Parking/furniture edits can change the nearest collision-free lane.
+    // Reuse recorded poses when comparing geometry across those changes.
+    if (process.env.REVIEW_POSES) {
+      const saved = JSON.parse(await readFile(`${process.env.REVIEW_POSES}/${seed}/poses.json`, 'utf8'));
+      poses = poses.map(p => saved.find(q => q.name === p.name) ?? p);
+    }
     await writeFile(`${dir}/poses.json`, JSON.stringify(poses, null, 2));
     const shots = [], metrics = [];
     for (const pose of poses.filter(p => !process.env.REVIEW_VIEWS || process.env.REVIEW_VIEWS.split(',').includes(p.name))) {

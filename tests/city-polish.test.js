@@ -30,9 +30,47 @@ test('projecting facade courses leave domestic, lobby and loading thresholds cle
       assert.ok(p.x + p.w / 2 <= x - width / 2 || p.x - p.w / 2 >= x + width / 2, `${type}: no raised strip across the doorway`);
     }
     assert.equal(f.clear.length, 0, 'temporary threshold cuts do not remove the door or the upper windows');
-    if (type === 'warehouse' && !distant) {
-      const shutter = pieces.find(p => p.w === 8 && p.colour === '#455b61');
-      assert.ok(Math.abs(shutter.y - shutter.h / 2 - PAVEMENT_LEVEL) < 1e-8, 'the loading shutter reaches the ground');
+  }
+});
+
+test('metal loading shutters fill their opening once, down to the pavement at both detail levels', () => {
+  for (const distant of [false, true]) for (const variation of [0, 1, 2]) for (const span of [10, 24]) {
+    const c = { distant, bodies: new Surface(), materials: {}, box() {}, item() {} };
+    const f = edgeFacade(c, { x: 0, y: 0 }, { x: span, y: 0 });
+    groundFloor(c, { type: 'warehouse', variation, accent: '#386f73' }, f, 5.4, true, seededRandom(1));
+    const p = c.bodies.positions, width = Math.min(8, span * .5);
+    let area = 0, low = Infinity, high = -Infinity;
+    for (let i = 0; i < p.length; i += 9) {
+      if (![2, 5, 8].every(k => Math.abs(p[i + k] - .22) < 1e-8)) continue;
+      area += Math.abs((p[i + 3] - p[i]) * (p[i + 7] - p[i + 1]) - (p[i + 6] - p[i]) * (p[i + 4] - p[i + 1])) / 2;
+      for (let j = 0; j < 9; j += 3) {
+        assert.ok(Math.abs(p[i + j] - span / 2) <= width / 2 + 1e-8);
+        low = Math.min(low, p[i + j + 1]); high = Math.max(high, p[i + j + 1]);
+      }
+    }
+    assert.ok(Math.abs(low - PAVEMENT_LEVEL) < 1e-8 && Math.abs(high - PAVEMENT_LEVEL - 3.05) < 1e-8);
+    assert.ok(Math.abs(area - width * 3.05) < 1e-8, 'solid panels and seams cover the opening without layered faces');
+  }
+});
+
+test('office lobby glazing leaves a real opening for two framed door leaves', () => {
+  for (const distant of [false, true]) for (const span of [12, 20, 27]) for (const primary of [false, true]) {
+    const pieces = [], panes = [], c = { distant, bodies: new Surface(), materials: {},
+      box(x, y, s, w, h, d, colour, kind) { pieces.push({ x, y, w, h, colour }); if (kind === 'glass') panes.push({ x, y, w, h, colour }); },
+      item(key, geometry, material, p, scale, colour) { if (key === 'distant-glass') panes.push({ x: p[0], y: p[1], w: scale[0], h: scale[1], colour }); } };
+    groundFloor(c, { type: 'office', variation: 0 }, edgeFacade(c, { x: 0, y: 0 }, { x: span, y: 0 }), 5.4, primary, seededRandom(1));
+    const doors = panes.filter(p => p.colour === '#2f4b55');
+    assert.equal(doors.length, primary ? 2 : 0, 'only the main frontage has an entrance');
+    for (const door of doors) {
+      assert.ok(Math.abs(door.y - door.h / 2 - PAVEMENT_LEVEL) < 1e-8, 'door reaches its threshold');
+      for (const pane of panes.filter(p => p.colour === '#5e8a9a')) {
+        const overlapX = Math.min(door.x + door.w / 2, pane.x + pane.w / 2) - Math.max(door.x - door.w / 2, pane.x - pane.w / 2);
+        const overlapY = Math.min(door.y + door.h / 2, pane.y + pane.h / 2) - Math.max(door.y - door.h / 2, pane.y - pane.h / 2);
+        assert.ok(overlapX <= 1e-8 || overlapY <= 1e-8, 'the facade pane does not continue behind the door');
+      }
+    }
+    if (primary) for (const p of pieces.filter(p => p.colour === '#b6c9c8' && p.h > 3)) {
+      assert.ok(Math.abs(p.x - span / 2) - p.w / 2 >= 1.34 - 1e-8 || p.y - p.h / 2 >= PAVEMENT_LEVEL + 2.75 - 1e-8, 'full-height mullions stop at the doorway');
     }
   }
 });

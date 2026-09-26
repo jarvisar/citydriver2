@@ -1,4 +1,4 @@
-import { CITY, SIDEWALK, cityStyleDistrict } from './city.js';
+import { CITY, SIDEWALK, PolygonIndex, cityStyleDistrict } from './city.js';
 import { ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL, waterAt, onRoadAt, surfaceAt } from './city-route.js';
 import { junctionGeometry, CROSSWALK, stopLineDistance } from './junction-geometry.js';
 import { junctionControls } from '../city-junctions.js';
@@ -13,6 +13,7 @@ import { cityIslands, islandFor } from './city-islands.js';
 import { rectanglePolygon } from './city-surfaces.js';
 import { frontSetback, treeRoom } from './city-buildings.js';
 import { yardParking, yardDrive, YARD_BAY, PARKED_MODELS } from './city-yards.js';
+import { difference, solids } from '../mapgen/booleans.js';
 
 // The streets as the city draws and furnishes them. Everything here is laid
 // out from the same few models: the road centre lines and their profiles, the
@@ -129,6 +130,59 @@ function markedSpan(edge, geometry) {
   const end = id => { const clear = geometry.get(id)?.approaches.get(edge)?.clear; return clear === undefined ? 2 : clear + CROSSWALK + 1.2; };
   return [end(edge.a), edge.length - end(edge.b)];
 }
+
+// Parking paint and parked cars share the openings in the kerb. These
+// rectangles are built once; they do not change the road or navigation.
+let parkingOpenings = null;
+export function parkingGaps() {
+  if (parkingOpenings) return parkingOpenings;
+  const index = new PolygonIndex(), gaps = [];
+  const add = (x, y, tx, ty, width, into, out) => {
+    const at = (along, depth) => ({ x: x + tx * along - ty * depth, y: y + ty * along + tx * depth });
+    const polygon = [at(-width / 2, -out), at(width / 2, -out), at(width / 2, into), at(-width / 2, into)];
+    gaps.push({ polygon, bounds: polygonBounds(polygon) }); index.add(polygon, true);
+  };
+  for (const block of CITY.blocks) {
+    const d = yardDrive(block.index);
+    if (d) add(d.mouth.x, d.mouth.y, d.tx, d.ty, d.width + 1.2, 1, SIDEWALK + 5);
+  }
+  // Crossings at every park gate span both sides of the road, including
+  // gates other than the park's named passenger destination.
+  for (const layout of CITY.parkLayouts ?? []) for (const gate of layout.gates) {
+    const dx = gate.x - gate.street.x, dy = gate.y - gate.street.y, length = Math.hypot(dx, dy);
+    if (length < 1) continue;
+    add(gate.street.x, gate.street.y, dy / length, -dx / length, CROSSWALK + 2, gate.profile.halfWidth + 1, gate.profile.halfWidth + 1);
+  }
+  // A square's smaller walks also reach its surrounding streets. Reserve
+  // just their own kerb, rather than an empty circle across the whole road.
+  for (const { park, walks } of cityParks()) if (park.square) for (const walk of walks) {
+    if (walk.length < 2 || Math.hypot(walk[0].x - walk.at(-1).x, walk[0].y - walk.at(-1).y) < .1) continue;
+    for (const end of [0, walk.length - 1]) {
+      const p = walk[end];
+      if (distanceToPolyline(p, [...park.lawn, park.lawn[0]]) > 1) continue;
+      const road = CITY.roadIndex.nearest(p.x, p.y, 24, (s, d) => s.road.kind === 'path' ? Infinity : d);
+      if (!road?.road.profile.parking) continue;
+      const dx = p.x - road.x, dy = p.y - road.y, length = Math.hypot(dx, dy);
+      if (length < 1) continue;
+      add(p.x, p.y, dy / length, -dx / length, SQUARE_WALK * 2 + 2, 1, Math.max(0, length - road.road.profile.parking + .3));
+    }
+  }
+  for (const p of cityPlaces()) if (p.footprint) {
+    const f = p.footprint, service = p.type === 'depot' || p.type === 'firehouse';
+    const reach = -((p.entrance.u - f.front.x) * f.nx + (p.entrance.s - f.front.y) * f.ny);
+    add(f.front.x, f.front.y, f.tx, f.ty, service ? f.width + 2 : 7, 1, Math.max(0, reach));
+  }
+  parkingOpenings = { gaps, index };
+  return parkingOpenings;
+}
+
+// Clip the full painted width, including ticks, so no thin line remains
+// through a crossing. Bounds reject almost every opening before clipping.
+export function clearParkingMark(polygon, gaps = parkingGaps().gaps) {
+  const b = polygonBounds(polygon);
+  const nearby = gaps.filter(({ bounds: q }) => q.minX <= b.maxX && q.maxX >= b.minX && q.minY <= b.maxY && q.maxY >= b.minY);
+  return nearby.length ? difference(solids([polygon]), solids(nearby.map(g => g.polygon))) : [{ outer: polygon, holes: [] }];
+}
 // A point on an approach `distance` from its junction node, with the unit
 // direction away from the node and the arriving driver's right-hand normal.
 function approachPoint(nav, edge, node, distance) {
@@ -238,12 +292,16 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
     else if (profile.centre === 'dashed') dashed(span, 9, 3.5, .12, COLOURS.marking, 2.5);
     if (profile.parking) {
       // Parking bays along both kerbs: a line along their outside, and a tick between bays
+      const paint = polygon => {
+        for (const p of clearParkingMark(polygon)) markings.polygon(p.outer, ROAD_LEVEL + .012, COLOURS.line, null, true, p.holes);
+      };
       for (const side of [-1, 1]) {
-        markings.ribbon(offsetPolyline(span, side * profile.parking), .07, ROAD_LEVEL + .012, COLOURS.line);
+        const line = offsetPolyline(span, side * profile.parking), left = offsetPolyline(line, .07), right = offsetPolyline(line, -.07);
+        for (let i = 0; i < line.length - 1; i++) paint([left[i], right[i], right[i + 1], left[i + 1]]);
         for (const p of alongPolyline(span, PARKING_BAY, PARKING_BAY / 2)) {
           const nx = -p.ty * side, ny = p.tx * side, a = profile.parking, b = profile.halfWidth - .3;
-          markings.polygon([{ x: p.x + nx * a - p.tx * .05, y: p.y + ny * a - p.ty * .05 }, { x: p.x + nx * b - p.tx * .05, y: p.y + ny * b - p.ty * .05 },
-            { x: p.x + nx * b + p.tx * .05, y: p.y + ny * b + p.ty * .05 }, { x: p.x + nx * a + p.tx * .05, y: p.y + ny * a + p.ty * .05 }], ROAD_LEVEL + .012, COLOURS.line);
+          paint([{ x: p.x + nx * a - p.tx * .05, y: p.y + ny * a - p.ty * .05 }, { x: p.x + nx * b - p.tx * .05, y: p.y + ny * b - p.ty * .05 },
+            { x: p.x + nx * b + p.tx * .05, y: p.y + ny * b + p.ty * .05 }, { x: p.x + nx * a + p.tx * .05, y: p.y + ny * a + p.ty * .05 }]);
         }
       }
     }
@@ -938,6 +996,7 @@ export function placeStreetFurniture(nav, bridges, add) {
   // Cars parked in two bays in five along a street with parking, clear of
   // the crosswalks, the park gates, bus stops and the venues' doors
   const entrances = cityPlaces().map(place => place.entrance);
+  const openings = parkingGaps().index;
   for (const edge of nav.edges) {
     const profile = edge.profile;
     if (!profile.parking || edge.kind === 'path') continue;
@@ -948,6 +1007,7 @@ export function placeStreetFurniture(nav, bridges, add) {
       const p = nav.pose(edge, d, 1), across = (profile.parking + profile.halfWidth) / 2, own = CITY.roadIndex.nearest(p.u, p.s, 2)?.road;
       const x = p.u + p.ty * side * across, y = p.s - p.tx * side * across;
       if (waterAt(y, x) || entrances.some(e => Math.hypot(e.u - x, e.s - y) < 16)) continue;
+      if ([-2.6, 0, 2.6].some(along => openings.find(x + p.tx * along, y + p.ty * along))) continue;
       // (where the lane's curve and the drawn road part a little, the car
       // must still be in the drawn road's bay, not over its kerb)
       const kerbside = own && CITY.roadIndex.nearest(x, y, 12, segment => segment.road === own ? 0 : Infinity);

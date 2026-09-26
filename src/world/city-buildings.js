@@ -641,19 +641,37 @@ export function groundFloor(c, b, f, base, primary, random) {
   }
   if (b.shopfront && span >= 5) shopFront(c, b, f, base, primary);
   else if (b.type === 'office' || b.type === 'atrium') {
-    // A glazed lobby with its mullions, a double door and a canopy
+    // The lobby's double door interrupts the glazing and its mullions.
+    // Keeping glass beside/above the opening avoids two overlapping panes
+    // and a full-height mullion running through the middle of the doorway.
     const bays = Math.max(1, Math.floor((span - 1.2) / 3.2)), spacing = (span - 1.2) / bays;
-    f.add(0, G + base / 2 + .1, .1, span - .3, base - .6, .12, '#5e8a9a', 'glass');
-    for (let i = 0; i <= bays; i++) f.add(-(span - 1.2) / 2 + i * spacing, G + base / 2 + .1, .2, .14, base - .6, .12, '#b6c9c8');
+    const lobby = primary ? { ...f, clear: [...f.clear, { from: -1.34, to: 1.34, bottom: G - 1, top: G + 2.75 }] } : f;
+    lobby.add(0, G + base / 2 + .1, .1, span - .3, base - .6, .12, '#5e8a9a', 'glass');
+    for (let i = 0; i <= bays; i++) lobby.add(-(span - 1.2) / 2 + i * spacing, G + base / 2 + .1, .2, .14, base - .6, .12, '#b6c9c8');
     if (primary) {
-      f.add(0, G + 1.25, .25, 2.4, 2.5, .1, '#2f4b55', 'glass'); f.add(0, G + 2.62, .26, 2.6, .14, .12, '#d8dbd2');
+      for (const side of [-1, 1]) {
+        f.add(side * .605, G + 1.3, .17, 1.11, 2.6, .1, '#2f4b55', 'glass');
+        f.add(side * 1.25, G + 1.3, .24, .18, 2.6, .14, '#b6c9c8', c.distant ? 'inlay' : 'solid');
+        f.add(side * .22, G + 1.28, .29, .065, .48, .08, '#d8dbd2');
+        f.add(side * .605, G + .12, .24, 1.11, .24, 0, '#7c9698', 'inlay');
+      }
+      f.add(0, G + 1.3, .24, .1, 2.6, .14, '#b6c9c8', c.distant ? 'inlay' : 'solid');
+      f.add(0, G + 2.675, .24, 2.68, .15, .14, '#d8dbd2', c.distant ? 'inlay' : 'solid');
       f.add(0, G + 3.05, 1.1, 4.2, .18, 2.2, '#b6c9c8', 'solid', true);
     }
   } else if (b.type === 'warehouse') {
     const door = Math.min(8, span * .5);
-    f.add(0, G + 1.525, .17, door, 3.05, .1, '#455b61', 'glass');
+    // Painted metal, not the window material: broad panels and quiet seams
+    // read as a shutter from the driving lane. Tile a single opaque face
+    // at both detail levels, without seven projecting bars per opening.
+    const paint = ['#82918b', '#77868c', '#9a9381'][b.variation % 3], seam = '#566764';
+    const rows = b.variation === 2 ? 4 : 6, height = 3.05 / rows;
+    for (let i = 0; i < rows; i++) {
+      f.add(0, G + i * height + (height - .035) / 2, .22, door, height - .035, 0, paint, 'inlay');
+      f.add(0, G + (i + 1) * height - .0175, .22, door, .035, 0, seam, 'inlay');
+    }
+    for (const side of [-1, 1]) f.add(side * (door / 2 + .07), G + 1.525, .2, .14, 3.05, .2, '#85968f', 'solid', true);
     f.add(0, G + 3.3, .3, canopy, .35, .7, b.accent, 'solid', true);
-    for (let y = .6; y < 3; y += .4) f.add(0, G + y, .24, Math.min(7.8, span * .49), .06, .05, '#85968f');
     // Beside the loading door on the main front, a door for the people who
     // work there, and along the rest of a long front a row of high windows
     if (staff !== null) {

@@ -6,9 +6,9 @@ import { yardDrive } from '../src/world/city-yards.js';
 import { surfaceAt, onRoadAt, citydriverRoute, journeyStart, PAVEMENT_LEVEL } from '../src/world/city-route.js';
 import { navGraph } from '../src/world/nav-graph.js';
 import { junctionGeometry, stopLineDistance, CROSSWALK } from '../src/world/junction-geometry.js';
-import { difference, solids } from '../src/mapgen/booleans.js';
+import { difference, intersection, region, solids } from '../src/mapgen/booleans.js';
 import { junctionControls } from '../src/city-junctions.js';
-import { placeStreetFurniture, findBridges, cityCrosswalks, convexOverlap } from '../src/world/city-streets.js';
+import { placeStreetFurniture, findBridges, cityCrosswalks, convexOverlap, parkingGaps, clearParkingMark } from '../src/world/city-streets.js';
 import { cityIslands } from '../src/world/city-islands.js';
 import { turnPath, wayOn, isLink } from '../src/world/lane-paths.js';
 import { planLot } from '../src/world/city-buildings.js';
@@ -22,6 +22,35 @@ const furniture = (() => { const pieces = []; placeStreetFurniture(navGraph(), f
 // Where an item's modelled front (+z) and its +x point on the map (see city-layout-render.js)
 const front = yaw => ({ x: Math.sin(yaw), y: -Math.cos(yaw) });
 const side = yaw => ({ x: Math.cos(yaw), y: Math.sin(yaw) });
+
+test('parking markings and parked cars leave the full width of kerb openings clear', () => {
+  const { index, gaps } = parkingGaps();
+  assert.ok(gaps.length > 10);
+  for (const { polygon, bounds } of gaps) {
+    assert.ok(polygon.every(p => Number.isFinite(p.x) && Number.isFinite(p.y)), 'every opening has finite geometry');
+    // A wide painted stripe through the middle of each actual opening must
+    // emerge as separate pieces, without paint inside that opening.
+    const y = (bounds.minY + bounds.maxY) / 2;
+    const stripe = [{ x: bounds.minX - 2, y: y - .07 }, { x: bounds.maxX + 2, y: y - .07 },
+      { x: bounds.maxX + 2, y: y + .07 }, { x: bounds.minX - 2, y: y + .07 }];
+    const kept = clearParkingMark(stripe, [{ polygon, bounds }]);
+    assert.ok(kept.length >= 2, 'a stripe breaks on both sides of an opening');
+    const overlap = intersection(region(kept), solids([polygon])).reduce((sum, p) => sum + calcPolygonArea(p.outer), 0);
+    assert.ok(overlap < .003, 'paint stays outside the opening, including oblique mouths');
+  }
+  for (const block of CITY.blocks) {
+    const drive = yardDrive(block.index);
+    if (!drive) continue;
+    for (const along of [-drive.width / 2 + .1, 0, drive.width / 2 - .1]) {
+      assert.ok(index.find(drive.mouth.x + drive.tx * along - drive.nx * (SIDEWALK + 2),
+        drive.mouth.y + drive.ty * along - drive.ny * (SIDEWALK + 2)), 'driveways reserve their whole mouth through the parking strip');
+    }
+  }
+  for (const car of furniture.filter(p => p.kind === 'parked' && p.yard === undefined)) {
+    const f = front(car.yaw);
+    for (const along of [-2.6, 0, 2.6]) assert.ok(!index.find(car.u + f.x * along, car.s + f.y * along), 'parked cars leave the same openings clear');
+  }
+});
 
 test('landmark approaches stay clear of street furniture and overhanging tree crowns', () => {
   const obstacles = furniture.filter(p => !p.median && ['tree', 'lamp', 'lantern', 'shelter', 'bench', 'bin', 'bollard', 'parking-sign'].includes(p.kind));
