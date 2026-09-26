@@ -26,8 +26,12 @@ test('an explicitly selected golden hour stays fixed', () => {
 });
 
 test('automatic weather covers every condition, repeats, and stays continuous at phase boundaries', () => {
-  assert.equal(sampleCityWeather(0, 'clear').lightLevel, 0);
-  assert.equal(sampleCityWeather(0, 'night').lightLevel, 1);
+  // Street lamps and headlights are on only at night and in a thunderstorm.
+  for (const id of Object.keys(WEATHER_PRESETS)) {
+    const level = sampleCityWeather(0, id).lightLevel;
+    if (id === 'night' || id === 'storm') assert.ok(level >= .8, `${id} turns the lights on`);
+    else assert.equal(level, 0, `${id} is daylight`);
+  }
   const period = WEATHER_CYCLE.length * WEATHER_INTERVAL;
   assert.equal(WEATHER_CYCLE[0], 'sunset');
   assert.equal(WEATHER_CYCLE.at(-1), 'night');

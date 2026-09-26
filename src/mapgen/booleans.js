@@ -15,8 +15,9 @@ const SCALE = 1000;
 const toPath = ring => ring.map(p => ({ X: Math.round(p.x * SCALE), Y: Math.round(p.y * SCALE) }));
 const fromPath = path => dedupePolygon(path.map(p => new Vector(p.X / SCALE, p.Y / SCALE)), 1e-6);
 
-function run(type, subject, clip = []) {
+function run(type, subject, clip = [], strict = false) {
   const clipper = new ClipperLib.Clipper(), tree = new ClipperLib.PolyTree();
+  clipper.StrictlySimple = strict;
   const add = (rings, kind) => { const paths = rings.filter(ring => ring.length >= 3).map(toPath); if (paths.length) clipper.AddPaths(paths, kind, true); };
   add(subject, ClipperLib.PolyType.ptSubject);
   add(clip, ClipperLib.PolyType.ptClip);
@@ -43,6 +44,15 @@ export const solids = rings => rings.filter(ring => ring.length >= 3).map(ring =
 export const union = (...regions) => run(ClipperLib.ClipType.ctUnion, regions.flat());
 export const difference = (subject, ...clips) => run(ClipperLib.ClipType.ctDifference, subject, clips.flat());
 export const intersection = (a, b) => run(ClipperLib.ClipType.ctIntersection, a, b);
+// The same, strictly simple (no ring touching itself or another), which is
+// slower but sure which rings are holes where many shapes with hairline gaps
+// between them ring round an open space (the water between two bridges):
+// there the plain result can fill the space in
+export const strictly = {
+  union: (...regions) => run(ClipperLib.ClipType.ctUnion, regions.flat(), [], true),
+  difference: (subject, ...clips) => run(ClipperLib.ClipType.ctDifference, subject, clips.flat(), true),
+  intersection: (a, b) => run(ClipperLib.ClipType.ctIntersection, a, b, true),
+};
 // A region grown by `distance` metres (mitred corners)
 export function grow(rings, distance) {
   const offset = new ClipperLib.ClipperOffset(2, .25), out = new ClipperLib.Paths();

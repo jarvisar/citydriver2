@@ -3,8 +3,9 @@ import { SEED } from './route.js';
 import { generateCityMap, carriagewayScore, ROAD_PROFILES, SIDEWALK } from '../mapgen/generate.js';
 import { FIELD_TYPE } from '../mapgen/basis-field.js';
 import { shoreRuns } from '../mapgen/shore.js';
-import { difference, intersection, region, solids, growRound, union, clean } from '../mapgen/booleans.js';
+import { difference, intersection, region, solids, growRound, union, clean, strictly } from '../mapgen/booleans.js';
 import { endJoints, slicePolyline } from '../mapgen/road-network.js';
+import { simplify } from '../mapgen/simplify.js';
 import { insidePolygon, offsetPolylineClean, bufferPolyline, averagePoint, calcPolygonArea,
   offsetPolygon, polygonBounds, distanceToPolyline, signedArea, dedupePolygon, polylineLength } from '../mapgen/polygon-util.js';
 
@@ -213,6 +214,120 @@ function crossingFree(roadIndex, points, halfWidth, own, step = 2) {
   return runs;
 }
 
+// A box `margin` metres clear of a polyline all round, and whether a polygon's bounds reach into one
+const boxAround = (points, margin) => {
+  const b = polygonBounds(points);
+  return [{ x: b.minX - margin, y: b.minY - margin }, { x: b.maxX + margin, y: b.minY - margin }, { x: b.maxX + margin, y: b.maxY + margin }, { x: b.minX - margin, y: b.maxY + margin }];
+};
+const overlapsBox = (polygon, box) => { const b = polygonBounds(polygon); return b.maxX > box[0].x && b.minX < box[1].x && b.maxY > box[0].y && b.minY < box[2].y; };
+
+// Bridge decks: all that is paved over the water round the bridges (their
+// carriageways and footways, the corners of a junction out over the water, a
+// promenade carried on across a river's mouth), one outline to a crossing,
+// so its edges, underside, piers and railings follow what is really there.
+// Each stretch of its edge over the water is a run, the water on its right;
+// the rest of its edge is the shore, where the paving carries on over land.
+// `around` gives a box round a bridge and the paving that reaches into it.
+function layDecks(bridges, land, around) {
+  const landRings = land.flatMap(piece => [piece.outer, ...piece.holes]);
+  // (whether a shape comes within a few centimetres of the shore)
+  const nearLand = shape => {
+    const b = polygonBounds(shape), m = .1;
+    return landRings.some(ring => ring.some((a, i) => {
+      const c = ring[(i + 1) % ring.length];
+      if (Math.max(a.x, c.x) < b.minX - m || Math.min(a.x, c.x) > b.maxX + m || Math.max(a.y, c.y) < b.minY - m || Math.min(a.y, c.y) > b.maxY + m) return false;
+      return shape.some(p => distanceToPolyline(p, [a, c]) < m);
+    }));
+  };
+  // (the water as whatever is not land: where the sea and the river meet,
+  // the millimetres can leave a seam between them. Each piece of paving over
+  // it is found on its own, and they are joined strictly: all the paving at
+  // once is slow, and its hairline gaps can ring round the water between two
+  // bridges, which the plain result fills in. Not the hairlines a paving's
+  // edge leaves along the shore, a few centimetres wide on average, which
+  // would only slow the joining.)
+  const perimeter = ring => ring.reduce((sum, p, i) => sum + Math.hypot(ring[(i + 1) % ring.length].x - p.x, ring[(i + 1) % ring.length].y - p.y), 0);
+  const overWater = (paved, area) => {
+    const water = region(difference(area, landRings));
+    const pieces = paved.flatMap(polygon => intersection(solids([polygon]), water)).filter(piece => 2 * calcPolygonArea(piece.outer) / perimeter(piece.outer) > .25);
+    return strictly.union(region(pieces));
+  };
+  const boxes = [], near = new Set();
+  for (const bridge of bridges) {
+    // (in a box round the bridge, grown while what it finds runs on out of
+    // it, as a road crossing the water at a slant carries its edge on past
+    // where its middle reaches the bank)
+    for (let grown = 0; ; grown++) {
+      const { box, paved } = around(bridge, grown * 40), b = polygonBounds(box);
+      const wide = growRound(region(growRound(region(overWater(paved, [box])), -.25)), .25);
+      if (grown < 3 && wide.some(piece => { const q = polygonBounds(piece.outer); return q.minX < b.minX + .5 || q.maxX > b.maxX - .5 || q.minY < b.minY + .5 || q.maxY > b.maxY - .5; })) continue;
+      boxes.push(box);
+      for (const polygon of paved) near.add(polygon);
+      break;
+    }
+  }
+  // (then all the boxes at once: where two overlap, a stretch of water the
+  // paving rings round would be counted twice over and filled in)
+  const wet = overWater([...near], region(strictly.union(solids(boxes))));
+  const paving = [...near].map(polygon => ({ polygon, bounds: polygonBounds(polygon) }));
+  const inPaved = p => paving.some(({ polygon, bounds: b }) => p.x > b.minX && p.x < b.maxX && p.y > b.minY && p.y < b.maxY && insidePolygon(p, polygon));
+  const decks = [];
+  for (const piece of wet) {
+    // Not the hairline a promenade's edge leaves along the shore, a few
+    // centimetres out over the water: what is too narrow to stand on and
+    // runs on for metres is left to the quay; nor a spike of paving out over
+    // the water. (But not the sharp corner where an edge meets the shore at a
+    // slant, nor the centimetres an outline sampled a little differently
+    // bulges out along an edge: neither stands out far from the rest.)
+    const rings = [piece.outer, ...piece.holes], opened = region(growRound(region(growRound(rings, -.2)), .2));
+    const edges = opened.flatMap(ring => ring.map((a, i) => [a, ring[(i + 1) % ring.length]]));
+    const standsOut = scrap => {
+      const b = polygonBounds(scrap.outer), near = edges.filter(([a, c]) => Math.max(a.x, c.x) > b.minX - 1 && Math.min(a.x, c.x) < b.maxX + 1 && Math.max(a.y, c.y) > b.minY - 1 && Math.min(a.y, c.y) < b.maxY + 1);
+      return scrap.outer.some(p => near.every(edge => distanceToPolyline(p, edge) > .4));
+    };
+    const needles = strictly.difference(rings, opened).filter(scrap => {
+      const b = polygonBounds(scrap.outer);
+      return standsOut(scrap) && (Math.hypot(b.maxX - b.minX, b.maxY - b.minY) > 3 || !nearLand(scrap.outer));
+    });
+    // (and the notches where two pieces of paving meet a little out of line
+    // closed over, the coping covering them; nor the spikes and pinholes
+    // where two pavings' outlines all but meet)
+    const trimmed = needles.length ? region(strictly.difference(rings, region(needles))) : rings;
+    // (true to the millimetre, and never inside the paving it closes over)
+    const closed = growRound(region(growRound(trimmed, .6, .005)), -.6, .005);
+    for (const deck of clean(strictly.union(region(closed), trimmed), .02)) {
+      if (calcPolygonArea(deck.outer) < 4) continue;
+      const holes = deck.holes.filter(hole => calcPolygonArea(hole) > 2), runs = [];
+      for (const ring of [deck.outer, ...holes]) {
+        // (an edge is over the water where, just beyond it, nothing is paved;
+        // and so is a nick less than a metre across between two such edges)
+        const n = ring.length, open = ring.map((a, i) => {
+          const b = ring[(i + 1) % n], l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+          return !inPaved({ x: (a.x + b.x) / 2 + (b.y - a.y) / l * .1, y: (a.y + b.y) / 2 - (b.x - a.x) / l * .1 });
+        });
+        for (let i = 0; i < n; i++) {
+          if (open[i] || !open[(i - 1 + n) % n]) continue;
+          let j = i;
+          while (!open[j % n] && j < i + n) j++;
+          if (Math.hypot(ring[j % n].x - ring[i].x, ring[j % n].y - ring[i].y) < 1) for (let k = i; k < j; k++) open[k % n] = true;
+        }
+        if (open.every(Boolean)) { runs.push({ points: simplify([...ring, ring[0]], .05).slice(0, -1), closed: true }); continue; }
+        // (each from the end of a stretch of shore to the start of the next;
+        // cleared of the centimetre steps where two outlines all but meet)
+        const start = open.findIndex((isOpen, i) => isOpen && !open[(i - 1 + n) % n]);
+        let run = null;
+        for (let k = 0; k <= n; k++) {
+          const i = (start + k) % n;
+          if (k < n && open[i]) (run ??= [ring[i]]).push(ring[(i + 1) % n]);
+          else if (run) { runs.push({ points: simplify(run, .05), closed: false }); run = null; }
+        }
+      }
+      decks.push({ outer: deck.outer, holes, runs: runs.filter(run => polylineLength(run.points) > .5) });
+    }
+  }
+  return decks;
+}
+
 export function buildCity(seed = SEED) {
   const styleName = (district, downtown) => downtown < DOWNTOWN ? 'Midtown' : district ?? 'Market district';
   const map = generateCityMap({ seed, width: CITY_WIDTH, height: CITY_HEIGHT,
@@ -312,10 +427,15 @@ export function buildCity(seed = SEED) {
   // square: the wedge between them is promenade too
   const quayRoads = new Set(quays.map(quay => quay.road));
   for (const joint of endJoints(map.roads.filter(road => quayRoads.has(road)), road => road.profile.halfWidth + QUAY)) {
-    // Not the carriageways, the walks already there or the blocks inland, and only on land
+    // Not the carriageways, the walks already there or the blocks inland, and
+    // only on land (or, where the two roads meet out on a bridge, over the
+    // water too, between the two promenades: the deck carries it, see layDecks)
     const bounds = polygonBounds(joint), near = polygon => { const b = polygonBounds(polygon); return b.maxX > bounds.minX && b.minX < bounds.maxX && b.maxY > bounds.minY && b.minY < bounds.maxY; };
-    const covered = [...roadsNear(joint).map(carriageway), ...map.joints, ...walks.map(walk => walk.polygon).filter(near), ...map.blocks.map(block => block.polygon).filter(near)];
-    const wedge = intersection(region(difference([joint], solids(covered))), region(land));
+    const nearWalks = walks.map(walk => walk.polygon).filter(near);
+    const covered = [...roadsNear(joint).map(carriageway), ...map.joints, ...nearWalks, ...map.blocks.map(block => block.polygon).filter(near)];
+    const free = difference([joint], solids(covered)), centre = averagePoint(joint);
+    const joins = piece => intersection(region(growRound([piece.outer], .05)), solids(nearWalks)).some(touch => calcPolygonArea(touch.outer) > .01);
+    const wedge = mask.at(centre.x, centre.y) ? free.filter(joins) : intersection(region(free), region(land));
     for (const piece of wedge) if (calcPolygonArea(piece.outer) > 1 && !piece.holes.length) walks.push({ points: [], halfWidth: QUAY / 2, polygon: piece.outer, road: null });
   }
   // Whatever land is left bare once the blocks, parks, carriageways and
@@ -409,7 +529,11 @@ export function buildCity(seed = SEED) {
       while (hi < keep.length - 1 && keep[hi + 1]) hi++;
       if (hi - lo < 4) return [];
       const line = samples.slice(Math.max(0, lo - 1), Math.min(samples.length, hi + 2));
-      const polygon = difference([bufferPolyline(line, width / 2)], region(others)).sort((p, q) => calcPolygonArea(q.outer) - calcPolygonArea(p.outer))[0]?.outer;
+      // (and never out past the roads' edges, where one meets another end to
+      // end at an angle and the footway carried on would stand over the water)
+      const strip = bufferPolyline(line, width / 2), box = boxAround(strip, 1), near = polygon => overlapsBox(polygon, box);
+      const within = intersection([strip], solids([carriageway(bridge.road), ...bridge.others, ...cornerPatches.filter(near)]));
+      const polygon = difference(region(within), region(others)).sort((p, q) => calcPolygonArea(q.outer) - calcPolygonArea(p.outer))[0]?.outer;
       return polygon ? [{ side, line, width, polygon }] : [];
     });
   };
@@ -484,11 +608,16 @@ export function buildCity(seed = SEED) {
   // (a scrap of footway left by the rounding is no walk)
   for (const bridge of bridges) bridge.footways = bridge.footways.filter(footway => calcPolygonArea(footway.polygon) > 20);
   for (const bridge of bridges) for (const footway of bridge.footways) pavement.add(footway.polygon, { kind: 'bridge' });
+  const decks = layDecks(bridges, land, (bridge, more) => {
+    const box = boxAround(bridge.points, bridge.road.profile.halfWidth + QUAY + 8 + more), near = polygon => overlapsBox(polygon, box);
+    return { box, paved: [...roadsNear(box).map(carriageway), ...cornerPatches.filter(near), ...walks.map(walk => walk.polygon).filter(near),
+      ...bridges.flatMap(other => other.footways.map(footway => footway.polygon)).filter(near)] };
+  });
   pavement.seal();
   return {
     ...map, minX, minY, maxX, maxY, margin,
     land, seaWater, riverWater, riverCentre, shores, walls, quays: walks, mask, downtown, inRiver, parks: map.parks, parkPlans: parks,
-    pavement, cornerPatches, bridges, styleName,
+    pavement, cornerPatches, bridges, decks, styleName,
     cell: CITY_CELL,
     ix0: Math.floor(-CITY_WIDTH / 2 / CITY_CELL), ix1: Math.floor((CITY_WIDTH / 2 - 1e-6) / CITY_CELL),
     iz0: Math.floor(-CITY_HEIGHT / 2 / CITY_CELL), iz1: Math.floor((CITY_HEIGHT / 2 - 1e-6) / CITY_CELL),

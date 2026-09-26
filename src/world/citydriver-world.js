@@ -347,9 +347,9 @@ export class CityChunk {
     });
   }
   post(x, s, radius) { if (!this.distant) this.features.colliders.push({ x: this.east + x, z: -this.start - s, reach: radius, anchor: this.layoutAnchor, frame: this.layoutPlacement }); }
-  prop(name, x, s, yaw = 0, y = PAVEMENT_LEVEL) {
+  prop(name, x, s, yaw = 0, y = PAVEMENT_LEVEL, scale = [1, 1, 1]) {
     if (this.distant) return;
-    this.item(name, cityAssets[name], this.materials.props, [x, y, -s], [1, 1, 1], '#ffffff', yaw, 0, ['shelter', 'tank', 'kiosk', 'bandstand'].includes(name));
+    this.item(name, cityAssets[name], this.materials.props, [x, y, -s], scale, '#ffffff', yaw, 0, ['shelter', 'tank', 'kiosk', 'bandstand'].includes(name));
   }
   tree(x, s, scale = 7) {
     // An address owns its tree: extra garden trees in a detailed chunk must
@@ -387,7 +387,12 @@ export class CityChunk {
       else if (piece.kind === 'bench') { this.prop('bench', x, s, piece.yaw); this.rigid(x, s, () => this.solid(x, s, .7, 2), itemFrame(piece.s, piece.u, piece.yaw)); }
       else if (piece.kind === 'bin') { this.prop('bin', x, s); this.post(x, s, .36); }
       else if (piece.kind === 'bollard') { this.prop('bollard', x, s); this.post(x, s, .16); }
-      else if (piece.kind === 'railing') { this.prop('railing', x, s, piece.yaw, piece.y ?? PAVEMENT_LEVEL); this.rigid(x, s, () => this.solid(x, s, .24, 4), itemFrame(piece.s, piece.u, piece.yaw)); }
+      else if (piece.kind === 'railing') {
+        // (a quay's lengths are all four metres; a bridge's are fitted between its posts)
+        const length = piece.length ?? 4;
+        this.prop('railing', x, s, piece.yaw, piece.y ?? PAVEMENT_LEVEL, [1, 1, length / 4]);
+        this.rigid(x, s, () => this.solid(x, s, .24, length), itemFrame(piece.s, piece.u, piece.yaw));
+      }
       else if (piece.kind === 'sign') this.standingSign(discoverySignFor(piece.type, piece.variant), x, s, piece.yaw, piece.width ?? 4.2, piece.bottom ?? 1.9);
       else if (piece.kind === 'stop' || piece.kind === 'yield') { this.prop(piece.kind, x, s, piece.yaw); this.post(x, s, .12); }
       else if (piece.kind === 'parking-sign') {
