@@ -170,7 +170,7 @@ export class DrivingController {
     this.setCar(carId, { rebuild: false, paint });
     this.s = state.s ?? 24; this.u = state.u ?? 2.4; this.speed = 0; this.steer = 0; this.heading = state.heading ?? route.frame(this.s).angle;
     this.distance = state.distance ?? 0; this.pitch = 0; this.roll = 0; this.previousSpeed = 0; this.groundedPosition = new THREE.Vector3();
-    this.reverseDelay = 0; this.driftAmount = 0; this.driftDirection = 0; this.drifting = false; this.driftReady = true; this.driftArmed = 0; this.slip = 0;
+    this.reverseDelay = 0; this.driftAmount = 0; this.driftDirection = 0; this.drifting = false; this.boosting = false; this.driftReady = true; this.driftArmed = 0; this.slip = 0;
     // Where the car's weight is: -1 over the back under power, +1 over the nose on the brakes.
     this.weight = 0; this.load = 0;
     this.bodyPitch = 0; this.bodyRoll = 0; this.wheelSpin = 0;
@@ -359,8 +359,11 @@ export class DrivingController {
     const { frame: roadFrame, position: positionAt } = this.route;
     const stats = this.stats;
     const touch = input.touchDrive;
-    const arcade = Boolean(this.arcade), boosting = arcade && input.boost;
+    const arcade = Boolean(this.arcade);
     const forward = clamp(Number(input.forward) || 0, 0, 1); const brake = clamp(Number(input.brake) || 0, 0, 1);
+    // Boost needs the gas. A taxi run meters it (TaxiRun.controls); free drive
+    // passes the button straight through.
+    const boosting = Boolean(input.boost) && (forward > 0 || touch?.amount > .1);
     const steering = touch ? 0 : clamp((Number(input.right) || 0) - (Number(input.left) || 0), -1, 1);
     // Quick response is independent of turning strength: do not hide sharp
     // steering behind a slow input filter. The precision curve is applied to
@@ -419,9 +422,10 @@ export class DrivingController {
       pedals = acceleration;
       if (touch.amount) this.heading = touch.heading;
     }
-    if (boosting && !parkingBrake && !brake) { acceleration += stats.acceleration * .9; pedals += stats.acceleration * .9; }
+    this.boosting = boosting && !parkingBrake && !brake;
+    if (this.boosting) { acceleration += stats.acceleration * .9; pedals += stats.acceleration * .9; }
     const oldSpeed = this.speed;
-    const boostCoast = arcade ? Math.max(0, this.speed - stats.topSpeed - stats.braking * .4 * dt) : 0;
+    const boostCoast = Math.max(0, this.speed - stats.topSpeed - stats.braking * .4 * dt);
     this.speed = clamp(this.speed + acceleration * dt, touch ? 0 : -stats.reverseSpeed, stats.topSpeed + (boosting ? 10 : boostCoast));
     // A held brake should settle the cab long enough to board/drop off before
     // backing up. Releasing and pressing again still selects reverse immediately.

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { CityWeather, sampleCityWeather, weatherLightning, WEATHER_CYCLE, WEATHER_INTERVAL, WEATHER_PRESETS } from '../src/world/city-weather.js';
 import { DriveAudio } from '../src/audio.js';
+import { SkyClouds } from '../src/sky-clouds.js';
 import { SoundDirector } from '../src/audio/director.js';
 
 test('new cities default to automatic weather, starting in golden hour before cycling', () => {
@@ -16,6 +17,39 @@ test('new cities default to automatic weather, starting in golden hour before cy
   weather.update(WEATHER_INTERVAL * WEATHER_CYCLE.length);
   assert.equal(weather.state.id, 'sunset');
   weather.dispose();
+});
+
+test('lit rooms glow only as the light fails, and the sky clouds over with the weather', () => {
+  const glow = id => sampleCityWeather(0, id).windowGlow, cover = id => sampleCityWeather(0, id).cloudCover;
+  assert.equal(glow('clear'), 0);
+  assert.equal(glow('night'), 1);
+  assert.ok(glow('sunset') > glow('overcast') && glow('storm') > glow('rain') && glow('rain') > glow('clear'));
+  for (const id of Object.keys(WEATHER_PRESETS)) assert.ok(cover(id) >= 0 && cover(id) <= 1, `${id} cloud cover`);
+  assert.ok(cover('rain') > cover('clear') && cover('storm') >= cover('rain') && cover('overcast') > cover('sunset'));
+  // (fair weather still has a few clouds)
+  assert.ok(cover('clear') > .3);
+});
+
+test('sky clouds grow with the cover and stay inside the nearest far plane', () => {
+  const clouds = new SkyClouds(new THREE.Scene()), camera = new THREE.PerspectiveCamera(70, 1.6, .1, 206);
+  clouds.setCover(0);
+  assert.equal(clouds.mesh.count, 0);
+  const state = sampleCityWeather(0, 'storm'), background = new THREE.Color('#606e81');
+  clouds.setWeather(state, background);
+  assert.ok(clouds.mesh.count > 0);
+  const matrix = new THREE.Matrix4(), position = new THREE.Vector3(), scale = new THREE.Vector3(), rotation = new THREE.Quaternion();
+  for (const [u, s] of [[0, 0], [900, -400], [-1300, 1100]]) {
+    camera.position.set(u, 26, -s); camera.updateMatrixWorld();
+    clouds.follow(camera);
+    for (let i = 0; i < clouds.mesh.count; i++) {
+      clouds.mesh.getMatrixAt(i, matrix); matrix.decompose(position, rotation, scale);
+      // (the whole of each puff, drawn round the camera, closer than the fog's far end)
+      assert.ok(position.distanceTo(camera.position) + Math.max(scale.x, scale.y, scale.z) < 200, 'a cloud reaches past the far plane');
+      assert.ok(position.y > camera.position.y, 'clouds are overhead');
+    }
+  }
+  clouds.follow(new THREE.OrthographicCamera());
+  assert.equal(clouds.group.visible, false, 'no clouds over the overhead map');
 });
 
 test('an explicitly selected golden hour stays fixed', () => {

@@ -114,9 +114,12 @@ body[data-mode=free] #app #city-location { max-width: none; white-space: normal;
     width: min(var(--free-map-width, 260px), calc(100% - var(--ui-left) - var(--ui-right) - var(--stick-size) - 16px));
   }
   body[data-mode=free] .city-guide[data-expanded=true] #city-map { width: 100%; }
+  /* Boost and Drift take the corner; a controller hides them. */
+  body[data-mode=free]:not([data-controller=true]) .city-guide { --map-bottom: calc(var(--ui-bottom) + 82px); }
 }
 @media (max-height: 560px) {
   body[data-mode=free] .city-guide { --free-map-width: min(220px, calc(100dvh - var(--ui-top) - var(--ui-bottom) - 84px)); }
+  body[data-mode=free]:not([data-controller=true]) .city-guide { --free-map-width: min(220px, calc(100dvh - var(--ui-top) - var(--ui-bottom) - 166px)); }
 }
 @media (max-width: 360px) {
   body[data-mode=free] .city-guide-header > span { display: none; }

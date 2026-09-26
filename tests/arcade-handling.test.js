@@ -124,3 +124,21 @@ test('tire sound continues through a powered slide and fades when traction retur
   assert.ok(slide.skidLevel > grip.skidLevel + .02);
   assert.equal(model.update({ speed: 0, slip: .3 }).skidLevel, 0);
 });
+
+test('boost works in free drive as well as a taxi run, needs the gas, and coasts back', () => {
+  for (const arcade of [false, true]) {
+    const car = new DrivingController(road, {}, 'taxi'); car.arcade = arcade;
+    try {
+      const top = car.stats.topSpeed;
+      car.speed = top;
+      advance(car, 1, { boost: true });
+      assert.equal(car.boosting, false, `arcade=${arcade}: boost without gas`);
+      car.speed = top;
+      advance(car, 3, { forward: 1, boost: true });
+      assert.ok(car.boosting && car.speed > top + 1, `arcade=${arcade}: boost should pass top speed`);
+      const boosted = car.speed;
+      advance(car, 1 / 120, { forward: 1 });
+      assert.ok(car.speed > top && car.speed < boosted, `arcade=${arcade}: releasing boost coasts down, not snaps`);
+    } finally { car.disposeModel(); }
+  }
+});

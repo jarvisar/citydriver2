@@ -4,6 +4,7 @@ import { ThirdPersonCamera } from './third-person-camera.js';
 import { FirstPersonCamera } from './first-person-camera.js';
 import { AmbientOcclusion } from './ambient-occlusion.js';
 import { CarSilhouette } from './car-silhouette.js';
+import { SkyClouds } from './sky-clouds.js';
 import { Graphics, drawingPixelRatio } from './graphics.js';
 import { XRCameraRig } from './xr-camera.js';
 import { sampleCityWeather } from './world/city-weather.js';
@@ -46,6 +47,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   // vehicles, cameras and streamed blocks update their own dirty matrices.
   scene.matrixAutoUpdate = false;
   const carSilhouette = new CarSilhouette(scene);
+  const clouds = new SkyClouds(scene);
   const drivingFog = new THREE.Fog('#c2e2db', 460, 860);
   const sky = new THREE.HemisphereLight('#e4f2f5', '#617149', 1.45); scene.add(sky);
   const sun = new THREE.DirectionalLight('#fff1db', 2.5); sun.castShadow = true;
@@ -162,6 +164,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
     const blend = !weatherFog || dt <= 0 ? 1 : 1 - Math.exp(-Math.min(dt, 1) * 4);
     weatherFog ??= { thirdNear: state.drivingFogNear, thirdFar: state.drivingFogFar };
     scene.background.lerp(state.background, blend);
+    clouds.setWeather(state, scene.background, blend, dt);
     weatherFog.thirdNear += (state.drivingFogNear - weatherFog.thirdNear) * blend;
     weatherFog.thirdFar += (state.drivingFogFar - weatherFog.thirdFar) * blend;
     sky.color.lerp(state.skyColor, blend);
@@ -180,6 +183,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   }
   function draw(viewCamera, stereo = false) {
     beforeDraw(viewCamera);
+    clouds.follow(viewCamera, previousOrigin, stereo);
     carSilhouette.update(followedCar, showCarSilhouette() && !stereo && viewCamera.isOrthographicCamera);
     // Hide the player's exterior for the whole first-person draw, including
     // shadows and AO. Restore it for other views and after render failures.
@@ -211,7 +215,8 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   function precompile(warmupObjects = []) {
     const warmup = new THREE.Group(), fog = scene.fog, lens = activeCamera(), pending = [];
     for (const object of [...warmupObjects, carSilhouette.warmup]) warmup.add(object);
-    const parallel = renderer.extensions.has('KHR_parallel_shader_compile');
+    const parallel = renderer.extensions.has('KHR_parallel_shader_compile'), skyVisible = clouds.group.visible;
+    clouds.group.visible = true;
     try {
       for (const variant of [null, drivingFog]) {
         scene.fog = variant;
@@ -220,7 +225,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
           else renderer.compile(target, lens, scene);
         }
       }
-    } finally { scene.fog = fog; }
+    } finally { scene.fog = fog; clouds.group.visible = skyVisible; }
     return Promise.all(pending);
   }
   function setView(index) { view = index; updateFog(); thirdPerson.snap(); firstPerson.snap(); return views[view].label; }

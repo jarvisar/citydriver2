@@ -148,7 +148,7 @@ async function boot() {
     // The weather's light, sky and wet roads, on the scene and every car
     function applyWeather(dt = 0) {
       weather.update(time, vehicle, world.origin); rendering.setWeather(weather.state, dt);
-      world.setWetness(weather.state.wetness); vehicle.setLights(weather.state.lightLevel); traffic.models.setLights(weather.state.lightLevel);
+      world.setWetness(weather.state.wetness); world.setWindowGlow(weather.state.windowGlow); vehicle.setLights(weather.state.lightLevel); traffic.models.setLights(weather.state.lightLevel);
     }
     const haltCar = () => { vehicle.speed = 0; vehicle.knock.x = vehicle.knock.z = vehicle.knock.spin = 0; vehicle.update(0, {}); };
     const drawScene = rendering.render;
@@ -694,7 +694,7 @@ async function boot() {
       text('#world-map-here', district);
       text('#weather-label', weather.state.label);
       cityGuide.update(started && !paused && !changingJourney);
-      taxiView.hud(taxi, vehicle);
+      taxiView.hud(taxi, vehicle, started && gameMode === 'free');
     }
     function updateViewUi() {
       $('#view').title = `${rendering.viewLabel} · Change camera (V)`;

@@ -143,6 +143,100 @@ function bench() {
   for (const y of [.73, .94]) p.box([.27 + (y - .73) * .12, y, 0], [.06, .17, 1.9], timber, [0, 0, -.12]);
   return p.finish();
 }
+// Boats in the harbour and along the river, each lying along local z with
+// its bow toward -z and its waterline at y = 0. A hull has a narrow keel,
+// a boot-top just above the water and a gunwale that rises toward the bow;
+// its topsides (`paint`) take each boat's own colour, like a parked car's
+// shell, and the rest is baked into `detail`.
+const BOAT_PLAN = [[-.8, 1], [.8, 1], [1, .5], [1, 0], [.92, -.4], [.62, -.75], [0, -1], [-.62, -.75], [-.92, -.4], [-1, 0], [-1, .5]];
+function boatHull(length, beam, freeboard, draft, colours) {
+  const paint = [], detail = [];
+  const level = (x, z, y) => [x, y, z];
+  const rings = {
+    keel: BOAT_PLAN.map(([x, z]) => level(x * beam * .17, z * length * .43, -draft)),
+    boot: BOAT_PLAN.map(([x, z]) => level(x * beam * .47, z * length * .485, .12)),
+    rub: BOAT_PLAN.map(([x, z]) => level(x * beam * .515, z * length * .505, freeboard - .16 + .3 * Math.max(0, -z) ** 2)),
+    top: BOAT_PLAN.map(([x, z]) => level(x * beam * .5, z * length * .5, freeboard + .3 * Math.max(0, -z) ** 2)),
+  };
+  // (every face turned out from the hull's middle, or up for the deck)
+  const face = (list, a, b, c, colour, up = false) => {
+    const e = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], f = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    const n = [e[1] * f[2] - e[2] * f[1], e[2] * f[0] - e[0] * f[2], e[0] * f[1] - e[1] * f[0]];
+    const m = [(a[0] + b[0] + c[0]) / 3, 0, (a[2] + b[2] + c[2]) / 3];
+    if ((up ? n[1] : n[0] * m[0] + n[2] * m[2]) < 0) [b, c] = [c, b];
+    list.push({ points: [a, b, c], colour });
+  };
+  const band = (list, lower, upper, colour) => {
+    for (let i = 0; i < BOAT_PLAN.length; i++) {
+      const j = (i + 1) % BOAT_PLAN.length;
+      face(list, lower[i], lower[j], upper[j], colour); face(list, lower[i], upper[j], upper[i], colour);
+    }
+  };
+  band(detail, rings.keel, rings.boot, colours.bottom);
+  band(paint, rings.boot, rings.top, '#ffffff');
+  // (the rubbing strake a hand's width proud along the top of the topsides)
+  band(detail, rings.rub.map(([x, y, z]) => [x, y - .08, z]), rings.rub, colours.strake);
+  const middle = [0, freeboard + .06, 0];
+  for (let i = 0; i < BOAT_PLAN.length; i++) face(detail, middle, rings.top[i], rings.top[(i + 1) % BOAT_PLAN.length], colours.deck, true);
+  const geometry = list => {
+    const positions = [], colors = [], c = new THREE.Color();
+    for (const { points, colour } of list) { c.set(colour); for (const p of points) { positions.push(...p); colors.push(c.r, c.g, c.b); } }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    g.computeVertexNormals();
+    return g;
+  };
+  return { paint: geometry(paint), detail: geometry(detail) };
+}
+function boat(length, beam, freeboard, draft, colours, fit) {
+  const hull = boatHull(length, beam, freeboard, draft, colours), p = new Parts();
+  p.parts.push(hull.detail);
+  fit(p, freeboard + .06);
+  const detail = p.finish({ preserveNormals: true }), paint = hull.paint;
+  compactGeometry(paint); paint.computeBoundingSphere();
+  return { paint, detail };
+}
+const ROPE = '#d6ceb6', FENDER = '#2b2f31';
+export const boatModels = {
+  // An open launch: a console and windscreen, a seat and an outboard
+  launch: boat(6, 2.3, .7, .3, { bottom: '#5b2d2a', strake: '#e8e4d8', deck: '#cdbf9f' }, (p, deck) => {
+    p.box([0, deck + .45, .3], [.8, .9, .7], '#e8e4d8');
+    p.box([0, deck + 1.02, -.08], [.82, .34, .05], '#5f7f88', [-.45, 0, 0]);
+    p.box([0, deck + .2, 1.7], [1.5, .4, .5], '#8b6d4f');
+    p.box([0, deck + .15, 2.95], [.36, .85, .42], '#3a3f42');
+    p.box([0, deck + .7, 2.95], [.42, .32, .6], '#e8e4d8');
+  }),
+  // A yacht with its sail furled under a cover on the boom, a stay to each end
+  yacht: boat(8.6, 2.8, .85, .45, { bottom: '#2c3e50', strake: '#8b6d4f', deck: '#c8a978' }, (p, deck) => {
+    p.box([0, deck + .28, .3], [1.75, .56, 3.3], '#ebe8df');
+    p.box([0, deck + .34, .3], [1.77, .15, 2.5], '#3f5560');
+    p.cylinder([0, deck + 5.3, -.9], .05, .07, 10.6, '#d8d6cf', 5);
+    p.box([0, deck + 1.55, 1.1], [.26, .28, 4], '#2f5d86');
+    p.beam([0, deck + 10.5, -.9], [0, deck + .35, -4.15], .016, '#9ea3a5', 3);
+    p.beam([0, deck + 10.5, -.9], [0, deck + .1, 4.2], .016, '#9ea3a5', 3);
+    for (const x of [-.95, .95]) p.box([x, deck + .38, 3.3], [.06, .5, 1.6], '#c9c7c0');
+  }),
+  // A workboat: a wheelhouse with a mast on its roof, a winch forward and
+  // old tyres hung along its sides
+  work: boat(7.6, 2.7, .95, .45, { bottom: '#3b2a26', strake: '#2b2f31', deck: '#7d786d' }, (p, deck) => {
+    p.box([0, deck + .8, 1.05], [1.75, 1.6, 2], '#eeeae0');
+    p.box([0, deck + 1.15, 1.05], [1.77, .45, 2.02], '#3a5058');
+    p.box([0, deck + 1.66, 1.05], [2, .12, 2.25], '#34393b');
+    p.cylinder([0, deck + 3.05, 1.35], .045, .06, 2.7, '#e0dccf', 5);
+    p.box([0, deck + 3.6, 1.35], [1.1, .07, .07], '#e0dccf');
+    p.cylinder([0, deck + .3, -2.1], .32, .32, 1.1, '#6d7a7e', 8, [0, 0, Math.PI / 2]);
+    p.box([0, deck + .15, -2.1], [1.3, .3, .5], '#a3452f');
+    for (const x of [-1, 1]) for (const z of [-1.4, 0, 1.4]) p.cylinder([x * 1.4, .55, z], .24, .24, .2, FENDER, 8, [0, 0, Math.PI / 2]);
+  }),
+};
+// A mooring line from a cleat on a boat's deck up to the quay's edge, 1.45 m
+// across (scaled to fit) along local +x
+function mooringLine() {
+  const p = new Parts();
+  p.beam([0, .95, 0], [1.45, 6.25, 0], .028, ROPE, 4);
+  return p.finish();
+}
 // A bus shelter: a flat roof on two posts with a glass back and a stop sign.
 function busShelter() {
   const p = new Parts();
@@ -303,7 +397,7 @@ function streetTree(variant) {
 }
 
 export const cityTrees = [streetTree(0), streetTree(1)];
-export const cityAssets = { lamp: lampPost(), signal: trafficSignal(), stop: stopSign(), yield: yieldSign(), bench: bench(), shelter: busShelter(), railing: railing(), bollard: bollard(), manhole: manhole(), tank: waterTank(), kiosk: kiosk(), bin: litterBin(), lantern: parkLantern(), bandstand: bandstand(), 'signal-head': signalHead(), 'signal-mast': signalMast() };
+export const cityAssets = { lamp: lampPost(), signal: trafficSignal(), stop: stopSign(), yield: yieldSign(), bench: bench(), shelter: busShelter(), railing: railing(), bollard: bollard(), manhole: manhole(), tank: waterTank(), kiosk: kiosk(), bin: litterBin(), 'mooring-line': mooringLine(), lantern: parkLantern(), bandstand: bandstand(), 'signal-head': signalHead(), 'signal-mast': signalMast() };
 
 // Parked cars reuse the traffic fleet's bodies: the paint shell carries a
 // per-instance colour and everything else keeps its own baked colours.

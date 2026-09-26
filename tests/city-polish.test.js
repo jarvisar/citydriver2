@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { wallHasOutlook, edgeFacade, edgeWindows, shopAwning, shopFront, groundFloor } from '../src/world/city-buildings.js';
+import { wallHasOutlook, edgeFacade, edgeWindows, shopAwning, shopFront, groundFloor, facadeRuns } from '../src/world/city-buildings.js';
 import { CityChunk } from '../src/world/citydriver-world.js';
 import { seededRandom } from '../src/world/route.js';
 import { Surface } from '../src/world/surface.js';
@@ -15,6 +15,35 @@ import { cityTrees, parkedCars } from '../src/world/city-assets.js';
 import { buildHedge } from '../src/world/city-detail-assets.js';
 
 const rectangle = (x, y, w, h) => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
+
+test('a curved front keeps its bays between its bends, with one pilaster at each', () => {
+  // Eight 7.3 m walls round a 40 m radius (a 10.5 degree turn at each bend),
+  // closed off behind by a long straight back wall
+  const arc = Array.from({ length: 9 }, (_, k) => { const a = -.73 + k * .1825; return { x: Math.sin(a) * 40, y: Math.cos(a) * 40 }; });
+  const ring = [...arc, { x: arc[8].x, y: -10 }, { x: arc[0].x, y: -10 }], n = ring.length;
+  const runs = facadeRuns(ring, k => k < 8, () => true);
+  assert.ok(runs.slice(0, 8).every(run => run && Math.abs(run.length - runs[0].length) < 1e-9), 'the curved walls share one run');
+  assert.equal(runs[8], undefined, 'a wall turning a corner starts no run');
+  for (const type of ['deco', 'pavilion', 'apartment']) {
+    const pilasters = [], windows = [];
+    for (let i = 0; i < 8; i++) {
+      const c = { distant: false, bodies: new Surface(), materials: {}, item() {},
+        box(x, y, s, w, h, d, colour, kind) { if (kind === 'glass') windows.push({ x, s, w, wall: i, f }); else if (h > 6 && w < 1) pilasters.push({ x, s }); } };
+      const f = edgeFacade(c, ring[i], ring[(i + 1) % n]);
+      f.street = true; f.run = runs[i];
+      edgeWindows(c, { type, variation: 0, accent: '#386f73' }, f, PAVEMENT_LEVEL + 5.4, 3, seededRandom(i));
+    }
+    for (const [i, a] of pilasters.entries()) for (const b of pilasters.slice(i + 1)) assert.ok(Math.hypot(a.x - b.x, a.s - b.s) > 1, `${type}: two pilasters side by side at a bend`);
+    // One floor's windows, in order round the curve, evenly spaced
+    const floor = windows.filter((w, k) => windows.findIndex(v => Math.hypot(v.x - w.x, v.s - w.s) < .01) === k)
+      .map(w => ({ ...w, angle: Math.atan2(w.x, w.s) })).sort((a, b) => a.angle - b.angle);
+    const gaps = floor.slice(1).map((w, k) => Math.hypot(w.x - floor[k].x, w.s - floor[k].s)).sort((a, b) => a - b), median = gaps[gaps.length >> 1];
+    assert.ok(floor.length >= 10, `${type}: windows all round the curve`);
+    assert.ok(gaps[0] > median * .6 && gaps.at(-1) < median * 1.5, `${type}: bays keep near one spacing round the bends (${gaps[0].toFixed(2)} to ${gaps.at(-1).toFixed(2)} m)`);
+    // (no pane runs round a bend)
+    for (const w of floor) assert.ok(Math.abs(w.f.local(w.x, w.s).offset) + w.w / 2 <= w.f.span / 2 + 1e-6, `${type}: a window across a bend`);
+  }
+});
 
 test('projecting facade courses leave domestic, lobby and loading thresholds clear', () => {
   for (const distant of [false, true]) for (const type of ['townhouse', 'brick', 'apartment', 'warehouse', 'office']) for (const primary of [false, true]) for (const variation of [0, 1]) {

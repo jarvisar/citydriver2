@@ -8,7 +8,7 @@ import { navGraph } from '../src/world/nav-graph.js';
 import { junctionGeometry, stopLineDistance, CROSSWALK } from '../src/world/junction-geometry.js';
 import { difference, intersection, region, solids } from '../src/mapgen/booleans.js';
 import { junctionControls } from '../src/city-junctions.js';
-import { placeStreetFurniture, findBridges, cityCrosswalks, convexOverlap, parkingGaps, clearParkingMark } from '../src/world/city-streets.js';
+import { placeStreetFurniture, findBridges, cityCrosswalks, convexOverlap, parkingGaps, clearParkingMark, harbourRoutes } from '../src/world/city-streets.js';
 import { cityIslands } from '../src/world/city-islands.js';
 import { turnPath, wayOn, isLink } from '../src/world/lane-paths.js';
 import { planLot } from '../src/world/city-buildings.js';
@@ -22,6 +22,29 @@ const furniture = (() => { const pieces = []; placeStreetFurniture(navGraph(), f
 // Where an item's modelled front (+z) and its +x point on the map (see city-layout-render.js)
 const front = yaw => ({ x: Math.sin(yaw), y: -Math.cos(yaw) });
 const side = yaw => ({ x: Math.cos(yaw), y: Math.sin(yaw) });
+
+test('boats lie wholly on the water, clear of each other and away from the bridges', () => {
+  const boats = furniture.filter(piece => piece.kind === 'boat'), hulls = { launch: [6, 2.3], yacht: [8.6, 2.8], work: [7.6, 2.7] };
+  assert.ok(boats.length > 20, `${boats.length} boats`);
+  assert.ok(boats.some(boat => boat.model === 'yacht') && boats.some(boat => boat.model === 'launch') && boats.some(boat => boat.model === 'work'));
+  for (const boat of boats) {
+    const [length, beam] = hulls[boat.model], f = front(boat.yaw), t = side(boat.yaw);
+    for (const a of [-.5, 0, .5]) for (const b of [-.5, .5]) {
+      const x = boat.u + f.x * a * length + t.x * b * beam, y = boat.s + f.y * a * length + t.y * b * beam;
+      assert.equal(surfaceAt(y, x), 'water', `${boat.model} at ${boat.u.toFixed(1)},${boat.s.toFixed(1)} runs aground`);
+    }
+    assert.ok(!CITY.decks.some(deck => insidePolygon({ x: boat.u, y: boat.s }, deck.outer)), 'no boat under a bridge');
+    for (const other of boats) if (other !== boat) assert.ok(Math.hypot(other.u - boat.u, other.s - boat.s) > 6, `boats overlap at ${boat.u.toFixed(1)},${boat.s.toFixed(1)}`);
+  }
+  // The boats going by keep to open water all round their loops, off every
+  // bridge and clear of the boats on their buoys
+  const routes = harbourRoutes();
+  assert.ok(routes.length >= 2, `${routes.length} harbour loops`);
+  for (const { points } of routes) for (const p of points) {
+    for (const [dx, dy] of [[0, 0], [8, 0], [-8, 0], [0, 8], [0, -8]]) assert.equal(surfaceAt(p.y + dy, p.x + dx), 'water', `a harbour loop runs aground at ${p.x.toFixed(0)},${p.y.toFixed(0)}`);
+    assert.ok(!CITY.decks.some(deck => insidePolygon(p, deck.outer)), 'a harbour loop under a bridge');
+  }
+});
 
 test('parking markings and parked cars leave the full width of kerb openings clear', () => {
   const { index, gaps } = parkingGaps();
@@ -91,6 +114,8 @@ test('lamps, trees, signs and signals stand on the pavement, never on a carriage
   for (const kind of ['lamp', 'median-lamp', 'lantern', 'tree', 'stop', 'signal', 'shelter', 'bin', 'railing', 'bench', 'parked']) assert.ok(kinds.has(kind), `${kind} placed`);
   for (const piece of furniture) {
     if (piece.kind === 'railing' || piece.kind === 'rim') continue;
+    // (a boat lies on the water: see below)
+    if (piece.kind === 'boat' || piece.kind === 'mooring') { assert.equal(surfaceAt(piece.s, piece.u), 'water', `${piece.kind} at ${piece.u.toFixed(1)},${piece.s.toFixed(1)}`); continue; }
     // A car in a yard's car park stands in its block's yard, off every road
     if (piece.kind === 'parked' && piece.yard !== undefined) {
       assert.ok(insidePolygon({ x: piece.u, y: piece.s }, CITY.blocks[piece.yard].yard) && !onRoadAt(piece.s, piece.u), `yard car off its yard at ${piece.u.toFixed(1)},${piece.s.toFixed(1)}`);

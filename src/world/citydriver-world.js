@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { CITY, cityCell, CITY_CELL } from './city.js';
-import { ROAD_LEVEL, PAVEMENT_LEVEL } from './city-route.js';
-import { cityAssets, cityTrees, LANTERN_HEIGHT, SIGNAL_LENSES, MAST_HEIGHT, parkedCars, PARKED_PAINTS } from './city-assets.js';
+import { ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL } from './city-route.js';
+import { HarbourBoats } from './city-boats.js';
+import { cityAssets, cityTrees, LANTERN_HEIGHT, SIGNAL_LENSES, MAST_HEIGHT, parkedCars, PARKED_PAINTS, boatModels } from './city-assets.js';
 import { TRAFFIC_MODELS } from '../traffic-models.js';
 import { seededRandom, randomAt } from './route.js';
 import { residentWindow } from './resident.js';
@@ -33,6 +34,9 @@ const residentItem = { p: [0, 0, 0], scale: [1, 1, 1], yaw: 0, roll: 0 };
 const residentFloat = {};
 const tint = new THREE.Color();
 const dryRoad = new THREE.Color('#666c70'), wetRoad = new THREE.Color('#424e58');
+// A lit room seen by day is only a warmer pane among the dark ones; the
+// window's own cream shows as the light fails (see city-weather.js)
+const dayWindow = new THREE.Color().setRGB(.023, .032, .057), nightWindow = new THREE.Color(1, 1, 1);
 const GREENS = ['#63924d', '#80a85c', '#4f8054', '#93ab65'];
 const SIGNAL_GREEN = new THREE.Color('#62d996'), SIGNAL_AMBER = new THREE.Color('#ffd571'), SIGNAL_RED = new THREE.Color('#ed654b'), SIGNAL_OFF = new THREE.Color('#293538');
 // Distant chunks further than this many cells from the car are not drawn at all.
@@ -225,6 +229,7 @@ function resources() {
     road: standard({ color: '#666c70', roughness: .6 }),
     glass: standard({ color: '#ffffff', roughness: .2, metalness: .25 }),
     lit: new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false }),
+    lens: new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false }),
     clock: new THREE.MeshBasicMaterial({ color: '#ffffff', vertexColors: true, toneMapped: false }),
     water: createWaterMaterial(),
     props: standard({ color: '#ffffff', vertexColors: true, roughness: .62 }),
@@ -418,7 +423,7 @@ export class CityChunk {
           if (this.distant) return;
           const hx = x - along * cos, hs = s - along * sin, indices = [];
           for (const dy of SIGNAL_LENSES) {
-            this.item('signal-lens', signalLens, this.materials.lit, [hx + sin * .215, PAVEMENT_LEVEL + height + dy, -hs + cos * .215], [.105, .105, 1], '#293538', yaw);
+            this.item('signal-lens', signalLens, this.materials.lens, [hx + sin * .215, PAVEMENT_LEVEL + height + dy, -hs + cos * .215], [.105, .105, 1], '#293538', yaw);
             indices.push(this.batches.get('signal-lens').items.length - 1);
           }
           this.features.signals.push({ axis: piece.axis, indices });
@@ -459,6 +464,14 @@ export class CityChunk {
         this.post(x, s, 3.5 * k);
       }
       else if (piece.kind === 'lantern') { this.prop('lantern', x, s); this.post(x, s, .2); }
+      // A boat's hull in its own paint, like a parked car's shell, and the
+      // line to the quay of one moored alongside
+      else if (piece.kind === 'boat' && !this.distant) {
+        const model = boatModels[piece.model];
+        this.item(`boat-paint-${piece.model}`, model.paint, this.materials.solid, [x, WATER_LEVEL, -s], [1, 1, 1], piece.paint, piece.yaw);
+        this.item(`boat-${piece.model}`, model.detail, this.materials.props, [x, WATER_LEVEL, -s], [1, 1, 1], '#ffffff', piece.yaw);
+      }
+      else if (piece.kind === 'mooring') this.prop('mooring-line', x, s, piece.yaw, WATER_LEVEL, [piece.span / 1.45, 1, 1]);
       else if (piece.kind === 'parked') {
         const model = parkedCars[piece.model], spec = TRAFFIC_MODELS.find(m => m.name === piece.model);
         if (!this.distant) {
@@ -609,6 +622,7 @@ export class CitydriverWorld {
     this.pending = []; this.building = null; this.materials = resources(); this.nav = navGraph();
     this.animationFrustum = new THREE.Frustum(); this.animationMatrix = new THREE.Matrix4(); this.animationSphere = new THREE.Sphere();
     this.prepareLots(); this.bridges = findBridges(); this.placeFurniture();
+    this.harbour = new HarbourBoats(scene, this.materials);
     this.staticGroup = new THREE.Group(); this.staticGroup.name = 'citydriver-static'; this.staticGroup.matrixAutoUpdate = false;
     scene.add(this.staticGroup);
     this.buildStatic();
@@ -850,6 +864,12 @@ export class CitydriverWorld {
     for (const chunk of this.chunks.values()) chunk.group.visible = seen(chunk);
     for (const chunk of this.distant.values()) if (chunk.group.parent) chunk.group.visible = seen(chunk);
   }
+  setWindowGlow(amount) {
+    const glow = Math.max(0, Math.min(1, amount));
+    if (glow === this.windowGlow) return;
+    this.windowGlow = glow;
+    this.materials.lit.color.copy(dayWindow).lerp(nightWindow, glow * glow);
+  }
   setWetness(amount) {
     const wet = Math.max(0, Math.min(1, amount));
     if (wet === this.wetness) return;
@@ -859,6 +879,7 @@ export class CitydriverWorld {
   }
   animate(time, signalTime = time, camera = null, contacts = null) {
     this.materials.water.userData.time.value = time;
+    this.harbour.update(time, camera);
     if (camera) {
       camera.updateMatrixWorld();
       this.animationMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
@@ -889,7 +910,7 @@ export class CitydriverWorld {
     for (const chunk of this.spare.values()) chunk.dispose(); this.spare.clear();
     this.building?.dispose(); this.building = null; this.prefetching?.dispose(); this.prefetching = null;
     for (const chunk of this.distant.values()) chunk.dispose(); this.distant.clear(); this.distantPending = [];
-    this.distantGroup.removeFromParent();
+    this.distantGroup.removeFromParent(); this.harbour.dispose();
     for (const mesh of this.staticGroup.children) if (!mesh.isInstancedMesh) mesh.geometry.dispose(); else mesh.dispose();
     this.staticGroup.removeFromParent();
     for (const material of Object.values(this.materials)) { material.map?.dispose(); material.dispose(); }

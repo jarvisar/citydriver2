@@ -831,6 +831,52 @@ export const findBridges = () => CITY.bridges;
 
 // Street furniture for the whole city, as pieces the chunks stand up:
 // { kind, u, s, yaw, ... } with yaw an item yaw (see city-layout-render.js).
+// The boats that move (see city-boats.js) run slow loops off the longest
+// open stretches of sea wall: out along a lane 30 m off the wall, round and
+// back along one 46 m off, the two a boat's length apart everywhere. Every
+// point on a loop has open water all round it and no bridge near it.
+export const HARBOUR_LANES = [30, 46];
+// Whether a point is within `margin` of a deck's bounding box: enough to keep
+// boats out from under and beside the bridges, and cheap
+const nearDeck = (x, y, margin) => CITY.decks.some(deck => {
+  if (!deckBounds.has(deck)) deckBounds.set(deck, polygonBounds(deck.outer));
+  const b = deckBounds.get(deck);
+  return x > b.minX - margin && x < b.maxX + margin && y > b.minY - margin && y < b.maxY + margin;
+});
+let harbourCache = null;
+export function harbourRoutes() {
+  if (harbourCache) return harbourCache;
+  const open = (x, y) => surfaceAt(y, x) === 'water';
+  const clear = (x, y) => open(x, y) && !nearDeck(x, y, 30) && circle(x, y, 10, 8).every(q => open(q.x, q.y));
+  const routes = [];
+  for (const run of CITY.walls) {
+    const samples = alongPolyline(run, 8);
+    if (samples.length < 30) continue;
+    // (the water's side of the wall, the same all along it)
+    const mid = samples[samples.length >> 1], side = open(mid.x + mid.ty * HARBOUR_LANES[0], mid.y - mid.tx * HARBOUR_LANES[0]) ? 1 : -1;
+    const lane = (p, d, along = 0) => ({ x: p.x + p.ty * side * d + p.tx * along, y: p.y - p.tx * side * d + p.ty * along });
+    const ok = samples.map(p => HARBOUR_LANES.every(d => { const q = lane(p, d); return clear(q.x, q.y); }));
+    // (each clear stretch, cut into loops of at most 700 m with room between them)
+    const stretches = [];
+    for (let i = 0, from = 0; i <= samples.length; i++) {
+      if (i < samples.length && ok[i]) continue;
+      for (let start = from + 1; i - 2 - start >= 30; start += 96) stretches.push([start, Math.min(i - 2, start + 88)]);
+      from = i + 1;
+    }
+    for (const [a, b] of stretches) {
+      if (b - a < 30) continue;
+      const middle = (HARBOUR_LANES[0] + HARBOUR_LANES[1]) / 2, turn = (HARBOUR_LANES[1] - HARBOUR_LANES[0]) / 2;
+      const ends = [lane(samples[b], middle, turn), lane(samples[a], middle, -turn)];
+      if (!ends.every(q => clear(q.x, q.y))) continue;
+      const points = [...samples.slice(a, b + 1).map(p => lane(p, HARBOUR_LANES[0])), ends[0], ...samples.slice(a, b + 1).reverse().map(p => lane(p, HARBOUR_LANES[1])), ends[1]];
+      points.push(points[0]);
+      routes.push({ points, length: polylineLength(points) });
+    }
+  }
+  harbourCache = routes.sort((p, q) => q.length - p.length).slice(0, 10);
+  return harbourCache;
+}
+
 export function placeStreetFurniture(nav, bridges, add) {
   const geometry = junctionGeometry(nav), controls = junctionControls(nav);
   // Junction zones: nothing stands on a corner or in a crosswalk's path
@@ -1143,6 +1189,51 @@ export function placeStreetFurniture(nav, bridges, add) {
   // parapet and its truss are drawn with the coping
   for (const { rail, y, truss } of deckEdges()) for (const piece of rail.pieces) {
     add({ kind: 'railing', u: piece.x, s: piece.y, yaw: faceYaw(piece.tx, piece.ty), y, length: piece.length, ...(truss.length ? { parapet: true } : {}) });
+  }
+  // Boats: moored a few metres off the quay walls along the stretches of
+  // harbour and river where they gather, and now and then one on a buoy out
+  // in open water, headed into the breeze. Each wholly over the water and
+  // clear of the others, and none under or beside a bridge.
+  const BOATS = [['launch', 6, 2.3], ['yacht', 8.6, 2.8], ['work', 7.6, 2.7]], boats = [];
+  const PAINTS = { launch: ['#2f4b68', '#ecebe4', '#6f9fbf', '#2f5d4f', '#b8413a'], yacht: ['#ecebe4', '#ecebe4', '#2f4b68', '#d8cbb0', '#1f2a33'], work: ['#a1433a', '#2f5d4f', '#35536e', '#2b2f31', '#c0892f'] };
+  const clearOfBoats = (x, y, room) => boats.every(b => Math.hypot(b.x - x, b.y - y) > room);
+  const open = (x, y) => surfaceAt(y, x) === 'water';
+  const grid = (count, half = .5) => Array.from({ length: count }, (_, k) => -half + k * 2 * half / (count - 1));
+  const afloat = (x, y, tx, ty, length, beam) => grid(9).every(a => grid(5).every(b => open(x + tx * a * length - ty * b * beam, y + ty * a * length + tx * b * beam)));
+  const moor = (model, x, y, yaw, salt) => {
+    boats.push({ x, y });
+    const paints = PAINTS[model];
+    add({ kind: 'boat', model, u: x, s: y, yaw, paint: paints[Math.floor(randomAt(salt, 7420, CITY.seed) * paints.length)] });
+  };
+  const seaward = p => waterAt(p.y + p.tx * 4, p.x - p.ty * 4) ? [-p.ty, p.tx] : [p.ty, -p.tx];
+  for (const run of CITY.walls) {
+    const samples = alongPolyline(run, 2);
+    for (let i = 0; i < samples.length; i++) {
+      const p = samples[i], salt = Math.round(p.x * 2) * 7919 + Math.round(p.y * 2);
+      if (CITY.field.noise2D(p.x / 160 + 31.7, p.y / 160 - 12.3) < .15 || randomAt(salt, 7411, CITY.seed) > .3) continue;
+      const [model, length, beam] = BOATS[Math.floor(randomAt(salt, 7412, CITY.seed) * BOATS.length)], [nx, ny] = seaward(p);
+      const x = p.x + nx * (beam / 2 + 1.3) + p.tx * length / 2, y = p.y + ny * (beam / 2 + 1.3) + p.ty * length / 2;
+      if (nearDeck(x, y, 18) || !clearOfBoats(x, y, length / 2 + 4.5) || !afloat(x, y, p.tx, p.ty, length + 1.5, beam + 1)) continue;
+      const bow = randomAt(salt, 7413, CITY.seed) < .5 ? 1 : -1;
+      moor(model, x, y, faceYaw(p.tx * bow, p.ty * bow), salt);
+      // (made fast fore and aft, a line from each end of its deck straight up to the quay's edge)
+      for (const end of [-.36, .36]) {
+        const cx = x + p.tx * end * length - nx * beam * .4, cy = y + p.ty * end * length - ny * beam * .4;
+        add({ kind: 'mooring', u: cx, s: cy, yaw: alongYaw(-nx, -ny), span: beam * .1 + 1.3 });
+      }
+      i += Math.ceil((length + 1 + randomAt(salt, 7414, CITY.seed) * 4) / 2);
+    }
+  }
+  const breeze = randomAt(3, 7415, CITY.seed) * Math.PI * 2;
+  for (const run of CITY.walls) for (const p of alongPolyline(run, 55, 20)) {
+    const salt = Math.round(p.x) * 7919 + Math.round(p.y);
+    if (randomAt(salt, 7416, CITY.seed) > .45) continue;
+    const [nx, ny] = seaward(p), out = 16 + randomAt(salt, 7417, CITY.seed) * 50, x = p.x + nx * out, y = p.y + ny * out;
+    const yaw = breeze + (randomAt(salt, 7419, CITY.seed) - .5) * .5, fx = Math.sin(yaw), fy = -Math.cos(yaw);
+    if (nearDeck(x, y, 30) || !clearOfBoats(x, y, 24) || ![7, 14].every(r => circle(x, y, r, 12).every(q => open(q.x, q.y))) || !afloat(x, y, fx, fy, 14, 8)) continue;
+    // (and out of the way of the boats going by)
+    if (harbourRoutes().some(route => distanceToPolyline({ x, y }, route.points) < 16)) continue;
+    moor(randomAt(salt, 7418, CITY.seed) < .7 ? 'yacht' : 'launch', x, y, yaw, salt);
   }
   // Parks and squares: what a square is for (its fountain, tower, sculptures,
   // glasshouse or stalls) or a park's fountain or bandstand in the middle,

@@ -171,7 +171,7 @@ try {
         g.world.update(v.s, v.u);
         while (g.world.pending.length || g.world.distantPending.length) g.world.update(v.s, v.u);
         g.weather.update(0, v, g.world.origin); g.rendering.setWeather(g.weather.state, 0);
-        g.world.setWetness(g.weather.state.wetness); v.setLights(g.weather.state.lightLevel);
+        g.world.setWetness(g.weather.state.wetness); g.world.setWindowGlow(g.weather.state.windowGlow); v.setLights(g.weather.state.lightLevel);
         g.rendering.setView(p.view); g.rendering.snap(); v.render(0, g.world.origin);
         g.rendering.update(v.car, 1, g.world.origin);
         g.world.animate(0, 0, g.rendering.camera);

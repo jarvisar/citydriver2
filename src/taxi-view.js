@@ -172,13 +172,21 @@ export class TaxiView {
     }
     this.skids.count = this.trails.length;
   }
-  hud(run, vehicle) {
+  hud(run, vehicle, free = false) {
     // Settle each panel once per refresh: showing and then hiding one again
     // restyles the whole HUD twice, ten times a second.
     hide($('taxi-hud'), !run.running); hide($('taxi-nav'), !run.running || !run.target); hide($('taxi-task'), !run.running);
-    hide($('taxi-buttons'), !run.running);
+    // Free drive keeps Boost and Drift, with no meter: its boost is unlimited.
+    hide($('taxi-buttons'), !run.running && !free);
+    hide($('taxi-boost'), !run.running);
     hide($('taxi-dash'), !run.running);
-    if (!run.running) return;
+    if (!run.running) {
+      if (!free) return;
+      text('taxi-boost-state', vehicle.boosting ? 'Boosting' : 'Hold');
+      data('taxi-buttons', 'boosting', String(vehicle.boosting));
+      data('taxi-buttons', 'drifting', String(vehicle.drifting));
+      return;
+    }
     text('taxi-clock', Math.ceil(run.timeLeft)); data('taxi-clock', 'urgent', String(run.timeLeft <= 15));
     text('taxi-cash', run.cash >= 1000 ? compactCash.format(run.cash) : money(run.cash));
     attribute($('taxi-cash'), 'aria-label', `Total earned ${money(run.cash)}`);

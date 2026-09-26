@@ -257,6 +257,27 @@ export function buildLandmark(c, lot, place) {
       c.item(end < 0 ? 'landmark-gable-front' : 'landmark-gable', gable, end < 0 && material === c.materials.solid ? c.materials.glass : material, [q.x, base, -q.s], [width / 2 - .1, rise - .1, 1], end < 0 ? '#8fb3b4' : endColour, end < 0 ? facing : facing + Math.PI);
     }
   };
+  // A works' north-light roof: a row of sawtooth bays across the front, each
+  // a sheeted slope and a glazed upright face, the ends in the walls' stone.
+  // Plain faces in the chunk's body mesh, near and far.
+  const sawtooth = base => {
+    const teeth = Math.max(3, Math.round(W / 7.5)), step = W / teeth, rise = Math.min(3.4, step * .48);
+    const point = (u, v, y) => { const p = at(u, v); return [p.x, y, -p.s]; };
+    const up = [0, 1, 0], side = [tx, 0, -ty], out = v => [nx * v, 0, -ny * v];
+    const triangle = (a, b, d, colour, towards) => {
+      const e = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], f = [d[0] - a[0], d[1] - a[1], d[2] - a[2]];
+      const n = [e[1] * f[2] - e[2] * f[1], e[2] * f[0] - e[0] * f[2], e[0] * f[1] - e[1] * f[0]];
+      if (n[0] * towards[0] + n[1] * towards[1] + n[2] * towards[2] < 0) [b, d] = [d, b];
+      bodies.face(...a, ...b, ...d, colour);
+    };
+    const quad = (a, b, d, e, colour, towards) => { triangle(a, b, d, colour, towards); triangle(a, d, e, colour, towards); };
+    for (let k = 0; k < teeth; k++) {
+      const u0 = -W / 2 + k * step, u1 = u0 + step, top = base + rise;
+      quad(point(u0, -D / 2, base), point(u1, -D / 2, top), point(u1, D / 2, top), point(u0, D / 2, base), '#8b9494', up);
+      quad(point(u1, -D / 2, base), point(u1, -D / 2, top), point(u1, D / 2, top), point(u1, D / 2, base), '#4f6d76', side);
+      for (const v of [-1, 1]) triangle(point(u0, v * D / 2, base), point(u1, v * D / 2, base), point(u1, v * D / 2, top), STONE, out(v));
+    }
+  };
   const clockTower = (u, v, base, height, size = 5) => {
     const p = at(u, v);
     c.box(p.x, base + height / 2, p.s, size, height, size, STONE, 'solid', along);
@@ -323,7 +344,8 @@ export function buildLandmark(c, lot, place) {
     const H = 8, body = localRing(W, D), rise = Math.min(W * .24, 8);
     bodies.prism(body, G, G + H, wall);
     bodies.polygon(body, G + H, '#8d8c80');
-    vault(W, rise, D, G + H, place.type === 'station' ? '#7e9aa0' : '#a47460');
+    if (place.type === 'depot') sawtooth(G + H);
+    else vault(W, rise, D, G + H, place.type === 'station' ? '#7e9aa0' : '#a47460');
     windows(body, G + 1, 1, 'loft');
     const market = place.type === 'market' || place.type === 'farmersmarket';
     const glazed = W * .55;
@@ -356,7 +378,8 @@ export function buildLandmark(c, lot, place) {
     if (place.type === 'station') {
       clock(c, at(0, front - .2).x, G + H + rise * .45, at(0, front - .2).s, Math.min(3.4, rise * .7), facing);
       nameBoard(G + 5.9, G + H - .3, W * .5);
-    } else {
+    } else if (place.type === 'depot') nameBoard(G + 5.3, G + H - .2, W * .5);
+    else {
       // (on the gable's glass, the whole board inside its curve)
       const a = W / 2 - .1, b = rise - .1;
       nameBoard(G + H + .3, G + H + rise * .7, W * .45, front + .08, (w, top) => w / 2 + .4 <= a * Math.sqrt(Math.max(0, 1 - ((top - G - H) / b) ** 2)));
@@ -368,7 +391,7 @@ export function buildLandmark(c, lot, place) {
     } else if (place.type === 'station') {
       box(0, G + 4.2, front - 1.45, Math.min(glazed, 11), .22, 2.9, COPPER);
     }
-    top = G + H + rise;
+    top = G + H + (place.type === 'depot' ? 3.4 : rise);
   } else if (kind === 'marquee') {
     const H = 13, body = localRing(W, D);
     bodies.prism(body, G, G + H, place.type === 'music' ? '#4b4f72' : '#b6604f');

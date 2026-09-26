@@ -422,19 +422,48 @@ export function planLot(c, lot) {
     shop: pick(SHOP_NAMES, random), ...shopSlot(lot), shopfront, domestic, lawn: insets.lawn, side: insets.side, party: wallKinds.map(kind => kind === 'side'), lotStreet: kinds.map(kind => kind === 'street'), rearWindows: rear > 2.4 || footprintOut !== footprint };
 }
 
+// A wall's window bays, .9 m in from each end of its front. The segments of
+// a curved front share one run (`f.run`, see facadeRuns), laid out in groups
+// of walls between bends, so each bay stays between two bends and the bays
+// keep near one rhythm round the curve. The windows on this wall (their bay
+// numbers and offsets from the wall's middle, a window over a bend inside a
+// group of short walls nudged wholly onto one), the least spacing, and the
+// piers between bays: one at each bend.
+function bayLayout(f, target, width = 0) {
+  const run = f.run ?? { from: 0, length: f.span, groups: [[0, f.span]] }, half = f.span / 2;
+  const at = d => d - run.from - half, own = o => o >= -half - 1e-6 && (o < half - 1e-6 || run.from + f.span > run.length - 1e-6);
+  const windows = [], piers = [];
+  let spacing = Infinity, bay = 0;
+  // (a plain wall takes as many whole bays as fit; the groups of a run the
+  // nearest number at the spacing that suits the whole run)
+  const whole = run.length - 1.8, even = whole / Math.max(1, Math.round((whole + .2) / target));
+  run.groups.forEach(([from, to], g) => {
+    const start = from + (from === 0 ? .9 : 0), length = to - (to >= run.length - 1e-6 ? .9 : 0) - start;
+    const bays = Math.max(1, f.run ? Math.round(length / even) : Math.floor((length + .2) / target)), step = length / bays;
+    const mine = to > run.from - 1e-6 && from < run.from + f.span + 1e-6;
+    if (mine) spacing = Math.min(spacing, step);
+    for (let k = 0; k < bays; k++, bay++) {
+      const o = at(start + (k + .5) * step), room = Math.max(0, half - Math.min(width, step - .5) / 2 - .05);
+      if (own(o)) windows.push({ bay, offset: Math.max(-room, Math.min(room, o)) });
+    }
+    for (let k = g ? 1 : 0; k <= bays; k++) if (own(at(start + k * step))) piers.push(at(start + k * step));
+  });
+  return { spacing: Number.isFinite(spacing) ? spacing : f.span - 1.8, windows, piers };
+}
+
 export function edgeWindows(c, b, f, bottom, floors, random) {
   const modern = b.type === 'office' || b.type === 'atrium', loft = b.type === 'warehouse' || b.type === 'loft', span = f.span;
-  if (span < 3.2) return;
-  const bays = Math.max(1, Math.floor((span - 1.6) / (modern ? 4.4 : loft ? 6.5 : b.variation === 1 ? 5.6 : 4.8)));
-  const spacing = (span - 1.8) / bays;
+  if (span < 3.2 && !f.run) return;
+  const target = modern ? 4.4 : loft ? 6.5 : b.variation === 1 ? 5.6 : 4.8, { spacing } = bayLayout(f, target);
   const windowWidth = Math.min(modern ? spacing - .36 : loft ? Math.min(3.7, spacing - 1) : b.variation === 2 ? 2.25 : 1.65, spacing - .5);
+  const { windows, piers } = bayLayout(f, target, windowWidth + .25);
   const h = loft ? 2.45 : modern ? 2.75 : 2.2, frame = b.type === 'brick' || b.type === 'townhouse' ? '#e0ccab' : '#b3c5bc';
   for (let floor = 0; floor < floors; floor++) {
     const y = bottom + 1.7 + floor * 3.6;
     if (modern) f.add(0, y - 1.42, .1, span + .1, .28, .3, '#b6c9c8', 'solid', true);
     if (b.type === 'deco' && floor === floors - 1) f.add(0, y + 1.55, .2, span + .4, .35, .5, '#ded2b8', 'solid', true);
-    for (let bay = 0; bay < bays; bay++) {
-      const offset = (bay - (bays - 1) / 2) * spacing, occupancy = random(), lit = occupancy < .1;
+    for (const { bay, offset } of windows) {
+      const occupancy = random(), lit = occupancy < .1;
       // Balconies stack over one another, with a glazed door down to the
       // deck. The other bays keep their ordinary windows and sills.
       const balcony = b.type === 'apartment' && f.street && bay % 3 === b.variation % 3;
@@ -477,12 +506,12 @@ export function edgeWindows(c, b, f, bottom, floors, random) {
   // (pilasters, fins and string courses stop under the cornice or eaves that
   // cap the wall, rather than meeting its faces)
   const rise = floors * 3.6 - .12;
-  if (b.type === 'deco') for (let bay = 0; bay <= bays; bay++) f.add((bay - bays / 2) * spacing, bottom + rise / 2, .18, .38, rise, .4, '#cfbea2', 'solid', true);
+  if (b.type === 'deco') for (const pier of piers) f.add(pier, bottom + rise / 2, .18, .38, rise, .4, '#cfbea2', 'solid', true);
   if (b.type === 'loft' || b.type === 'townhouse') for (let floor = 1; floor < floors; floor++) {
     f.add(0, bottom + floor * 3.6 - .12, .16, span + .2, b.type === 'loft' ? .4 : .22, .3, '#d6c1a0', 'solid', true);
   }
-  if (b.type === 'atrium' || b.type === 'pavilion') for (let bay = 0; bay <= bays; bay++) {
-    f.add((bay - bays / 2) * spacing, bottom + rise / 2, .4, .25, rise, .85, b.type === 'pavilion' ? '#bf976c' : '#d5d9bd', 'solid', true);
+  if (b.type === 'atrium' || b.type === 'pavilion') for (const pier of piers) {
+    f.add(pier, bottom + rise / 2, .4, .25, rise, .85, b.type === 'pavilion' ? '#bf976c' : '#d5d9bd', 'solid', true);
   }
 }
 
@@ -705,10 +734,10 @@ export function groundFloor(c, b, f, base, primary, random) {
     }
     // Windows in bays along the whole front, as on the floors above, clear of the door
     // (or, where the door takes the only bay, one either side of it)
-    const bays = Math.max(1, Math.floor((span - 1.6) / (tall && loft ? 6.5 : b.variation === 1 ? 5.6 : 4.8))), spacing = (span - 1.8) / bays;
+    const target = tall && loft ? 6.5 : b.variation === 1 ? 5.6 : 4.8, { spacing } = bayLayout(f, target);
     const width = tall ? Math.min(loft ? Math.min(3.7, spacing - 1) : b.variation === 2 ? 2.25 : 1.65, spacing - .5) : 1.4;
-    let offsets = Array.from({ length: bays }, (_, bay) => (bay - (bays - 1) / 2) * spacing).filter(offset => !door || Math.abs(offset - doorOffset) >= width / 2 + 1.3);
-    if (!offsets.length) offsets = [-span * .3, span * .3].filter(offset => !door || Math.abs(offset - doorOffset) > 1.9);
+    let offsets = bayLayout(f, target, (tall ? width : 1.4) + .25).windows.map(w => w.offset).filter(offset => !door || Math.abs(offset - doorOffset) >= width / 2 + 1.3);
+    if (!offsets.length && !f.run) offsets = [-span * .3, span * .3].filter(offset => !door || Math.abs(offset - doorOffset) > 1.9);
     if (span > 5.5) for (const offset of offsets) {
       if (!tall) {
         f.add(offset, G + 2, .075, 1.65, 2.05, .11, '#e0ccab');
@@ -1007,6 +1036,39 @@ function roofDetails(c, b, deck, top, random, holes = []) {
   } else if (b.type === 'shop' && random() < .5) plant(1.1 + random() * .5);
 }
 
+// The runs of walls round a ring that turn less than 30 degrees where they
+// meet: for each wall in a run of two or more, where along the run it
+// starts, how long the run is, and its walls in groups for bayLayout (each
+// at least 3.6 m of front, so a short wall joins its neighbours)
+export function facadeRuns(ring, facade, kind) {
+  const n = ring.length, runs = new Array(n);
+  const gentle = k => {
+    const j = (k - 1 + n) % n, p = ring[j], q = ring[k], r = ring[(k + 1) % n];
+    const turn = Math.abs(Math.atan2((q.x - p.x) * (r.y - q.y) - (q.y - p.y) * (r.x - q.x), (q.x - p.x) * (r.x - q.x) + (q.y - p.y) * (r.y - q.y)));
+    return turn < .52 && facade(j) && facade(k) && kind(j) === kind(k);
+  };
+  let first = 0;
+  while (first < n && gentle(first)) first++;
+  if (first === n) return runs;
+  for (let m = 0, k = first; m < n;) {
+    const walls = [k];
+    for (m++, k = (k + 1) % n; m < n && gentle(k); m++, k = (k + 1) % n) walls.push(k);
+    if (walls.length < 2) continue;
+    const length = walls.reduce((sum, w) => sum + edgeLength(ring, w), 0), groups = [];
+    let from = 0, start = 0;
+    for (const [i, w] of walls.entries()) {
+      runs[w] = { from, length, groups };
+      from += edgeLength(ring, w);
+      const front = from - start - (start === 0 ? .9 : 0) - (i === walls.length - 1 ? .9 : 0);
+      if (front >= 3.6 || i === walls.length - 1) { groups.push([start, from]); start = from; }
+    }
+    // (a short last group joins the one before it)
+    const last = groups.at(-1);
+    if (groups.length > 1 && last[1] - last[0] - .9 < 3.6) { groups.pop(); groups.at(-1)[1] = last[1]; }
+  }
+  return runs;
+}
+
 function buildBuilding(c, b) {
   const random = seededRandom(b.seed ^ 0x3c6ef372), bodies = c.bodies, ring = b.footprint, n = ring.length;
   const base = b.type === 'warehouse' ? 4.8 : b.domestic ? 3.6 : 5.4, height = base + b.floors * 3.6, lower = b.setbackFloors, lowerTop = G + base + lower * 3.6;
@@ -1073,9 +1135,13 @@ function buildBuilding(c, b) {
       if (secondary < 0 || f.span > edgeLength(ring, secondary)) secondary = i;
     }
   }
+  // Windowed walls of the same kind that meet at gentle bends, the segments
+  // of a curved front, share one run of bays (see bayLayout)
+  const runs = facadeRuns(ring, k => b.windows[k] && edgeLength(ring, k) >= 2.5, k => b.street[k]);
   for (let i = 0; i < n; i++) {
     const f = edgeFacade(c, ring[i], ring[(i + 1) % n]);
     f.street = b.street[i];
+    f.run = runs[i];
     f.shopSign = i === secondary;
     if (f.span < 2.5) continue;
     if (f.street) groundFloor(c, b, f, base, i === primary, random);
