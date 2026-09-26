@@ -30,6 +30,7 @@ try {
       const { cityPlaces } = await import('/src/city-exploration.js');
       const { CITY_PLACES } = await import('/src/world/city-places.js');
       const { planLot } = await import('/src/world/city-buildings.js');
+      const { cityParks } = await import('/src/world/city-parks.js');
       if (!g.paused) g.action('pause');
       g.traffic.setEnabled(false);
       g.graphics.setMode('balanced'); g.graphics.setDensity(1);
@@ -90,7 +91,7 @@ try {
       result.push({ ...result.find(p => p.name === 'shopfront'), name: 'basic-shopfront', quality: 'basic' });
       // Public-space details, viewed from the closest ordinary driving lane.
       const furniture = [...g.world.furnitureByChunk.values()].flat();
-      for (const kind of ['shelter', 'bed', 'glasshouse', 'bandstand']) {
+      for (const kind of ['shelter', 'bed', 'glasshouse', 'bandstand', 'cafe', 'stall']) {
         const candidates = furniture.filter(f => f.kind === kind).map(f => {
           const p = g.nearestLanePose(f.s, f.u, 0, 100);
           return p && { f, p, distance: Math.hypot(f.s - p.s, f.u - p.u) };
@@ -99,7 +100,26 @@ try {
         if (chosen) {
           const { f, p } = chosen;
           result.push({ name: `detail-${kind}`, ...p, heading: Math.atan2(f.u - p.u, f.s - p.s), view: 5 });
+          if (kind === 'cafe' || kind === 'stall') {
+            // Also inspect the actual furniture at eye height in its square.
+            const angle = (f.yaw ?? 0) + Math.PI / 4;
+            const u = f.u + Math.sin(angle) * 8, s = f.s - Math.cos(angle) * 8;
+            result.push({ name: `detail-${kind}-close`, u, s, heading: Math.atan2(f.u - u, f.s - s), view: 5 });
+          }
         }
+      }
+      const square = cityParks().find(e => !e.paved && e.park.square && e.walks.some(w => w.length === 2));
+      const entrance = square?.walks.find(w => w.length === 2)?.[0];
+      if (entrance) {
+        const p = g.nearestLanePose(entrance.y, entrance.x, 0, 100);
+        if (p) result.push({ name: 'square-entrance', ...p, heading: Math.atan2(entrance.x - p.u, entrance.y - p.s), view: 5 });
+      }
+      // These are ordinary first-person views from the drivable park paths.
+      const junction = g.nav.nodes.find(n => n.edges.length >= 3 && n.edges.every(e => e.kind === 'path') && n.edges.some(e => e.length > 35));
+      if (junction) {
+        const e = junction.edges.find(e => e.length > 35), direction = e.a === junction.id ? -1 : 1;
+        const p = g.nav.pose(e, e.length - 14, direction, 0);
+        result.push({ name: 'path-junction', ...p, view: 5 });
       }
       result.push({ ...result[0], name: 'night', weather: 'night' });
       return result.filter(p => Number.isFinite(p.s)).map(({ name, s, u, heading, view, weather, quality }) => ({ name, s, u, heading, view, weather, quality }));
@@ -142,12 +162,19 @@ try {
       shots.push({ name: pose.name, data });
     }
     await writeFile(`${dir}/metrics.json`, JSON.stringify(metrics, null, 2));
-    await page.evaluate(() => {
+    await page.evaluate(p => {
       const g = window.__citydriver;
+      // A focused furniture review may end inside a square. Always start
+      // the driving check from the same known lane, regardless of filters.
+      const v = g.vehicle;
+      v.s = p.s; v.u = p.u; v.heading = p.heading; v.speed = 0; v.update(0, {});
+      g.world.update(v.s, v.u);
+      while (g.world.pending.length || g.world.distantPending.length) g.world.update(v.s, v.u);
+      g.rendering.setView(4); g.rendering.snap();
       g.weather.setMode('clear', { immediate: true });
       g.traffic.setEnabled(true, g.vehicle);
       if (g.paused) g.action('pause');
-    });
+    }, poses[0]);
     await page.keyboard.press('KeyH');
     const start = await page.evaluate(() => window.__citydriver.vehicle.distance);
     await page.waitForTimeout(6000);

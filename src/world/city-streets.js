@@ -4,12 +4,12 @@ import { junctionGeometry, CROSSWALK, stopLineDistance } from './junction-geomet
 import { junctionControls } from '../city-junctions.js';
 import { cityMedians, MEDIAN_KERB } from './city-medians.js';
 import { cityParks, parkClear, pondShore, circle, SQUARE_WALK, BED_COLOURS } from './city-parks.js';
+import { parkSurfaces } from './city-park-surfaces.js';
 import { faceYaw, alongYaw } from './city-layout-render.js';
 import { randomAt, seededRandom } from './route.js';
 import { offsetPolyline, offsetPolylineClean, offsetPolygon, insidePolygon, polygonBounds, calcPolygonArea, signedArea, distanceToPolyline, averagePoint } from '../mapgen/polygon-util.js';
 import { cityPlaces, placeForBlock } from '../city-exploration.js';
 import { cityIslands, islandFor } from './city-islands.js';
-import { clipInside } from '../mapgen/road-network.js';
 import { rectanglePolygon } from './city-surfaces.js';
 import { frontSetback, treeRoom } from './city-buildings.js';
 import { yardParking, yardDrive, YARD_BAY, PARKED_MODELS } from './city-yards.js';
@@ -210,12 +210,8 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
   // The island under everything
   for (const piece of CITY.land) ground.polygon(piece.outer, ROAD_LEVEL - .06, COLOURS.land, null, true, piece.holes);
   // Carriageways, and the corners the rounded kerbs hand back to them
-  const parkKerbs = CITY.parkPlans.filter(park => park.kerb.length >= 3).map(park => park.kerb);
-  for (const road of CITY.roads) {
-    if (road.kind !== 'path') { roads.ribbon(road.points, road.profile.halfWidth, ROAD_LEVEL, COLOURS.road); continue; }
-    // A path is drawn on the lawn and the park's pavement, never out over the street
-    for (const kerb of parkKerbs) for (const run of clipInside(road.points, kerb, 0)) paths.ribbon(run, road.profile.halfWidth, PAVEMENT_LEVEL + .035, COLOURS.path);
-  }
+  const parkPaths = CITY.roads.filter(road => road.kind === 'path');
+  for (const road of CITY.roads) if (road.kind !== 'path') roads.ribbon(road.points, road.profile.halfWidth, ROAD_LEVEL, COLOURS.road);
   for (const patch of CITY.cornerPatches) roads.polygon(patch, ROAD_LEVEL, COLOURS.road);
   // Markings along each street between its junctions: lanes down a
   // boulevard, a double centre line down an avenue, a dashed one down a
@@ -340,18 +336,15 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
     }
     const paved = entry.paved;
     if (park.lawn.length >= 3) ground.polygon(park.lawn, PAVEMENT_LEVEL + .02, paved ? COLOURS.plaza : COLOURS.lawn, null, true, holes);
-    // The plaza in the middle, paved out to the walk round it
-    if (entry.plaza) {
-      const reach = park.square ? entry.plaza.radius + SQUARE_WALK * 2 + .6 : entry.plaza.radius + 4.4;
-      // (over the ends of the paths that lead to it)
-      const disc = circle(entry.plaza.x, entry.plaza.y, reach, 28);
-      ground.polygon(disc, PAVEMENT_LEVEL + .05, paved ? COLOURS.flags : COLOURS.plaza);
-      ground.wall(clockwise(disc), PAVEMENT_LEVEL + .05, PAVEMENT_LEVEL, paved ? COLOURS.flags : COLOURS.plaza, true);
-    }
     // A paved square's lawns
     for (const panel of entry.panels) ground.polygon(panel.outer, PAVEMENT_LEVEL + .03, COLOURS.lawn, null, true, panel.holes);
-    // A square's own walks
-    for (const walk of entry.walks) paths.ribbon(walk, SQUARE_WALK, PAVEMENT_LEVEL + .035, paved ? COLOURS.flags : COLOURS.path);
+    // One joined network, flush at its junctions and clipped across its full
+    // width at the street. Quiet stone edging only where paving meets lawn.
+    const paving = parkSurfaces(entry, parkPaths);
+    for (const [pieces, colour] of [[paving.walks, paved ? COLOURS.flags : COLOURS.path],
+      [paving.plaza, paved ? COLOURS.flags : COLOURS.plaza], [paving.edging, COLOURS.coping]]) {
+      for (const piece of pieces) paths.polygon(piece.outer, PAVEMENT_LEVEL + .035, colour, null, true, piece.holes);
+    }
     // A pond: water a little below the lawn, inside a low stone coping
     if (entry.pond) {
       const shore = pondShore(entry.pond), ccw = signedArea(shore) > 0 ? shore : shore.slice().reverse(), top = PAVEMENT_LEVEL + .3;

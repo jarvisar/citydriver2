@@ -22,16 +22,34 @@ const gable = new THREE.CircleGeometry(1, 14, 0, Math.PI);
 const cache = new Map();
 const template = (key, build) => { if (!cache.has(key)) cache.set(key, build()); return cache.get(key); };
 
+// Thin fabric, visible from underneath in the ordinary opaque prop batch.
+// Reversed faces cost less than closed boxes and need no extra material.
+function fabric(triangles) {
+  const vertices = triangles.flatMap(([a, b, c]) => [...a, ...b, ...c, ...c, ...b, ...a]);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+  g.computeVertexNormals();
+  return g;
+}
+
 // A market stall: a counter and a table of produce under a striped awning,
 // its front to local +z
 function stall(colour) {
   const p = new Parts(), cream = '#f1e6cc';
   p.box([0, .5, .55], [3.2, 1, 1.1], '#9c7c58');
   p.box([0, 1.03, .55], [3.3, .06, 1.2], '#b8986c');
-  for (const x of [-1.55, 1.55]) for (const z of [-1, 1.15]) p.box([x, 1.3, z], [.1, 2.6, .1], '#5d4a38');
+  const roofAt = z => 2.63 - (z - .05) * .22;
+  for (const x of [-1.55, 1.55]) for (const z of [-1, 1.15]) {
+    const h = roofAt(z);
+    p.box([x, h / 2, z], [.1, h, .1], '#5d4a38');
+  }
   // The awning, sloping down to the front in stripes
-  for (let i = 0; i < 6; i++) p.box([-1.5 + i * .6 + .3, 2.62, .05], [.6, .1, 3], i % 2 ? cream : colour, [-.22, 0, 0]);
-  p.box([0, 2.3, 1.62], [3.6, .36, .06], colour);
+  for (let i = 0; i < 6; i++) {
+    const x = -1.8 + i * .6, a = [x, roofAt(-1.45), -1.45], b = [x + .6, roofAt(-1.45), -1.45];
+    const d = [x, roofAt(1.55), 1.55], e = [x + .6, roofAt(1.55), 1.55];
+    const f = [x, roofAt(1.55) - .22, 1.55], h = [x + .6, roofAt(1.55) - .22, 1.55];
+    p.add(fabric([[a, d, e], [a, e, b], [d, f, h], [d, h, e]]), [0, 0, 0], i % 2 ? cream : colour);
+  }
   const fruit = ['#d9503f', '#e9b23b', '#8fb34a', '#e98a3c'];
   for (let i = 0; i < 4; i++) p.add(new THREE.IcosahedronGeometry(.28, 0), [-1.15 + i * .77, 1.2, .5], fruit[(i + colour.length) % 4]);
   p.box([0, .45, -.75], [3, .9, .8], '#7d6650');
@@ -40,15 +58,27 @@ function stall(colour) {
 // A cafe table for four under a parasol
 function cafe(colour) {
   const p = new Parts(), iron = '#3d4246';
+  p.cylinder([0, .035, 0], .27, .3, .07, iron, 8);
   p.cylinder([0, .37, 0], .05, .05, .74, iron, 5);
-  p.cylinder([0, .75, 0], .55, .55, .05, '#e9e4d6', 10);
+  p.cylinder([0, .75, 0], .55, .55, .05, '#e9e4d6', 12);
   for (let k = 0; k < 4; k++) {
     const a = k * Math.PI / 2, x = Math.cos(a) * 1.05, z = Math.sin(a) * 1.05;
-    p.box([x, .23, z], [.42, .46, .42], iron);
-    p.box([x * 1.2, .65, z * 1.2], [Math.abs(Math.cos(a)) > .5 ? .06 : .42, .45, Math.abs(Math.cos(a)) > .5 ? .42 : .06], iron);
+    const ca = Math.cos(a), sa = Math.sin(a), turn = Math.PI / 2 - a;
+    const at = (side, back, y) => [x - sa * side + ca * back, y, z + ca * side + sa * back];
+    p.box([x, .44, z], [.46, .06, .44], '#85745d', [0, turn, 0]);
+    for (const side of [-.18, .18]) for (const back of [-.17, .17]) {
+      const h = back > 0 ? .85 : .42;
+      p.box(at(side, back, h / 2), [.045, h, .045], iron, [0, turn, 0]);
+    }
+    p.box(at(0, .17, .73), [.46, .24, .05], '#85745d', [0, turn, 0]);
   }
-  p.cylinder([0, 1.45, 0], .03, .03, 1.5, '#d8d2c0', 5);
-  p.cone([0, 2.35, 0], 1.7, .55, colour, 8);
+  p.cylinder([0, 1.69, 0], .03, .03, 1.88, '#d8d2c0', 5);
+  const canopy = [], point = (k, r, y) => [Math.cos(k * Math.PI / 6) * r, y, Math.sin(k * Math.PI / 6) * r];
+  for (let k = 0; k < 12; k++) {
+    const a = point(k, .75, 2.48), b = point(k + 1, .75, 2.48), d = point(k, 1.7, 2.075), e = point(k + 1, 1.7, 2.075);
+    canopy.push([[0, 2.625, 0], b, a], [a, b, e], [a, e, d]);
+  }
+  p.add(fabric(canopy), [0, 0, 0], colour);
   return p.finish();
 }
 

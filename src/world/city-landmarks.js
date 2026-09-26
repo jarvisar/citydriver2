@@ -12,7 +12,7 @@ import { grassArea } from './city-grass.js';
 import { faceYaw, alongYaw, itemFrame } from './city-layout-render.js';
 import { buildMonument } from './city-monuments.js';
 import { BED_COLOURS } from './city-parks.js';
-import { intersection, solids } from '../mapgen/booleans.js';
+import { intersection, region, solids, union } from '../mapgen/booleans.js';
 import { offsetPolygon, calcPolygonArea, insidePolygon, distanceToPolyline } from '../mapgen/polygon-util.js';
 
 // The places a passenger asks for stand out from the street they are on: a
@@ -149,11 +149,13 @@ export function buildLandmark(c, lot, place) {
   // lot's edges and in its open lawn, clear of both and of the name's plinth;
   // and for a civic hall flower beds either side of the forecourt and its flags
   const grounds = () => {
-    const paved = rect => intersection(solids([rect]), solids([lotLocal])).map(piece => piece.outer.map(p => [p.x, p.y]));
     c.polygon(lotLocal.map(p => [p.x, p.y]), G + .05, .06, LAWN);
     grassArea(c, lotLocal.map(p => [p.x, p.y]), LAWN, G + .08);
-    const reach = setback + 8;
-    for (const piece of paved(localRing(court, reach, front - reach / 2))) c.polygon(piece, G + .07, .06, PAVING);
+    // Rectangle fitting can put the site well behind an irregular street
+    // edge. Reach the actual lot boundary, not just its nominal setback;
+    // clipping below keeps the forecourt wholly within the grounds.
+    const reach = Math.max(setback + 8, ...lotLocal.map(p => front - ((p.x - cx) * nx + (p.y - cs) * ny))) + .1;
+    const apron = localRing(court, reach, front - reach / 2);
     // The path round the building, carried on to the lot's edge wherever it
     // stops so short of it that only a strip of lawn would be left between
     const halfW = W / 2 + 1.6, halfD = D / 2 + 1.6, spread = [-.9, -.45, 0, .45, .9];
@@ -162,7 +164,13 @@ export function buildLandmark(c, lot, place) {
     const out = { front: grow(spread.map(k => [k * halfW, -halfD]), 0, -1), back: grow(spread.map(k => [k * halfW, halfD]), 0, 1),
       left: grow(spread.map(k => [-halfW, k * halfD]), -1, 0), right: grow(spread.map(k => [halfW, k * halfD]), 1, 0) };
     const around = [at(-halfW - out.left, -halfD - out.front), at(halfW + out.right, -halfD - out.front), at(halfW + out.right, halfD + out.back), at(-halfW - out.left, halfD + out.back)];
-    for (const piece of paved(around.map(p => ({ x: p.x, y: p.s })))) c.polygon(piece, G + .07, .06, PAVING);
+    const paving = intersection(region(union(solids([apron, around.map(p => ({ x: p.x, y: p.s }))]))), solids([lotLocal]));
+    for (const piece of paving) {
+      c.polygon(piece.outer.map(p => [p.x, p.y]), G + .07, .06, PAVING);
+      // Close the ten-centimetre edge at the pavement: the raised forecourt
+      // otherwise shows a green slit beneath its flat, floating front edge.
+      bodies.prism(piece.outer, G, G + .1, PAVING);
+    }
     if (c.distant) return;
     // Where a tree may stand: on the lawn, clear of the lot's edge, the
     // building and the forecourt
