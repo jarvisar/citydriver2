@@ -33,7 +33,7 @@ The page's menus and HUD can't be seen in a headset, so `src/vr-status.js` draws
 ## Comfort
 
 - The camera follows the chase camera's position and heading only. Pitch and roll come from the headset, and there is no camera shake.
-- The comfort vignette darkens the edge of the view when the camera turns faster than about 20° a second, or the car speeds up or slows down sharply. It keeps the middle of the view clear, fades once the turn ends and never shows in menus. It can be turned off in the pause menu. The setting is saved.
+- The comfort vignette darkens the edge of the view when the camera turns faster than about 20° a second, or the car speeds up or slows down sharply. It keeps the middle of the view clear, fades once the turn ends and never shows in menus. When the chase camera has to jump in because a building is in the way, the view blinks dark for a moment, and the vignette closes in while the camera eases back out. All of this can be turned off in the pause menu. The setting is saved.
 
 ## Controls
 

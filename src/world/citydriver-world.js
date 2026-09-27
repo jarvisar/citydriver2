@@ -10,7 +10,7 @@ import { buildCityBuildingSteps } from './city-buildings.js';
 import { createSignMaterials, discoverySignFor, signCore } from './city-signs.js';
 import { cityItemMatrix, cityRigidFrame, cityAffinePoint, itemFrame } from './city-layout-render.js';
 import { addSurfacePolygon, faceSlabEdges } from './city-surfaces.js';
-import { buildGrassFringe } from './city-grass.js';
+import { buildGrassFringe, grassGeometry, MAX_LAWN_TUFTS } from './city-grass.js';
 import { createWaterMaterial } from './city-water.js';
 import { Surface, setColor } from './surface.js';
 import { cityWalker, walkerFloat, WALKER_COLORS, createWalkerMaterial, walkerAppearance, setWalkerAppearance, pairWalkers, offsetWalkerPose } from './city-life.js';
@@ -424,6 +424,10 @@ export class CityChunk {
   }
   // A busy street's furniture, a few dozen pieces per step of a streamed build
   *furnitureSteps() {
+    // (a cell with more lawn fringe than its budget keeps it evenly thinned)
+    const tint = new THREE.Color(), fringe = this.furniture.reduce((n, piece) => n + (piece.kind === 'grass'), 0);
+    const keep = Math.min(1, MAX_LAWN_TUFTS / Math.max(1, fringe));
+    let tufts = 0;
     for (const [index, piece] of this.furniture.entries()) {
       if (index && index % 40 === 0) yield;
       const x = piece.u - this.east, s = piece.s - this.start;
@@ -556,6 +560,11 @@ export class CityChunk {
       }
       else if (piece.kind === 'bandstand') { this.prop('bandstand', x, s, piece.yaw); this.post(x, s, 5.4); }
       else if (piece.kind === 'rim') this.post(x, s, piece.radius);
+      // A public lawn's fringe (see placeLawnFringe), up to a budget a cell
+      else if (piece.kind === 'grass' && !this.distant && Math.floor(++tufts * keep) > Math.floor((tufts - 1) * keep)) {
+        tint.set(piece.colour).multiplyScalar(piece.tint);
+        this.item('grass-fringe', grassGeometry, this.materials.props, [x, piece.level, -s], [piece.width, piece.height, piece.width], `#${tint.getHexString()}`, piece.yaw);
+      }
     }
   }
   // Residents walk the pavement round their block; pairs stroll together.

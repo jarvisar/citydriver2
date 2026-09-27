@@ -10,6 +10,7 @@ import { difference, intersection, region, solids } from '../src/mapgen/booleans
 import { junctionControls } from '../src/city-junctions.js';
 import { placeStreetFurniture, findBridges, cityCrosswalks, convexOverlap, parkingGaps, clearParkingMark, harbourRoutes } from '../src/world/city-streets.js';
 import { cityIslands } from '../src/world/city-islands.js';
+import { cityParks } from '../src/world/city-parks.js';
 import { turnPath, wayOn, isLink } from '../src/world/lane-paths.js';
 import { planLot } from '../src/world/city-buildings.js';
 import { shopSignFor } from '../src/world/city-signs.js';
@@ -262,6 +263,23 @@ test('a block with no lot is a planted island: a lawn inside its kerb, with only
     if (!['bed', 'sculpture'].includes(piece.kind) || piece.yard !== undefined) continue;
     const island = cityIslands().find(island => insidePolygon({ x: piece.u, y: piece.s }, island.block.kerb));
     if (island) assert.ok(insidePolygon({ x: piece.u, y: piece.s }, island.lawn) && !onRoadAt(piece.s, piece.u));
+  }
+});
+
+test('the parks, squares and islands have a fringe of grass round their lawns, off the walks', () => {
+  const lawns = [...cityParks().flatMap(e => e.paved ? e.panels.map(panel => panel.outer) : [e.park.lawn]), ...cityIslands().map(island => island.lawn)];
+  const grass = furniture.filter(piece => piece.kind === 'grass');
+  for (const piece of grass) {
+    const at = `${piece.u.toFixed(1)},${piece.s.toFixed(1)}`;
+    assert.ok(lawns.some(lawn => lawn.length >= 3 && insidePolygon({ x: piece.u, y: piece.s }, lawn)), `grass off the lawns at ${at}`);
+    const road = CITY.roadIndex.nearest(piece.u, piece.s, 12, (segment, distance) => distance - segment.road.profile.halfWidth);
+    assert.ok(!road || road.score >= .7, `grass on a walk or road at ${at}`);
+    assert.ok(piece.height <= .65 && piece.width <= .95, `grass over knee height at ${at}`);
+  }
+  // (every park and unpaved square has some)
+  for (const entry of cityParks()) {
+    if (entry.paved || entry.park.lawn.length < 3) continue;
+    assert.ok(grass.some(piece => insidePolygon({ x: piece.u, y: piece.s }, entry.park.lawn)), `park ${entry.index} has no fringe`);
   }
 });
 

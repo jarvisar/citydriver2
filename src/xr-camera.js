@@ -54,8 +54,12 @@ export class XRCameraRig {
 // the camera or the car surges, the usual cure for being turned by something
 // other than your own head. It is moderate (the middle of the view stays
 // clear and bright), fades as soon as the turn ends and never shows while
-// paused. The pause menu's Comfort vignette switch turns it off.
+// paused. The chase camera easing back out from a building counts as a
+// surge, and its jump in (over JUMP metres) is a blink: dark at once, then
+// clearing over BLINK seconds, the usual way to make a teleport comfortable.
+// The pause menu's Comfort vignette switch turns both off.
 const APERTURE = { wide: THREE.MathUtils.degToRad(58), narrow: THREE.MathUtils.degToRad(34) };
+const JUMP = 1, BLINK = .15;
 export class ComfortVignette {
   constructor(camera, distance = .3) {
     // A ring whose inner edge is clear and whose feather and far edge are
@@ -77,7 +81,11 @@ export class ComfortVignette {
     this.mesh.renderOrder = 998; this.mesh.frustumCulled = false; this.mesh.visible = false;
     this.mesh.position.z = -distance; this.distance = distance;
     camera.add(this.mesh);
-    this.enabled = true; this.amount = 0; this.heading = null; this.speed = 0;
+    this.blink = new THREE.Mesh(new THREE.CircleGeometry(2, 16), new THREE.MeshBasicMaterial({ color: 0, transparent: true, opacity: 0, depthTest: false, depthWrite: false, toneMapped: false, fog: false }));
+    this.blink.renderOrder = 998; this.blink.frustumCulled = false; this.blink.visible = false;
+    this.blink.position.z = -distance;
+    camera.add(this.blink);
+    this.enabled = true; this.amount = 0; this.heading = null; this.speed = 0; this.dark = 0;
   }
   // `source` is the game's camera, whose turning the headset is carried by.
   update(source, speed, dt, active) {
@@ -87,14 +95,18 @@ export class ComfortVignette {
       const turn = Math.abs(Math.atan2(Math.sin(heading - this.heading), Math.cos(heading - this.heading))) / dt;
       const surge = Math.abs(speed - this.speed) / dt;
       // From 20 degrees a second of turning; fully in by 90. A hard launch or
-      // stop adds a little.
-      target = Math.min(1, Math.max(0, (turn - .35) / 1.2) + Math.max(0, (surge - 8) / 30));
+      // stop adds a little, and so does the camera gliding back out (fully
+      // in from 7 m/s, as it leaves a building's side at the start).
+      const glide = source.userData.glide ?? 0;
+      target = Math.min(1, Math.max(0, (turn - .35) / 1.2) + Math.max(0, (surge - 8) / 30) + Math.max(0, (glide - 1) / 6));
+      this.dark = (source.userData.jump ?? 0) > JUMP ? 1 : Math.max(0, this.dark - dt / BLINK);
     }
     this.heading = heading; this.speed = speed;
-    if (!active || !this.enabled) this.amount = 0;
+    if (!active || !this.enabled) this.amount = this.dark = 0;
     // In quickly, out gently
     else if (dt > 0) this.amount = THREE.MathUtils.damp(this.amount, target, target > this.amount ? 8 : 2.5, dt);
     this.mesh.visible = this.amount > .02;
     if (this.mesh.visible) this.mesh.scale.setScalar(this.distance * Math.tan(THREE.MathUtils.lerp(APERTURE.wide, APERTURE.narrow, this.amount)));
+    this.blink.visible = this.dark > 0; this.blink.material.opacity = this.dark;
   }
 }

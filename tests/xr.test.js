@@ -284,6 +284,25 @@ test('the comfort vignette closes in while the camera turns, eases off after, an
   vignette.enabled = false; run(.6, 1.6); assert.equal(vignette.mesh.visible, false);
 });
 
+test('the chase camera jumping in off a building blinks the headset, and easing back out closes the vignette', () => {
+  const camera = new THREE.PerspectiveCamera(), source = new THREE.Object3D(), vignette = new ComfortVignette(camera);
+  const step = (jump = 0, glide = 0, active = true) => { source.userData.jump = jump; source.userData.glide = glide; vignette.update(source, 20, 1 / 72, active); };
+  step(); step(.5);
+  assert.equal(vignette.blink.visible, false, 'a small nudge is not a teleport');
+  step(6);
+  assert.ok(vignette.blink.visible && vignette.blink.material.opacity === 1, 'dark at once');
+  for (let i = 0; i < 6; i++) step();
+  assert.ok(vignette.blink.material.opacity > 0 && vignette.blink.material.opacity < .6, 'then clearing');
+  for (let i = 0; i < 6; i++) step();
+  assert.equal(vignette.blink.visible, false, 'gone within a fifth of a second');
+  for (let i = 0; i < 36; i++) step(0, 12);
+  assert.ok(vignette.amount > .6 && vignette.mesh.visible, `gliding back out closes it in (${vignette.amount.toFixed(2)})`);
+  for (let i = 0; i < 144; i++) step();
+  assert.equal(vignette.mesh.visible, false);
+  step(6, 0, false); assert.equal(vignette.blink.visible, false, 'never while paused or in a menu');
+  vignette.enabled = false; step(6); assert.equal(vignette.blink.visible, false, 'the comfort switch turns it off');
+});
+
 test('overhead VR retains each view framing without mutating the desktop camera', () => {
   const rig = new XRCameraRig(), direction = new THREE.Vector3();
   const camera = new THREE.OrthographicCamera(-80, 80, 82.5, -82.5, 1, 1200);

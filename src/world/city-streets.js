@@ -1434,4 +1434,67 @@ export function placeStreetFurniture(nav, bridges, add) {
       add({ kind: 'parked', u: x, s: y, yaw: -heading, model, colour: Math.floor(randomAt(salt, 7408, CITY.seed) * 1e6) });
     }
   }
+  placeLawnFringe(inZone, free, pathClear, add);
+}
+
+// A fringe of longer grass on the public lawns, as the gardens have (see
+// city-grass.js): along a park's lawn by the pavement and down both sides of
+// its walks, round a square's lawns and a planted island's edge. Placed last
+// and seeded by position, so nothing else moves, and it keeps nothing clear.
+function placeLawnFringe(inZone, free, pathClear, add) {
+  const sow = (x, y, tx, ty, nx, ny, level, fits) => {
+    const random = seededRandom(Math.imul(Math.round(x * 4), 73856093) ^ Math.imul(Math.round(y * 4), 19349663) ^ CITY.seed);
+    if (random() > .7) return;
+    const count = random() < .5 ? 2 : 1;
+    for (let i = 0; i < count; i++) {
+      const along = i ? .8 + random() * .5 : 0, inset = .55 + random() * .6;
+      const u = x + tx * along + nx * inset, s = y + ty * along + ny * inset;
+      // (blades reach ~.45 m from the tuft's middle)
+      if (!fits(u, s) || pathClear(u, s) < .7 || inZone(u, s, true) || !free(u, s, 1.4)) continue;
+      add({ kind: 'grass', u, s, level, colour: COLOURS.lawn, yaw: random() * Math.PI * 2, width: .65 + random() * .3, height: .4 + random() * .25, tint: .92 + random() * .35 });
+    }
+  };
+  // Round a lawn's edge, just inside it
+  const edge = (ring, level, fits, step = 4) => {
+    const ccw = signedArea(ring) > 0 ? ring : ring.slice().reverse();
+    for (const p of alongPolyline([...ccw, ccw[0]], step, step / 2)) sow(p.x, p.y, p.tx, p.ty, -p.ty, p.tx, level, fits);
+  };
+  const within = (polygon, margin) => {
+    const ring = [...polygon, polygon[0]];
+    return (x, y) => insidePolygon({ x, y }, polygon) && distanceToPolyline({ x, y }, ring) > margin;
+  };
+  const lawns = [];
+  for (const entry of cityParks()) {
+    const park = entry.park;
+    if (park.lawn.length < 3) continue;
+    if (entry.paved) {
+      for (const panel of entry.panels) edge(panel.outer, PAVEMENT_LEVEL + .03, within(panel.outer, .4));
+      continue;
+    }
+    const onLawn = within(park.lawn, .4), fits = (x, y) => onLawn(x, y) && parkClear(entry, x, y, .3);
+    edge(park.lawn, PAVEMENT_LEVEL + .02, fits);
+    if (!park.square) lawns.push({ bounds: polygonBounds(park.lawn), fits });
+    else for (const walk of entry.walks) for (const p of alongPolyline(walk, 4.5, 2.25)) for (const side of [-1, 1]) {
+      const nx = -p.ty * side, ny = p.tx * side;
+      sow(p.x + nx * SQUARE_WALK, p.y + ny * SQUARE_WALK, p.tx, p.ty, nx, ny, PAVEMENT_LEVEL + .02, fits);
+    }
+  }
+  // down both sides of a park's walks
+  for (const road of CITY.roads) {
+    if (road.kind !== 'path') continue;
+    const reach = road.profile.halfWidth;
+    for (const p of alongPolyline(road.points, 4.5, 2.25)) {
+      const lawn = lawns.find(({ bounds: b }) => p.x > b.minX && p.x < b.maxX && p.y > b.minY && p.y < b.maxY);
+      if (!lawn) continue;
+      for (const side of [-1, 1]) {
+        const nx = -p.ty * side, ny = p.tx * side;
+        sow(p.x + nx * reach, p.y + ny * reach, p.tx, p.ty, nx, ny, PAVEMENT_LEVEL + .02, lawn.fits);
+      }
+    }
+  }
+  // (clear of an island's flower bed or sculpture, in its middle)
+  for (const { lawn, deepest } of cityIslands()) {
+    const onLawn = within(lawn, .4), bed = deepest?.distance >= 2 ? deepest.point : null;
+    edge(lawn, PAVEMENT_LEVEL + .02, (x, y) => onLawn(x, y) && !(bed && Math.hypot(x - bed.x, y - bed.y) < 4));
+  }
 }

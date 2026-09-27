@@ -252,6 +252,12 @@ test('buildings stand firm, and trees and shelters do against all but the cars t
       const knocked = props.knock(collider, contact, motion);
       assert.equal(Boolean(knocked), breaks.includes(kind), `${car} and a ${kind}`);
       if (knocked) props.restore(collider);
+      // and while the player drives it, so does anything else, however slow:
+      // a traffic car it has shoved into one
+      const shoved = { x: collider.x - 2.5, z: collider.z, heading: Math.PI / 2, halfWidth: 1, halfLength: 2.2, mass: 1.5, vx: 1.5, vz: 0, spin: 0, y: ROAD_LEVEL, height: 1.5 };
+      const pushed = props.knock(collider, contact, shoved);
+      assert.equal(Boolean(pushed), breaks.includes(kind), `a car shoved by the ${car} into a ${kind}`);
+      if (pushed) props.restore(collider);
     }
     vehicle.disposeModel();
   }

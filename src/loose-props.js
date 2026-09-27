@@ -36,7 +36,7 @@ const KINDS = {
   // A pedestrian a car meets (see person): scooped off their feet, they
   // tumble, land and slide to a stop, then get up (see PedestrianContacts)
   person: { mass: .07, firm: 0, lift: .45, bounce: .1, sound: 'thud' },
-  // Stand firm against any car but one that `breaks` them (see Vehicle.spec)
+  // Stand firm unless the player drives a car that `breaks` them (see this.breaks)
   tree: { mass: 1.4, firm: 4, topples: true, lift: .25, bounce: .1, sound: 'wood', bits: 'leaves', only: true },
   shelter: { mass: .6, firm: 3, lift: .35, bounce: .15, sound: 'metal', bits: 'glass', only: true },
 };
@@ -282,6 +282,9 @@ export class LooseProps {
   constructor(scene, material) {
     this.group = new THREE.Group(); this.group.name = 'loose-props'; scene.add(this.group);
     this.material = material; this.pools = new Map(); this.bodies = []; this.loose = []; this.people = []; this.alpha = 1;
+    // What the player's car breaks (see Vehicle.spec): while they drive it,
+    // those kinds give way to anything, at any speed, a car they shove included
+    this.breaks = [];
     this.bits = new Bits(this.group, material);
     // What was heard: { kind, strength (m/s), x, z }, for the sound to take (see DriveAudio)
     this.sounds = [];
@@ -295,8 +298,9 @@ export class LooseProps {
   knock(collider, contact, car) {
     const prop = collider.prop;
     if (!prop?.ready || collider.woken) return null;
-    const closing = -(car.vx * contact.x + car.vz * contact.z), piece = prop.pieces[0].kind;
-    if (closing < Math.max(.2, KINDS[piece].firm) || (KINDS[piece].only && !car.breaks?.includes(piece))) return null;
+    const closing = -(car.vx * contact.x + car.vz * contact.z), piece = prop.pieces[0].kind, type = KINDS[piece];
+    if (type.only && !this.breaks.includes(piece)) return null;
+    if (closing < Math.max(.2, type.only ? 0 : type.firm)) return null;
     const point = contact.point ?? { x: collider.x, z: collider.z }, bodies = this.loosen(collider);
     const hit = bodies.reduce((a, b) => Math.hypot(a.p.x - point.x, a.p.z - point.z) <= Math.hypot(b.p.x - point.x, b.p.z - point.z) ? a : b), kind = hit.kind;
     const blow = kind.topples ? this.topple(hit, car, contact, point) : this.fling(hit, car, contact, point);
@@ -359,7 +363,8 @@ export class LooseProps {
   }
   carOf(player) {
     const car = player.motion();
-    car.y = player.groundedPosition.y; car.height = player.spec.mass > 3 ? CAB : ROOF; car.breaks = player.spec.breaks;
+    car.y = player.groundedPosition.y; car.height = player.spec.mass > 3 ? CAB : ROOF;
+    this.breaks = player.spec.breaks ?? [];
     return car;
   }
   // Its bodies take the furniture's place
@@ -625,6 +630,7 @@ export class LooseProps {
   // tumble and settle. The traffic takes nothing back from a loose piece.
   update(dt, player, traffic = null, chunks = null) {
     const at = player.groundedPosition;
+    this.breaks = player.spec?.breaks ?? [];
     for (let i = this.loose.length - 1; i >= 0; i--) {
       const collider = this.loose[i];
       if (Math.hypot(collider.x - at.x, collider.z - at.z) > RETURN) this.restore(collider);

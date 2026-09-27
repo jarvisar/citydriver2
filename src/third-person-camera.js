@@ -83,8 +83,13 @@ export class ThirdPersonCamera {
     this.pivot.set(car.position.x, this.height + PIVOT + lift, car.position.z);
     const open = this.sight?.(this.pivot, this.camera.position) ?? 1;
     const eased = this.reach === null || open < this.reach ? open : THREE.MathUtils.damp(this.reach, open, OPEN_RATE, dt);
+    const before = this.reach ?? eased, line = this.camera.position.distanceTo(this.pivot);
     this.reach = open - eased < 1e-3 ? open : eased;
     if (this.reach < 1) this.camera.position.sub(this.pivot).multiplyScalar(this.reach).add(this.pivot);
+    // How far it was just pulled in, and how fast it is easing out, for the
+    // headset's comfort vignette (see ComfortVignette)
+    this.camera.userData.jump = Math.max(0, before - this.reach) * line;
+    this.camera.userData.glide = dt > 0 ? Math.max(0, this.reach - before) * line / dt : 0;
     this.target.copy(car.position).addScaledVector(this.forward, 7);
     this.target.y = this.height + 2.2 + lift * .35 + Math.sin(this.pitch) * 7;
     this.camera.lookAt(this.target);

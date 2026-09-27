@@ -22,6 +22,8 @@ grassGeometry.setAttribute('position', new THREE.Float32BufferAttribute(position
 grassGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 grassGeometry.computeVertexNormals();
 export const MAX_GRASS_TUFTS = 64;
+// and on the parks', squares' and islands' lawns, placed with the furniture
+export const MAX_LAWN_TUFTS = 128;
 
 export function grassArea(c, polygon, color, y) {
   if (c.distant) return;

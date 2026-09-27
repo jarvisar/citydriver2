@@ -170,20 +170,23 @@ test('a building in the way brings the chase camera in along its line to the car
     return open;
   };
   free.update(car, 0); rig.update(car, 0);
-  const along = t => rig.pivot.clone().lerp(free.camera.position, t);
+  const along = t => rig.pivot.clone().lerp(free.camera.position, t), line = rig.pivot.distanceTo(free.camera.position);
   assert.ok(rig.camera.position.distanceTo(along(.4)) < 1e-9);
+  assert.equal(rig.camera.userData.jump, 0, 'a snap is no jump');
   // The view clears: out over a second or two, a little at a time
   open = 1;
   let previous = .4;
   for (let i = 0; i < 60; i++) {
     free.update(car, 1 / 60); rig.update(car, 1 / 60);
     assert.ok(rig.reach > previous && rig.reach - previous < .04);
+    assert.ok(Math.abs(rig.camera.userData.glide - (rig.reach - previous) * line * 60) < 1e-6, 'the headset hears how fast it glides');
     previous = rig.reach;
   }
   assert.ok(rig.reach > .9 && rig.reach < 1);
   // Something new in the way pulls it straight back in
-  open = .3; free.update(car, 1 / 60); rig.update(car, 1 / 60);
+  open = .3; free.update(car, 1 / 60); const reached = rig.reach; rig.update(car, 1 / 60);
   assert.ok(rig.camera.position.distanceTo(along(.3)) < 1e-9);
+  assert.ok(Math.abs(rig.camera.userData.jump - (reached - .3) * line) < 1e-6 && rig.camera.userData.glide === 0, 'and how far it jumped');
   // Once clear it ends exactly where it stands without the check
   open = 1;
   for (let i = 0; i < 300; i++) { free.update(car, 1 / 60); rig.update(car, 1 / 60); }
