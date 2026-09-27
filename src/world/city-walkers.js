@@ -78,12 +78,19 @@ function coatProfile(style) {
   // Legs together, then the underside of the top's hem
   if (TROUSERS.includes(style)) Object.assign(rows, { 0: [.195, .3], 1: [.21, .52], 2: [.262, .53], 3: [.268, .62] });
   if ([1, 5, 7].includes(style)) Object.assign(rows, { 3: [.272, .7], 4: [.28, .84] });
+  // The plain pullover has a close ribbed hem, not the team tops' broad
+  // chest stripe. Reuse their colour band lower down on a softer body.
+  if (style === 5) Object.assign(rows, { 2: [.27, .53], 3: [.274, .55], 4: [.29, .59], 5: [.3, .95] });
   // A boxy jacket, as broad at the hem as the shoulders; a padded vest
   if (style === 9) Object.assign(rows, { 2: [.298, .53], 3: [.3, .62], 4: [.3, .8], 5: [.3, .95] });
   if (style === 10) Object.assign(rows, { 3: [.29, .62], 4: [.3, .8] });
-  // A scarf takes the waist's ring: the coat runs straight from hip to
-  // chest, and the scarf's roll stands out over the shoulders on a ledge.
-  if (SCARF.includes(style)) rows.splice(2, 7, [.276, .64], [.283, .8], [.29, .95], [.262, 1.02], [.28, 1.03], [.245, 1.105], [.16, 1.14]);
+  // Spend the waist ring on a scarf's fold. It sits inside the shoulders,
+  // instead of widening into a stiff cape across all four coat styles.
+  if (SCARF.includes(style)) rows.splice(2, 7, [.276, .64], [.283, .8], [.29, .95], [.236, 1.025], [.25, 1.045], [.218, 1.115], [.15, 1.145]);
+  // The fitted coat draws in above a flared skirt; the long wrap falls
+  // loosely from a higher waist. Keep this shaping after the scarf's rings.
+  if (style === 8) Object.assign(rows, { 0: [.286, .3], 1: [.307, .325], 2: [.253, .64], 3: [.263, .8] });
+  if (style === 11) Object.assign(rows, { 0: [.312, .3], 1: [.324, .325], 2: [.286, .64], 3: [.263, .8], 4: [.28, .95], 6: [.255, 1.04], 7: [.22, 1.105] });
   return rows;
 }
 
@@ -98,11 +105,13 @@ const COLUMNS = [0, 24, 58, 90, 135, 180, -135, -90, -58, -24].map(a => a * Math
 function walkerBody(p, style) {
   const width = [1, 1.07, .96, 1.04, .93, 1.08, 1.02, 1.08, .96, 1.06, 1.08, .94][style];
   const rows = coatProfile(style), columns = COLUMNS.length, top = rows.length - 1, grid = [];
-  // A cardigan hangs open over less of the shirt than a jacket; the
-  // parka's front panels close to a placket
-  const pinch = { 2: .2, 6: .7 }[style] ?? 1;
-  const angles = COLUMNS.map(a => Math.abs(a) < .5 ? a * pinch : a);
+  // The open fronts narrow toward their hem instead of looking like a
+  // broad pasted-on stripe. The parka's panels close to a slim placket.
+  const opening = style === 6 ? [.5, .5, .5, .55, .65, .8, .9, .9, .9]
+    : style === 9 ? [.7, .7, .7, .8, .9, 1, 1, 1, 1] : null;
   rows.forEach(([r, y], j) => {
+    const pinch = style === 2 ? .2 : opening?.[j] ?? 1;
+    const angles = COLUMNS.map(a => Math.abs(a) < .5 ? a * pinch : a);
     // The collar stands higher at the back than the front
     const dip = j === top ? .018 : j === top - 1 ? .01 : 0;
     // The chest swells forward under the shoulders; the back stays flat
@@ -200,7 +209,10 @@ function walkerHead(p, style) {
   for (let i = 0; i < vertex.count; i++) {
     const phi = Math.atan2(vertex.getZ(i), -vertex.getX(i));
     const front = Math.max(0, -Math.sin(phi)), side = Math.cos(phi), back = Math.max(0, Math.sin(phi));
-    const latitude = (1 - uv.getY(i)) * 1.25, row = Math.min(1, latitude);
+    const latitude = (1 - uv.getY(i)) * 1.25, ring = Math.min(4, Math.round(latitude * 4));
+    // The beanie uses two rings at the same height for the lip of its folded
+    // cuff; all other caps keep their evenly spaced rows.
+    const row = style === 10 ? [0, .4, .78, .78, 1][ring] : Math.min(1, latitude);
     // The hairline, in radians from the crown. Short hair clears the ears and
     // comes down the back of the head to the nape: a cap stopping at the
     // ears read as hair on a bald ball from behind, and even as a face.
@@ -228,14 +240,32 @@ function walkerHead(p, style) {
     x += (snug[0] - x) * hug; y += (snug[1] - y) * hug; z += (snug[2] - z) * hug;
     if (style === 0) { x -= .045 * top; y += .085 * top + .03 * front * Math.sin(theta); }
     if (style === 1) { x -= .065 * top; y += .055 * top; }
-    if ((style === 3 || style === 11) && y < 0) x *= 1.13;
-    if (style === 10) y += .055 * top;
+    if (style === 3 || style === 11) {
+      // Cut hair hangs from the temples instead of following the skull back
+      // in under the jaw. The bob has a blunt edge; the long sweep drops
+      // farther behind and over one shoulder, with its face left clear.
+      const hang = THREE.MathUtils.smoothstep(theta, 1.35, 2.45);
+      const fall = style === 11 ? .285 + .025 * side : .255;
+      x += (-Math.cos(phi) * .264 - x) * hang;
+      z += (Math.sin(phi) * .239 - z) * hang;
+      y += (-fall - y) * hang;
+      // These longer faces cross the head's widest facets between rows.
+      // Leave a little clearance there, or a temple pokes through the hair.
+      x *= 1.05; z *= 1.05;
+    }
+    if (style === 10) {
+      y += .055 * top;
+      if (ring >= 3) { x *= 1.08; z *= 1.08; }
+    }
+    // A sparse cap spans across, rather than along, some head facets at the
+    // temples. Its close-fitting styles need the same small clearance.
+    if ([0, 1, 4, 6, 8, 9].includes(style)) { x *= 1.04; z *= 1.04; }
     if (style === 5) {
       // Bald on top: a horseshoe of hair, narrow over the ears and deepest
       // behind, from the back of the crown to the nape. The crown rows sink
       // into the head straight under its upper edge, and the band runs out
       // at the temples.
-      const ring = Math.min(4, Math.round(latitude * 4)), upper = 1.35 - back * .2, lower = 1.5 + back * .85;
+      const upper = 1.35 - back * .2, lower = 1.5 + back * .85;
       const angle = [0, upper, upper, (upper + lower) / 2, lower][ring];
       const out = ring < 2 || front > .3 ? .85 : [1.025, 1.08 - back * .02, 1.05][ring - 2];
       x = -Math.cos(phi) * Math.sin(angle) * .25 * out;
@@ -244,7 +274,10 @@ function walkerHead(p, style) {
     }
     // Return the rim inside the head. An open, paper-thin cap can leave
     // detached-looking slivers around the temples from oblique cameras.
-    if (latitude > 1.01) { x *= .72; y *= .72; z *= .72; }
+    if (latitude > 1.01) {
+      const long = style === 3 || style === 11;
+      x *= long ? .35 : .72; y *= long ? .65 : .72; z *= long ? .35 : .72;
+    }
     vertex.setXYZ(i, x, y, z);
   }
   scalp.computeVertexNormals(); p.add(scalp, [0, 1.46, 0], style === 10 ? trim : hair);

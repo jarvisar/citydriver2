@@ -69,6 +69,17 @@ test('hair covers the back of the head down to the nape', () => {
   for (const style of WALKER_STYLES.keys()) assert.ok(!isHair(outermost(style, new THREE.Vector3(0, .05, -1))), WALKER_STYLES[style]);
 });
 
+// Sparse hair facets used to cut through the wider head facets between
+// their rings, leaving isolated skin-coloured holes behind the temples.
+// These points sit inside the hair, clear of its edge and the visible ears.
+test('hair shells cover the head between their rings at the temples', () => {
+  for (const [style, direction] of [
+    [4, [-.93792, 0, .34684]], [8, [-.93792, 0, .34684]],
+    [6, [-.96665, -.04998, .25116]], [9, [-.946, -.025, .32319]],
+    [11, [-.83718, -.3429, -.4261]],
+  ]) assert.ok(isHair(outermost(style, new THREE.Vector3(...direction))), WALKER_STYLES[style]);
+});
+
 // Hair a shade from the face hides the hairline, brows and beard in it
 test('no resident has hair the colour of their face', () => {
   const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));

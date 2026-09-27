@@ -23,6 +23,7 @@ Smooth and Basic turn off the background blur behind the driving HUD.
 - A whole block is hidden when it's outside both the camera and the sun's shadow area. Skyline blocks that are out of range or under a detailed block are removed from the scene.
 - Detailed blocks instance their scenery (trees, lamps, benches, bins, signals, stops and small roof parts). Small batches of up to 32 instances that share a material merge into one mesh, up to 18,000 vertices per block. `blockBatches()` lists a block's batches.
 - Parked cars share the traffic cars' bodies and ten-sided tyres, at 568–640 triangles each. Pedestrians, signal lights, boats and water stay instanced because they change after building.
+- All twelve resident styles, taxi passengers and the walking player share one 504-triangle, 498-vertex model. Clothing and hair variation use existing morphs and palette colours, with one instanced draw per resident chunk and no clothing textures or accessory meshes.
 - Static matrices are cached. Off-screen objects skip updates until they're visible again, except traffic signals. Collision checks skip blocks that are too far away before checking individual colliders.
 - Perspective cameras stop drawing one metre past the point where the fog is fully opaque.
 - Loading compiles every shader before the first frame, including stand-ins for things that aren't on screen yet, like fare markers. Compiling a shader mid-drive stalls a phone for 50–200 ms.
