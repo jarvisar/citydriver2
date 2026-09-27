@@ -68,10 +68,8 @@ const FELT = 1.5;
 // its foot would leave the ground (its weight has to hold the foot down, so a
 // tall lamp post falls slower than a short sign); its foot slides on at this
 // share of the blow (up to 2.5 m/s), and it leans this much away from the
-// car's path. Until it is down (tilted this far, rad), a car that meets it
-// sweeps it out through the side it stands on (see contact), up to SWEPT
-// times the car's speed, rather than carrying it off down the street.
-const TOPPLE = .1, TOPPLE_LEAST = .9, SLIDE = .1, OUTWARD = .6, DOWN = Math.PI / 3, SWEPT = 2;
+// car's path. A car that meets it as it falls pushes it, as any piece (see contact).
+const TOPPLE = .1, TOPPLE_LEAST = .9, SLIDE = .1, OUTWARD = .6;
 // A piece flung off a bumper is swept this much aside, and pops up at most this fast (m/s)
 const ASIDE = .5, POP = 3.5;
 // The air slows a flying piece this much a second, and each hard landing
@@ -336,9 +334,8 @@ const velocityAt = (body, at, out) => out.crossVectors(body.w, at).add(body.v);
 // out: through the nearest side, the nearest end at that height (over the
 // bonnet, a piece leaves forward past the windscreen's foot, not the
 // bumper), or up through the top, leaning out the way the crown falls.
-// With `side` (1 or -1), the way out is only through that side (see falling).
 const exit = { x: 0, z: 0, roof: false };
-function inBody(car, x, y, z, side = 0) {
+function inBody(car, x, y, z) {
   const up = y - car.y;
   if (up < (car.floor ?? CLEARANCE)) return 0;
   const cos = Math.cos(car.heading), sin = Math.sin(car.heading), dx = x - car.x, dz = z - car.z;
@@ -361,7 +358,6 @@ function inBody(car, x, y, z, side = 0) {
     if (top <= 0) return 0;
     ahead = car.halfLength - along; behind = car.halfLength + along;
   }
-  if (side) { exit.roof = false; exit.x = side * cos; exit.z = side * sin; return car.halfWidth - across * side; }
   const d = Math.min(beside, ahead, behind, top);
   exit.roof = d === top;
   // (up through the top, leaning out as the crown falls there)
@@ -675,7 +671,6 @@ export class LooseProps {
     body.w.set(dz * turn, body.jitter * .6, -dx * turn);
     foot.copy(body.shape.com).applyQuaternion(body.q);
     body.v.crossVectors(body.w, foot).add(t2.set(dx * slide, .5, dz * slide));
-    body.falling = true;
     this.wake(body);
     return { x: blow.a.x, z: blow.a.z, spin: blow.a.spin, closing: blow.closing };
   }
@@ -722,8 +717,6 @@ export class LooseProps {
   // way out (px, pz), or null.
   contact(body, car) {
     const round = car.radius !== undefined, reach = (round ? car.radius : Math.hypot(car.halfWidth, car.halfLength)) + body.shape.radius;
-    // (a post still falling goes out through the side of the car it stands on: see falling)
-    const aside = body.falling && !round ? Math.sign((body.p.x - car.x) * Math.cos(car.heading) + (body.p.z - car.z) * Math.sin(car.heading)) || Math.sign(body.jitter) || 1 : 0;
     if (Math.abs(body.p.x - car.x) > reach || Math.abs(body.p.z - car.z) > reach || body.p.y - body.shape.radius > car.y + car.height) {
       if (body.under === car.owner) body.under = null;
       return null;
@@ -740,7 +733,7 @@ export class LooseProps {
         depth = d; best = i; nx = distance > 1e-6 ? dx / distance : 1; nz = distance > 1e-6 ? dz / distance : 0;
         continue;
       }
-      const d = inBody(car, x, y, z, aside);
+      const d = inBody(car, x, y, z);
       if (d <= depth) continue;
       depth = d; best = i; nx = exit.x; nz = exit.z; roof = exit.roof;
     }
@@ -780,14 +773,7 @@ export class LooseProps {
     // against a wall the way they push it: they meet it as they would the wall
     const firm = round && (body.piece.person || body.kind.mass > car.mass || this.pinned(body, r, nx, nz, car));
     const share = roof ? 1 : firm ? 0 : car.fixed ? 1 : car.mass / (car.mass + body.kind.mass);
-    let away = depth + .01;
-    if (aside) {
-      // (swept aside no faster than SWEPT times the car's speed, over the step's passes)
-      if (body.sweptAt !== this.steps) { body.sweptAt = this.steps; body.swept = 0; }
-      away = Math.min(away, Math.max(0, (Math.hypot(car.vx, car.vz) * SWEPT + 1) * this.dt - body.swept));
-      body.swept += away;
-    }
-    const px = -nx * away * (1 - share), pz = -nz * away * (1 - share);
+    const away = depth + .01, px = -nx * away * (1 - share), pz = -nz * away * (1 - share);
     if (roof) { body.p.y += away; body.riding = this.steps; }
     else { body.p.x += nx * away * share; body.p.z += nz * away * share; }
     body.pool.dirty = true;
@@ -875,7 +861,7 @@ export class LooseProps {
     if (was) for (const other of this.bodies) if (other.asleep && !other.sunk && other.p.distanceToSquared(body.p) < (other.shape.radius + body.shape.radius) ** 2) this.wake(other);
   }
   sleep(body) {
-    body.asleep = true; body.falling = false; body.v.set(0, 0, 0); body.w.set(0, 0, 0);
+    body.asleep = true; body.v.set(0, 0, 0); body.w.set(0, 0, 0);
     body.last.p.copy(body.p); body.last.q.copy(body.q); body.pool.dirty = true;
   }
   // One step of a piece on its own: it falls, turns, lands on its points and
@@ -895,8 +881,6 @@ export class LooseProps {
     }
     this.land(body);
     if (chunks) this.walls(body, chunks);
-    // (a post is down once it leans far enough over: see contact)
-    if (body.falling && t1.set(0, 1, 0).applyQuaternion(q).y < Math.cos(DOWN)) body.falling = false;
     // The air wears it down, and on the ground its turn, and its roll (a bin
     // on its side would otherwise roll on down the street). Lying on another
     // piece is lying on the ground (see meet).
@@ -1112,7 +1096,7 @@ export class LooseProps {
   // kicks light pieces aside and is stopped by heavy ones (see contact).
   update(dt, player, traffic = null, chunks = null) {
     const at = player.groundedPosition;
-    this.steps = (this.steps ?? 0) + 1; this.traffic = traffic; this.dt = dt;
+    this.steps = (this.steps ?? 0) + 1; this.traffic = traffic;
     this.breaks = player.spec?.breaks ?? [];
     for (let i = this.loose.length - 1; i >= 0; i--) {
       const collider = this.loose[i];

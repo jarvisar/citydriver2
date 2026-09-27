@@ -24,12 +24,14 @@ const colliders = () => [...world().world.chunks.values()].flatMap(chunk => chun
 // The nearest standing piece of a kind to the start that a car driven along
 // its street (see drive) meets: beside the carriageway, square off it, with
 // nothing else standing (a tree, a shelter) in the car's way over the last
-// ten metres to it. (Not one past a street's end or back in a square, which
-// the car would miss, nor one behind a tree, which would stop it short.)
-const besideStreet = c => {
+// ten metres to it, or `beyond` metres after it (where the car pushes on
+// what it has knocked over). (Not one past a street's end or back in a
+// square, which the car would miss, nor one behind a tree, which would stop
+// it short.)
+const besideStreet = (c, beyond = 3) => {
   const road = roadAt(-c.z, c.x, 40);
   if (!road || road.distance > road.road.profile.halfWidth + 4 || Math.abs((c.x - road.x) * road.tx + (-c.z - road.y) * road.ty) > .05) return false;
-  const run = [{ x: c.x - road.tx * 10, y: -c.z - road.ty * 10 }, { x: c.x + road.tx * 3, y: -c.z + road.ty * 3 }];
+  const run = [{ x: c.x - road.tx * 10, y: -c.z - road.ty * 10 }, { x: c.x + road.tx * beyond, y: -c.z + road.ty * beyond }];
   return colliders().every(o => o === c || o.woken || Math.hypot(o.x - c.x, o.z - c.z) > 20 || distanceToSegment({ x: o.x, y: -o.z }, run) > 1.8 + o.reach);
 };
 // Whether a point is inside a collider, as a loose piece meets it (a convex
@@ -48,7 +50,7 @@ const distanceToSegment = (p, [a, b]) => {
   const dx = b.x - a.x, dy = b.y - a.y, t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy)));
   return Math.hypot(p.x - a.x - dx * t, p.y - a.y - dy * t);
 };
-const nearest = (kind, test = () => true) => colliders().filter(c => c.prop?.ready && !c.woken && c.prop.pieces[0].kind === kind && besideStreet(c) && test(c))
+const nearest = (kind, test = () => true, beyond = 3) => colliders().filter(c => c.prop?.ready && !c.woken && c.prop.pieces[0].kind === kind && besideStreet(c, beyond) && test(c))
   .sort((a, b) => Math.hypot(a.x - world().start.u, -a.z - world().start.s) - Math.hypot(b.x - world().start.u, -b.z - world().start.s))[0];
 // Every point of a loose piece above the ground under it
 function aboveGround(body) {
@@ -149,16 +151,18 @@ test('the truck ploughs through a tree and a bus shelter, the monster truck only
 });
 
 test('a lamp post hit at speed snaps and falls over, dark, and the car carries on with a bite taken out of its speed', () => {
-  const lamp = nearest('lamp');
+  const lamp = nearest('lamp', undefined, 12);
   assert.ok(lamp, 'a lamp post near the start');
   const light = [...world().world.chunks.values()].flatMap(chunk => chunk.features.lamps).find(l => lamp.prop.items.includes(l.item));
-  const { props, car, before, after } = drive(lamp);
+  // (six seconds: pushed on by the car, it can lean on it a while before it lies still)
+  const { props, car, before, after } = drive(lamp, 'taxi', 20, 6);
   try {
     assert.ok(lamp.woken && lamp.prop.bodies.length === 1, 'knocked loose');
     const [post] = lamp.prop.bodies;
     assert.ok(tilt(post) > 70, `lying down (${tilt(post).toFixed(0)}°)`);
     assert.ok(post.asleep && aboveGround(post), 'and still, on the ground');
-    assert.ok(Math.hypot(post.p.x - lamp.x, post.p.z - lamp.z) < 12, 'where it stood, not flung down the street');
+    // (pushed on a few metres by the car as it falls: 8-17 m on five seeds)
+    assert.ok(Math.hypot(post.p.x - lamp.x, post.p.z - lamp.z) < 20, 'near where it stood, not flung down the street');
     const lost = (before - after) / before;
     assert.ok(lost > .05 && lost < .3, `the car lost ${(lost * 100).toFixed(0)}% of its speed`);
     assert.ok(light?.item.render.hidden, 'and its light is out');
@@ -342,8 +346,8 @@ test('a cafe table and its four chairs come loose as five pieces, and settle apa
   } finally { props.reset(); props.dispose(); player.disposeModel(); }
 });
 
-test('a post knocked over is swept aside off the car that hit it, head on or glancing: never carried off, nor long in it', () => {
-  const lamp = nearest('lamp');
+test('a post knocked over is pushed by the car that hit it, head on or glancing: never far into it, and it lies near where it stood', () => {
+  const lamp = nearest('lamp', undefined, 12);
   assert.ok(lamp, 'a lamp post near the start');
   for (const [id, headOn] of [['taxi', true], ['taxi', false], ['rig', true], ['formula', true]]) {
     let deepest = 0, seen = null, time = 0;
@@ -352,17 +356,15 @@ test('a post knocked over is swept aside off the car that hit it, head on or gla
     try {
       assert.ok(lamp.woken, `${id} knocked it loose`);
       const [post] = lamp.prop.bodies;
-      // (its foot slides out through the car's side over a few steps, as a
-      // bumper sweeps it aside: see falling)
       assert.ok(deepest < .7 && time < .15, `${id}${headOn ? ' head on' : ''}: the post was ${deepest.toFixed(2)} m inside the car (${seen?.toFixed(0)}° over), for ${time.toFixed(2)} s`);
-      assert.ok(tilt(post) > 70 && Math.hypot(post.p.x - lamp.x, post.p.z - lamp.z) < 12, `${id}: it lies near where it stood (${tilt(post).toFixed(0)}°, ${Math.hypot(post.p.x - lamp.x, post.p.z - lamp.z).toFixed(1)} m)`);
+      assert.ok(tilt(post) > 70 && Math.hypot(post.p.x - lamp.x, post.p.z - lamp.z) < 20, `${id}: it lies near where it stood (${tilt(post).toFixed(0)}°, ${Math.hypot(post.p.x - lamp.x, post.p.z - lamp.z).toFixed(1)} m)`);
     } finally { props.reset(); props.dispose(); car.disposeModel(); }
   }
 });
 
-test('a post knocked loose starts exactly where it stood, and its foot never jumps: it slides aside no faster than the car sweeps it', () => {
+test('a post knocked loose starts exactly where it stood, and its foot never jumps: it moves no faster than the car pushes it', () => {
   // (its foot was once kicked clear of the car at the knock: a metre's jump)
-  const lamp = nearest('lamp'), stood = new THREE.Vector3().setFromMatrixPosition(lamp.prop.matrix(new THREE.Matrix4()));
+  const lamp = nearest('lamp', undefined, 12), stood = new THREE.Vector3().setFromMatrixPosition(lamp.prop.matrix(new THREE.Matrix4()));
   const foot = body => body.p.clone().sub(body.shape.com.clone().applyQuaternion(body.q));
   for (const headOn of [true, false]) {
     let last = null, fastest = 0;
