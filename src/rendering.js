@@ -263,7 +263,8 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   // and the ground it keeps above
   function setSightLine(sight) { thirdPerson.sight = sight; }
   function setGround(ground) { thirdPerson.ground = ground; }
-  // The mouse turns the chase camera round the car, and the wheel brings it in or out (see MouseLook)
-  const look = (yaw, pitch) => thirdPerson.look(yaw, pitch), zoom = factor => thirdPerson.zoomBy(factor);
+  // The mouse turns the chase camera round the car, or the view through the
+  // player's eyes, and the wheel brings the chase camera in or out (see MouseLook)
+  const look = (yaw, pitch) => (views[view].firstPerson ? firstPerson : thirdPerson).look(yaw, pitch), zoom = factor => thirdPerson.zoomBy(factor);
   return { renderer, scene, graphics, ambientOcclusion, vrCamera, render, precompile, addCuller, setSightLine, setGround, look, zoom, enterVR, exitVR, setView, toggleAO() { return graphics.toggleAmbientOcclusion(); }, get camera() { return activeCamera(); }, update, resize, recordFrame, setJourney, setWeather, get viewLabel() { return views[view].label; }, get chaseView() { return Boolean(views[view].thirdPerson); }, get firstPersonView() { return Boolean(views[view].firstPerson); }, toggleView() { return setView((view + 1) % views.length); }, snap() { initialized = false; thirdPerson.snap(); firstPerson.snap(); } };
 }

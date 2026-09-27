@@ -228,6 +228,8 @@ export class PedestrianContacts {
       // (and parked cars knocked loose, while they are out of their bays)
       for (const car of traffic.woken ?? []) if (car.parked) this.add(car, time);
     }
+    // (and the player's own car where they left it, knocked about as those are)
+    for (const car of traffic?.playerCars ?? []) this.add(car, time);
     for (const body of props?.bodies ?? []) if (!body.asleep && !body.sunk && !body.removed) this.addPiece(body);
   }
   // A loose piece, if it is moving fast enough to knock someone over

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { carEntry } from './cars.js';
 import { sceneryContacts } from './collision.js';
 import { rock } from './impact.js';
+import { TRAFFIC_MODELS } from './traffic-models.js';
 import { PLAYER_LOOK, WALKER_SPEC } from './walker.js';
 
 // Getting out of the car and into another, in free drive (the walking is
@@ -12,7 +13,10 @@ import { PLAYER_LOOK, WALKER_SPEC } from './walker.js';
 // car in the garage. Any car in the traffic can be borrowed too, as in The
 // Simpsons: Hit & Run, where its driver lets the player take the wheel: when
 // they get out, the driver drives on from there, back to the nearest lane
-// the car faces (see CityTraffic.giveBack). The helicopter is not left.
+// the car faces (see CityTraffic.giveBack). So can a car parked along the
+// kerb, while there is traffic: its bay stays empty, and where they get out
+// it stands as though knocked loose to there, going back to its bay once
+// they are well away (see CityTraffic.leaveParked). The helicopter is not left.
 
 // How near (m, from someone's side to a car's) a car can be got into
 const REACH = 1.1;
@@ -31,20 +35,21 @@ export class OnFoot {
     // The garage car, parked: a body as the traffic knows one, with what it
     // takes to drive it again (see DrivingController.stepOut)
     this.parked = null;
-    // The traffic car they are driving, if it is one (see CityTraffic.take)
-    this.borrowed = null;
+    // The traffic car they are driving, if it is one (see CityTraffic.take),
+    // or the bay of the parked car they are (see CityTraffic.takeParked)
+    this.borrowed = null; this.bay = null;
     // Stopping, to get out as soon as the car is still
     this.leaving = false;
   }
   get walking() { return Boolean(this.vehicle.walker); }
   // What getting in or out would do now, for the HUD: { out } in a car
-  // they can leave, { car, own, name } by one they can get into, or null
+  // they can leave, { car | bay, own, name } by one they can get into, or null
   offer() {
     if (this.vehicle.pilot) return null;
     if (!this.walking) return { out: true, stopping: this.leaving };
     if (!this.vehicle.walker.standing) return null;
     const near = this.nearest();
-    return near && { ...near, name: carEntry(near.own ? near.car.kept.carId : near.car.spec.name).name };
+    return near && { ...near, name: carEntry(near.own ? near.car.kept.carId : near.bay ? near.bay.parked.model : near.car.spec.name).name };
   }
   // Out of the car (stopping first), or into the car within reach. Returns
   // anything worth saying.
@@ -60,6 +65,7 @@ export class OnFoot {
     const near = this.nearest();
     if (!near) return 'Walk up to a car to get in';
     if (near.own) return this.getBackIn();
+    if (near.bay) return this.borrowParked(near.bay);
     return this.borrow(near.car);
   }
   // The controls, while stopping to get out: brakes on, nothing else
@@ -105,6 +111,7 @@ export class OnFoot {
   clear() {
     this.leaving = false;
     if (this.borrowed) { this.traffic.giveBack(this.borrowed); this.borrowed = null; }
+    if (this.bay) { this.traffic.leaveParked(this.bay); this.bay = null; }
     const car = this.parked;
     if (!car) return;
     this.unpark(); car.car.removeFromParent(); car.kept.model.disposeModel();
@@ -128,32 +135,46 @@ export class OnFoot {
     for (const car of traffic.playerCars) add(car);
     return sight;
   }
-  // The car nearest them within reach: their own, or one of the traffic's
+  // The car nearest them within reach: their own, one of the traffic's, or
+  // one parked along the kerb (in its bay, or knocked loose), while there is traffic
   nearest() {
-    const p = this.vehicle.groundedPosition;
+    const p = this.vehicle.groundedPosition, traffic = this.traffic;
     let best = null, gap = REACH;
-    const consider = (car, own) => {
-      const dx = p.x - car.position.x, dz = p.z - car.position.z;
-      if (Math.abs(dx) > 8 || Math.abs(dz) > 8 || Math.abs(p.y - car.position.y) > 1.5) return;
-      const cos = Math.cos(car.heading), sin = Math.sin(car.heading);
-      const across = Math.max(0, Math.abs(dx * cos + dz * sin) - car.spec.width / 2), along = Math.max(0, Math.abs(dx * sin - dz * cos) - car.spec.length / 2);
+    // (from their side to a car's, standing at (x, z) facing `heading`)
+    const consider = (x, z, heading, spec, found) => {
+      const dx = p.x - x, dz = p.z - z;
+      if (Math.abs(dx) > 8 || Math.abs(dz) > 8) return;
+      const cos = Math.cos(heading), sin = Math.sin(heading);
+      const across = Math.max(0, Math.abs(dx * cos + dz * sin) - spec.width / 2), along = Math.max(0, Math.abs(dx * sin - dz * cos) - spec.length / 2);
       const distance = Math.hypot(across, along) - WALKER_SPEC.radius;
-      if (distance < gap) { gap = distance; best = { car, own }; }
+      if (distance < gap) { gap = distance; best = found; }
     };
-    if (this.parked) consider(this.parked, true);
-    if (this.traffic.enabled) for (const car of this.traffic.vehicles) if (car.edge && car.car.visible) consider(car, false);
+    const car = (car, found) => { if (Math.abs(p.y - car.position.y) < 1.5) consider(car.position.x, car.position.z, car.heading, car.spec, found); };
+    if (this.parked) car(this.parked, { car: this.parked, own: true });
+    if (!traffic.enabled) return best;
+    for (const each of traffic.vehicles) if (each.edge && each.car.visible) car(each, { car: each });
+    for (const each of traffic.woken) if (each.parked) car(each, { bay: each.parked });
+    for (const chunk of this.vehicle.scenery?.values() ?? []) {
+      const bounds = chunk?.collisionBounds;
+      if (!bounds || p.x < bounds.minX - 8 || p.x > bounds.maxX + 8 || p.z < bounds.minZ - 8 || p.z > bounds.maxZ + 8) continue;
+      for (const solid of chunk.features.colliders) {
+        if (!solid.parked?.ready || solid.woken || Math.abs(solid.x - p.x) > 8 || Math.abs(solid.z - p.z) > 8) continue;
+        consider(solid.x, solid.z, traffic.bayPose(solid).heading, TRAFFIC_MODELS.find(model => model.name === solid.parked.model), { bay: solid });
+      }
+    }
     return best;
   }
   // Out beside the car. Their own car stays parked; a borrowed one goes
-  // back to its driver.
+  // back to its driver, or stands where they left it.
   getOut() {
     const v = this.vehicle, spot = this.door();
     this.leaving = false;
     if (!spot) return 'No room to get out here';
     const pose = { s: v.s, u: v.u, heading: v.heading }, spec = v.spec, kept = v.stepOut(this.appearance);
-    if (this.borrowed) {
+    if (this.borrowed || this.bay) {
       kept.model.car.removeFromParent(); kept.model.disposeModel();
-      this.traffic.giveBack(this.borrowed, pose); this.borrowed = null;
+      if (this.borrowed) this.traffic.giveBack(this.borrowed, pose); else this.traffic.leaveParked(this.bay, pose);
+      this.borrowed = this.bay = null;
     } else this.park(kept, pose, spec);
     v.s = -spot.z; v.u = spot.x; v.walker.takeOver(); v.update(0, {});
     return '';
@@ -178,7 +199,7 @@ export class OnFoot {
     const chunks = this.vehicle.scenery;
     if (chunks) sceneryContacts(() => ({ x, z, heading: 0, halfWidth: r, halfLength: r, radius: r }), chunks.values(), () => { blocked = true; });
     if (blocked) return false;
-    const cars = [...(this.traffic.enabled ? this.traffic.vehicles : []), ...(this.parked ? [this.parked] : [])];
+    const traffic = this.traffic, cars = [...(traffic.enabled ? [...traffic.vehicles, ...traffic.woken.filter(car => car.parked)] : []), ...(this.parked ? [this.parked] : [])];
     return !cars.some(car => {
       const dx = x - car.position.x, dz = z - car.position.z, cos = Math.cos(car.heading), sin = Math.sin(car.heading);
       return Math.abs(dx * cos + dz * sin) < car.spec.width / 2 + r && Math.abs(dx * sin - dz * cos) < car.spec.length / 2 + r;
@@ -221,5 +242,16 @@ export class OnFoot {
     v.setCar(car.spec.name, { paint: `#${car.paint.color.getHexString()}` });
     this.borrowed = car;
     return `${carEntry(car.spec.name).name} · borrowed`;
+  }
+  // Into a parked car where it stands, in its bay or where it was knocked
+  // to, in its own paint
+  borrowParked(collider) {
+    const v = this.vehicle, info = collider.parked, at = this.traffic.woken.find(car => car.parked === collider) ?? this.traffic.bayPose(collider);
+    const { s, u, heading } = at;
+    if (!this.traffic.takeParked(collider)) return '';
+    v.s = s; v.u = u; v.heading = heading; v.speed = 0;
+    v.setCar(info.model, { paint: info.colour });
+    this.bay = collider;
+    return `${carEntry(info.model).name} · borrowed`;
   }
 }

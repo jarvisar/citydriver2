@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { CARS, CAR_IDS, DEFAULT_CAR, ROUTE_PAINT, DRAG, carMeters, carStats } from '../src/cars.js';
+import { CARS, CAR_IDS, GARAGE_IDS, DEFAULT_CAR, ROUTE_PAINT, DRAG, carMeters, carStats } from '../src/cars.js';
+import { carArt } from '../src/car-art.js';
 import { createCar, DrivingController } from '../src/vehicle.js';
 import { TRAFFIC_MODELS } from '../src/traffic-models.js';
 import { JOURNEYS } from '../src/journeys.js';
@@ -310,6 +311,18 @@ test('the racer is an open-wheeler, not a road car with new numbers', () => {
   assert.equal(CARS.formula.shape.name, 'formula');
   assert.ok(Math.abs(racer.x - CARS.formula.shape.width) < .1, 'its exposed wheels set the collision width');
   formula.disposeModel(); wagon.disposeModel();
+});
+
+// Portraits are drawn from each model's own numbers; a slab given its ends the
+// wrong way round draws a negative rect, which the browser rejects with an error.
+test('every garage portrait draws only well-formed shapes', () => {
+  for (const id of GARAGE_IDS) {
+    const svg = carArt(id);
+    for (const [, name, value] of svg.matchAll(/ (width|height|r|rx|ry)="([^"]*)"/g)) {
+      assert.ok(Number.isFinite(+value) && +value >= 0, `${id} portrait has ${name}="${value}"`);
+    }
+    assert.ok(!/NaN|undefined|Infinity/.test(svg), `${id} portrait has a broken number`);
+  }
 });
 
 test('one colour dresses the whole garage and follows the car swap', () => {

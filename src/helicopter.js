@@ -20,7 +20,7 @@ export const HELICOPTER_SHAPE = { name: 'helicopter', width: 2.3, length: 7.3, e
 // The mast, which the body tilts and banks about: in car space, nose to -z.
 const MAST = new THREE.Vector3(0, 1.6, -1.35);
 // (the bubble is lighter than a car's glass: that much of it read as a black ball)
-const DARK = '#2b3434', CHROME = '#bfc4b9', GLASS = '#4d737c', ENGINE = '#59625f', CREAM = '#ece4cf';
+const DARK = '#2b3434', CHROME = '#bfc4b9', GLASS = '#4d737c';
 
 // Faceted parts in the road cars' manner, merged by material. Paint takes the
 // garage colour; `details` carry their own. Everything is placed in car space
@@ -39,19 +39,7 @@ function partsKit() {
   const place = (geometry, [x, y, z], category, color) => { geometry.translate(x - MAST.x, y - MAST.y, z - MAST.z); add(geometry, category, color); };
   return {
     parts, add,
-    box(size, location, category = 'paint', color, tilt = 0) {
-      const geometry = new THREE.BoxGeometry(...size);
-      if (tilt) geometry.rotateX(tilt);
-      place(geometry, location, category, color);
-    },
-    // A box with its `at` end (-1 nose, 1 tail) drawn in and lifted
-    tapered(size, location, { at, x = 1, y = 1, lift = 0 }, category = 'paint', color) {
-      const geometry = new THREE.BoxGeometry(...size), position = geometry.attributes.position;
-      for (let i = 0; i < position.count; i++) if (Math.sign(position.getZ(i)) === at) {
-        position.setX(i, position.getX(i) * x); position.setY(i, position.getY(i) * y + lift);
-      }
-      geometry.computeVertexNormals(); place(geometry, location, category, color);
-    },
+    box(size, location, category = 'paint', color) { place(new THREE.BoxGeometry(...size), location, category, color); },
     // A tube from one point to another, thinner at the far end if asked
     rod(from, to, radius, category, color, end = radius) {
       const a = new THREE.Vector3(...from), b = new THREE.Vector3(...to), along = b.clone().sub(a);
@@ -59,42 +47,115 @@ function partsKit() {
       geometry.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), along.normalize()));
       place(geometry, a.add(b).multiplyScalar(.5).toArray(), category, color);
     },
-    bubble(radii, location) {
-      const geometry = new THREE.SphereGeometry(1, 12, 8);
-      geometry.scale(...radii); place(geometry, location, 'details', GLASS);
+    // A box whose corners `corner(x, y, z)` places in car space, from the
+    // signs (±1) of the corner it is
+    solid(corner, category = 'paint', color) {
+      const geometry = new THREE.BoxGeometry(2, 2, 2), position = geometry.attributes.position;
+      for (let i = 0; i < position.count; i++) position.setXYZ(i, ...corner(position.getX(i), position.getY(i), position.getZ(i)));
+      geometry.computeVertexNormals(); place(geometry, [0, 0, 0], category, color);
+    },
+    // The cabin: one egg, glass over paint. A sphere with its pole tipped
+    // `tilt` toward the nose is glass within `glass` of its `rings` of the
+    // pole, so the glass comes down to the chin and back over the crown, and
+    // paint below; its back half is drawn out, narrowed and lifted into the
+    // boom, and its belly flattened at `floor` under the middle. Painted
+    // frames run down the middle of the glass, from the roof to the chin, and
+    // over it where the doors begin, a hoop tipped back `door` from the pole.
+    pod({ centre: [cx, cy, cz], radii: [rx, ry], front, back, taper, rise, tilt, rings, glass, floor, door }) {
+      const cos = Math.cos(tilt), sin = Math.sin(tilt), cut = Math.PI * glass / rings;
+      // (a point of the upright unit sphere, in car space)
+      const at = (x, y, z) => {
+        [y, z] = [y * cos + z * sin, z * cos - y * sin];
+        const t = Math.max(0, z), narrow = 1 - taper * t * t;
+        return new THREE.Vector3(cx + x * narrow * rx, cy + Math.max((y * narrow + rise * t * t) * ry, -floor), cz + z * (t ? back : front));
+      };
+      for (const [geometry, color] of [
+        [new THREE.SphereGeometry(1, 12, glass, 0, Math.PI * 2, 0, cut), GLASS],
+        [new THREE.SphereGeometry(1, 12, rings - glass, 0, Math.PI * 2, cut, Math.PI - cut), null],
+      ]) {
+        const position = geometry.attributes.position;
+        for (let i = 0; i < position.count; i++) position.setXYZ(i, ...at(position.getX(i), position.getY(i), position.getZ(i)).toArray());
+        geometry.computeVertexNormals(); place(geometry, [0, 0, 0], color ? 'details' : 'paint', color);
+      }
+      // Each frame stands proud of the glass along a curve on it, and sinks
+      // into it far enough to meet the facets
+      const middle = new THREE.Vector3(cx, cy, cz), width = .035, proud = .018, points = [];
+      const triangle = (a, b, c, out) => {
+        const n = b.clone().sub(a).cross(c.clone().sub(a));
+        points.push(...a.toArray(), ...(n.dot(out) < 0 ? [c, b] : [b, c]).flatMap(v => v.toArray()));
+      };
+      const quad = (a, b, c, d, out) => { triangle(a, b, c, out); triangle(a, c, d, out); };
+      const strip = (curve, sunk) => {
+        const stations = curve.map((p, k) => {
+          const along = curve[Math.min(k + 1, curve.length - 1)].clone().sub(curve[Math.max(k - 1, 0)]).normalize();
+          const out = p.clone().sub(middle), side = new THREE.Vector3();
+          out.addScaledVector(along, -out.dot(along)).normalize(); side.crossVectors(along, out).multiplyScalar(width);
+          const edge = (sign, lift) => p.clone().addScaledVector(out, lift).addScaledVector(side, sign);
+          return { out, along, side, top: [edge(-1, proud), edge(1, proud)], foot: [edge(-1, -sunk), edge(1, -sunk)] };
+        });
+        stations.forEach((a, k) => {
+          const b = stations[k + 1];
+          if (!k) quad(a.top[0], a.top[1], a.foot[1], a.foot[0], a.along.clone().negate());
+          if (!b) { quad(a.top[0], a.top[1], a.foot[1], a.foot[0], a.along); return; }
+          quad(a.top[0], a.top[1], b.top[1], b.top[0], a.out.clone().add(b.out));
+          quad(a.top[0], b.top[0], b.foot[0], a.foot[0], a.side.clone().negate());
+          quad(a.top[1], b.top[1], b.foot[1], a.foot[1], a.side);
+        });
+      };
+      strip(Array.from({ length: glass * 2 + 1 }, (_, k) => at(0, Math.cos(k * cut / glass - cut), Math.sin(k * cut / glass - cut))), .012);
+      strip(Array.from({ length: 13 }, (_, k) => at(Math.cos(k * Math.PI / 12), Math.sin(k * Math.PI / 12) * Math.cos(door), Math.sin(k * Math.PI / 12) * Math.sin(door))), .06);
+      const frame = new THREE.BufferGeometry();
+      frame.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+      frame.setIndex([...Array(points.length / 3).keys()]);
+      frame.computeVertexNormals(); place(frame, [0, 0, 0], 'paint');
     },
   };
 }
 
-function build({ box, tapered, rod, bubble }) {
+// A flat painted plate, tapering and swept: its root chord (from, to) at one
+// end and its tip chord at the other, `thick` through. `fin` stands up the
+// middle, from the root at height `root[2]` to the tip at `tip[2]`; `plane`
+// spans out sideways, at height `y`, from x = `root[2]` to x = `tip[2]`. (The
+// lower end takes the box's lower corners, so a plate hanging down or out to
+// the left is not turned inside out.)
+const fin = (solid, root, tip, thick) => solid((sx, sy, sz) => {
+  const [from, to, height] = (sy < 0) === (root[2] < tip[2]) ? root : tip;
+  return [sx * thick / 2, height, sz < 0 ? from : to];
+});
+const plane = (solid, root, tip, y, thick) => solid((sx, sy, sz) => {
+  const [from, to, across] = (sx < 0) === (root[2] < tip[2]) ? root : tip;
+  return [across, y + sy * thick / 2, sz < 0 ? from : to];
+});
+
+function build({ box, rod, solid, pod }) {
   // Skids on splayed struts, turned up at the front
   for (const side of [-1, 1]) {
     rod([side * 1.05, .055, .55], [side * 1.05, .055, -2.85], .055, 'details', DARK);
     rod([side * 1.05, .055, -2.85], [side * 1.05, .3, -3.2], .055, 'details', DARK);
-    rod([side * 1.05, .06, -2.3], [side * .55, .82, -2.15], .045, 'details', DARK);
-    rod([side * 1.05, .06, -.2], [side * .55, .82, -.4], .045, 'details', DARK);
+    rod([side * 1.05, .06, -2.3], [side * .5, 1, -2.15], .045, 'details', DARK);
+    rod([side * 1.05, .06, -.2], [side * .38, 1.26, -1.2], .045, 'details', DARK);
   }
-  // The cabin: a painted tub under a glass bubble, a cream band round its sill
-  tapered([1.5, .6, 2.6], [0, .98, -1.95], { at: -1, x: .7, y: .8, lift: .05 });
-  tapered([1.53, .1, 2.5], [0, 1.24, -1.95], { at: -1, x: .7 }, 'details', CREAM);
-  bubble([.9, .82, 1.15], [0, 1.6, -2.35]);
-  // Engine and gearbox behind it, under a cowl, with the exhaust and the mast
-  tapered([1.3, 1.05, 1.9], [0, 1.62, -.55], { at: 1, x: .55, y: .6, lift: .15 });
-  box([.9, .3, 1.2], [0, 2.25, -1.05]);
-  box([.6, .34, .5], [0, 1.95, .4], 'details', ENGINE);
-  rod([0, 2.05, .6], [0, 2.1, .95], .1, 'details', DARK);
-  rod([0, 2.3, -1.35], [0, 2.74, -1.35], .07, 'details', DARK);
-  box([.34, .14, .34], [0, 2.76, -1.35], 'details', CHROME);
-  // The tail: a tapering boom, tailplane, fin and a skid to guard the rotor
-  rod([0, 1.62, .15], [0, 1.86, 3.55], .26, 'paint', null, .1);
-  box([1.3, .05, .38], [0, 1.78, 2.95]);
-  for (const side of [-1, 1]) box([.05, .22, .3], [side * .66, 1.78, 2.98], 'details', CREAM);
-  box([.07, 1.15, .6], [0, 2.3, 3.45], 'paint', null, .35);
-  box([.06, .5, .34], [0, 1.52, 3.5], 'paint', null, -.3);
-  box([.2, .14, .14], [.1, 2.05, 3.5], 'details', DARK);
+  // The cabin, with the engine inside its tail, and its exhaust under the boom
+  pod({ centre: [0, 1.5, -2.2], radii: [.8, .8], front: 1.3, back: 1.75, taper: .35, rise: .35, tilt: .87, rings: 10, glass: 5, floor: .72, door: 1.05 });
+  rod([0, 1.52, -.8], [0, 1.47, -.3], .075, 'details', DARK);
+  // The mast out of a fairing along the cabin roof, highest at the mast and
+  // falling away onto the boom, and the hub
+  for (const [front, rear] of [[[-2, .24, 2.27], [-1.3, .26, 2.42]], [[-1.3, .26, 2.42], [-.3, .15, 2.06]]]) {
+    solid((x, y, z) => { const [at, half, top] = z < 0 ? front : rear; return [x * half * (y < 0 ? 1 : .6), y < 0 ? 1.95 : top, at]; });
+  }
+  rod([0, 2.35, -1.35], [0, 2.78, -1.35], .07, 'details', DARK);
+  box([.34, .14, .34], [0, 2.78, -1.35], 'details', CHROME);
+  // The tail: a tapering boom, a swept tailplane and fin, and a lower fin that
+  // guards the rotor, which turns on a gearbox on the right
+  rod([0, 1.78, -.9], [0, 1.96, 3.55], .22, 'paint', null, .09);
+  for (const side of [-1, 1]) plane(solid, [2.78, 3.2, 0], [2.98, 3.2, side * .7], 1.9, .05);
+  fin(solid, [3.0, 3.7, 1.9], [3.5, 3.85, 2.9], .07);
+  fin(solid, [3.3, 3.7, 2], [3.55, 3.72, 1.42], .06);
+  box([.18, .14, .2], [.1, 2.05, 3.5], 'details', DARK);
+  rod([.18, 2.05, 3.5], [.24, 2.05, 3.5], .07, 'details', CHROME);
   // Anti-collision beacons, on the fin and under the belly
-  box([.12, .1, .16], [0, 2.9, 3.62], 'beacon');
-  box([.14, .08, .16], [0, .64, -1.6], 'beacon');
+  box([.1, .1, .16], [0, 2.94, 3.74], 'beacon');
+  box([.14, .08, .16], [0, .77, -2], 'beacon');
   // The rotors, which turn: two main blades through the hub and the tail pair
   box([8.4, .045, .26], [0, 2.84, -1.35], 'rotor', DARK);
   box([.36, .07, .36], [0, 2.84, -1.35], 'rotor', CHROME);

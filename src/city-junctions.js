@@ -200,6 +200,16 @@ export class JunctionTraffic {
     this.conflicts.set(key, hit);
     return hit;
   }
+  // Two drivers coming from one approach in its two lanes (a boulevard's):
+  // one turning across the other's lane meets it, as a car turning left
+  // from the kerb lane meets one going straight on by the median. (A
+  // driver's `lane` is its offset right of the centre line; the autodrive
+  // has none.)
+  acrossLanes(a, am, b, bm) {
+    if (am.edge !== bm.edge || am.direction !== bm.direction || !Number.isFinite(a.lane) || !Number.isFinite(b.lane) || Math.abs(a.lane - b.lane) < 1) return false;
+    const [kerb, inner] = a.lane > b.lane ? [am, bm] : [bm, am];
+    return kerb.kind >= 2 || inner.kind === 1;
+  }
   // Everything a driver holds (a recycled car, a reset)
   release(driver) {
     if (driver.claim) this.drop(driver.claim);
@@ -289,7 +299,7 @@ export class JunctionTraffic {
     const nav = this.nav;
     // Nobody crossing, or bound to cross, where these movements go
     for (const { movement } of chain) for (const node of movement.nodes) for (const claim of this.claims.get(node.id)?.values() ?? []) {
-      if (claim.driver !== driver && this.conflict(movement, claim.movement)) return false;
+      if (claim.driver !== driver && (this.conflict(movement, claim.movement) || this.acrossLanes(driver, movement, claim.driver, claim.movement))) return false;
     }
     if (player && chain.some(({ movement }) => this.playerIn(movement, player))) return false;
     for (const other of drivers) {

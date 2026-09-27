@@ -17,6 +17,7 @@ const driven = (x, z, heading, speed) => ({
   groundedPosition: new THREE.Vector3(x, ROAD_LEVEL, z), heading, speed, spec: { width: 2, length: 4.4, mass: 1.4 },
   motion() { return { x: this.groundedPosition.x, z: this.groundedPosition.z, heading: this.heading, halfWidth: 1, halfLength: 2.2, mass: 1.6, vx: Math.sin(this.heading) * this.speed, vz: -Math.cos(this.heading) * this.speed, spin: 0 }; },
   strike(x, z) { this.speed += x * Math.sin(this.heading) - z * Math.cos(this.heading); },
+  resolveTrafficCollision(dx, dz, x, z) { this.groundedPosition.x += dx; this.groundedPosition.z += dz; this.strike(x, z); },
   drive(dt) { this.groundedPosition.x += Math.sin(this.heading) * this.speed * dt; this.groundedPosition.z -= Math.cos(this.heading) * this.speed * dt; },
 });
 

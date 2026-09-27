@@ -14,6 +14,7 @@ This is the sequel to [Citydriver](https://github.com/jarvisar/citydriver). The 
 - Six districts: Old town, Garden quarter, Warehouse district, Market district, Civic quarter and Midtown
 - Buildings shaped to fit their lots
 - Traffic that follows signals, stop signs and give-way signs
+- Traffic that changes lanes on the boulevards and drives around crashed and stopped cars
 - Landmarks and shops that passengers can ask to go to
 - Taxi mode with group fares, shift goals, driver ranks and cabs to buy
 - Demolition mode with a truck, damage chains, ratings and high scores
@@ -31,7 +32,7 @@ Start a **Taxi run** to pick up passengers and earn money. Stop in a pickup ring
 
 **Free drive** has no timer. All three taxis are available in the garage, and weather settings and city discoveries are in the pause menu. The garage also has a helicopter that can fly over the city and land on roofs. Press forward on the main menu to enter free drive. Press R or select New city in the pause menu to generate a new city.
 
-In free drive, press E to get out of the car and walk around. Walk up to your car or any car in traffic and press E to get in. A car taken from traffic drives off on its own when you get out. Your own car stays where you left it and is marked on both maps. Picking a car in the garage puts you in it. The helicopter can't be left.
+In free drive, press E to get out of the car and walk around. Walk up to your car, a car in traffic or a car parked along the street and press E to get in. A car taken from traffic drives off on its own when you get out. A parked car stays where you leave it and goes back to its space once you are far away. Your own car stays where you left it and is marked on both maps. Picking a car in the garage puts you in it. The helicopter can't be left. In first-person view the mouse looks around in fullscreen. Without it, A and D turn you on foot.
 
 Every visit generates a new city. Add `?seed=4817` to the URL to load the same city again.
 
@@ -56,7 +57,7 @@ Every visit generates a new city. Add `?seed=4817` to the URL to load the same c
 | Jump (on foot) | Space | A / Cross or LB / L1 |
 | Fullscreen | F, or hold Escape to leave | D-pad Down (while driving) |
 | Auto-fullscreen (on unless switched off) | Pause menu | Pause menu |
-| Look around (chase view) | Mouse, in fullscreen | Right stick |
+| Look around (chase and first-person view) | Mouse, in fullscreen | Right stick |
 | Camera distance (chase view) | Mouse wheel | |
 | Sound | Pause menu | Pause menu |
 | City map | M, or City map on the street map | View / Share |

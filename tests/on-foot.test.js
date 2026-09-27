@@ -7,13 +7,17 @@ import { OnFoot } from '../src/on-foot.js';
 import { circleContact, collideScenery, sightLine } from '../src/collision.js';
 import { CityTraffic } from '../src/city-traffic.js';
 import { LooseProps } from '../src/loose-props.js';
+import { cityAssets } from '../src/world/city-assets.js';
+import { cityWalker } from '../src/world/city-walkers.js';
 import { PedestrianContacts } from '../src/world/pedestrian-reactions.js';
 import { ThirdPersonCamera } from '../src/third-person-camera.js';
+import { FirstPersonCamera } from '../src/first-person-camera.js';
+import { TRAFFIC_MODELS } from '../src/traffic-models.js';
 import { GamepadInput } from '../src/gamepad.js';
 import { XRInput } from '../src/xr-input.js';
 import { DriveSoundModel } from '../src/audio/model.js';
 import { engineFor } from '../src/audio/profiles.js';
-import { citydriverRoute, journeyStart, onRoadAt } from '../src/world/city-route.js';
+import { citydriverRoute, journeyStart, onRoadAt, roadAt, ROAD_LEVEL } from '../src/world/city-route.js';
 
 // Flat ground at 24 m, a kerb 12 cm up east of u = 20, and north of s = 200 water, 6 m lower
 const GROUND = 24, KERB = 20;
@@ -108,12 +112,9 @@ test('on foot they jog, walk at a gentle push, sprint, turn to face the way they
     for (let i = 0; i < 240; i++) { vehicle.update(step, { jump: true }); top = Math.max(top, vehicle.groundedPosition.y - GROUND); }
     assert.ok(top > .5 && top < .75, `hopped ${top.toFixed(2)} m`);
     assert.ok(vehicle.walker.grounded && vehicle.groundedPosition.y === GROUND, 'and landed, however long it was held');
-    // Through their own eyes, back is a step back and the sides turn them
-    const heading = vehicle.heading;
-    walk(vehicle, 1, { walk: { x: -Math.sin(heading), z: Math.cos(heading) }, face: false });
-    assert.ok(Math.abs(vehicle.heading - heading) < 1e-9 && vehicle.speed > 4, 'backed up, still facing on');
-    walk(vehicle, 1, { turn: 1 });
-    assert.ok(Math.abs(vehicle.heading - heading - 1) < 1e-6);
+    // Through their own eyes they face where the view looks, and back is a step back
+    walk(vehicle, 1, { walk: { x: 0, z: 1 }, face: false, aim: .5 });
+    assert.ok(Math.abs(vehicle.heading - .5) < 1e-9 && vehicle.speed > 4, 'backed up, facing where they look');
     // Up and down a kerb in their stride, but never into the water
     vehicle.s = 0; vehicle.u = 18; vehicle.update(0, {});
     walk(vehicle, 1, { walk: { x: 1, z: 0 } });
@@ -167,11 +168,18 @@ test('the controls point the way to walk from the camera: chased, from above and
     const screen = new THREE.Vector3(out.walk.x, 0, out.walk.z).applyMatrix4(new THREE.Matrix4().extractRotation(above.matrixWorldInverse));
     close(Math.atan2(screen.x, screen.y), Math.atan2(x, y));
   }
-  // Through their own eyes: forward and back along the way they face, the sides turn them
-  out = walkingInput({ moveY: -1, moveX: 1 }, chase, { firstPerson: true, heading: Math.PI / 2 });
-  close(out.walk.x, -1); close(out.walk.z, 0); assert.equal(out.face, false); assert.ok(out.turn > 0);
-  out = walkingInput({ lookX: -1 }, chase, { firstPerson: true });
-  assert.ok(out.turn < 0, 'the right stick turns them too');
+  // Through their own eyes (looking east): they face where the view looks,
+  // forward and back go that way, and the sides step aside only with a
+  // mouse or a stick to turn the view (the keys turn it otherwise: main.js)
+  const eyes = new THREE.PerspectiveCamera();
+  eyes.rotation.set(0, -Math.PI / 2, 0, 'YXZ');
+  out = walkingInput({ moveY: -1, moveX: 1 }, eyes, { firstPerson: true });
+  close(out.aim, Math.PI / 2); close(out.walk.x, -1); close(out.walk.z, 0); assert.equal(out.face, false);
+  out = walkingInput({ moveX: 1 }, eyes, { firstPerson: true, strafe: true });
+  close(out.walk.x, 0); close(out.walk.z, 1);
+  out = walkingInput({}, eyes, { firstPerson: true });
+  close(out.aim, Math.PI / 2); assert.ok(out.walk.x === 0 && out.walk.z === 0, 'standing, still facing where they look');
+  assert.ok(Number.isNaN(walkingInput({ moveY: 1 }, chase).aim), 'chased, they face the way they go');
   assert.equal(walkingInput({ jump: 1, sprint: 1 }, chase).jump && walkingInput({ jump: 1, sprint: 1 }, chase).sprint, true);
 });
 
@@ -201,6 +209,32 @@ test('the chase camera trails someone on foot on a leash and frames them closer,
   for (let i = 0; i < 240; i++) camera.update(car, dt);
   assert.equal(camera.scale, 1); assert.equal(camera.lift, 0);
   assert.ok(Math.abs(camera.heading - 1) < .01, 'behind the car');
+});
+
+test('through their own eyes the mouse turns the driver\'s head, which comes back ahead as the car moves, and turns the walker right round', () => {
+  const car = new THREE.Object3D(), eyes = new FirstPersonCamera(), dt = 1 / 60, direction = new THREE.Vector3();
+  const view = () => { eyes.camera.getWorldDirection(direction); return { heading: Math.atan2(direction.x, -direction.z), pitch: Math.asin(direction.y) }; };
+  eyes.resize(1.6);
+  car.rotation.set(0, -.3, 0, 'YXZ'); car.userData = { speed: 0 };
+  eyes.update(car, 0);
+  assert.ok(eyes.camera.quaternion.equals(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -.3, 0, 'YXZ'))), 'untouched, the view is as it always was');
+  // Right and down: the head turns
+  eyes.look(.8, .2); eyes.update(car, dt);
+  assert.ok(Math.abs(view().heading - 1.1) < 1e-6 && Math.abs(view().pitch + .2) < 1e-6);
+  for (let i = 0; i < 180; i++) eyes.update(car, dt);
+  assert.ok(Math.abs(view().heading - 1.1) < 1e-6, 'standing still it stays turned');
+  // Moving, once the mouse has rested, it comes back to the road ahead
+  car.userData.speed = 10;
+  for (let i = 0; i < 300; i++) eyes.update(car, dt);
+  assert.ok(Math.abs(view().heading - .3) < 1e-9 && Math.abs(view().pitch) < 1e-9);
+  eyes.look(10, -10); eyes.update(car, dt);
+  assert.ok(Math.abs(view().heading - .3 - 2.3) < 1e-6 && view().pitch < .61, 'no further than a head turns');
+  // On foot the view is theirs, all the way round, and stays where it is put
+  const figure = new THREE.Object3D();
+  figure.userData = { leash: true, speed: 5 }; eyes.snap(); eyes.update(figure, 0);
+  eyes.look(3, 0); eyes.update(figure, dt); eyes.look(1, 0);
+  for (let i = 0; i < 300; i++) eyes.update(figure, dt);
+  assert.ok(Math.cos(view().heading - 4) > 1 - 1e-9, `turned right round: ${view().heading.toFixed(3)}`);
 });
 
 test('cars come between someone on foot and the camera; a car camera still looks over them', () => {
@@ -307,7 +341,7 @@ test('a borrowed traffic car is driven as it was going, and given back drives on
     // Beside its door
     vehicle.s = car.s + Math.sin(car.heading) * 1.4; vehicle.u = car.u - Math.cos(car.heading) * 1.4; vehicle.update(0, {});
     const offer = feet.offer();
-    assert.equal(offer.car, car); assert.equal(offer.own, false);
+    assert.ok(offer.car === car && !offer.own);
     const speed = car.speed, count = traffic.vehicles.length;
     assert.match(feet.use(), /borrowed$/);
     assert.equal(feet.borrowed, car); assert.equal(traffic.vehicles.length, count - 1, 'out of the traffic while borrowed');
@@ -416,4 +450,118 @@ test('on foot the engine, the tyres and the wind are silent', () => {
   const state = model.update({ speed: 7, throttle: 1, offRoad: 1 }, 1 / 30);
   for (const key of ['engineLevel', 'roadLevel', 'roughLevel', 'windLevel', 'reverseLevel', 'load']) assert.equal(state[key], 0, key);
   assert.equal(engineFor('walker').rasp, 0); assert.equal(engineFor('walker').intake, 0);
+});
+
+// A car parked in a bay at (u, s), facing `heading`, as the world makes one (see citydriver-world.js)
+function parkedAt(s, u, heading, model = 'sedan') {
+  const spec = TRAFFIC_MODELS.find(each => each.name === model), x = u, z = -s, cos = Math.cos(heading), sin = Math.sin(heading);
+  const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => ({ x: x + a * spec.width / 2 * cos + b * spec.length / 2 * sin, z: z + a * spec.width / 2 * sin - b * spec.length / 2 * cos }));
+  return { x, z, corners, reach: Math.hypot(spec.width, spec.length) / 2, parked: {
+    model, colour: '#4f7086', nose: { u: Math.sin(heading), s: Math.cos(heading) }, ready: true, hidden: false, hide(hidden = true) { this.hidden = hidden; },
+  } };
+}
+
+test('a car parked along the kerb can be borrowed while there is traffic, and left where they get out goes back to its bay once they are away', () => {
+  const scene = new THREE.Scene(), start = journeyStart(), vehicle = new DrivingController(citydriverRoute, start, 'coast');
+  scene.add(vehicle.car); vehicle.freeDriving = true;
+  const traffic = new CityTraffic(scene, vehicle.route, vehicle.s, 'city', vehicle.u), feet = new OnFoot(vehicle, traffic);
+  try {
+    feet.use();
+    // A bay five metres to the right of their car, the car in it facing the same way
+    const h = vehicle.heading, car = feet.parked, bay = parkedAt(car.s - Math.sin(h) * 5, car.u + Math.cos(h) * 5, h), home = traffic.bayPose(bay);
+    vehicle.scenery = chunkOf(bay);
+    vehicle.s = home.s + Math.sin(h) * 1.6; vehicle.u = home.u - Math.cos(h) * 1.6; vehicle.update(0, {});
+    const offer = feet.offer();
+    assert.ok(offer.bay === bay && offer.name === 'Highway Sedan' && !offer.own, 'offered the parked car');
+    assert.equal(feet.use(), 'Highway Sedan · borrowed');
+    assert.ok(feet.bay === bay && !feet.walking && vehicle.carId === 'sedan' && vehicle.paintColor === '#4f7086');
+    assert.ok(bay.woken && bay.parked.hidden, 'its bay stands empty');
+    assert.ok(Math.abs(vehicle.heading - h) < 1e-9 && Math.hypot(vehicle.s - home.s, vehicle.u - home.u) < 1e-9, 'driven from where it stood');
+    // Away and out: it stands where they left it, as a car knocked loose would
+    for (let i = 0; i < 120; i++) vehicle.update(step, { forward: 1 });
+    for (let i = 0; i < 360; i++) vehicle.update(step, { handbrake: 1 });
+    const left = { s: vehicle.s, u: vehicle.u };
+    feet.use();
+    const standIn = traffic.woken.find(car => car.parked === bay);
+    assert.ok(feet.walking && !feet.bay && standIn, 'a stand-in where they got out');
+    assert.ok(Math.hypot(standIn.s - left.s, standIn.u - left.u) < 1e-9 && standIn.car.visible && bay.woken && bay.parked.hidden);
+    // Back in it where it stands, and then the garage (or a run) puts it straight back in its bay
+    vehicle.s = standIn.s - Math.sin(standIn.heading) * 1.5; vehicle.u = standIn.u + Math.cos(standIn.heading) * 1.5; vehicle.update(0, {});
+    assert.ok(feet.offer()?.bay === bay);
+    feet.use();
+    assert.ok(feet.bay === bay && !standIn.parked && !standIn.car.visible, 'the stand-in is free again');
+    assert.ok(Math.hypot(vehicle.s - left.s, vehicle.u - left.u) < 1e-9);
+    feet.clear();
+    assert.ok(!bay.woken && !bay.parked.hidden && !feet.bay);
+    // Left once more, it goes back to its bay once they are well away
+    feet.use();
+    assert.ok(feet.walking, 'out of the car they were in, now theirs');
+    vehicle.s = home.s + Math.sin(h) * 1.6; vehicle.u = home.u - Math.cos(h) * 1.6; vehicle.update(0, {});
+    assert.ok(feet.offer()?.bay === bay);
+    feet.use(); feet.use();
+    assert.ok(feet.walking && traffic.woken.some(car => car.parked === bay));
+    vehicle.s += 200; vehicle.update(0, {});
+    traffic.update(step, vehicle);
+    assert.ok(!bay.woken && !bay.parked.hidden && !traffic.woken.some(car => car.parked === bay), 'back in its bay');
+    // With no traffic there is nothing to borrow it from
+    vehicle.s = home.s + Math.sin(h) * 1.6; vehicle.u = home.u - Math.cos(h) * 1.6; vehicle.update(0, {});
+    traffic.setEnabled(false, vehicle);
+    assert.ok(feet.offer()?.bay === undefined);
+  } finally { feet.clear(); traffic.dispose(); vehicle.disposeModel(); }
+});
+
+test('on foot, loose pieces are solid: a bin is kicked aside, a fallen post stops them until they hop it, and someone lying there is stepped round', () => {
+  const scene = new THREE.Scene(), start = journeyStart(), road = roadAt(start.s, start.u, 40), heading = Math.atan2(road.tx, road.ty);
+  const vehicle = new DrivingController(citydriverRoute, { s: road.y, u: road.x, heading }, 'taxi');
+  scene.add(vehicle.car); vehicle.freeDriving = true;
+  const props = new LooseProps(scene, new THREE.MeshStandardMaterial());
+  vehicle.props = props; vehicle.stepOut();
+  // Up the road: `along` it from where they stand, and across it
+  const fx = road.tx, fz = -road.ty, ax = Math.cos(heading), az = Math.sin(heading), x0 = road.x, z0 = -road.y;
+  const along = p => (p.x - x0) * fx + (p.z - z0) * fz, forward = { walk: { x: fx, z: fz } };
+  // (how far up the road the part of a piece across their way lies, nearest and furthest)
+  const across = p => Math.abs((p.x - x0) * ax + (p.z - z0) * az), onWay = body => points(body).filter(p => across(p) < 1).map(along);
+  const points = body => Array.from({ length: body.shape.points.length / 3 }, (_, k) => new THREE.Vector3().fromArray(body.shape.points, k * 3).applyQuaternion(body.q).add(body.p));
+  // Something lying `d` m up the road, across it, once it has settled
+  const lying = (kind, geometry, d, person = false) => {
+    const turn = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(ax, 0, az)), from = along(vehicle.groundedPosition) + d;
+    const body = props.add({ kind, geometry, person }, new THREE.Matrix4().compose(new THREE.Vector3(x0 + fx * from - ax * 1.5, ROAD_LEVEL + .3, z0 + fz * from - az * 1.5), turn, new THREE.Vector3(1, 1, 1)));
+    for (let i = 0; i < 120 * 3 && !body.asleep; i++) props.update(step, vehicle);
+    return body;
+  };
+  // Walking on: how far into the piece they ever were
+  const walkInto = (body, seconds, input = () => forward) => {
+    let deepest = 0;
+    for (let i = 0; i < seconds / step; i++) {
+      vehicle.update(step, input(i)); props.update(step, vehicle);
+      const p = vehicle.groundedPosition;
+      for (const q of points(body)) if (q.y > p.y + .05 && q.y < p.y + 1.75) deepest = Math.max(deepest, WALKER_SPEC.radius - Math.hypot(q.x - p.x, q.z - p.z));
+    }
+    return deepest;
+  };
+  try {
+    // A bin in their way is kicked aside
+    const bin = props.add({ kind: 'bin', geometry: cityAssets.bin }, new THREE.Matrix4().makeTranslation(x0 + fx * 2, ROAD_LEVEL, z0 + fz * 2));
+    const binAt = bin.p.clone();
+    for (let i = 0; i < 120 && !bin.asleep; i++) props.update(step, vehicle);
+    walkInto(bin, 1.5);
+    assert.ok(bin.p.distanceTo(binAt) > .4, `the bin was kicked (${bin.p.distanceTo(binAt).toFixed(2)} m)`);
+    props.remove(bin);
+    // A fallen lamp post stops them, and hardly moves
+    const post = lying('lamp', cityAssets.lamp, 2.5), postAt = post.p.clone(), near = Math.min(...onWay(post));
+    const into = walkInto(post, 2.5);
+    assert.ok(into < .1, `they stop at the post, not in it (${into.toFixed(2)} m)`);
+    assert.ok(along(vehicle.groundedPosition) < near, 'on this side of it');
+    assert.ok(post.p.distanceTo(postAt) < .3, `and it hardly moves (${post.p.distanceTo(postAt).toFixed(2)} m)`);
+    // A hop with a run-up clears it
+    walkInto(post, 1, () => ({ walk: { x: -fx, z: -fz } }));
+    let hopped = false;
+    walkInto(post, 2.5, () => { const jump = !hopped && near - along(vehicle.groundedPosition) < .9; hopped ||= jump; return { ...forward, jump }; });
+    assert.ok(along(vehicle.groundedPosition) > Math.max(...onWay(post)), 'over it with a hop');
+    // Someone lying in the road is stepped round, not shoved along
+    const body = lying('person', cityWalker, 2, true), bodyAt = body.p.clone();
+    const person = walkInto(body, 2);
+    assert.ok(person < .1, `they stop at them, not in them (${person.toFixed(2)} m)`);
+    assert.ok(body.p.distanceTo(bodyAt) < .05, `and do not move them (${body.p.distanceTo(bodyAt).toFixed(2)} m)`);
+  } finally { props.dispose(); vehicle.disposeModel(); }
 });

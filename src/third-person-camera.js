@@ -13,7 +13,8 @@ const DIP_RISE = 4, DIP_DROP = 10;
 // from where it would be). Once the mouse has rested LOOK_REST s, a car moving
 // faster than LOOK_MOVING m/s swings it back behind at LOOK_RETURN, as GTA's
 // does; one standing still leaves it where it was put.
-const TILT_LOW = -.25, TILT_HIGH = 1.05, LOOK_REST = 1.5, LOOK_MOVING = 2, LOOK_RETURN = 2.5;
+const TILT_LOW = -.25, TILT_HIGH = 1.05;
+export const LOOK_REST = 1.5, LOOK_MOVING = 2, LOOK_RETURN = 2.5;
 // The wheel takes it this much nearer or farther, easing there at ZOOM_RATE
 const ZOOM_NEAR = .45, ZOOM_FAR = 2, ZOOM_RATE = 10;
 // However it is turned, it keeps this far over the ground under it
@@ -27,7 +28,7 @@ const GROUND_CLEAR = .6;
 // The mouse turns it for good.
 const SCALE_RATE = 3;
 // (eases toward a goal, and lands on it exactly, so the camera comes back bit for bit)
-const settle = (value, goal, rate, dt) => {
+export const settle = (value, goal, rate, dt) => {
   const next = THREE.MathUtils.damp(value, goal, rate, dt);
   return Math.abs(next - goal) < 1e-4 ? goal : next;
 };

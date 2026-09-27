@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ConvexHull } from 'three/addons/math/ConvexHull.js';
 import { surfaceAt, ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL } from './world/city-route.js';
 import { MEDIAN_KERB } from './world/city-medians.js';
 import { collisionImpulse } from './impact.js';
@@ -56,9 +57,10 @@ const TOP = ROAD_LEVEL + MEDIAN_KERB + .01;
 const GRIP = 1, DRAG = .4, SLICK = .08;
 // Below this a piece lands, or is pushed, without bouncing (as in impact.js)
 const REST = 1.5;
-// How high a bumper meets what it hits, and how high a car's body reaches:
-// a roof, or a heavy car's cab
-const BUMPER = .45, ROOF = 1.5, CAB = 3.2;
+// How high a bumper meets what it hits, and how high a car's body reaches
+// when it does not say (see Vehicle.spec); and someone on foot, from just
+// over their feet to their head
+const BUMPER = .45, ROOF = 1.5, FEET = .05, TALL = 1.75;
 // A blow felt in the car counts for this much more in its thud and shake
 const FELT = 1.5;
 // A post knocked over snaps at its foot and starts to fall at this many rad/s
@@ -66,8 +68,8 @@ const FELT = 1.5;
 // its foot would leave the ground (its weight has to hold the foot down, so a
 // tall lamp post falls slower than a short sign); its foot slides on at this
 // share of the blow (up to 2.5 m/s), and it leans this much away from the
-// car's path. While it is still more upright than FALLING the car goes past it.
-const TOPPLE = .1, TOPPLE_LEAST = .9, SLIDE = .1, OUTWARD = .6, FALLING = Math.cos(50 * Math.PI / 180);
+// car's path, its foot kicked this far clear of the car's side (m).
+const TOPPLE = .1, TOPPLE_LEAST = .9, SLIDE = .1, OUTWARD = .6, KICKED = .3;
 // A piece flung off a bumper is swept this much aside, and pops up at most this fast (m/s)
 const ASIDE = .5, POP = 3.5;
 // The air slows a flying piece this much a second, and each hard landing
@@ -79,6 +81,26 @@ const ROLL = 1;
 const PROP_SURFACE = { bounce: .2, friction: .4 };
 // A loose piece looks again for what stands near it once it has moved this far (m)
 const NEAR = 2;
+// Two pieces meeting slower than this (m/s) leave one lying still where it
+// lies; they are parted by at most this much (m) a step, and no nearer than SLOP
+const WAKE = .6, PART = .2, SLOP = .01;
+// A piece this heavy (tonnes: a lamp post, not a sign) meeting a parked car
+// faster than this (m/s) knocks it loose (see wall)
+const HEAVY = .2, KNOCKS = 1.5;
+// The traffic brakes for pieces this heavy (tonnes) lying in its way, and
+// shoves lighter ones aside; each is this many of its points to it (see lying)
+const SHOVED = .05, SPREAD = 8;
+// Someone on foot, tried against a piece's parts: points round their outline
+// (unit directions), at their shins, waist and chest (m over their feet)
+const OUTLINE = Array.from({ length: 8 }, (_, k) => [Math.cos(k * Math.PI / 4), Math.sin(k * Math.PI / 4)]), OUTLINE_HEIGHTS = [.15, .7, 1.3];
+// How far behind a piece a wall is looked for, to tell whether a car's push
+// would drive it into one, and how far from where it is pushed (see pinned);
+// and the fastest (m/s) a car can go and be only pushing a piece
+const PIN = .1, BEHIND = .8, PUSHED = 3;
+// A piece in a car or a wall is put out of it a point at a time, the deepest
+// first, up to this many a step (a post fallen across a roof, or a tree's
+// crown against a wall, has several points in it)
+const PASSES = 3;
 
 const UP = new THREE.Vector3(0, 1, 0), ONE = new THREE.Vector3(1, 1, 1);
 const r = new THREE.Vector3(), pv = new THREE.Vector3(), rel = new THREE.Vector3(), n = new THREE.Vector3(), slip = new THREE.Vector3();
@@ -145,11 +167,56 @@ function shapeOf(geometry) {
     radius = Math.max(radius, Math.hypot(points[k * 3], points[k * 3 + 1], points[k * 3 + 2]));
   });
   const size = high.clone().sub(low), shape = {
-    points, com, size, radius, height: size.y,
+    points, com, size, radius, height: size.y, parts: partsOf(geometry, com),
     inertia: new THREE.Vector3((size.y ** 2 + size.z ** 2) / 12, (size.x ** 2 + size.z ** 2) / 12, (size.x ** 2 + size.y ** 2) / 12),
   };
   shapes.set(geometry, shape);
   return shape;
+}
+// A model's solid parts, for other loose pieces to meet it (see meet). The
+// furniture is built of simple solids (a pole, an arm, a lamp's head, a
+// chair's legs and seat), merged but not joined, so each separate part (its
+// triangles joined by shared corners) is nearly convex: its convex hull
+// stands for it, as the planes of its faces about the centre of mass (an
+// outward normal and how far out along it the face lies, four numbers
+// each), within a sphere ({ x, y, z, r }) that turns most points away first.
+// (One hull round the whole piece would fill in a lamp's arm and a cafe
+// parasol's shade.) Null if it has none.
+function partsOf(geometry, com) {
+  const position = geometry.attributes.position, index = geometry.index?.array, count = index ? index.length : position.count;
+  // (corners welded where parts of one solid meet, then joined triangle by triangle)
+  const weld = new Map(), parent = [], corners = [], at = new THREE.Vector3();
+  const corner = i => {
+    at.fromBufferAttribute(position, index ? index[i] : i);
+    const key = `${Math.round(at.x * 1e4)},${Math.round(at.y * 1e4)},${Math.round(at.z * 1e4)}`;
+    if (!weld.has(key)) { weld.set(key, corners.length); parent.push(corners.length); corners.push(at.clone().sub(com)); }
+    return weld.get(key);
+  };
+  const root = k => { while (parent[k] !== k) k = parent[k] = parent[parent[k]]; return k; };
+  for (let t = 0; t + 2 < count; t += 3) {
+    const a = corner(t), b = corner(t + 1), c = corner(t + 2);
+    parent[root(a)] = root(b); parent[root(b)] = root(c);
+  }
+  const groups = new Map();
+  corners.forEach((p, k) => { const r = root(k); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(p); });
+  const parts = [];
+  for (const points of groups.values()) {
+    let hull;
+    try { hull = new ConvexHull().setFromPoints(points); } catch { continue; }
+    if (!hull.faces.length) continue;
+    // (each face once: a box's faces come as pairs of triangles)
+    const planes = [];
+    for (const face of hull.faces) {
+      const { x, y, z } = face.normal, c = face.constant;
+      let same = false;
+      for (let k = 0; k < planes.length && !same; k += 4) same = planes[k] * x + planes[k + 1] * y + planes[k + 2] * z > .9999 && Math.abs(planes[k + 3] - c) < 1e-4;
+      if (!same) planes.push(x, y, z, c);
+    }
+    const middle = new THREE.Box3().setFromPoints(points).getCenter(new THREE.Vector3());
+    const r = Math.sqrt(Math.max(...points.map(p => p.distanceToSquared(middle))));
+    parts.push({ x: middle.x, y: middle.y, z: middle.z, r, planes: new Float32Array(planes) });
+  }
+  return parts.length ? parts : null;
 }
 
 // A shape scaled by `s` (a Vector3), for a piece drawn scaled
@@ -157,8 +224,17 @@ function scaledShape(unit, s) {
   const points = unit.points.slice();
   for (let i = 0; i < points.length; i += 3) { points[i] *= s.x; points[i + 1] *= s.y; points[i + 2] *= s.z; }
   const size = unit.size.clone().multiply(s);
+  // (a face n · p = c of the unit shape is (n / s) · (s p) = c scaled)
+  const parts = unit.parts?.map(part => {
+    const planes = part.planes.slice();
+    for (let i = 0; i < planes.length; i += 4) {
+      const x = planes[i] / s.x, y = planes[i + 1] / s.y, z = planes[i + 2] / s.z, length = Math.hypot(x, y, z);
+      planes[i] = x / length; planes[i + 1] = y / length; planes[i + 2] = z / length; planes[i + 3] /= length;
+    }
+    return { x: part.x * s.x, y: part.y * s.y, z: part.z * s.z, r: part.r * Math.max(s.x, s.y, s.z), planes };
+  }) ?? null;
   return {
-    points, com: unit.com.clone().multiply(s), size, radius: unit.radius * Math.max(s.x, s.y, s.z), height: size.y,
+    points, com: unit.com.clone().multiply(s), size, radius: unit.radius * Math.max(s.x, s.y, s.z), height: size.y, parts,
     inertia: new THREE.Vector3((size.y ** 2 + size.z ** 2) / 12, (size.x ** 2 + size.z ** 2) / 12, (size.x ** 2 + size.y ** 2) / 12),
   };
 }
@@ -171,36 +247,50 @@ export function level(x, z) {
 }
 
 // How far a point (x, z) stands inside a collider, and the way out of it:
-// { x, z, depth }, or null outside
+// { x, z, depth }, or null outside. The way out is through the nearest
+// face; or, for a point that was outside at (fromX, fromZ) a step ago,
+// back through the face it came in by, so nothing flung at a railing or a
+// thin wall comes out the far side of it.
 const way = { x: 0, z: 0, depth: 0 };
-function inside(solid, x, z) {
+function inside(solid, x, z, fromX = NaN, fromZ = NaN) {
   const dx = x - solid.x, dz = z - solid.z;
+  if (!solid.corners && solid.heading === undefined) {
+    const d = Math.hypot(dx, dz);
+    if (d >= solid.reach) return null;
+    // (come in from outside, it goes back out the side it came in at)
+    const fx = fromX - solid.x, fz = fromZ - solid.z, from = Math.hypot(fx, fz), back = from >= solid.reach;
+    const ux = back ? fx / from : d > 1e-6 ? dx / d : 1, uz = back ? fz / from : d > 1e-6 ? dz / d : 0;
+    way.depth = solid.reach - (dx * ux + dz * uz); way.x = ux; way.z = uz;
+    return way;
+  }
+  // (each face as a way out along its normal: how far in the point is, and was)
+  let entered = -Infinity;
+  way.depth = Infinity;
+  const face = (ex, ez, reach) => {
+    const d = reach - (dx * ex + dz * ez);
+    if (d <= 0) return false;
+    const was = reach - ((fromX - solid.x) * ex + (fromZ - solid.z) * ez);
+    // (crossed coming in: the last such face is the one it came in by)
+    if (was <= 0) {
+      const t = was / (was - d);
+      if (t > entered) { entered = t; way.depth = d; way.x = ex; way.z = ez; }
+    } else if (entered === -Infinity && d < way.depth) { way.depth = d; way.x = ex; way.z = ez; }
+    return true;
+  };
   if (solid.corners) {
     const corners = solid.corners;
-    way.depth = Infinity;
     for (let i = 0; i < corners.length; i++) {
       const a = corners[i], b = corners[(i + 1) % corners.length], length = Math.hypot(b.x - a.x, b.z - a.z);
       if (length < 1e-8) continue;
       // (the edge's normal, turned out from the middle)
       let ex = (b.z - a.z) / length, ez = -(b.x - a.x) / length;
       if (ex * ((a.x + b.x) / 2 - solid.x) + ez * ((a.z + b.z) / 2 - solid.z) < 0) { ex = -ex; ez = -ez; }
-      const d = (a.x - x) * ex + (a.z - z) * ez;
-      if (d <= 0) return null;
-      if (d < way.depth) { way.depth = d; way.x = ex; way.z = ez; }
+      if (!face(ex, ez, (a.x - solid.x) * ex + (a.z - solid.z) * ez)) return null;
     }
     return way;
   }
-  if (solid.heading === undefined) {
-    const d = Math.hypot(dx, dz);
-    if (d >= solid.reach) return null;
-    way.depth = solid.reach - d; way.x = d > 1e-6 ? dx / d : 1; way.z = d > 1e-6 ? dz / d : 0;
-    return way;
-  }
-  const cos = Math.cos(solid.heading), sin = Math.sin(solid.heading), across = dx * cos + dz * sin, along = dx * sin - dz * cos;
-  const side = solid.halfWidth - Math.abs(across), end = solid.halfLength - Math.abs(along);
-  if (side <= 0 || end <= 0) return null;
-  if (side < end) { way.depth = side; way.x = Math.sign(across) * cos; way.z = Math.sign(across) * sin; }
-  else { way.depth = end; way.x = Math.sign(along) * sin; way.z = -Math.sign(along) * cos; }
+  const cos = Math.cos(solid.heading), sin = Math.sin(solid.heading);
+  for (const side of [1, -1]) if (!face(side * cos, side * sin, solid.halfWidth) || !face(side * sin, -side * cos, solid.halfLength)) return null;
   return way;
 }
 
@@ -223,6 +313,45 @@ function impulse(body, at, blow) {
   body.w.add(turnBy(body, t1.crossVectors(at, blow), t1)).clampLength(0, SPIN_MOST);
 }
 const velocityAt = (body, at, out) => out.crossVectors(body.w, at).add(body.v);
+// How far two pieces overlap: the deepest point of either inside a part of
+// the other (m), or 0
+export function overlap(a, b) {
+  const reach = a.shape.radius + b.shape.radius;
+  if (!a.shape.parts || !b.shape.parts || a.p.distanceToSquared(b.p) > reach * reach) return 0;
+  return Math.max(deepestIn(a, b).depth, deepestIn(b, a).depth);
+}
+// The deepest of `body`'s points inside one of `other`'s parts (see
+// partsOf): `depth` (0 if none is), the point (from body's centre, in the
+// world) `at`, and the way out through that part's nearest face (in the world) `n`
+const depthIn = { depth: 0, at: new THREE.Vector3(), n: new THREE.Vector3() }, found = { depth: 0, at: new THREE.Vector3(), n: new THREE.Vector3() };
+const into = new THREE.Quaternion(), turned = new THREE.Quaternion(), offset = new THREE.Vector3(), local = new THREE.Vector3(), outerAt = new THREE.Vector3();
+function deepestIn(body, other) {
+  const parts = other.shape.parts, points = body.shape.points, reach = other.shape.radius ** 2;
+  into.copy(other.q).invert(); turned.copy(into).multiply(body.q);
+  offset.copy(body.p).sub(other.p).applyQuaternion(into);
+  let deepest = 0, best = -1, planes = null, face = -1;
+  for (let i = 0; i < points.length; i += 3) {
+    local.set(points[i], points[i + 1], points[i + 2]).applyQuaternion(turned).add(offset);
+    if (local.lengthSq() > reach) continue;
+    for (const part of parts) {
+      if ((local.x - part.x) ** 2 + (local.y - part.y) ** 2 + (local.z - part.z) ** 2 > part.r * part.r) continue;
+      const faces = part.planes;
+      let out = -Infinity, nearest = -1;
+      for (let k = 0; k < faces.length; k += 4) {
+        const d = faces[k] * local.x + faces[k + 1] * local.y + faces[k + 2] * local.z - faces[k + 3];
+        if (d > out) { out = d; nearest = k; if (d >= 0) break; }
+      }
+      if (out >= 0 || -out <= deepest) continue;
+      deepest = -out; best = i; planes = faces; face = nearest;
+    }
+  }
+  depthIn.depth = deepest;
+  if (best >= 0) {
+    depthIn.at.set(points[best], points[best + 1], points[best + 2]).applyQuaternion(body.q);
+    depthIn.n.set(planes[face], planes[face + 1], planes[face + 2]).applyQuaternion(other.q);
+  }
+  return depthIn;
+}
 
 // A burst of small bits off a smash: glass from a lamp's head, splinters,
 // litter from a bin, a stall's fruit, a splash. One instanced draw, each bit
@@ -390,9 +519,13 @@ export class LooseProps {
     velocityAt(body, r, pv);
     return { x, z, y: y - BUMPER, heading: Math.atan2(pv.x, -pv.z), halfWidth: .3, halfLength: .3, vx: pv.x, vz: pv.z, spin: 0, mass: body.kind.mass };
   }
+  // The player as a body a loose piece meets: their car's footprint up to
+  // its roof, or, on foot, a round one (see Walker) from just over their
+  // feet (what is under those they have hopped over) to their head
   carOf(player) {
     const car = player.motion();
-    car.y = player.groundedPosition.y; car.height = player.spec.mass > 3 ? CAB : ROOF;
+    car.y = player.groundedPosition.y; car.height = player.walker ? TALL : player.spec.height ?? ROOF;
+    if (player.walker) { car.radius = player.spec.radius; car.floor = FEET; }
     this.breaks = player.spec.breaks ?? [];
     return car;
   }
@@ -444,10 +577,14 @@ export class LooseProps {
       for (let i = 0; i < pool.capacity; i++) mesh.setColorAt(i, white);
       stableShadowDepth(mesh); this.group.add(mesh);
     }
+    // (pieces that stood tangled, as a lamp post can in a tree's crown, are
+    // left to come apart by themselves: see meetAll)
+    for (const other of this.bodies) if (overlap(body, other)) { (body.tangled ??= new Set()).add(other); (other.tangled ??= new Set()).add(body); }
     this.bodies.push(body);
     return body;
   }
   remove(body) {
+    for (const other of body.tangled ?? []) other.tangled.delete(body);
     const list = body.pool.bodies;
     list[list.indexOf(body)] = list.at(-1); list.pop(); body.pool.dirty = true;
     this.bodies[this.bodies.indexOf(body)] = this.bodies.at(-1); this.bodies.pop();
@@ -464,11 +601,17 @@ export class LooseProps {
     if (!blow) return null;
     const given = Math.hypot(blow.b.x, blow.b.z) || 1, ax = Math.cos(car.heading), az = Math.sin(car.heading);
     const side = Math.sign((body.p.x - car.x) * ax + (body.p.z - car.z) * az) || Math.sign(body.jitter) || 1;
+    // The bumper kicks its foot out of the car's way, to the side it stood
+    // on, just clear of it: the car runs on past it as it falls, not through
+    // it. (Not into whatever stands there, a parked car or a wall: then it
+    // falls where it stood.)
+    foot.copy(body.shape.com).applyQuaternion(body.q);
+    const clear = car.halfWidth + KICKED - Math.abs((body.p.x - foot.x - car.x) * ax + (body.p.z - foot.z - car.z) * az);
+    if (clear > 0 && !this.standing(body.p.x - foot.x + ax * side * clear, body.p.z - foot.z + az * side * clear)) { body.p.x += ax * side * clear; body.p.z += az * side * clear; }
     let dx = blow.b.x / given + ax * side * OUTWARD, dz = blow.b.z / given + az * side * OUTWARD;
     const length = Math.hypot(dx, dz), slide = Math.min(2.5, given * SLIDE); dx /= length; dz /= length;
     const turn = Math.min(.9 * Math.sqrt(GRAVITY / body.shape.com.y), Math.max(TOPPLE_LEAST, given * TOPPLE));
     body.w.set(dz * turn, body.jitter * .6, -dx * turn);
-    foot.copy(body.shape.com).applyQuaternion(body.q);
     body.v.crossVectors(body.w, foot).add(t2.set(dx * slide, .5, dz * slide));
     this.wake(body);
     return { x: blow.a.x, z: blow.a.z, spin: blow.a.spin, closing: blow.closing };
@@ -501,43 +644,138 @@ export class LooseProps {
     const ix = -J.x, iz = -J.z, inertia = car.mass * (car.halfWidth ** 2 + car.halfLength ** 2) / 3;
     return { x: ix / car.mass, z: iz / car.mass, spin: (cx * iz - cz * ix) / inertia, closing: -closing };
   }
-  // A car against a loose piece: the deepest of the piece's points inside the
-  // car's body (its footprint, up to its roof) is put out through the nearest
-  // side, or the roof for a piece coming down on it, and takes the blow there.
-  // Returns what the car takes back, or null.
+  // Anything that moves against a loose piece (`car` as motion() gives one,
+  // with its ground height `y` and `height`): a car's footprint up to its
+  // roof, or, with a `radius`, someone on foot from their `floor` up. The
+  // deepest of the piece's points inside it is put out through the nearest
+  // side (round someone on foot, straight out from them), or the roof for a
+  // piece coming down on a car, and takes the blow there. The way out is
+  // shared by weight, as two cars part (see CityTraffic.collidePlayer):
+  // `fixed`, a car on its rails, gives no way, nor does a car's roof, and
+  // some pieces give none (see firm: a car on its rails is stopped by one). Returns what the mover takes back, and
+  // its share of the way out (px, pz), or null.
   contact(body, car) {
-    if (body.kind.topples && !body.asleep && t1.copy(UP).applyQuaternion(body.q).y > FALLING) return null;
-    const reach = Math.hypot(car.halfWidth, car.halfLength) + body.shape.radius;
+    const round = car.radius !== undefined, reach = (round ? car.radius : Math.hypot(car.halfWidth, car.halfLength)) + body.shape.radius;
     if (Math.abs(body.p.x - car.x) > reach || Math.abs(body.p.z - car.z) > reach || body.p.y - body.shape.radius > car.y + car.height) return null;
-    const cos = Math.cos(car.heading), sin = Math.sin(car.heading), points = body.shape.points;
+    const cos = Math.cos(car.heading), sin = Math.sin(car.heading), points = body.shape.points, floor = car.y + (car.floor ?? -.3);
     let depth = 0, best = -1, nx = 0, nz = 0, roof = false;
     for (let i = 0; i < points.length; i += 3) {
       r.set(points[i], points[i + 1], points[i + 2]).applyQuaternion(body.q);
       const y = body.p.y + r.y, top = car.y + car.height - y;
-      if (y < car.y - .3 || top < 0) continue;
-      const dx = body.p.x + r.x - car.x, dz = body.p.z + r.z - car.z, across = dx * cos + dz * sin, along = dx * sin - dz * cos;
+      if (y < floor || top < 0) continue;
+      const dx = body.p.x + r.x - car.x, dz = body.p.z + r.z - car.z;
+      if (round) {
+        const distance = Math.hypot(dx, dz), d = car.radius - distance;
+        if (d <= depth) continue;
+        depth = d; best = i; nx = distance > 1e-6 ? dx / distance : 1; nz = distance > 1e-6 ? dz / distance : 0;
+        continue;
+      }
+      const across = dx * cos + dz * sin, along = dx * sin - dz * cos;
       const side = car.halfWidth - Math.abs(across), end = car.halfLength - Math.abs(along), d = Math.min(side, end, top);
       if (d <= depth) continue;
       depth = d; best = i; roof = top === d;
       if (side < end) { nx = (Math.sign(across) || 1) * cos; nz = (Math.sign(across) || 1) * sin; }
       else { nx = (Math.sign(along) || 1) * sin; nz = -(Math.sign(along) || 1) * cos; }
     }
+    if (best >= 0) r.set(points[best], points[best + 1], points[best + 2]).applyQuaternion(body.q);
+    // Someone on foot is narrower than the gaps between a long piece's
+    // points (a fallen post's are up to a metre apart), so their outline
+    // is also tried against its solid parts (see partsOf)
+    if (round && body.shape.parts) {
+      into.copy(body.q).invert();
+      for (const [x, z] of OUTLINE) for (const up of OUTLINE_HEIGHTS) {
+        local.set(car.x + x * car.radius - body.p.x, car.y + up - body.p.y, car.z + z * car.radius - body.p.z).applyQuaternion(into);
+        for (const part of body.shape.parts) {
+          if ((local.x - part.x) ** 2 + (local.y - part.y) ** 2 + (local.z - part.z) ** 2 > part.r * part.r) continue;
+          const faces = part.planes;
+          let out = -Infinity, face = -1;
+          for (let k = 0; k < faces.length; k += 4) {
+            const d = faces[k] * local.x + faces[k + 1] * local.y + faces[k + 2] * local.z - faces[k + 3];
+            if (d > out) { out = d; face = k; if (d >= 0) break; }
+          }
+          if (out >= 0) continue;
+          // (out through the nearest face, along the ground: over a top they have not stepped)
+          offset.set(faces[face], faces[face + 1], faces[face + 2]).applyQuaternion(body.q);
+          const flat = Math.hypot(offset.x, offset.z);
+          if (flat < .3 || -out / flat <= depth) continue;
+          depth = -out / flat; best = 0; nx = -offset.x / flat; nz = -offset.z / flat;
+          r.set(car.x + x * car.radius - body.p.x, car.y + up - body.p.y, car.z + z * car.radius - body.p.z);
+        }
+      }
+    }
     if (best < 0) return null;
-    if (roof) { nx = nz = 0; body.p.y += depth + .01; }
-    else { body.p.x += nx * (depth + .01); body.p.z += nz * (depth + .01); }
+    // A piece that gives no way at all: to someone on foot, anything
+    // heavier than they are (they shove a bin or a chair aside, but lean on
+    // a fallen post in vain) and anyone lying there (they step round them);
+    // to anything pushing it, one pinned against a wall the way it would go
+    // (hit hard, it takes the blow as ever). The mover takes the whole way
+    // out, and meets it as it would the wall.
+    const firm = !roof && ((round && (body.piece.person || body.kind.mass > car.mass)) || this.pinned(body, r, nx, nz, car));
+    const share = roof ? 1 : firm ? 0 : car.fixed ? 1 : car.mass / (car.mass + body.kind.mass);
+    const away = depth + .01, px = -nx * away * (1 - share), pz = -nz * away * (1 - share);
+    if (roof) body.p.y += away;
+    else { body.p.x += nx * away * share; body.p.z += nz * away * share; }
     body.pool.dirty = true;
-    r.set(points[best], points[best + 1], points[best + 2]).applyQuaternion(body.q);
-    if (roof) return this.blow(body, car, r, 0, 0, 1, SLICK);
+    if (firm) {
+      const at = { x: body.p.x + r.x, z: body.p.z + r.z }, wall = collisionImpulse(car, { ...at, vx: 0, vz: 0, mass: Infinity }, { x: -nx, z: -nz }, at, PROP_SURFACE);
+      return { x: wall?.a.x ?? 0, z: wall?.a.z ?? 0, spin: wall?.a.spin ?? 0, closing: wall?.closing ?? 0, px, pz };
+    }
     // A person met by the nose or tail is swept aside off it, as when first
-    // hit, rather than pushed on ahead of the car
-    if (body.kind === KINDS.person && Math.abs(nx * sin - nz * cos) > .9) {
+    // hit, rather than pushed on ahead of the car (anything else is pushed
+    // straight out: swept off at a slant, furniture looked thrown aside)
+    if (body.kind === KINDS.person && !roof && Math.abs(nx * sin - nz * cos) > .9) {
       const side = Math.sign((body.p.x - car.x) * cos + (body.p.z - car.z) * sin) || Math.sign(body.jitter) || 1;
       nx += cos * side * ASIDE * 2; nz += sin * side * ASIDE * 2;
       const length = Math.hypot(nx, nz); nx /= length; nz /= length;
     }
-    return this.blow(body, car, r, nx, nz, .3);
+    const blow = roof ? this.blow(body, car, r, 0, 0, 1, SLICK) : this.blow(body, car, r, nx, nz, .3);
+    if (!blow) return share < 1 ? { x: 0, z: 0, spin: 0, closing: 0, px, pz } : null;
+    blow.px = px; blow.pz = pz;
+    return blow;
   }
-  wake(body) { body.asleep = false; body.still = 0; body.awake = 0; body.slept = 0; }
+  // Whether a piece has a wall hard behind it the way (nx, nz) a push at
+  // `at` (a point of it, from its centre) would move it, near enough square
+  // on (see CityTraffic.pinned): what stands near it (see walls), behind the
+  // part pushed (a wall behind a fallen tree's crown only turns it), and not
+  // furniture or a parked car, which is no wall to what is pushed into it.
+  // Only a car going slowly, or heading into that wall, pins it there: one
+  // going by sweeps it along the wall.
+  pinned(body, at, nx, nz, car) {
+    const near = body.near?.list, points = body.shape.points;
+    if (!near?.length) return false;
+    const cx = body.p.x + at.x - car.x, cz = body.p.z + at.z - car.z, vx = car.vx - car.spin * cz, vz = car.vz + car.spin * cx, speed = Math.hypot(vx, vz);
+    const against = way => way.x * nx + way.z * nz < -.7 && (speed < PUSHED || -(vx * way.x + vz * way.z) > speed * .7);
+    // (a wall that has just put it back out, wherever it touched: a bench
+    // tipped back against one is pinned by its foot while its top is pushed)
+    if (body.walled >= this.steps - 1 && against(body.wall)) return true;
+    for (let i = 0; i < points.length; i += 3) {
+      t1.set(points[i], points[i + 1], points[i + 2]).applyQuaternion(body.q);
+      if ((t1.x - at.x) ** 2 + (t1.z - at.z) ** 2 > BEHIND ** 2) continue;
+      const x = body.p.x + t1.x + nx * PIN, z = body.p.z + t1.z + nz * PIN;
+      for (const solid of near) {
+        if (solid.woken || solid.prop || solid.parked) continue;
+        const way = inside(solid, x, z);
+        if (way && against(way)) return true;
+      }
+    }
+    return false;
+  }
+  // Whether anything stands at (x, z), in the chunks the last step had
+  standing(x, z) {
+    for (const chunk of this.chunks?.values() ?? []) {
+      const bounds = chunk.collisionBounds;
+      if (!bounds || x < bounds.minX - 10 || x > bounds.maxX + 10 || z < bounds.minZ - 10 || z > bounds.maxZ + 10) continue;
+      for (const solid of chunk.features.colliders) if (!solid.woken && Math.abs(solid.x - x) < solid.reach + KICKED && Math.abs(solid.z - z) < solid.reach + KICKED && inside(solid, x, z)) return true;
+    }
+    return false;
+  }
+  // Woken, a piece wakes whatever lay still against it, so nothing is left
+  // lying on air when what it lay on is knocked away
+  wake(body) {
+    const was = body.asleep;
+    body.asleep = false; body.still = 0; body.awake = 0; body.slept = 0;
+    if (was) for (const other of this.bodies) if (other.asleep && !other.sunk && other.p.distanceToSquared(body.p) < (other.shape.radius + body.shape.radius) ** 2) this.wake(other);
+  }
   sleep(body) {
     body.asleep = true; body.v.set(0, 0, 0); body.w.set(0, 0, 0);
     body.last.p.copy(body.p); body.last.q.copy(body.q); body.pool.dirty = true;
@@ -560,9 +798,12 @@ export class LooseProps {
     this.land(body);
     if (chunks) this.walls(body, chunks);
     // The air wears it down, and on the ground its turn, and its roll (a bin
-    // on its side would otherwise roll on down the street)
-    w.multiplyScalar(Math.exp(-dt * (body.grounded ? 2.5 : .2)));
-    if (!body.grounded) v.multiplyScalar(Math.exp(-dt * AIR));
+    // on its side would otherwise roll on down the street). Lying on another
+    // piece is lying on the ground (see meet).
+    const resting = body.grounded || body.supported;
+    body.supported = false;
+    w.multiplyScalar(Math.exp(-dt * (resting ? 2.5 : .2)));
+    if (!resting) v.multiplyScalar(Math.exp(-dt * AIR));
     else { const roll = Math.exp(-dt * ROLL); v.x *= roll; v.z *= roll; }
     body.awake += dt; body.clatter = Math.max(0, body.clatter - dt);
     // Nearly still on the ground, it stops. It is judged by how far it has
@@ -570,8 +811,9 @@ export class LooseProps {
     // or balanced on a chair's back jitters without getting anywhere. Slow,
     // it is held down, unless it is sinking: a topple starts slow, and held,
     // a post lying on its lamp's arm took seconds to roll off it.
-    const slow = body.grounded && v.lengthSq() < .25 && w.lengthSq() < .5;
-    if (slow && v.y > -.02) { const hold = Math.exp(-dt * 6); v.multiplyScalar(hold); w.multiplyScalar(hold); }
+    // (on another piece, it has only just fallen a step's worth onto it again)
+    const slow = resting && v.lengthSq() < .25 && w.lengthSq() < .5;
+    if (slow && (v.y > -.02 || !body.grounded)) { const hold = Math.exp(-dt * 6); v.multiplyScalar(hold); w.multiplyScalar(hold); }
     const rest = body.rest;
     if (slow && rest.p.distanceToSquared(p) < .03 ** 2 && rest.q.angleTo(q) < .03) body.still += dt;
     else { rest.p.copy(p); rest.q.copy(q); body.still = 0; }
@@ -631,35 +873,136 @@ export class LooseProps {
       body.near = { x: p.x, z: p.z, list };
     }
     const near = body.near.list;
-    if (!near.length) return;
-    let depth = 0, best = -1, nx = 0, nz = 0;
+    // (a point at a time, the deepest first: a fallen tree's crown against a wall has several in it)
+    for (let pass = 0; pass < PASSES && near.length && this.wall(body, near); pass++);
+  }
+  // The deepest of a piece's points inside any of `near` put back out, with
+  // its blow; false if none is in one
+  wall(body, near) {
+    const { p, q, shape, last } = body, points = shape.points;
+    let depth = 0, best = -1, nx = 0, nz = 0, met = null;
     for (let i = 0; i < points.length; i += 3) {
       r.set(points[i], points[i + 1], points[i + 2]).applyQuaternion(q);
+      // (and where it was a step ago)
+      t2.set(points[i], points[i + 1], points[i + 2]).applyQuaternion(last.q).add(last.p);
       for (const solid of near) {
         if (solid.woken) continue;
-        const way = inside(solid, p.x + r.x, p.z + r.z);
-        if (way && way.depth > depth) { depth = way.depth; best = i; nx = way.x; nz = way.z; }
+        const way = inside(solid, p.x + r.x, p.z + r.z, t2.x, t2.z);
+        if (way && way.depth > depth) { depth = way.depth; best = i; nx = way.x; nz = way.z; met = solid; }
       }
     }
-    if (best < 0) return;
-    p.x += nx * depth; p.z += nz * depth;
+    if (best < 0) return false;
     r.set(points[best], points[best + 1], points[best + 2]).applyQuaternion(q);
+    // Standing furniture it meets hard enough is knocked loose in turn, as by
+    // a car (a truck shoving a fallen tree into a lamp post snaps the post)
+    if (met.prop) {
+      const at = this.motionOf(body, p.x + r.x, p.y + r.y, p.z + r.z), blow = this.knock(met, { x: nx, z: nz, point: { x: at.x, z: at.z } }, at);
+      // (the piece takes back what a car would, at the point it met: the knock used r)
+      if (blow) { r.set(points[best], points[best + 1], points[best + 2]).applyQuaternion(q); impulse(body, r, J.set(blow.x, 0, blow.z).multiplyScalar(body.kind.mass)); return true; }
+    }
+    // A heavy piece coming down on a parked car, or thrown into one, knocks
+    // it loose as a car would (a felled tree sets a parked car rolling), and
+    // meets it as a car from the next step (see update), rather than lying
+    // half in it
+    if (met.parked && body.kind.mass >= HEAVY && this.traffic?.enabled && velocityAt(body, r, pv).length() > KNOCKS && this.traffic.wake(met)) return true;
+    p.x += nx * depth; p.z += nz * depth;
+    // (the way the scenery put it out, and when, for a car pushing it: see pinned)
+    if (!met.parked) { (body.wall ??= { x: 0, z: 0 }).x = nx; body.wall.z = nz; body.walled = this.steps; }
     velocityAt(body, r, pv);
     const into = pv.x * nx + pv.z * nz;
-    if (into >= 0) return;
+    if (into >= 0) return true;
     n.set(nx, 0, nz);
     J.copy(n).multiplyScalar(-(1 + (-into > REST ? body.kind.bounce : 0)) * into / give(body, r, n));
     slip.copy(pv).addScaledVector(n, -into);
     const slide = slip.length();
     if (slide > 1e-4) { slip.divideScalar(slide); J.addScaledVector(slip, -Math.min(slide / give(body, r, slip), GRIP * .5 * J.length())); }
     impulse(body, r, J);
+    return true;
+  }
+  // Loose pieces against each other: every pair near enough, one of them
+  // awake, meets where either has a point inside one of the other's parts
+  // (see meet); but a pair that came loose already tangled only once it has
+  // come apart, rather than being thrown apart
+  meetAll() {
+    const bodies = this.bodies;
+    for (let i = 0; i < bodies.length; i++) {
+      const a = bodies[i];
+      if (a.sunk || !a.shape.parts) continue;
+      for (let j = i + 1; j < bodies.length; j++) {
+        const b = bodies[j], reach = a.shape.radius + b.shape.radius;
+        if (b.sunk || !b.shape.parts || (a.asleep && b.asleep) || Math.abs(a.p.x - b.p.x) > reach || Math.abs(a.p.z - b.p.z) > reach || Math.abs(a.p.y - b.p.y) > reach) continue;
+        if (a.tangled?.has(b)) { if (overlap(a, b)) continue; a.tangled.delete(b); b.tangled.delete(a); }
+        this.meet(a, b);
+      }
+    }
+  }
+  // Two loose pieces: the deepest point of either inside a part of the other is
+  // put back out, the two sharing the way by weight, and they take a blow
+  // there, a bounce and a scrape, as a piece meets a wall. One lying still
+  // is a wall to one that comes to rest on it, and is only woken by a real knock.
+  meet(a, b) {
+    let inner = a, outer = b;
+    const first = deepestIn(a, b);
+    let depth = first.depth;
+    if (first.depth) { found.depth = first.depth; found.at.copy(first.at); found.n.copy(first.n); }
+    const second = deepestIn(b, a);
+    if (second.depth > depth) { inner = b; outer = a; depth = second.depth; found.at.copy(second.at); found.n.copy(second.n); }
+    if (!depth) return;
+    const n = found.n, ri = found.at, ro = outerAt.copy(ri).add(inner.p).sub(outer.p);
+    // (one lying on the other is as good as on the ground, for settling: see step)
+    if (n.y > .5) inner.supported = true; else if (n.y < -.5) outer.supported = true;
+    velocityAt(inner, ri, pv); velocityAt(outer, ro, slip);
+    rel.copy(pv).sub(slip);
+    const closing = rel.dot(n), knocked = -closing > WAKE;
+    // (the one lying still stays still, unless knocked)
+    const innerFree = !inner.asleep || knocked, outerFree = !outer.asleep || knocked;
+    if (!innerFree && !outerFree) return;
+    // (all but the last centimetre, which the blow alone keeps from growing:
+    // put right in full, one resting on another is lifted off it every step
+    // and falls back, and never lies still)
+    const mi = inner.kind.mass, mo = outer.kind.mass, share = !outerFree ? 1 : !innerFree ? 0 : mo / (mi + mo), away = Math.min(depth - SLOP, PART);
+    if (away > 0) { inner.p.addScaledVector(n, away * share); outer.p.addScaledVector(n, -away * (1 - share)); inner.pool.dirty = outer.pool.dirty = true; }
+    if (innerFree && inner.asleep) this.wake(inner);
+    if (outerFree && outer.asleep) this.wake(outer);
+    if (closing >= 0) return;
+    const give2 = (dir, i, o) => (innerFree ? give(inner, i, dir) : 0) + (outerFree ? give(outer, o, dir) : 0);
+    const bounce = -closing > REST ? (inner.kind.bounce + outer.kind.bounce) / 2 : 0;
+    J.copy(n).multiplyScalar(-(1 + bounce) * closing / give2(n, ri, ro));
+    slip.copy(rel).addScaledVector(n, -closing);
+    const slide = slip.length();
+    if (slide > 1e-4) { slip.divideScalar(slide); J.addScaledVector(slip, -Math.min(slide / give2(slip, ri, ro), GRIP * .5 * J.length())); }
+    if (innerFree) impulse(inner, ri, J);
+    if (outerFree) impulse(outer, ro, J.negate());
+  }
+  // What lies in the traffic's way (see CityTraffic.following): each piece
+  // too heavy to shove aside (bins and chairs are), and everyone knocked
+  // down, as the spread of its points over the ground: records { u, s,
+  // reach, discs (u, s pairs), count, person, mass }, kept from call to call
+  lying() {
+    const list = this.inTheWay ??= [], pool = this.inTheWayPool ??= [];
+    list.length = 0;
+    for (const body of this.bodies) {
+      if (body.sunk || (body.kind.mass < SHOVED && !body.piece.person)) continue;
+      const record = pool[list.length] ??= { u: 0, s: 0, reach: 0, discs: new Float32Array(2 + SPREAD * 2), count: 0, person: false, mass: 0 };
+      const points = body.shape.points, count = Math.min(SPREAD, points.length / 3), discs = record.discs;
+      record.u = discs[0] = body.p.x; record.s = discs[1] = -body.p.z; record.reach = body.shape.radius; record.person = Boolean(body.piece.person); record.mass = body.kind.mass; record.count = count + 1;
+      // (the first of a shape's points are the most spread: see shapeOf)
+      for (let i = 0; i < count; i++) {
+        t1.set(points[i * 3], points[i * 3 + 1], points[i * 3 + 2]).applyQuaternion(body.q);
+        discs[2 + i * 2] = body.p.x + t1.x; discs[3 + i * 2] = -(body.p.z + t1.z);
+      }
+      list.push(record);
+    }
+    return list;
   }
   // A step of everything loose: what has been left far behind goes back, the
-  // player's car and the traffic shove what they meet, and the rest fly,
-  // tumble and settle. The traffic takes nothing back from a loose piece,
-  // and the player on foot moves none (see Walker).
+  // player and the traffic shove what they meet and take their share of the
+  // blow (a car on its rails takes it as speed: see CityTraffic.strike), the
+  // pieces meet each other, and they fly, tumble and settle. Someone on foot
+  // kicks light pieces aside and is stopped by heavy ones (see contact).
   update(dt, player, traffic = null, chunks = null) {
     const at = player.groundedPosition;
+    this.steps = (this.steps ?? 0) + 1; this.chunks = chunks; this.traffic = traffic;
     this.breaks = player.spec?.breaks ?? [];
     for (let i = this.loose.length - 1; i >= 0; i--) {
       const collider = this.loose[i];
@@ -680,20 +1023,33 @@ export class LooseProps {
       else this.restore(collider);
     }
     if (this.bodies.length) {
-      const car = player.walker ? null : this.carOf(player), cars = traffic?.enabled ? [...traffic.vehicles, ...traffic.woken ?? []] : [];
+      // (the player knocked over is a body here themselves: see Walker; the
+      // traffic, the parked cars knocked loose and the player's own car left parked)
+      let car = player.walker?.down ? null : this.carOf(player);
+      const cars = [...(traffic?.enabled ? [...traffic.vehicles, ...traffic.woken ?? []] : []), ...traffic?.playerCars ?? []];
       for (const body of this.bodies) {
         if (body.sunk) continue;
         body.last.p.copy(body.p); body.last.q.copy(body.q);
-        const blow = car && this.contact(body, car);
-        if (blow) player.strike(blow.x, blow.z, blow.spin, Math.hypot(blow.x, blow.z) * FELT);
+        for (let pass = 0; car && pass < PASSES; pass++) {
+          const blow = this.contact(body, car);
+          if (!blow) break;
+          player.resolveTrafficCollision(blow.px, blow.pz, blow.x, blow.z, blow.spin, player.walker ? blow.closing : Math.hypot(blow.x, blow.z) * FELT);
+          car = player.walker?.down ? null : this.carOf(player);
+        }
         for (const other of cars) {
           if (!other.car.visible || Math.abs(other.position.x - body.p.x) > 8 || Math.abs(other.position.z - body.p.z) > 8) continue;
-          const motion = traffic.motion(other);
-          motion.y = other.position.y; motion.height = ROOF;
-          this.contact(body, motion);
+          for (let pass = 0; pass < PASSES; pass++) {
+            const motion = traffic.motion(other);
+            motion.y = other.position.y; motion.height = other.height ?? other.spec.height ?? ROOF; motion.fixed = !other.loose && !other.recover;
+            const hit = this.contact(body, motion);
+            if (!hit) break;
+            traffic.strike(other, hit.x, hit.z, hit.spin);
+            if (hit.px || hit.pz) traffic.nudge(other, hit.px, hit.pz);
+          }
         }
         if (!body.asleep) this.step(body, dt, chunks);
       }
+      this.meetAll();
     }
     this.bits.update(dt);
   }

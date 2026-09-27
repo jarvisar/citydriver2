@@ -67,7 +67,7 @@ setupPwaFullscreen(() => autoFullscreen);
 const $ = selector => document.querySelector(selector);
 const MENU_MOVES = ['menuNext', 'menuPrevious', 'menuUp', 'menuDown'];
 const MENU_CRUISE_SPEED = TRAFFIC_CRUISE_SPEED * 1.4;
-// How fast the right stick turns the chase camera, pushed all the way (rad/s)
+// How fast the right stick turns the camera, pushed all the way (rad/s)
 const STICK_LOOK = 2.4;
 const mileageFormat = new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 let paused = false, started = false, time = 0, hudTime = 0, gameMode = 'taxi';
@@ -798,10 +798,14 @@ async function boot() {
       desktop.getUpdate().then(showUpdate);
     }
     // Driving in the chase view, the wheel brings the camera in or out, and
-    // in fullscreen the mouse looks round the car
+    // in fullscreen the mouse looks round the car, or through the player's eyes
     const chasing = () => started && !paused && !changingJourney && !vr.active && rendering.chaseView;
-    const mouseLook = new MouseLook($('#scene'), { lockable: () => chasing() && fullscreenActive(), zoomable: chasing, look: rendering.look, zoom: rendering.zoom,
+    const looking = () => started && !paused && !changingJourney && !vr.active && (rendering.chaseView || rendering.firstPersonView);
+    const mouseLook = new MouseLook($('#scene'), { lockable: () => looking() && fullscreenActive(), zoomable: chasing, look: rendering.look, zoom: rendering.zoom,
       released: () => setPaused(true) });
+    // On foot through their own eyes, the sides step aside when a mouse or a
+    // stick can turn the view (see walkingInput); otherwise they turn it
+    const strafing = () => vr.active || input.gamepad.connected || mouseLook.locked;
     // A touch acts on pointerup: a secondary finger may not synthesize a
     // click while the stick is held (and see pressOnRelease).
     for (const name of ['pause', 'view']) pressOnRelease($(`#${name}`), () => action(name));
@@ -909,7 +913,7 @@ async function boot() {
       $('#view').title = `${rendering.viewLabel} · Change camera (V)`;
       $('#view').setAttribute('aria-label', `${rendering.viewLabel}. Change camera`);
       const thirdPerson = rendering.camera.isPerspectiveCamera, flying = document.body.dataset.flying === 'true', walking = document.body.dataset.walking === 'true';
-      $('.stick-help-copy').firstChild.textContent = walking ? 'Drag anywhere to walk' : thirdPerson ? `Touch anywhere · ↑ ${flying ? 'Fly' : 'Drive'} · ↔ ${flying ? 'Turn' : 'Steer'}` : `Drag anywhere to ${flying ? 'fly' : 'drive'}`;
+      $('.stick-help-copy').firstChild.textContent = walking ? rendering.firstPersonView ? 'Touch anywhere · ↑ Walk · ↔ Turn' : 'Drag anywhere to walk' : thirdPerson ? `Touch anywhere · ↑ ${flying ? 'Fly' : 'Drive'} · ↔ ${flying ? 'Turn' : 'Steer'}` : `Drag anywhere to ${flying ? 'fly' : 'drive'}`;
       $('.stick-help-line').textContent = walking ? 'Push further to run' : flying ? thirdPerson ? '↓ Back · Release to hover' : 'Release to hover' : thirdPerson ? '↓ Brake · Release to stop' : 'Release to stop';
       $('#touch-stick').setAttribute('aria-label', walking ? 'Virtual joystick: push the way to walk, further to run' : thirdPerson ? 'Virtual joystick: up to accelerate, left and right to steer, down to brake or reverse, release to stop' : 'Virtual joystick');
     }
@@ -1008,7 +1012,7 @@ async function boot() {
       if (!started && vr.active) state = {};
       else if (!started || autodrive.enabled) state = autodrive.update(vehicle, traffic, started ? vehicle.stats.topSpeed : MENU_CRUISE_SPEED, dt);
       // On foot the stick and keys point the way to walk, from the camera's point of view
-      if (vehicle.walker) state = walkingInput(state, rendering.camera, { firstPerson: rendering.firstPersonView, heading: vehicle.heading }, walking);
+      if (vehicle.walker) state = walkingInput(state, rendering.camera, { firstPerson: rendering.firstPersonView, strafe: strafing() }, walking);
       else if (state.touchStick) {
         if (rendering.camera.isPerspectiveCamera) {
           const touch = thirdPersonDrivingInput(state.touchStick);
@@ -1092,10 +1096,16 @@ async function boot() {
       if (running) {
         time += dt;
         if (vr.active && started && (Math.abs(vehicle.speed) > 2 || vehicle.airborne)) vrHintTime += dt;
-        // The right stick looks round in the chase view, as the mouse does
-        // (not the helicopter's, which climbs; a headset's only turns)
-        const stick = vr.active ? input.xr.state : input.gamepad.state;
-        if (started && rendering.chaseView && !vehicle.pilot && (stick.lookX || stick.lookY)) rendering.look(stick.lookX * STICK_LOOK * dt, vr.active ? 0 : (stick.lookY || 0) * STICK_LOOK * dt);
+        // The right stick looks round in the chase view and through the
+        // player's eyes, as the mouse does (not the helicopter's, which
+        // climbs; a headset's only turns). On foot through their own eyes,
+        // with no mouse or stick to turn the view, the sides turn it.
+        if (started && (rendering.chaseView || rendering.firstPersonView) && !vehicle.pilot) {
+          const stick = vr.active ? input.xr.state : input.gamepad.state, pitch = vr.active ? 0 : stick.lookY || 0;
+          let yaw = stick.lookX || 0;
+          if (vehicle.walker && rendering.firstPersonView && !strafing()) { const keys = input.state; yaw += keys.touchStick?.x || keys.moveX || 0; }
+          if (yaw || pitch) rendering.look(yaw * STICK_LOOK * dt, pitch * STICK_LOOK * dt);
+        }
         world.update(vehicle.s, vehicle.u, { budgetMs: 3 }); vehicle.render(frameClock.alpha, world.origin); onFoot.render(frameClock.alpha, world.origin);
         traffic.render(frameClock.alpha, world.origin); props.render(frameClock.alpha, world.origin);
         pedestrianContacts.update(vehicle, traffic, time, props);

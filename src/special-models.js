@@ -89,33 +89,50 @@ function partsKit() {
 }
 
 const BUILDERS = {
-  // A bare tub in a roll cage, with the engine hung out behind the seats.
-  buggy({ box, tapered, tube }) {
-    box([1.16, .34, 2.2], [0, .66, .1]);
+  // A bare tub in a roll cage, with the engine hung out behind the seats on a
+  // frame that the cage's back stays come down to.
+  buggy(kit) {
+    const { box, tapered, tube } = kit;
+    // The tub: a floor, a bulkhead under the cowl, a deck behind the seats and
+    // sides between them, so the seats sit down inside it.
+    box([1.16, .16, 2.2], [0, .57, .1]);
+    box([1.16, .2, .35], [0, .74, -.8]);
+    box([1.16, .2, .55], [0, .74, .925]);
     tapered([1.1, .34, .75], [0, .66, -1.3], { at: -1, x: .55, y: .45, lift: -.06 });
     box([1.16, .2, .3], [0, .93, -.78]);
     box([1, .06, 2], [0, .47, .05], 'details', DARK);
     for (const side of [-1, 1]) {
-      box([.42, .14, .5], [side * .28, .88, .2], 'details', SEAT);
-      box([.42, .56, .13], [side * .28, 1.16, .5], 'details', SEAT);
-      // Cage: a rear hoop, a raked front one, roof rails, and stays down to the engine.
+      box([.1, .2, 1.32], [side * .53, .74, 0]);
+      box([.42, .14, .5], [side * .28, .72, .2], 'details', SEAT);
+      box([.42, .56, .13], [side * .28, 1, .5], 'details', SEAT);
+      // Cage: a rear hoop, a raked front one and roof rails.
       box([.07, .95, .07], [side * .56, 1.3, .68], 'details', DARK);
       box([.07, .9, .07], [side * .56, 1.33, -.78], 'details', DARK, .272);
       box([.07, .07, 1.41], [side * .56, 1.76, .01], 'details', DARK);
-      box([.07, 1.02, .07], [side * .56, 1.38, 1.015], 'details', DARK, -.723);
-      // Wishbones out to the wheels, lamp pods on the cowl, and lamps on the hoop.
+      // The engine frame: rails back from the tub, and stays from the hoop
+      // down to where they meet the bumper, clear of the engine and the tyres.
+      box([.06, .06, .55], [side * .43, .74, 1.445], 'details', DARK);
+      box([.07, 1.435, .07], [side * .5, 1.2525, 1.1875], 'details', DARK, -Math.PI / 4);
+      // Wishbones out to the wheels, round lamps on the cowl, lamps on the hoop.
       box([.5, .05, .08], [side * .6, .5, -1.15], 'details', DARK);
       box([.4, .07, .1], [side * .56, .56, 1.05], 'details', DARK);
-      box([.2, .2, .1], [side * .5, .98, -.98], 'headlights');
+      tube(.1, .12, [side * .42, .98, -.985], 'z', DARK);
+      strut(kit, [side * .42, .98, -1.04], [side * .42, .98, -1.06], .085, null, 'headlights');
       box([.12, .16, .05], [side * .56, 1.15, .74], 'taillights');
-      tube(.05, .55, [side * .3, 1.32, 1.6], 'y', CHROME);
+      // Tailpipes turned up off the ends of the silencer.
+      strut(kit, [side * .3, .84, 1.73], [side * .33, 1, 1.77], .035, CHROME);
     }
     for (const z of [-.66, .68]) box([1.19, .07, .07], [0, 1.76, z], 'details', DARK);
-    box([1.12, .05, 1.2], [0, 1.82, 0]);
-    tube(.16, .04, [-.28, 1.12, -.5], 'z', DARK);
+    box([1.12, .05, 1.3], [0, 1.82, -.05]);
+    // The wheel on a raked column out of the cowl.
+    strut(kit, [-.28, .96, -.64], [-.28, 1.04, -.45], .025, DARK);
+    strut(kit, [-.28, 1.04, -.45], [-.28, 1.052, -.422], .16, DARK);
     // A roof light bar, because every buggy has one.
-    for (const x of [-.33, -.11, .11, .33]) box([.17, .13, .06], [x, 1.91, -.68], 'headlights');
-    box([.78, .42, .62], [0, .95, 1.38], 'details', ENGINE);
+    for (const x of [-.33, -.11, .11, .33]) box([.17, .13, .06], [x, 1.905, -.66], 'headlights');
+    box([.82, .42, .62], [0, .95, 1.38], 'details', ENGINE);
+    box([1.06, .07, .07], [0, .74, 1.72], 'details', DARK);
+    // A silencer across the back of the engine, resting on the bumper.
+    tube(.075, .72, [0, .84, 1.72], 'x', CHROME);
     tube(.13, .26, [0, 1.29, 1.38], 'y', CHROME);
   },
 
@@ -125,60 +142,101 @@ const BUILDERS = {
     for (const z of [-1.55, 1.55]) {
       box([2, .18, .18], [0, .85, z], 'details', DARK);
       box([.4, .36, .4], [0, .85, z], 'details', ENGINE);
-      // Long-travel shocks in a V over each axle.
-      for (const side of [-1, 1]) for (const lean of [-1, 1]) box([.09, .74, .09], [side * .62, 1.18, z + lean * .17], 'details', SHOCK, -lean * .42);
+      // Long-travel shocks in a V from each axle up under the fenders.
+      for (const side of [-1, 1]) for (const lean of [-1, 1]) box([.09, 1, .09], [side * .56, 1.3, z + lean * .2], 'details', SHOCK, lean * .42);
     }
-    box([2.05, .66, 4.5], [0, 1.78, 0]);
+    // The body clears the tyres: a fender line over them, the cab's sills
+    // down between them, and a bed sunk into the back.
+    box([2.05, .38, 2.8], [0, 1.92, -.85]);
+    box([2.05, .22, 1.7], [0, 1.84, 1.4]);
+    box([2.05, .3, 1.64], [0, 1.6, 0]);
     box([1.2, .1, 1.2], [0, 2.16, -1.5]);
     glass([1.8, .7, 1.55], [0, 2.46, -.25]);
     box([1.78, .12, 1.3], [0, 2.85, -.19]);
-    box([1.75, .06, 1.6], [0, 2.13, 1.4], 'details', BED);
-    box([2.05, .32, .15], [0, 2.27, 2.18]);
+    // A painted cab back under the rear window, which is also the bed's front.
+    box([1.84, .32, .1], [0, 2.27, .5]);
+    box([1.75, .06, 1.64], [0, 1.96, 1.37], 'details', BED);
+    box([1.75, .6, .08], [0, 2.1, 2.23]);
+    box([.3, .05, .02], [0, 2.3, 2.28], 'details', DARK);
     for (const side of [-1, 1]) {
       box([.085, .7, .12], [side * .88, 2.46, -.1]);
-      box([.15, .32, 1.72], [side * .95, 2.27, 1.39]);
-      box([.2, .16, .26], [side * 1.1, 2.3, -.8]);
-      box([.09, .85, .09], [side * .8, 2.55, .75], 'details', DARK);
-      box([.42, .24, .05], [side * .68, 1.86, -2.275], 'headlights');
-      box([.22, .3, .05], [side * .85, 1.8, 2.275], 'taillights');
+      box([.09, .72, .1], [side * .86, 2.46, .465], 'paint', undefined, -.17);
+      box([.15, .48, 1.72], [side * .95, 2.19, 1.39]);
+      // Mirrors on stalks off the doors.
+      box([.1, .18, .24], [side * 1.12, 2.32, -.8]);
+      box([.26, .04, .04], [side * .96, 2.24, -.8], 'details', DARK);
+      box([.09, 1, .09], [side * .8, 2.49, .75], 'details', DARK);
+      box([.36, .2, .05], [side * .66, 1.94, -2.275], 'headlights');
+      box([.13, .42, .04], [side * .95, 2.12, 2.27], 'taillights');
     }
-    // Roll bar across the bed with a row of spots on it.
+    // Roll bar across the bed with a row of spots on it, lenses to the front.
     box([1.69, .09, .09], [0, 2.95, .75], 'details', DARK);
-    for (const x of [-.5, -.17, .17, .5]) box([.24, .18, .08], [x, 3.08, .73], 'headlights');
-    box([.8, .3, .05], [0, 1.84, -2.275], 'details', DARK);
-    for (const z of [-2.3, 2.3]) box([2.1, .24, .22], [0, 1.4, z], 'details', CHROME);
+    for (const x of [-.5, -.17, .17, .5]) {
+      box([.24, .18, .1], [x, 3.08, .76], 'details', DARK);
+      box([.2, .14, .02], [x, 3.08, .7], 'headlights');
+    }
+    box([.76, .22, .05], [0, 1.94, -2.275], 'details', DARK);
+    for (const z of [-2.3, 2.3]) box([2.1, .24, .22], [0, 1.64, z], 'details', CHROME);
   },
 
   // A chopped coupe on bare rails: skinny fronts, fat rears, and a blower
   // standing out of the bonnet.
-  hotrod({ box, tapered, glass, tube }) {
+  hotrod(kit) {
+    const { box, tapered, tube } = kit;
+    // Half the bonnet's width along its length, for the headers to leave from.
+    const bonnet = z => .37 + .13 * (z + 1.79) / 1.62;
     for (const side of [-1, 1]) {
-      box([.12, .14, 3.9], [side * .4, .52, 0], 'details', DARK);
-      box([.08, .36, .1], [side * .58, 1.38, .55]);
-      // Four header stubs into a side pipe, and a lamp on a stalk.
-      for (let i = 0; i < 4; i++) tube(.045, .3, [side * .56, .84, -1.45 + i * .28], 'x', CHROME);
-      tube(.07, 2, [side * .72, .62, -.35], 'z', CHROME);
-      box([.22, .22, .14], [side * .58, .98, -1.78], 'headlights');
-      box([.05, .3, .05], [side * .58, .74, -1.78], 'details', CHROME);
-      box([.13, .13, .05], [side * .4, .88, 1.995], 'taillights');
+      box([.12, .15, 3.9], [side * .4, .525, 0], 'details', DARK);
+      // Four headers sweeping down into a side pipe that stops short of both tyres.
+      for (let i = 0; i < 4; i++) {
+        const z = -1.25 + i * .2;
+        strut(kit, [side * (bonnet(z) - .03), .86, z], [side * .72, .64, z + .14], .042, CHROME);
+      }
+      tube(.07, 1.65, [side * .72, .62, -.325], 'z', CHROME);
+      // Bucket lamps on stalks from a bar across the frame horns.
+      box([.05, .22, .05], [side * .58, .765, -1.76], 'details', CHROME);
+      tube(.11, .16, [side * .58, .98, -1.76], 'z', CHROME);
+      strut(kit, [side * .58, .98, -1.835], [side * .58, .98, -1.855], .09, null, 'headlights');
+      strut(kit, [side * .4, .86, 1.97], [side * .4, .86, 2.02], .075, null, 'taillights');
     }
-    box([1.6, .08, .08], [0, .4, -1.5], 'details', CHROME);
+    box([1.3, .06, .06], [0, .63, -1.76], 'details', CHROME);
+    box([1.6, .1, .08], [0, .4, -1.5], 'details', CHROME);
     box([1.3, .12, .12], [0, .56, 1.15], 'details', DARK);
+    box([.92, .06, .06], [0, .52, 1.93], 'details', CHROME);
+    // The grille shell, barred.
     box([.74, .66, .12], [0, .88, -1.84], 'details', CHROME);
     box([.56, .5, .04], [0, .88, -1.91], 'details', DARK);
+    for (const x of [-.18, -.06, .06, .18]) box([.02, .5, .02], [x, .88, -1.935], 'details', CHROME);
     tapered([1, .52, 1.62], [0, .86, -.98], { at: -1, x: .74 });
-    box([.42, .26, .6], [0, 1.24, -1], 'details', CHROME);
-    box([.46, .16, .4], [0, 1.45, -1.05], 'details', DARK);
+    // The blower, and its scoop's open mouth facing the wind.
+    box([.4, .22, .56], [0, 1.21, -1], 'details', CHROME);
+    block(kit, [-1.22, -1.22, .21, .21, 1.31, 1.53], [-.88, -.88, .19, .17, 1.31, 1.42], 'details', CHROME);
+    box([.34, .16, .02], [0, 1.43, -1.225], 'details', DARK);
+    // A three-window cab: door glass, then a painted back sloping from the
+    // roof to the deck, with a small window let into it.
     box([1.34, .6, 1.35], [0, .9, .47]);
-    glass([1.22, .36, 1], [0, 1.38, .45], .16);
+    block(kit, [-.05, .11, .61, .575, 1.2, 1.56], [.8, .66, .61, .575, 1.2, 1.56], 'details', GLASS);
+    block(kit, [.7, .6, .615, .58, 1.2, 1.56], [1.145, .93, .615, .58, 1.2, 1.56]);
+    block(kit, [1.0736, .9704, .38, .36, 1.3039, 1.4767], [1.0908, .9876, .38, .36, 1.3142, 1.487], 'details', GLASS);
     box([1.2, .1, .86], [0, 1.6, .5]);
     tapered([1.34, .6, .85], [0, .9, 1.55], { at: 1, x: .8, y: .55, lift: -.05 });
   },
 
-  // A long-nose tractor unit running bobtail: a sleeper, twin stacks and
-  // a fifth wheel with nothing on it.
+  // A long-nose tractor unit running bobtail: a raised-roof sleeper, twin
+  // stacks and a fifth wheel with nothing on it.
   rig({ box, tapered, glass, tube }) {
-    box([1, .3, 7.1], [0, .75, .05], 'details', DARK);
+    const RED = '#e0513d', BLUE = '#3f68b0';
+    // Two rails, the axles under them, and the fifth wheel on its mounting
+    // with its throat open to the back.
+    for (const side of [-1, 1]) box([.2, .3, 7.1], [side * .4, .75, .05], 'details', DARK);
+    box([1.76, .15, .15], [0, .56, -2.5], 'details', DARK);
+    for (const z of [1.85, 3.05]) {
+      box([1.26, .16, .16], [0, .56, z], 'details', DARK);
+      box([.36, .3, .3], [0, .56, z], 'details', ENGINE);
+    }
+    box([.9, .1, .5], [0, .94, 2.25], 'details', DARK);
+    tube(.46, .12, [0, 1.04, 2.25], 'y', ENGINE);
+    box([.16, .02, .42], [0, 1.105, 2.5], 'details', DARK);
     // A 1.9 m hood; the rest of the length goes behind the cab.
     tapered([1.7, .95, 1.9], [0, 1.5, -2.5], { at: -1, x: .88, y: .9, lift: -.04 });
     box([1.3, .85, .08], [0, 1.46, -3.49], 'details', CHROME);
@@ -187,46 +245,102 @@ const BUILDERS = {
     box([2.4, .3, .25], [0, .7, -3.525], 'details', CHROME);
     box([2.2, .95, 1.8], [0, 1.5, -.65]);
     glass([2.05, .75, 1.7], [0, 2.35, -.65]);
-    box([2, .12, 1.45], [0, 2.78, -.59]);
+    box([2, .12, 1.565], [0, 2.78, -.5325]);
     box([.06, .74, .055], [0, 2.35, -1.38], 'paint', undefined, .31);
+    // The sleeper, its roof rising off the cab's in a short slope.
     box([2.1, 1.85, 1.4], [0, 1.95, .95]);
-    tapered([2, .5, 1.4], [0, 3.12, .95], { at: -1, y: .2, lift: -.2 });
-    tube(.46, .12, [0, 1.02, 2.25], 'y', ENGINE);
+    box([2.1, .3, .95], [0, 3.025, 1.175]);
+    tapered([2.1, .3, .45], [0, 3.025, .475], { at: -1, y: .1, lift: -.135 });
+    // Its back, which the chase camera looks at all day: a lamp bar along the
+    // top, a chrome skirt along the bottom, and the trailer's air lines
+    // coiled up on a bracket between them.
+    box([2.02, .12, .04], [0, 3.05, 1.67], 'details', CHROME);
+    for (const x of [-.8, -.3, 0, .3, .8]) box([.14, .07, .03], [x, 3.05, 1.705], 'taillights');
+    box([2.12, .22, .04], [0, 1.16, 1.67], 'details', CHROME);
+    box([.5, .05, .06], [0, 1.9, 1.68], 'details', CHROME);
+    box([.11, .55, .11], [-.11, 1.6, 1.71], 'details', RED);
+    box([.11, .55, .11], [.11, 1.6, 1.71], 'details', BLUE);
+    // A chrome bar across the tail carries the lamps, the mud flaps under it.
+    box([2.2, .12, .08], [0, .94, 3.61], 'details', CHROME);
     for (const side of [-1, 1]) {
-      tapered([.4, .25, 1.55], [side * 1.05, 1.22, -2.5], { at: -1, y: .55 });
+      // Fenders run back to the cab, with a mud flap behind each front wheel.
+      tapered([.4, .25, 1.72], [side * 1.05, 1.22, -2.41], { at: -1, y: .55 });
+      box([.36, .44, .03], [side * 1.05, .88, -1.6], 'details', DARK);
       box([.09, .75, .12], [side * 1, 2.35, -.4]);
       box([.065, .78, .065], [side * .99, 2.35, -1.37], 'details', CHROME, .31);
       box([.07, .065, 1.62], [side * 1.04, 1.99, -.65], 'details', CHROME);
-      box([.2, .3, .14], [side * 1.15, 2.2, -1.35]);
+      // West Coast mirrors on two arms, glass to the back.
+      box([.06, .46, .2], [side * 1.24, 2.25, -1.25], 'details', CHROME);
+      box([.05, .4, .02], [side * 1.24, 2.25, -1.14], 'details', GLASS);
+      for (const y of [2.06, 2.44]) box([.26, .03, .03], [side * 1.1, y, -1.25], 'details', CHROME);
+      box([.03, .3, .5], [side * 1.055, 2.5, 1.05], 'details', GLASS);
       box([.35, .24, .05], [side * 1.05, 1.2, -3.3], 'headlights');
-      box([.3, .16, .05], [side * .34, .78, 3.625], 'taillights');
+      box([.3, .08, .03], [side * .78, .94, 3.665], 'taillights');
       box([.035, .075, .28], [side * 1.115, 1.84, -.15], 'details', CHROME);
       box([.25, .16, .8], [side * 1.08, .77, -.8], 'details', CHROME);
       box([.18, .12, .66], [side * 1.08, 1, -.8], 'details', ENGINE);
-      tube(.09, 2.3, [side * 1.14, 2.25, .13], 'y', CHROME);
+      tube(.09, 2.5, [side * 1.14, 2.25, .13], 'y', CHROME);
       tube(.3, 1.35, [side * .92, .82, .55], 'z', CHROME);
-      box([.62, .5, .04], [side * .94, .7, 3.63], 'details', DARK);
+      box([.62, .62, .03], [side * .94, .58, 3.625], 'details', DARK);
     }
     for (const x of [-.7, -.35, 0, .35, .7]) box([.12, .07, .1], [x, 2.87, -1.23], 'details', AMBER);
   },
 
   // A bubble of glass on a roller skate, with the weekend's luggage on top.
-  micro({ box, tapered, glass }) {
-    tapered([1.3, .6, 1.3], [0, .64, -.5], { at: -1, x: .78, y: .7 });
-    tapered([1.3, .6, 1.3], [0, .64, .5], { at: 1, x: .84, y: .8 });
-    glass([1.2, .6, 1.5], [0, 1.24, -.05], .3);
-    box([1.04, .07, .98], [0, 1.56, .03], 'details', CANVAS);
+  micro(kit) {
+    const { box } = kit;
+    // The tub in two halves meeting at its widest, under a canopy drawn in
+    // toward a canvas roof; the canopy's foot is down inside the tub.
+    const waist = [0, 0, .63, .63, .32, .9];
+    block(kit, [-1.15, -1.08, .5, .508, .34, .78], waist);
+    block(kit, waist, [1.15, 1.09, .54, .545, .34, .8]);
+    block(kit, [-.8, -.6, .5, .5, .76, 1.12], [.74, .7, .53, .525, .76, 1.12], 'details', GLASS);
+    block(kit, [-.6, -.28, .5, .4, 1.12, 1.5], [.7, .46, .525, .4, 1.12, 1.5], 'details', GLASS);
+    // The pillar between the side windows: a slab through the canopy, only
+    // its edges standing proud of the glass.
+    block(kit, [.1, .1, .53, .526, .8, 1.12], [.17, .17, .53, .526, .8, 1.12]);
+    block(kit, [.1, .1, .526, .412, 1.12, 1.5], [.17, .17, .526, .412, 1.12, 1.5]);
+    box([.86, .05, .78], [0, 1.52, .08], 'details', CANVAS);
     for (const side of [-1, 1]) {
-      box([.07, .6, .09], [side * .58, 1.24, .1]);
-      box([.2, .2, .06], [side * .36, .74, -1.165], 'headlights');
-      box([.14, .12, .05], [side * .4, .74, 1.165], 'taillights');
-      box([.05, .05, .8], [side * .34, 1.62, .1], 'details', DARK);
+      strut(kit, [side * .33, .6, -1.16], [side * .33, .6, -1.04], .085, null, 'headlights');
+      strut(kit, [side * .4, .62, 1.15], [side * .4, .62, 1.09], .06, null, 'taillights');
+      box([.04, .04, .56], [side * .26, 1.565, .1], 'details', DARK);
     }
+    // A chrome bar across the front between the lamps, as on a front-door
+    // bubble car, and the engine's vent between the lamps at the back.
+    box([.4, .03, .03], [0, .6, -1.115], 'details', CHROME);
+    box([.34, .1, .03], [0, .66, 1.11], 'details', DARK);
     for (const z of [-1.16, 1.16]) box([1.06, .08, .1], [0, .42, z], 'details', CHROME);
-    box([.52, .22, .7], [0, 1.76, .1], 'details', LEATHER);
-    for (const z of [-.1, .3]) box([.54, .24, .05], [0, 1.76, z], 'details', DARK);
+    box([.46, .16, .38], [0, 1.66, .12], 'details', LEATHER);
+    box([.48, .17, .04], [0, 1.66, .12], 'details', DARK);
   },
 };
+
+// Shapes the kit has no call for, cut from its own pieces as they go in: a
+// tube from one point to another (pipes and stays that lean both ways, round
+// lamps), and a block given by its two ends, each [bottom z, top z, half width
+// at the bottom, half width at the top, bottom, top] (a canopy, a rounded tub).
+function strut(kit, from, to, radius, color, category = 'details') {
+  const a = new THREE.Vector3(...from), axis = new THREE.Vector3(...to).sub(a);
+  kit.tube(radius, axis.length(), [0, 0, 0], 'y', color ?? '#ffffff');
+  const geometry = kit.parts.details.pop();
+  // A flat top and bottom to the octagon where it lies level.
+  geometry.rotateY(Math.PI / 8);
+  geometry.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis.clone().normalize()));
+  geometry.translate(...a.addScaledVector(axis, .5).toArray());
+  if (!color) geometry.deleteAttribute('color');
+  kit.parts[category].push(geometry);
+}
+
+function block(kit, front, rear, category = 'paint', color) {
+  kit.box([2, 2, 2], [0, 0, 0], category, color);
+  const geometry = kit.parts[category].at(-1), position = geometry.attributes.position;
+  for (let i = 0; i < position.count; i++) {
+    const [bottomZ, topZ, bottomHalf, topHalf, bottom, top] = position.getZ(i) < 0 ? front : rear, up = position.getY(i) > 0;
+    position.setXYZ(i, Math.sign(position.getX(i)) * (up ? topHalf : bottomHalf), up ? top : bottom, up ? topZ : bottomZ);
+  }
+  geometry.computeVertexNormals();
+}
 
 export function createSpecialCar(entry) {
   const shape = entry.shape, kit = partsKit();

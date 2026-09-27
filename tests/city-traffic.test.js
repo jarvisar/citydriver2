@@ -1,14 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { CityTraffic } from '../src/city-traffic.js';
+import { CityTraffic, lanesOf } from '../src/city-traffic.js';
 import { CityAutodrive } from '../src/city-autodrive.js';
 import { junctionControls, cityGreen, JunctionTraffic } from '../src/city-junctions.js';
 import { turnPath } from '../src/world/lane-paths.js';
 import { trafficContact } from '../src/traffic.js';
 import { navGraph } from '../src/world/nav-graph.js';
 import { DrivingController } from '../src/vehicle.js';
-import { citydriverRoute, journeyStart, onRoadAt, roadAt, surfaceAt } from '../src/world/city-route.js';
+import { citydriverRoute, journeyStart, onRoadAt, roadAt, surfaceAt, ROAD_LEVEL } from '../src/world/city-route.js';
+import { collideScenery, sceneryContacts } from '../src/collision.js';
+import { LooseProps } from '../src/loose-props.js';
+import { cityAssets } from '../src/world/city-assets.js';
+import { cityWalker } from '../src/world/city-walkers.js';
 
 test('traffic spawns on the streets around the car, drives on and stays on the road', () => {
   const scene = new THREE.Scene(), player = new DrivingController(citydriverRoute, journeyStart(), 'taxi');
@@ -181,9 +185,10 @@ test('autodrive never loses its way: it never whips round, circles on the spot o
   }
 });
 
-// Cars pinned to a long, plain street near the start, the rest out of the
-// way: [along, speed, model name] each
-function pinnedStreet(player, cars) {
+// Cars pinned to a long, plain street near the start (with no median, or
+// one that `where` picks), the rest out of the way: [along, speed, model
+// name, lane (its kerb lane), direction (1)] each
+function pinnedStreet(player, cars, where = e => !e.profile.median) {
   const traffic = new CityTraffic(new THREE.Scene(), player.route, player.s, 'city', player.u), start = journeyStart();
   // (plain: straight over its first 100 m, within a metre, so no car slows
   // there for a bend and meets a blow late)
@@ -191,21 +196,28 @@ function pinnedStreet(player, cars) {
     const a = traffic.nav.pose(e, 0, 1, 0), b = traffic.nav.pose(e, 100, 1, 0), l = Math.hypot(b.u - a.u, b.s - a.s) || 1;
     return Array.from({ length: 11 }, (_, k) => traffic.nav.pose(e, k * 10, 1, 0)).every(p => Math.abs((p.u - a.u) * (b.s - a.s) - (p.s - a.s) * (b.u - a.u)) / l < 1);
   };
-  const edge = traffic.nav.edges.filter(e => e.kind !== 'path' && e.length > 160 && !e.profile.median && straight(e)).sort((a, b) => {
+  const edge = traffic.nav.edges.filter(e => e.kind !== 'path' && e.length > 160 && where(e) && straight(e)).sort((a, b) => {
     const m = e => e.points[Math.floor(e.points.length / 2)];
     return Math.hypot(m(a).y - start.s, m(a).x - start.u) - Math.hypot(m(b).y - start.s, m(b).x - start.u);
   })[0];
   for (const car of traffic.vehicles) { car.edge = null; car.car.visible = false; car.s = car.u = 1e6; car.position.set(1e6, 0, 1e6); }
   traffic.spawn = () => false; traffic.junctions.limit = () => Infinity;
-  const used = new Set(), pinned = cars.map(([along, speed, model = 'hatchback']) => {
+  const used = new Set(), pinned = cars.map(([along, speed, model = 'hatchback', lane = edge.profile.lane, direction = 1]) => {
     const car = traffic.vehicles.find(c => c.spec.name === model && !used.has(c));
     used.add(car);
-    Object.assign(car, { edge, direction: 1, along, lane: edge.profile.lane, next: null, turn: null, after: null, stopWait: 0, loose: null, recover: null, rock: null, dazed: 0, shoved: false, tries: 0, stranded: 0 });
+    Object.assign(car, { edge, direction, along, next: null, turn: null, after: null, stopWait: 0, loose: null, recover: null, rock: null, dazed: 0, shoved: false, tries: 0, stranded: 0 });
+    traffic.settle(car, lane);
     car.cruiseSpeed = car.speed = speed; car.pace = speed / edge.profile.speed; car.car.visible = true;
     traffic.choose(car); traffic.pose(car);
     return car;
   });
   return { traffic, edge, pinned };
+}
+// Someone watching from well off the street, out of everyone's way
+function onlooker(traffic, edge, along) {
+  const p = traffic.nav.pose(edge, along, 1, -edge.profile.halfWidth - 15);
+  traffic.lastS = p.s; traffic.lastU = p.u;
+  return { s: p.s, u: p.u, heading: 0, speed: 0, airborne: true, groundedPosition: new THREE.Vector3(1e5, 0, 1e5) };
 }
 // The player's car square to the lane at `along`, `across` metres to its left and `ahead` metres on
 function besideLane(traffic, edge, player, along, across, ahead, speed) {
@@ -311,4 +323,216 @@ test('a car shoved into the one ahead knocks it on, and the two are kept apart',
     }
     assert.ok(knocked, 'the car ahead took a blow too');
   } finally { traffic.dispose(); player.disposeModel(); }
+});
+
+test('traffic brakes for furniture lying in its lane and waits for anyone knocked down; held up by furniture, it edges through, shoving it aside', () => {
+  const player = new DrivingController(citydriverRoute, journeyStart(), 'taxi');
+  player.toggleFreeDriving();
+  const { traffic, edge, pinned: [car] } = pinnedStreet(player, [[30, 10]]);
+  const props = new LooseProps(new THREE.Scene(), new THREE.MeshBasicMaterial());
+  traffic.props = props;
+  // (the player well behind it, in the same lane)
+  const back = traffic.nav.pose(edge, 2, 1, edge.profile.lane);
+  player.s = back.s; player.u = back.u; player.heading = player.slideHeading = back.heading; player.update(0, {});
+  // Something lying across its lane `along` the street, settled
+  const lying = (kind, geometry, along, person = false) => {
+    const rail = traffic.nav.pose(edge, along, 1, edge.profile.lane), h = rail.heading, across = new THREE.Vector3(Math.cos(h), 0, Math.sin(h));
+    const at = new THREE.Vector3(rail.u, ROAD_LEVEL + .3, -rail.s).addScaledVector(across, -.6), turn = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), across);
+    const body = props.add({ kind, geometry, person }, new THREE.Matrix4().compose(at, turn, new THREE.Vector3(1, 1, 1)));
+    for (let i = 0; i < 120 * 3 && !body.asleep; i++) props.update(1 / 120, player, traffic);
+    return body;
+  };
+  const matrix = new THREE.Matrix4(), run = (seconds, body, watch) => {
+    for (let i = 0; i < seconds * 120; i++) {
+      traffic.update(1 / 120, player); props.update(1 / 120, player, traffic);
+      if (body.piece.person) props.personMatrix(body, matrix);
+      watch?.(i);
+    }
+  };
+  try {
+    // A bench lying in the lane 25 m on: it stops short of it, and after a
+    // while edges on into it, at a walk, shoving it out of the way
+    const bench = lying('bench', cityAssets.bench, 55), from = bench.p.clone();
+    let stopped = null, touched = null;
+    run(5, bench, i => { if (car.speed < .05 && stopped === null) stopped = i; if (bench.p.distanceTo(from) > .05 && touched === null) touched = i; });
+    assert.ok(stopped !== null && touched === null, 'stopped short of the bench');
+    // (the pace it pushes at, while the bench is still ahead of it; past it, it drives on)
+    let fastest = 0, past = false;
+    run(10, bench, () => {
+      const ahead = (bench.p.x - car.position.x) * Math.sin(car.heading) - (bench.p.z - car.position.z) * Math.cos(car.heading);
+      if (bench.p.distanceTo(from) > .05 && ahead > 0) fastest = Math.max(fastest, car.speed);
+      past ||= car.along > 60;
+    });
+    assert.ok(bench.p.distanceTo(from) > .5, `then shoved it on (${bench.p.distanceTo(from).toFixed(2)} m)`);
+    assert.ok(fastest < 2.5, `at a walk (${fastest.toFixed(1)} m/s)`);
+    assert.ok(past, 'and drove on past it');
+    props.remove(bench);
+    // Someone knocked down in the lane: it stops and waits, however long
+    car.along = 30; car.speed = car.cruiseSpeed; car.waited = 0; traffic.pose(car);
+    const person = lying('person', cityWalker, 55, true), lies = person.p.clone();
+    run(8, person);
+    assert.ok(car.speed < .05 && car.along < 55 - car.spec.length / 2 - 1, `stopped short of them (${(55 - car.along).toFixed(1)} m off)`);
+    assert.ok(person.p.distanceTo(lies) < .02, 'and never touched them');
+  } finally { traffic.dispose(); props.dispose(); player.disposeModel(); }
+});
+
+test('a loose car pinned against a building gives no further: the player pushing it is stopped instead of pressing it into the wall', () => {
+  const player = new DrivingController(citydriverRoute, journeyStart(), 'rig');
+  player.toggleFreeDriving();
+  const { traffic, edge, pinned: [car] } = pinnedStreet(player, [[50, 0]]);
+  try {
+    // Knocked loose and at rest, a building's wall hard against its right side
+    Object.assign(car, { loose: { vx: 0, vz: 0, spin: 0 }, stranded: 100 });
+    const rail = traffic.nav.pose(edge, 50, 1, edge.profile.lane), h = rail.heading, fx = Math.sin(h), fz = -Math.cos(h), ax = Math.cos(h), az = Math.sin(h);
+    const side = car.spec.width / 2 + .02, corner = (along, across) => ({ x: rail.u + fx * along + ax * across, z: -rail.s + fz * along + az * across });
+    const building = { corners: [corner(-6, side), corner(6, side), corner(6, side + 8), corner(-6, side + 8)], x: rail.u + ax * (side + 4), z: -rail.s + az * (side + 4), reach: 10, top: ROAD_LEVEL + 12 };
+    const chunks = new Map([['a', { collisionBounds: { minX: -1e5, maxX: 1e5, minZ: -1e5, maxZ: 1e5 }, features: { colliders: [building] } }]]);
+    // The truck coming at its left side, square on
+    besideLane(traffic, edge, player, 50, 9, 0, 8);
+    player.heading = player.slideHeading = h + Math.PI / 2; player.update(0, {});
+    let pressed = 0;
+    for (let i = 0; i < 120 * 3; i++) {
+      player.update(1 / 120, { forward: true }); collideScenery(player, chunks, 1 / 120); traffic.update(1 / 120, player, chunks);
+      sceneryContacts(() => ({ x: car.u, z: -car.s, heading: car.heading, halfWidth: car.spec.width / 2, halfLength: car.spec.length / 2 }), chunks.values(), contact => { pressed = Math.max(pressed, contact.depth); });
+    }
+    assert.ok(pressed < .15, `the car is not pressed into the building (${pressed.toFixed(2)} m)`);
+    const contact = trafficContact(player.motion(), traffic.motion(car));
+    assert.ok(!contact || contact.depth < .2, `nor the truck into the car (${contact?.depth.toFixed(2)} m)`);
+    assert.ok(Math.abs(player.speed) < 1.5, `the truck is stopped (${player.speed.toFixed(1)} m/s)`);
+  } finally { traffic.dispose(); player.disposeModel(); }
+});
+
+// Changing lanes
+const box = car => ({ x: car.u, z: -car.s, heading: car.heading, halfWidth: car.spec.width / 2 - .05, halfLength: car.spec.length / 2 - .1 });
+const apart = (a, b) => { const contact = trafficContact(box(a), box(b)); return !contact || contact.depth < .05; };
+// How far `b` is ahead of `a`, along `a`'s way
+const aheadOf = (a, b) => (b.u - a.u) * Math.sin(a.laneHeading ?? a.heading) + (b.s - a.s) * Math.cos(a.laneHeading ?? a.heading);
+// Send a car straight on into the next boulevard, or round a real turn off it
+function headFor(traffic, car, straight) {
+  const next = traffic.nav.choices(car.edge, car.direction).find(c => c.edge !== car.edge && (straight ? Math.abs(c.turn) < .35 && c.edge.profile.divider : Math.abs(c.turn) > .6));
+  if (!next) return false;
+  Object.assign(car, { next, turn: turnPath(traffic.nav, car.edge, car.direction, next), after: null });
+  return true;
+}
+
+test('a car left standing across the lane is waited behind, driven round once the oncoming lane is clear, and the driver goes back to its lane', () => {
+  const start = journeyStart(), side = e => e.profile.kind === 'side' && !e.profile.parking && !e.profile.narrow;
+  const { traffic, edge, pinned: [wreck, follower, coming] } = pinnedStreet({ route: citydriverRoute, s: start.s, u: start.u }, [[80, 0], [30, 8], [0, 8, 'hatchback', undefined, -1]], side);
+  try {
+    // A car knocked across its lane and left there, and another coming the other way, 85 m past it
+    Object.assign(wreck, { loose: { vx: 0, vz: 0, spin: 0 }, stranded: 1e9 }); wreck.heading += 1.3; traffic.pose(wreck);
+    coming.along = Math.max(5, edge.length - 165); traffic.choose(coming); traffic.pose(coming);
+    const watcher = onlooker(traffic, edge, 80), home = edge.profile.lane;
+    let waited = 0, startedWith = null, widest = 0, passed = false;
+    for (let i = 0; i < 60 * 30; i++) {
+      traffic.update(1 / 60, watcher);
+      if (!follower.around && follower.speed < .3 && !passed) waited += 1 / 60;
+      if (follower.around && !startedWith) startedWith = { waited, coming: aheadOf(follower, coming) };
+      if (follower.edge === edge) widest = Math.max(widest, Math.abs(follower.lane - home));
+      passed ||= aheadOf(wreck, follower) > 10 || follower.edge !== edge;
+      assert.ok(apart(follower, wreck) && apart(follower, coming) && apart(coming, wreck), `no one touches (${(i / 60).toFixed(1)} s)`);
+      assert.ok([follower.s, follower.u, follower.heading, follower.lane].every(Number.isFinite));
+    }
+    assert.ok(startedWith, 'it went round');
+    assert.ok(startedWith.waited > 1, `after waiting behind it (${startedWith.waited.toFixed(1)} s)`);
+    // (round the side toward the centre line: a side street has no room at the kerb)
+    assert.ok(widest > 2.5 && home - widest - follower.spec.width / 2 < 0, `across the centre line, ${widest.toFixed(1)} m out of its lane`);
+    assert.ok(startedWith.coming < 0, `only once the car coming the other way was past (${startedWith.coming.toFixed(0)} m)`);
+    assert.ok(passed && !follower.around && follower.lane === follower.edge.profile.lane && follower.speed > 3, `back in its lane at ${follower.speed.toFixed(1)} m/s`);
+  } finally { traffic.dispose(); }
+});
+
+test('traffic held up by the player stopped in the lane sounds the horn, then drives round them', () => {
+  const player = new DrivingController(citydriverRoute, journeyStart(), 'taxi');
+  player.toggleFreeDriving();
+  const { traffic, edge, pinned: [car] } = pinnedStreet(player, [[20, 8]]);
+  try {
+    const rail = traffic.nav.pose(edge, 75, 1, edge.profile.lane);
+    player.s = rail.s; player.u = rail.u; player.heading = player.slideHeading = rail.heading; player.speed = 0; player.update(0, {});
+    traffic.lastS = player.s; traffic.lastU = player.u;
+    const impacts = player.audioTelemetry.impactSerial;
+    let honked = false, honkedFirst = null, passed = false;
+    for (let i = 0; i < 60 * 25; i++) {
+      player.update(1 / 60, {}); traffic.update(1 / 60, player);
+      honked ||= car.held > 3;
+      if (car.around && honkedFirst === null) honkedFirst = honked;
+      passed ||= aheadOf(player, car) > 10;
+    }
+    assert.equal(player.audioTelemetry.impactSerial, impacts, 'never touched them');
+    assert.ok(honked && honkedFirst, 'the horn first');
+    assert.ok(passed && !car.around && car.lane === car.edge.profile.lane, 'then round them and back in lane');
+  } finally { traffic.dispose(); player.disposeModel(); }
+});
+
+test('on a boulevard a car catching a slower one pulls out by the median, passes it and, keeping right, moves back over', () => {
+  const start = journeyStart();
+  const { traffic, edge, pinned: [slow, fast] } = pinnedStreet({ route: citydriverRoute, s: start.s, u: start.u }, [[45, 5], [5, 15]], e => e.profile.divider);
+  try {
+    // (both going straight on, so neither must keep to the kerb lane for a turn)
+    for (const car of [slow, fast]) headFor(traffic, car, true);
+    traffic.random = (car, salt) => (salt === 41 ? 0 : CityTraffic.prototype.random.call(traffic, car, salt));
+    const watcher = onlooker(traffic, edge, 80), [kerb, median] = lanesOf(edge.profile);
+    let out = false, passed = false, back = false;
+    for (let i = 0; i < 60 * 20; i++) {
+      traffic.update(1 / 60, watcher);
+      out ||= fast.edge === edge && fast.lane === median;
+      passed ||= aheadOf(slow, fast) > 8;
+      back ||= passed && fast.lane === fast.edge.profile.lane;
+      assert.ok(apart(slow, fast), `they never touch (${(i / 60).toFixed(1)} s)`);
+      // (and moving across no faster than a driver would, a couple of metres a second)
+      assert.ok(fast.speed * Math.abs(Math.sin(fast.heading - fast.laneHeading)) < 2.05, 'a gentle lane change');
+    }
+    assert.ok(kerb !== median && out && passed && back, JSON.stringify({ out, passed, back }));
+  } finally { traffic.dispose(); }
+});
+
+test('on a boulevard a car by the median that must turn gets over in time, let in by the kerb lane, or else goes straight on', () => {
+  const start = journeyStart();
+  const { traffic, edge, pinned: [merger, ...stream] } = pinnedStreet({ route: citydriverRoute, s: start.s, u: start.u }, [[62, 10], [60, 10], [49, 10], [38, 10], [27, 10]], e => e.profile.divider);
+  try {
+    const [kerb, median] = lanesOf(edge.profile);
+    traffic.settle(merger, median); traffic.pose(merger);
+    assert.ok(headFor(traffic, merger, false), 'a turn off the boulevard');
+    for (const car of stream) headFor(traffic, car, true);
+    const planned = merger.next.edge, watcher = onlooker(traffic, edge, 100);
+    let waitedToMerge = false, turnedFromMedian = false, onto = null;
+    for (let i = 0; i < 60 * 40; i++) {
+      traffic.update(1 / 60, watcher);
+      waitedToMerge ||= merger.merging;
+      if (merger.edge !== edge) onto ??= merger.edge;
+      if (merger.edge === edge && merger.turn && merger.along > merger.turn.start && Math.abs(merger.lane - kerb) > .6 && !traffic.carriesOn(merger)) turnedFromMedian = true;
+      for (const car of stream) assert.ok(apart(merger, car), `the merger touches nobody (${(i / 60).toFixed(1)} s)`);
+    }
+    assert.ok(waitedToMerge, 'the kerb lane was busy: it had to wait to be let in');
+    assert.ok(!turnedFromMedian, 'never turning off from the median lane');
+    assert.ok(onto, 'and on its way');
+    assert.ok(onto === planned || onto.profile.divider, `round its turn, or straight on (${onto.kind})`);
+  } finally { traffic.dispose(); }
+});
+
+test('a minute of traffic by each of the two longest boulevards: cars change lanes, never overlap, and never turn off from the median lane', () => {
+  const nav = navGraph();
+  let changes = 0, wrong = 0;
+  for (const edge of nav.edges.filter(e => e.profile.divider).sort((a, b) => b.length - a.length).slice(0, 2)) {
+    const traffic = new CityTraffic(new THREE.Scene(), citydriverRoute, 0, 'city', 0), watcher = onlooker(traffic, edge, edge.length / 2);
+    traffic.reset(citydriverRoute, watcher.s, 'city', watcher.u);
+    const was = new Map();
+    try {
+      for (let f = 0; f < 60 * 60; f++) {
+        traffic.update(1 / 60, watcher);
+        const cars = traffic.vehicles.filter(car => car.edge && car.car.visible);
+        for (const car of cars) {
+          const key = `${car.index}:${car.generation}:${car.edge.id}`, to = car.laneTo;
+          if (was.has(key) && was.get(key) !== to && !car.around) changes++;
+          was.set(key, to);
+          if (car.turn && car.along > car.turn.start + 1 && Math.abs(car.lane - car.edge.profile.lane) > .6 && !traffic.carriesOn(car)) wrong++;
+        }
+        for (let i = 0; i < cars.length; i++) for (let j = i + 1; j < cars.length; j++) {
+          if (Math.abs(cars[i].s - cars[j].s) < 8 && Math.abs(cars[i].u - cars[j].u) < 8) assert.ok(apart(cars[i], cars[j]), `cars ${cars[i].index} and ${cars[j].index} overlap`);
+        }
+      }
+    } finally { traffic.dispose(); }
+  }
+  assert.ok(changes >= 1, `${changes} lane changes`);
+  assert.equal(wrong, 0, 'turns off from the median lane');
 });

@@ -5,8 +5,9 @@ import { CitydriverWorld } from '../src/world/citydriver-world.js';
 import { citydriverRoute, journeyStart, roadAt, surfaceAt, ROAD_LEVEL, PAVEMENT_LEVEL } from '../src/world/city-route.js';
 import { DrivingController } from '../src/vehicle.js';
 import { collideScenery } from '../src/collision.js';
-import { LooseProps } from '../src/loose-props.js';
-import { cityAssets } from '../src/world/city-assets.js';
+import { LooseProps, overlap } from '../src/loose-props.js';
+import { cityAssets, looseTree } from '../src/world/city-assets.js';
+import { cityWalker } from '../src/world/city-walkers.js';
 import { DemolitionRun, PRICES } from '../src/demolition-run.js';
 
 // One city for every test here, built round the start
@@ -59,16 +60,17 @@ function aboveGround(body) {
   }
   return true;
 }
-// A car driven along the nearest road into `target`, its side over it by .6 m,
-// for `seconds` (braking half a second after it, with `brake`): its speed just
+// A car driven along the nearest road into `target`, its side over it by .6 m
+// (or its middle, `headOn`), for `seconds` (braking half a second after it,
+// with `brake`), told of each step (`onStep(props, car)`): its speed just
 // before the knock and just after, and the loose pieces
-function drive(target, id = 'taxi', speed = 20, seconds = 4, brake = false, city = world(), onSmash = null) {
+function drive(target, id = 'taxi', speed = 20, seconds = 4, brake = false, city = world(), onSmash = null, { onStep = null, headOn = false } = {}) {
   const { scene, world: built } = city, props = new LooseProps(scene, built.materials.props), car = new DrivingController(citydriverRoute, journeyStart(), id);
   props.onSmash = onSmash;
   car.toggleFreeDriving();
   const road = roadAt(-target.z, target.x, 40), heading = Math.atan2(road.tx, road.ty);
   let du = road.x - target.x, ds = road.y + target.z;
-  const l = Math.hypot(du, ds) || 1, lateral = car.spec.width / 2 - .6, back = 6 + car.spec.length / 2;
+  const l = Math.hypot(du, ds) || 1, lateral = headOn ? 0 : car.spec.width / 2 - .6, back = 6 + car.spec.length / 2;
   du /= l; ds /= l;
   car.u = target.x + du * lateral - Math.sin(heading) * back; car.s = -target.z + ds * lateral - Math.cos(heading) * back;
   car.heading = car.slideHeading = heading; car.speed = speed; car.update(0, {});
@@ -78,12 +80,27 @@ function drive(target, id = 'taxi', speed = 20, seconds = 4, brake = false, city
     car.update(1 / 120, { brake: brake && knocked !== null && i > knocked + 60 });
     collideScenery(car, built.chunks, 1 / 120, (c, contact) => c.prop ? props.hit(c, contact, car) : false);
     props.update(1 / 120, car, null, built.chunks);
+    onStep?.(props, car);
     if (target.woken && knocked === null) { knocked = i; result.before = was; }
     if (i === knocked + 4) result.after = car.speed;
   }
   return result;
 }
 const tilt = body => Math.acos(new THREE.Vector3(0, 1, 0).applyQuaternion(body.q).y) * 180 / Math.PI;
+// How far any point of a loose piece is inside a car's body: its footprint,
+// from the ground to its roof
+function inside(body, car) {
+  const cos = Math.cos(car.heading), sin = Math.sin(car.heading), at = car.groundedPosition, points = body.shape.points, p = new THREE.Vector3();
+  let deepest = 0;
+  for (let i = 0; i < points.length; i += 3) {
+    p.set(points[i], points[i + 1], points[i + 2]).applyQuaternion(body.q).add(body.p);
+    const dx = p.x - at.x, dz = p.z - at.z;
+    deepest = Math.max(deepest, Math.min(car.spec.width / 2 - Math.abs(dx * cos + dz * sin), car.spec.length / 2 - Math.abs(dx * sin - dz * cos), at.y + car.spec.height - p.y, p.y - at.y));
+  }
+  return deepest;
+}
+// Pieces at rest on their own, with no car (the player lying down, a body themselves)
+const alone = { groundedPosition: new THREE.Vector3(), spec: {}, walker: { down: true } };
 
 test('the truck ploughs through a tree and a bus shelter, the monster truck only the shelter; to other cars they are walls', () => {
   // (bus shelters stand on main roads, not always near the start: a second city round the nearest)
@@ -216,7 +233,8 @@ test('weight decides what a post costs: the light racer loses most, the truck ha
 test('a bin is knocked flying with hardly a check to the car, and comes to rest on the ground', () => {
   const bin = nearest('bin');
   assert.ok(bin, 'a bin near the start');
-  const { props, car, before, after } = drive(bin, 'taxi', 18, 5, true);
+  // (a bin rolled far on its side can take nearly five seconds to lie still)
+  const { props, car, before, after } = drive(bin, 'taxi', 18, 6, true);
   try {
     const [body] = bin.prop.bodies;
     assert.ok((before - after) / before < .03, `the car lost ${before - after} m/s`);
@@ -302,9 +320,95 @@ test('a cafe table and its four chairs come loose as five pieces, and settle apa
     assert.ok(blow && blow.x * dx + blow.z * dz < 0, 'the car takes a little of the blow');
     assert.equal(cafe.prop.bodies.length, 5);
     assert.deepEqual(cafe.prop.bodies.map(b => b.piece.kind).sort(), ['chair', 'chair', 'chair', 'chair', 'table']);
+    // (the one it met, and where each stood)
+    const met = cafe.prop.bodies.reduce((a, b) => a.v.length() >= b.v.length() ? a : b), stood = new Map(cafe.prop.bodies.map(b => [b, b.p.clone()]));
     for (let i = 0; i < 120 * 5; i++) props.update(1 / 120, player, null, built.chunks);
     assert.deepEqual(cafe.prop.bodies.filter(b => !b.asleep).map(b => `${b.piece.kind} ${b.v.length().toFixed(2)} ${b.w.length().toFixed(2)} ${b.grounded}`), [], 'all settled');
     assert.ok(cafe.prop.bodies.every(aboveGround), 'on the ground');
-    assert.ok(cafe.prop.bodies.some(b => b.v.lengthSq() === 0 && Math.hypot(b.p.x - cafe.x, b.p.z - cafe.z) > 3), 'the one it met was thrown clear');
+    // Thrown into the rest of the set, which it knocks about rather than passing through
+    assert.ok(met.p.distanceTo(stood.get(met)) > .8, `the ${met.piece.kind} it met was thrown (${met.p.distanceTo(stood.get(met)).toFixed(2)} m)`);
+    assert.ok(cafe.prop.bodies.some(b => b !== met && b.p.distanceTo(stood.get(b)) > .1), 'and knocked on into the rest');
+    for (const a of cafe.prop.bodies) for (const b of cafe.prop.bodies) if (a !== b) assert.ok(overlap(a, b) < .05, `a ${a.piece.kind} in a ${b.piece.kind} by ${overlap(a, b).toFixed(2)} m`);
   } finally { props.reset(); props.dispose(); player.disposeModel(); }
+});
+
+test('a post knocked over falls clear of the car that hit it, head on or glancing, rather than through it', () => {
+  const lamp = nearest('lamp');
+  assert.ok(lamp, 'a lamp post near the start');
+  for (const [id, headOn] of [['taxi', true], ['taxi', false], ['rig', true], ['formula', true]]) {
+    let deepest = 0, seen = null;
+    const onStep = (props, car) => { for (const body of lamp.prop.bodies ?? []) { const d = inside(body, car); if (d > deepest) { deepest = d; seen = tilt(body); } } };
+    const { props, car } = drive(lamp, id, 20, 3, false, world(), null, { onStep, headOn });
+    try {
+      assert.ok(lamp.woken, `${id} knocked it loose`);
+      const [post] = lamp.prop.bodies;
+      // (a step's travel, at most: the car runs on into it before it is put out)
+      assert.ok(deepest < .3, `${id}${headOn ? ' head on' : ''}: the post was ${deepest.toFixed(2)} m inside the car, ${seen?.toFixed(0)}° over`);
+      assert.ok(tilt(post) > 70 && Math.hypot(post.p.x - lamp.x, post.p.z - lamp.z) < 14, `${id}: it lies near where it stood (${tilt(post).toFixed(0)}°, ${Math.hypot(post.p.x - lamp.x, post.p.z - lamp.z).toFixed(1)} m)`);
+    } finally { props.reset(); props.dispose(); car.disposeModel(); }
+  }
+});
+
+test('loose pieces meet each other: dropped on a bench, a bin and a person come to rest on it, not in it', () => {
+  const props = new LooseProps(new THREE.Scene(), new THREE.MeshBasicMaterial()), start = journeyStart(), road = roadAt(start.s, start.u, 40);
+  try {
+    const at = up => new THREE.Matrix4().makeTranslation(road.x, ROAD_LEVEL + up, -road.y);
+    const bench = props.add({ kind: 'bench', geometry: cityAssets.bench }, at(0));
+    for (let i = 0; i < 120 * 2; i++) props.update(1 / 120, alone);
+    assert.ok(bench.asleep, 'the bench stands still');
+    const top = bench.p.y + bench.shape.size.y / 2;
+    for (const [kind, geometry, person] of [['bin', cityAssets.bin, false], ['person', cityWalker, true]]) {
+      const body = props.add({ kind, geometry, person }, at(bench.shape.size.y + .6));
+      for (let i = 0; i < 120 * 4; i++) props.update(1 / 120, alone);
+      assert.ok(overlap(body, bench) < .05, `the ${kind} is not in the bench (${overlap(body, bench).toFixed(2)} m)`);
+      const point = new THREE.Vector3(), lowest = Math.min(...Array.from({ length: body.shape.points.length / 3 }, (_, k) => point.fromArray(body.shape.points, k * 3).applyQuaternion(body.q).y + body.p.y));
+      // (on it, or slid off it to the ground beside it)
+      assert.ok(lowest > top - .2 || lowest < ROAD_LEVEL + .2, `the ${kind} rests on the bench (${(lowest - top).toFixed(2)} m over its top) or on the ground beside it`);
+      assert.ok(body.asleep, `and lies still (${body.v.length().toFixed(2)} m/s)`);
+      props.remove(body);
+    }
+  } finally { props.dispose(); }
+});
+
+test('pieces that stood tangled, as a lamp in a tree\'s crown, are left to come apart rather than thrown apart', () => {
+  const props = new LooseProps(new THREE.Scene(), new THREE.MeshBasicMaterial()), start = journeyStart(), road = roadAt(start.s, start.u, 40);
+  try {
+    const tree = props.add({ kind: 'tree', geometry: looseTree(0, '#63924d') }, new THREE.Matrix4().makeTranslation(road.x, ROAD_LEVEL, -road.y));
+    const lamp = props.add({ kind: 'lamp', geometry: cityAssets.lamp }, new THREE.Matrix4().makeTranslation(road.x + .6, ROAD_LEVEL, -road.y));
+    assert.ok(overlap(tree, lamp) > 0 && tree.tangled?.has(lamp), 'standing tangled');
+    let fastest = 0;
+    for (let i = 0; i < 60; i++) { props.update(1 / 120, alone); fastest = Math.max(fastest, lamp.v.length(), tree.v.length()); }
+    assert.ok(fastest < 3, `nothing is thrown (${fastest.toFixed(1)} m/s)`);
+  } finally { props.dispose(); }
+});
+
+test('a piece pinned against a wall is a wall to the car pushing it: neither goes into the other', () => {
+  const props = new LooseProps(new THREE.Scene(), new THREE.MeshBasicMaterial()), start = journeyStart(), road = roadAt(start.s, start.u, 40);
+  const car = new DrivingController(citydriverRoute, start, 'rig');
+  try {
+    car.toggleFreeDriving();
+    // A wall across the road 12 m on, a bench lying against it, and the truck coming up the road at it
+    const heading = Math.atan2(road.tx, road.ty), fx = road.tx, fz = -road.ty, ax = Math.cos(heading), az = Math.sin(heading);
+    const x = road.x + road.tx * 12, z = -(road.y + road.ty * 12), corner = (along, across) => ({ x: x + fx * along + ax * across, z: z + fz * along + az * across });
+    const wall = { corners: [corner(0, -6), corner(0, 6), corner(1, 6), corner(1, -6)], x: x + fx * .5, z: z + fz * .5, reach: 7, top: ROAD_LEVEL + 6 };
+    const chunks = new Map([['wall', { collisionBounds: { minX: -1e5, maxX: 1e5, minZ: -1e5, maxZ: 1e5 }, features: { colliders: [wall] } }]]);
+    const bench = props.add({ kind: 'bench', geometry: cityAssets.bench }, new THREE.Matrix4().makeRotationY(Math.PI / 2 - heading).setPosition(x - fx * .5, ROAD_LEVEL, z - fz * .5));
+    for (let i = 0; i < 120; i++) props.update(1 / 120, alone, null, chunks);
+    car.u = road.x; car.s = road.y; car.heading = car.slideHeading = heading; car.speed = 6; car.update(0, {});
+    let inWall = 0, inCar = 0;
+    const p = new THREE.Vector3();
+    for (let i = 0; i < 120 * 3; i++) {
+      car.update(1 / 120, { forward: true });
+      collideScenery(car, chunks, 1 / 120);
+      props.update(1 / 120, car, null, chunks);
+      inCar = Math.max(inCar, inside(bench, car));
+      for (let k = 0; k < bench.shape.points.length; k += 3) {
+        p.fromArray(bench.shape.points, k).applyQuaternion(bench.q).add(bench.p);
+        inWall = Math.max(inWall, (p.x - x) * fx + (p.z - z) * fz);
+      }
+    }
+    assert.ok(inWall < .15, `the bench is not pressed into the wall (${inWall.toFixed(2)} m)`);
+    assert.ok(inCar < .25, `nor the truck into the bench (${inCar.toFixed(2)} m)`);
+    assert.ok(Math.abs(car.speed) < 1.5, `the truck is stopped (${car.speed.toFixed(1)} m/s)`);
+  } finally { props.dispose(); car.disposeModel(); }
 });

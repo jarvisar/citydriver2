@@ -1,6 +1,7 @@
-// In fullscreen the mouse looks round the chase camera, as GTA's does. While
-// the drive runs in the third-person view the pointer is locked to the scene
-// (and let go for any menu), and moving it turns the camera round the car.
+// In fullscreen the mouse looks round the chase camera, as GTA's does, and
+// through the player's eyes. While the drive runs in the third-person or the
+// first-person view the pointer is locked to the scene (and let go for any
+// menu), and moving it turns the camera round the car, or the view.
 // The wheel brings the camera nearer or farther, in a window too.
 // Radians of turn for each pixel the mouse travels
 const TURN = .0025;

@@ -17,6 +17,32 @@ function box(group, size, location, material) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
   mesh.position.set(...location); mesh.castShadow = true; mesh.receiveShadow = true; group.add(mesh); return mesh;
 }
+// A slab cut to a side-view outline of [z, y] points, running across the car
+// from x0 to x1.
+function outline(group, points, [x0, x1], material) {
+  const geometry = new THREE.ExtrudeGeometry(new THREE.Shape(points.map(([z, y]) => new THREE.Vector2(-z, y))), { depth: x1 - x0, bevelEnabled: false });
+  geometry.rotateY(Math.PI / 2); geometry.translate(x0, 0, 0);
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.castShadow = true; mesh.receiveShadow = true; group.add(mesh); return mesh;
+}
+// Fixed parts of a group that share a material draw together; `keep` stays loose.
+function mergeParts(group, keep) {
+  const batches = new Map();
+  for (const mesh of group.children) {
+    if (mesh === keep || !mesh.isMesh) continue;
+    if (!batches.has(mesh.material)) batches.set(mesh.material, []);
+    batches.get(mesh.material).push(mesh);
+  }
+  for (const [material, parts] of batches) {
+    if (parts.length < 2) continue;
+    const geometries = parts.map(part => { part.updateMatrix(); return part.geometry.applyMatrix4(part.matrix); });
+    const loose = geometries.some(geometry => !geometry.index);
+    const mesh = new THREE.Mesh(mergeGeometries(loose ? geometries.map(g => g.index ? g.toNonIndexed() : g) : geometries), material);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    for (const part of parts) { group.remove(part); part.geometry.dispose(); }
+    group.add(mesh);
+  }
+}
 export function createClassicCar(entry = carEntry(DEFAULT_CAR)) {
   const car = new THREE.Group();
   const body = new THREE.Group(); car.add(body);
@@ -25,88 +51,114 @@ export function createClassicCar(entry = carEntry(DEFAULT_CAR)) {
   const front = mat('#fff5cf', { emissive: '#e9cc84', emissiveIntensity: .24 });
   const rear = mat('#8e3328', { emissive: '#b8220d', emissiveIntensity: .1 });
   const nightLights = [{ material: front, day: .24, night: 2.2 }, { material: rear, day: .1, night: 2.5 }];
+  // A boxy tourer: the tub, a bonnet and a boot stepped up from it, and the
+  // glasshouse under a cream hardtop.
   box(body, [2.05, .64, 3.9], [0, .9, 0], paint);
   box(body, [1.96, .24, 1.12], [0, 1.3, -1.32], paint);
-  box(body, [1.92, .22, .74], [0, 1.28, 1.51], paint);
+  box(body, [1.92, .22, .82], [0, 1.28, 1.47], paint);
   box(body, [1.77, .81, 1.9], [0, 1.57, .12], glass);
   box(body, [1.89, .16, 2.03], [0, 2.04, .13], roof);
   for (const side of [-1, 1]) {
-    for (const z of [-.77, .23, 1.03]) box(body, [.095, .85, .09], [side * .9, 1.61, z], paint);
+    // Pillars stop inside the hardtop, the end ones just proud of the glass.
+    for (const z of [-.795, .23, 1.035]) box(body, [.09, .78, .09], [side * .895, 1.58, z], paint);
     box(body, [.085, .16, 2], [side * .92, 1.24, .14], paint);
-    box(body, [.09, .08, .27], [side * 1.03, 1.14, .52], chrome);
-    box(body, [.23, .15, .29], [side * 1.1, 1.42, -.64], paint);
-    box(body, [.42, .25, .055], [side * .64, 1.03, -1.978], front);
-    box(body, [.33, .18, .05], [side * .72, 1.03, 1.978], rear);
+    for (const z of [.06, .7]) box(body, [.05, .05, .2], [side * 1.04, 1.14, z], chrome);
+    // A door mirror on a foot at the sill, its glass facing back.
+    box(body, [.1, .1, .1], [side * .97, 1.34, -.68], paint);
+    box(body, [.2, .13, .07], [side * 1.1, 1.42, -.68], paint);
+    box(body, [.17, .1, .01], [side * 1.1, 1.42, -.64], glass);
+    // Squared arches stand out over the tyres, their feet just under the sill.
+    for (const z of [-1.18, 1.21]) {
+      const arch = [[z - .7, .575], [z - .46, 1.07], [z + .46, 1.07], [z + .7, .575], [z + .58, .575], [z + .37, .99], [z - .37, .99], [z - .58, .575]];
+      outline(body, arch, side < 0 ? [-1.175, -.995] : [.995, 1.175], paint);
+    }
+    // Lamps sit in chrome bezels either side of the grille.
+    box(body, [.48, .31, .02], [side * .64, 1.03, -1.955], chrome);
+    box(body, [.42, .25, .04], [side * .64, 1.03, -1.965], front);
+    box(body, [.33, .18, .05], [side * .72, 1.03, 1.97], rear);
   }
+  box(body, [.74, .24, .02], [0, 1.03, -1.955], chrome);
+  box(body, [.68, .18, .035], [0, 1.03, -1.9625], tires);
   box(body, [1.98, .14, .17], [0, .64, -1.97], chrome);
   box(body, [1.98, .14, .17], [0, .64, 1.97], chrome);
-  const plate = box(body, [.6, .22, .02], [0, .91, 2.002], roof);
-  box(body, [.77, .18, .02], [0, .89, -2.002], tires);
-  // Fixed body parts sharing a material can draw together. The plate still
-  // moves for the spare tire; accessories and animated wheels stay separate.
-  const batches = new Map();
-  for (const mesh of body.children) {
-    if (mesh === plate) continue;
-    if (!batches.has(mesh.material)) batches.set(mesh.material, []);
-    batches.get(mesh.material).push(mesh);
-  }
-  for (const [material, parts] of batches) {
-    if (parts.length < 2) continue;
-    for (const part of parts) { part.updateMatrix(); part.geometry.applyMatrix4(part.matrix); }
-    const mesh = new THREE.Mesh(mergeGeometries(parts.map(part => part.geometry)), material);
-    mesh.castShadow = true; mesh.receiveShadow = true;
-    for (const part of parts) { body.remove(part); part.geometry.dispose(); }
-    body.add(mesh);
-  }
-  // One roof or tail accessory per wagon trim (see cars.js).
+  const plate = box(body, [.6, .22, .03], [0, .91, 1.96], roof);
+  // The plate still moves for the spare tyre; accessories and animated
+  // wheels stay separate.
+  mergeParts(body, plate);
+  // One roof or tail accessory per wagon trim (see cars.js). The rack's bars
+  // stand on feet at the hardtop's edges, and every load rests on them, or on
+  // the hardtop between them.
+  const RACK = 2.24;
   const rack = new THREE.Group(); rack.name = 'roof-rack'; body.add(rack);
-  for (const z of [-.48, .75]) box(rack, [1.65, .09, .12], [0, 2.2, z], tires);
+  for (const z of [-.48, .75]) {
+    box(rack, [1.72, .09, .12], [0, RACK - .045, z], tires);
+    for (const side of [-1, 1]) box(rack, [.1, .045, .15], [side * .8, 2.1325, z], tires);
+  }
+  mergeParts(rack);
   const surfboard = new THREE.Group(); surfboard.name = 'surfboard'; body.add(surfboard);
   const boardShape = new THREE.Shape();
   boardShape.moveTo(0, -1.65); boardShape.quadraticCurveTo(.5, -1.35, .47, .65); boardShape.quadraticCurveTo(.43, 1.55, 0, 1.65); boardShape.quadraticCurveTo(-.43, 1.55, -.47, .65); boardShape.quadraticCurveTo(-.5, -1.35, 0, -1.65);
   const board = new THREE.Mesh(new THREE.ExtrudeGeometry(boardShape, { depth: .11, bevelEnabled: false, curveSegments: 3 }), roof);
-  board.rotation.x = Math.PI / 2; board.position.set(.14, 2.38, .04); board.castShadow = true; surfboard.add(board);
-  box(surfboard, [.065, .02, 2.85], [.14, 2.385, .02], paint);
-  const spare = new THREE.Group(); spare.name = 'desert-spare'; spare.position.set(0, 1.22, 2.12); body.add(spare);
+  board.rotation.x = Math.PI / 2; board.position.set(.14, RACK + .11, .04); board.castShadow = true; surfboard.add(board);
+  box(surfboard, [.065, .02, 2.85], [.14, RACK + .115, .02], paint);
+  // The spare hangs on the tail, clear of the lamps and the plate.
+  const spare = new THREE.Group(); spare.name = 'desert-spare'; spare.position.set(0, 1.22, 2.095); body.add(spare);
   const spareTire = new THREE.Mesh(new THREE.CylinderGeometry(.48, .48, .28, 12), tires);
   spareTire.rotation.x = Math.PI / 2; spareTire.castShadow = true; spare.add(spareTire);
   const spareHub = new THREE.Mesh(new THREE.CylinderGeometry(.23, .23, .295, 10), roof);
   spareHub.rotation.x = Math.PI / 2; spare.add(spareHub);
   const roofBox = new THREE.Group(); roofBox.name = 'alpine-roof-box'; body.add(roofBox);
-  box(roofBox, [1.24, .3, 1.86], [0, 2.4, .13], tires);
-  box(roofBox, [1.16, .12, 1.72], [0, 2.61, .13], mat('#536774'));
-  for (const x of [-.4, .4]) box(roofBox, [.07, .025, 1.74], [x, 2.68, .13], chrome);
+  // The box's nose is chamfered top and bottom, like a real one's.
+  outline(roofBox, [[-.8, RACK + .07], [-.66, RACK], [1, RACK], [1.06, RACK + .05], [1.06, RACK + .3], [-.74, RACK + .3], [-.8, RACK + .25]], [-.62, .62], tires);
+  box(roofBox, [1.16, .12, 1.72], [0, RACK + .36, .13], mat('#536774'));
+  for (const x of [-.4, .4]) box(roofBox, [.07, .025, 1.74], [x, RACK + .4325, .13], chrome);
+  mergeParts(roofBox);
+  // Round loads lie across the car; `open` leaves a strap's band without ends.
+  const across = (group, radius, length, [x, y, z], material, segments, open = false) => {
+    const part = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length, segments, 1, open), material);
+    part.rotation.z = Math.PI / 2; part.position.set(x, y, z); part.castShadow = true; group.add(part);
+  };
+  // Two cases on the front bar, a rolled tent strapped to the back one.
   const cargo = new THREE.Group(); cargo.name = 'jungle-cargo'; body.add(cargo);
   const olive = mat('#5f6b3f'), canvas = mat('#c9b48b');
-  for (const x of [-.52, .52]) box(cargo, [.44, .34, .3], [x, 2.42, -.55], olive);
-  const roll = new THREE.Mesh(new THREE.CylinderGeometry(.19, .19, 1.5, 8), canvas);
-  roll.rotation.z = Math.PI / 2; roll.position.set(0, 2.44, .55); roll.castShadow = true; cargo.add(roll);
-  // A round hay bale strapped across the rack for the plains.
+  for (const x of [-.52, .52]) box(cargo, [.44, .34, .3], [x, RACK + .17, -.55], olive);
+  across(cargo, .19, 1.5, [0, RACK + .19, .75], canvas, 8);
+  for (const x of [-.45, .45]) across(cargo, .2, .05, [x, RACK + .19, .75], olive, 8, true);
+  mergeParts(cargo);
+  // A round bale lies on the hardtop between the bars, strapped round.
   const bale = new THREE.Group(); bale.name = 'plains-bale'; body.add(bale);
-  const straw = mat('#d8b566'), cutEnd = mat('#b8964f');
-  const baleRoll = new THREE.Mesh(new THREE.CylinderGeometry(.42, .42, 1.4, 10), straw);
-  baleRoll.rotation.z = Math.PI / 2; baleRoll.position.set(0, 2.66, .05); baleRoll.castShadow = true; bale.add(baleRoll);
-  for (const x of [-.7, .7]) {
-    const end = new THREE.Mesh(new THREE.CylinderGeometry(.36, .36, .03, 10), cutEnd);
-    end.rotation.z = Math.PI / 2; end.position.set(x, 2.66, .05); bale.add(end);
+  const straw = mat('#d8b566'), cutEnd = mat('#b8964f'), strap = mat('#5e4c33');
+  across(bale, .42, 1.4, [0, 2.515, .135], straw, 10);
+  for (const side of [-1, 1]) {
+    across(bale, .36, .03, [side * .7, 2.515, .135], cutEnd, 10);
+    across(bale, .2, .03, [side * .72, 2.515, .135], straw, 10);
+    across(bale, .435, .06, [side * .4, 2.515, .135], strap, 10, true);
   }
-  for (const z of [-.35, .45]) box(bale, [1.5, .88, .04], [0, 2.66, z], mat('#5e4c33'));
-  // A bicycle standing on the rack for the city commute.
+  mergeParts(bale);
+  // A bicycle stands in a wheel tray across the bars, held by an arm at its
+  // down tube, for the city commute.
   const bike = new THREE.Group(); bike.name = 'city-bike'; body.add(bike);
   const frameMat = mat('#c9453f'), rubber = mat('#2f3336');
+  const axle = RACK + .355;
+  box(bike, [.12, .045, 1.64], [0, RACK + .0225, .02], rubber);
   for (const z of [-.58, .58]) {
     const wheel = new THREE.Mesh(new THREE.TorusGeometry(.3, .035, 5, 14), rubber);
-    wheel.rotation.y = Math.PI / 2; wheel.position.set(0, 2.62, z); wheel.castShadow = true; bike.add(wheel);
+    wheel.rotation.y = Math.PI / 2; wheel.position.set(0, axle, z); wheel.castShadow = true; bike.add(wheel);
   }
-  const tube = (a, b) => {
+  const tube = (a, b, radius = .03, material = frameMat) => {
     const from = new THREE.Vector3(...a), to = new THREE.Vector3(...b), direction = to.clone().sub(from);
-    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(.03, .03, direction.length(), 5), frameMat);
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, direction.length(), 5), material);
     mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.clone().normalize());
     mesh.position.copy(from.add(to).multiplyScalar(.5)); mesh.castShadow = true; bike.add(mesh);
   };
-  tube([0, 2.62, -.58], [0, 3.14, -.2]); tube([0, 3.14, -.2], [0, 3.14, .32]); tube([0, 3.14, .32], [0, 2.62, .58]);
-  tube([0, 3.14, -.2], [0, 2.62, .12]); tube([0, 2.62, .12], [0, 2.62, .58]);
-  box(bike, [.34, .04, .04], [0, 3.2, -.2], rubber); box(bike, [.08, .05, .22], [0, 3.22, .3], rubber);
+  // Fork and stem, top tube, down tube, seat tube and post, stays.
+  const bracket = [0, axle - .04, .08], cluster = [0, axle + .5, .26], rearHub = [0, axle, .58];
+  tube([0, axle, -.58], [0, axle + .6, -.316]); tube([0, axle + .5, -.36], cluster); tube([0, axle + .42, -.395], bracket);
+  tube(bracket, [0, axle + .62, .3]); tube(cluster, rearHub); tube(bracket, rearHub);
+  box(bike, [.09, .04, .22], [0, axle + .64, .27], rubber); box(bike, [.44, .035, .035], [0, axle + .6, -.316], rubber);
+  across(bike, .1, .02, [.045, axle - .04, .08], chrome, 10);
+  tube([.05, RACK + .045, -.16], [.05, axle + .22, -.16], .022, rubber); box(bike, [.1, .07, .07], [.025, axle + .19, -.158], rubber);
+  mergeParts(bike);
   const wheels = [];
   for (const x of [-1.02, 1.02]) for (const z of [-1.18, 1.21]) {
     const pivot = new THREE.Group(); pivot.position.set(x, .48, z); car.add(pivot);
@@ -124,7 +176,8 @@ export function createClassicCar(entry = carEntry(DEFAULT_CAR)) {
     paint.color.set(customPaint ?? ROUTE_PAINT[kit] ?? ROUTE_PAINT.coast);
     surfboard.visible = kit === 'coast'; spare.visible = kit === 'desert'; roofBox.visible = kit === 'snow'; cargo.visible = kit === 'jungle'; bale.visible = kit === 'plains'; bike.visible = kit === 'city';
     rack.visible = surfboard.visible || roofBox.visible || cargo.visible || bale.visible || bike.visible;
-    plate.position.x = spare.visible ? -.65 : 0;
+    // With the spare on, the plate drops to the bumper beside it, under a lamp.
+    plate.position.set(spare.visible ? -.69 : 0, spare.visible ? .825 : .91, 1.96);
   }
   function paintCar(color) { customPaint = color || null; applyTrim(kitJourney); }
   applyTrim('coast');
@@ -137,6 +190,18 @@ export function createClassicCar(entry = carEntry(DEFAULT_CAR)) {
   return { car, body, wheels, nightLights, applyTrim, paintCar, disposeModel };
 }
 
+// How high a model reaches over where its tyres meet the ground (its own y
+// = 0), for whatever lands on its roof (see LooseProps.contact)
+const topBox = new THREE.Box3(), partBox = new THREE.Box3(), toModel = new THREE.Matrix4(), partMatrix = new THREE.Matrix4();
+export function topOf(model) {
+  model.updateMatrixWorld(true); toModel.copy(model.matrixWorld).invert(); topBox.makeEmpty();
+  model.traverse(part => {
+    if (!part.geometry) return;
+    if (!part.geometry.boundingBox) part.geometry.computeBoundingBox();
+    topBox.union(partBox.copy(part.geometry.boundingBox).applyMatrix4(partMatrix.multiplyMatrices(toModel, part.matrixWorld)));
+  });
+  return topBox.isEmpty() ? 1.5 : topBox.max.y;
+}
 export function createCar(id = DEFAULT_CAR) {
   const entry = carEntry(id);
   if (entry.kind === 'formula') return createFormulaCar(entry);
@@ -226,7 +291,7 @@ export class DrivingController {
       ? new THREE.Vector3(...eye)
       : new THREE.Vector3(0, cabinY + cabin[1] * .7 - drop, cabinZ - cabin[2] / 2 + glassSlope - .18);
     this.car.userData.chaseLift = chaseLift;
-    this.spec = { name: carId, width, length, mass: entry.mass ?? footprintMass(width, length), breaks: entry.breaks ?? [] };
+    this.spec = { name: carId, width, length, height: topOf(this.car), mass: entry.mass ?? footprintMass(width, length), breaks: entry.breaks ?? [] };
     this.stats = carStats(carId);
     parent?.add(this.car);
     this.setLights(Number(this.night)); this.setAppearance(this.journeyId); this.setPaint(paint);

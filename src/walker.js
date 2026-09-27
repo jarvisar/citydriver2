@@ -29,13 +29,12 @@ export const WALKER_SPEC = { name: 'walker', width: .64, length: .64, radius: .3
 //                   a gentle push walks
 //   GRIP, AIR       how fast they change speed on their feet and in the air (m/s²)
 //   TURN            how quickly they turn to face the way they go
-//   TURNING         the turn keys' rate through their own eyes (rad/s)
 //   JUMP, GRAVITY   take-off speed and fall (m/s, m/s²): a hop of about .6 m
 //   STEP            the highest kerb they step up or down without a hop; a
 //                   drop further than that they fall down
 //   KNOCK           a car coming at them faster than this (m/s) knocks them over
 //   LIE, RISE       seconds lying still once they come to rest, and getting up
-const JOG = 4.4, SPRINT = 7.4, GRIP = 24, AIR = 5, TURN = 12, TURNING = 2.6;
+const JOG = 4.4, SPRINT = 7.4, GRIP = 24, AIR = 5, TURN = 12;
 const JUMP = 4.6, GRAVITY = 17, STEP = .45, KNOCK = 4, LIE = 1.1, RISE = .7;
 // What a car's stats say, for whatever reads them (the sound's gearing, say)
 export const WALKER_STATS = { topSpeed: SPRINT, acceleration: GRIP, braking: GRIP, grip: 1, offRoad: SPRINT, reverseSpeed: JOG, cruise: SPRINT };
@@ -100,11 +99,11 @@ export class Walker {
     // The way they want to go, and how fast: the stick's push, a key's all the way
     const amount = walk ? Math.min(1, Math.hypot(walk.x, walk.z)) : 0, top = input.sprint ? SPRINT : JOG;
     const wx = amount ? walk.x * top : 0, wz = amount ? walk.z * top : 0;
-    if (control && input.turn) v.heading += input.turn * dt;
+    if (control && Number.isFinite(input.aim)) v.heading = input.aim;
     const dx = wx - this.vx, dz = wz - this.vz, gap = Math.hypot(dx, dz), change = Math.min(gap, (this.grounded ? GRIP : AIR) * dt);
     if (gap > 1e-9) { this.vx += dx / gap * change; this.vz += dz / gap * change; }
     // They turn to face the way they are asked to go (not through their own
-    // eyes, where the keys turn them and back is a step back)
+    // eyes, where they face where the view looks and back is a step back)
     if (control && input.face !== false && amount > .05) v.heading += wrap(Math.atan2(wx, -wz) - v.heading) * (1 - Math.exp(-TURN * dt));
     v.heading = wrap(v.heading);
     // A hop, once for each press
@@ -266,29 +265,27 @@ export class Walker {
 }
 
 // What the controls ask of someone on foot, from the input's state (see
-// Input: moveX / moveY, the touch stick, lookX, jump and sprint) and the
-// camera they are seen through: `walk`, the way to go in the world (x east,
-// z south), as long as the stick is pushed; `face`, whether to turn that
-// way; `turn`, a turn of their own (rad/s). Chased or seen from above they
-// go the way the stick points on the screen; through their own eyes,
-// forward and back go the way they face and the sides turn them, as in a
-// first-person game played on keys. `out` is filled and returned.
-export function walkingInput(state, camera, { firstPerson = false, heading = 0 } = {}, out = { walk: { x: 0, z: 0 } }) {
+// Input: moveX / moveY, the touch stick, jump and sprint) and the camera
+// they are seen through: `walk`, the way to go in the world (x east, z
+// south), as long as the stick is pushed; `face`, whether to turn that way;
+// `aim`, a way to face instead. Chased or seen from above they go the way
+// the stick points on the screen. Through their own eyes they face where
+// the view looks (see FirstPersonCamera), forward and back go that way, and
+// the sides step aside (`strafe`: with a mouse or a stick to turn the view)
+// or else turn the view (see main.js). `out` is filled and returned.
+export function walkingInput(state, camera, { firstPerson = false, strafe = false } = {}, out = { walk: { x: 0, z: 0 } }) {
   let x = clamp(Number(state.moveX) || 0, -1, 1), y = clamp(Number(state.moveY) || 0, -1, 1);
   const stick = state.touchStick;
   if (stick && (stick.x || stick.y)) { x = stick.x; y = stick.y; }
-  out.jump = Boolean(state.jump); out.sprint = Boolean(state.sprint); out.face = !firstPerson; out.turn = 0;
-  const walk = out.walk;
+  if (firstPerson && !strafe) x = 0;
+  out.jump = Boolean(state.jump); out.sprint = Boolean(state.sprint); out.face = !firstPerson; out.aim = NaN;
+  const walk = out.walk, amount = Math.min(1, Math.hypot(x, y));
   walk.x = walk.z = 0;
-  if (firstPerson) {
-    out.turn = clamp(x + (Number(state.lookX) || 0), -1, 1) * TURNING;
-    walk.x = Math.sin(heading) * y; walk.z = -Math.cos(heading) * y;
-    return out;
-  }
-  const amount = Math.min(1, Math.hypot(x, y));
-  if (!amount) return out;
+  if (!amount && !firstPerson) return out;
   camera.updateMatrixWorld();
   const m = camera.matrixWorld.elements;
+  if (firstPerson) out.aim = Math.atan2(-m[8], m[10]);
+  if (!amount) return out;
   let gx, gz;
   if (camera.isPerspectiveCamera) {
     // (the camera's right, and its forward laid flat on the ground)
