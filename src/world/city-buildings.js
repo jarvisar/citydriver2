@@ -491,7 +491,8 @@ export function edgeWindows(c, b, f, bottom, floors, random) {
       if (loft || b.variation === 1) f.add(offset, y, .25, .09, h, .07, frame);
       if (!modern && !balcony) f.add(offset, y - h / 2 - .14, .25, windowWidth + .44, .14, .48, frame);
       if (b.type === 'townhouse') {
-        for (const sign of [-1, 1]) f.add(offset + sign * (windowWidth / 2 + .4), y, .2, .5, h, .15, b.accent, 'solid', true);
+        // (down to the top of the sill they flank, not hanging just above it)
+        for (const sign of [-1, 1]) f.add(offset + sign * (windowWidth / 2 + .4), y - .035, .2, .5, h + .07, .15, b.accent, 'solid', true);
         f.add(offset, y, .265, windowWidth, .12, .1, creamTrim);
       }
       if (b.type === 'loft') f.add(offset, y, .265, windowWidth, .12, .1, '#c8bda8');
@@ -593,7 +594,8 @@ export function shopFront(c, b, facade, base, primary) {
   const lobby = primary && facade.span >= 12 && !['shop', 'warehouse', 'pavilion'].includes(b.type) ? 2.8 : 0;
   if (lobby) {
     const at = side * (facade.span / 2 - lobby / 2);
-    facade.add(at, G + 1.65, .075, 1.7, 3.1, .11, creamTrim, 'solid', true);
+    // (its frame, as every doorway's, stands on the ground: the glass stops at a kick plate)
+    facade.add(at, G + 1.6, .075, 1.7, 3.2, .11, creamTrim, 'solid', true);
     facade.add(at, G + 1.43, .17, 1.35, 2.66, .1, '#344e58', 'glass');
     facade.add(at, G + 2.97, .17, 1.35, .36, .1, '#63818a', 'glass');
     facade.add(at + side * .43, G + 1.35, .29, .06, .4, .08, '#d7c3a0');
@@ -615,7 +617,8 @@ export function shopFront(c, b, facade, base, primary) {
     const width = spacing - .45, door = i === doorBay && (primary || facade.shopSign) ? Math.min(1.25, width * .32) : 0;
     const gap = door ? .16 : 0, doorOffset = offset + side * (width - door) / 2;
     const display = width - door - gap, displayOffset = offset - side * (door + gap) / 2;
-    f.add(offset, G + 1.73, .075, width + .24, 3.36, .11, b.accent);
+    // (the bay's frame reaches the ground, below the lot's own, as the wall does)
+    f.add(offset, G + 1.705, .075, width + .24, 3.41, .11, b.accent);
     f.add(displayOffset, G + 1.69, .17, display, 2.03, .1, '#456971', 'glass');
     f.add(displayOffset, G + 3.04, .17, display, .57, .1, '#729299', 'glass');
     // A sill and the occasional mullion give large panes a readable scale.
@@ -674,7 +677,10 @@ export function groundFloor(c, b, f, base, primary, random) {
     const openings = [entry && { offset: entry.offset, width: entry.width }, staff !== null && { offset: staff, width: 1.45 }].filter(Boolean);
     const footing = { ...f, clear: [...f.clear, ...openings.map(p => ({ from: p.offset - p.width / 2, to: p.offset + p.width / 2, bottom: G - 1, top: G + .6 }))] };
     footing.add(0, G + .08, .3, span + .4, .16, .8, '#d5c19e', 'solid', true);
-    footing.add(0, G + .24, .06, span + .12, .48, .16, '#939b98', 'solid', true);
+    // (the plinth stands on the ledge: running down through it, their cut ends
+    // at a doorway shared a plane and flickered. It runs on past each end of
+    // the front as far as the gap to a neighbour's, so a terrace's plinths meet)
+    footing.add(0, G + .32, .06, span + .2, .32, .16, '#939b98', 'solid', true);
   }
   if (b.shopfront && span >= 5) shopFront(c, b, f, base, primary);
   else if (b.type === 'office' || b.type === 'atrium') {
@@ -861,7 +867,11 @@ function frontGarden(c, b, ring, primary, random) {
     // wherever along a shop's front it is furthest)
     const reach = Math.max(...[-.45, 0, .45].map(k => exitDistance(at(door.offset + k * door.width, .05), nx, ny, lot)));
     if (!(reach < 14)) continue;
-    const strip = [at(door.offset - door.width / 2, 0), at(door.offset + door.width / 2, 0), at(door.offset + door.width / 2, reach + 1), at(door.offset - door.width / 2, reach + 1)];
+    // (a shop's forecourt runs on past its front to the lot's own edges, where
+    // the next shop's meets it: as wide as the front only, a sliver of lawn
+    // showed between the two)
+    const half = door.width / 2 + (door.shop ? 3 : 0);
+    const strip = [at(door.offset - half, 0), at(door.offset + half, 0), at(door.offset + half, reach + 1), at(door.offset - half, reach + 1)];
     for (const piece of intersection([strip], [lot])) c.polygon(piece.outer.map(p => [p.x, p.y]), G + .06, .06, PATH);
     if (!door.shop) gaps.push({ ...at(door.offset, reach), half: door.width / 2 + .45 });
   }
@@ -874,12 +884,36 @@ function frontGarden(c, b, ring, primary, random) {
     const a = lot[j], q = lot[(j + 1) % lot.length], length = edgeLength(lot, j);
     if (length < 2) continue;
     const tx = (q.x - a.x) / length, ty = (q.y - a.y) / length, inset = depth / 2 + .2;
-    // The runs between the gates
+    // Where the line down the middle of this run meets a line through p along
+    // (dx, dy), as a distance along the edge (null if they run nearly parallel)
+    const cx = a.x - ty * inset, cy = a.y + tx * inset;
+    const meet = (p, dx, dy) => { const den = tx * dy - ty * dx; return Math.abs(den) < .2 ? null : ((p.x - cx) * dy - (p.y - cy) * dx) / den; };
+    // How far the run reaches at the corner before (side -1) or after (+1) this edge:
+    // round a street corner to where the next run's middle line crosses its
+    // own and half a wall on, so the two close the corner between them
+    // instead of one standing out past the other; a stone wall a little over
+    // a lot line, meeting the next lot's however the street bends there
+    // (stopped short, a row of them showed a notch at every lot line); a
+    // hedge, each its own height and green, a little short of it
+    const reach = side => {
+      const k = (j + side + lot.length) % lot.length, p = lot[k], r = lot[(k + 1) % lot.length], l = Math.hypot(r.x - p.x, r.y - p.y) || 1;
+      const dx = (r.x - p.x) / l, dy = (r.y - p.y) / l, vertex = side < 0 ? 0 : length;
+      if (b.lotStreet[k] && l >= 2) {
+        const t = meet({ x: p.x - dy * inset, y: p.y + dx * inset }, dx, dy);
+        return t === null ? vertex : Math.max(-depth - .5, Math.min(length + depth + .5, t + side * depth / 2));
+      }
+      if (!civic) return vertex - side * .1;
+      const t = meet(p, dx, dy);
+      return t === null ? vertex : Math.max(-.5, Math.min(length + .5, t + side * .1));
+    };
+    // The runs between the gates, including a gate on the next edge that a
+    // run carried round the corner would reach
+    const start = reach(-1), end = reach(1);
     const cuts = gaps.map(g => ({ along: (g.x - a.x) * tx + (g.y - a.y) * ty, off: Math.abs((g.x - a.x) * -ty + (g.y - a.y) * tx), half: g.half }))
-      .filter(g => g.off < 1.5 && g.along > -g.half && g.along < length + g.half).sort((p, r) => p.along - r.along);
-    let from = .1;
+      .filter(g => g.off < 1.5 && g.along > Math.min(0, start) - g.half && g.along < Math.max(length, end) + g.half).sort((p, r) => p.along - r.along);
+    let from = start;
     for (const cut of [...cuts, { along: length + 1e9, half: 0 }]) {
-      const to = Math.min(length - .1, cut.along - cut.half);
+      const to = Math.min(end, cut.along - cut.half);
       if (to - from > .6) {
         const mid = (from + to) / 2, x = a.x + tx * mid - ty * inset, y = a.y + ty * mid + tx * inset, yaw = Math.atan2(ty, tx);
         if (civic) c.box(x, G + height / 2, y, to - from, height, depth, colour, 'solid', yaw);

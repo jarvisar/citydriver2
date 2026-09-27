@@ -2,10 +2,13 @@ import * as THREE from 'three';
 import { Rainfall } from './rainfall.js';
 import { Snowfall } from './snowfall.js';
 
-// A complete cycle takes fourteen minutes of driving. This clock belongs to
+// A complete cycle takes fourteen minutes of driving (the first one less half a phase). This clock belongs to
 // the game, so pausing or hiding the tab also pauses the sky and precipitation.
 export const WEATHER_INTERVAL = 105;
 export const WEATHER_TRANSITION = 22;
+// The clock starts halfway through the opening golden hour, so the first
+// shuffled weather arrives sooner; later phases keep the full interval.
+export const WEATHER_START = WEATHER_INTERVAL / 2;
 // Shuffle once per game load so sampling the clock stays stable while driving.
 const middlePhases = ['clear', 'clear', 'overcast', 'rain', 'storm', 'snow'];
 for (let i = middlePhases.length - 1; i > 0; i--) {
@@ -73,6 +76,7 @@ export function sampleCityWeather(time, mode = 'auto', result = emptyState()) {
   if (mode !== 'auto' && !Object.hasOwn(WEATHER_PRESETS, mode)) mode = 'auto';
   let current = mode, next = mode, blend = 0;
   if (mode === 'auto') {
+    time += WEATHER_START;
     const phase = Math.floor(time / WEATHER_INTERVAL);
     current = WEATHER_CYCLE[phase % WEATHER_CYCLE.length];
     next = WEATHER_CYCLE[(phase + 1) % WEATHER_CYCLE.length];

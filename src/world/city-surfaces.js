@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { compactGeometry } from './compact-geometry.js';
+import { PAVEMENT_LEVEL } from './city-route.js';
 
 // One shared triangular prism. Ground pieces share their actual corner
 // positions instead of overlapping independently rotated tangent boxes.
@@ -15,6 +16,9 @@ surfaceTopGeometry.setAttribute('position', new THREE.Float32BufferAttribute([0,
 surfaceTopGeometry.computeVertexNormals();
 export const SURFACE_STEP = 14;
 const EPS = 1e-8;
+// How far down a thin slab's edge faces reach: just under the pavement, the
+// lowest ground a lot's surfaces meet
+const SLAB_FOOT = PAVEMENT_LEVEL - .005;
 export const signedArea = points => points.reduce((sum, a, i) => {
   const b = points[(i + 1) % points.length]; return sum + a[0] * b[1] - a[1] * b[0];
 }, 0) / 2;
@@ -57,10 +61,13 @@ export function surfacePolygons(points) {
 }
 // A polygon's triangles, anticlockwise: a fan across a convex polygon, and
 // ear clipping for any other, whose fan would reach outside it (an L-shaped
-// lot's lawn laid across the street beside it)
+// lot's lawn laid across the street beside it). An outline that doubles
+// straight back on itself (a spike) never turns the wrong way, but is no
+// more convex for that.
 function triangles(ring) {
   const n = ring.length, turn = i => { const a = ring[(i + n - 1) % n], p = ring[i], b = ring[(i + 1) % n]; return (p.u - a.u) * (b.s - p.s) - (p.s - a.s) * (b.u - p.u); };
-  if (ring.every((p, i) => turn(i) >= -EPS)) return Array.from({ length: n - 2 }, (_, i) => [0, i + 1, i + 2]);
+  const back = i => { const a = ring[(i + n - 1) % n], p = ring[i], b = ring[(i + 1) % n], ux = p.u - a.u, us = p.s - a.s, vx = b.u - p.u, vs = b.s - p.s; return ux * vx + us * vs < -.99 * Math.hypot(ux, us) * Math.hypot(vx, vs); };
+  if (ring.every((p, i) => turn(i) >= -EPS && !back(i))) return Array.from({ length: n - 2 }, (_, i) => [0, i + 1, i + 2]);
   return THREE.ShapeUtils.triangulateShape(ring.map(p => new THREE.Vector2(p.u, p.s)), []).map(([i0, i1, i2]) => {
     const a = ring[i0], b = ring[i1], d = ring[i2];
     return (b.u - a.u) * (d.s - a.s) - (b.s - a.s) * (d.u - a.u) >= 0 ? [i0, i1, i2] : [i0, i2, i1];
@@ -120,6 +127,70 @@ export function addSurfacePolygon(c, points, y, height, color, kind = 'solid') {
       }
     }
   }
+  // A thin slab is only its top, and it stands a few centimetres proud of
+  // the lot's ground and the pavement (a garden path, a lawn bed, paving):
+  // its edge is faced once the chunk's slabs are all laid (see faceSlabEdges)
+  if (flat && kind === 'solid' && !c.distant) {
+    (c.slabs ??= []).push({ ring: signedArea(points) > 0 ? [...points].reverse() : points, top: y + height / 2, bottom: Math.min(y - height / 2, SLAB_FOOT), color });
+  }
+}
+// The faces down the edges of a chunk's thin slabs, to just under the
+// pavement: without them a slab reads as a sheet hovering over a slit. An
+// edge under another slab's top at least as high is left open, as the top
+// hides it, and so is an edge along a higher slab's (a lawn under a
+// forecourt's paving), whose face would lie in the same plane and flicker.
+// Of two slabs at one height with an edge along the same line (a court's
+// lines where they cross) the first keeps its face.
+export function faceSlabEdges(c) {
+  const slabs = c.slabs ?? [];
+  c.slabs = null;
+  if (!slabs.length || !c.bodies) return;
+  for (const [j, slab] of slabs.entries()) {
+    const { ring } = slab;
+    slab.index = j; slab.box = [Math.min(...ring.map(p => p[0])), Math.min(...ring.map(p => p[1])), Math.max(...ring.map(p => p[0])), Math.max(...ring.map(p => p[1]))];
+  }
+  const cross = (ax, ay, bx, by) => ax * by - ay * bx;
+  for (const { ring, top, bottom, color, index: k } of slabs) {
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length], ex = b[0] - a[0], es = b[1] - a[1], length2 = ex * ex + es * es;
+      if (length2 < 1e-8) continue;
+      const box = [Math.min(a[0], b[0]) - 1e-3, Math.min(a[1], b[1]) - 1e-3, Math.max(a[0], b[0]) + 1e-3, Math.max(a[1], b[1]) + 1e-3];
+      const covers = slabs.filter(({ top: level, index, box: other }) => index !== k && level >= top - 1e-6 && other[0] <= box[2] && other[2] >= box[0] && other[1] <= box[3] && other[3] >= box[1]);
+      // Cut the edge where it meets the covering outlines, and face the stretches outside them all
+      const cuts = [0, 1];
+      const length = Math.sqrt(length2), along = p => ((p[0] - a[0]) * ex + (p[1] - a[1]) * es) / length2;
+      const off = p => cross(p[0] - a[0], p[1] - a[1], ex, es) / length;
+      for (const { ring: other } of covers) for (let j = 0; j < other.length; j++) {
+        const c0 = other[j], c1 = other[(j + 1) % other.length], o0 = off(c0), o1 = off(c1);
+        // (an outline's corner on the edge, within the millimetre its outline counts for, or a crossing)
+        for (const [p, o] of [[c0, o0], [c1, o1]]) if (Math.abs(o) < 1e-3) cuts.push(along(p));
+        if ((o0 > 1e-3 && o1 < -1e-3) || (o0 < -1e-3 && o1 > 1e-3)) {
+          const f = o0 / (o0 - o1);
+          cuts.push(along([c0[0] + (c1[0] - c0[0]) * f, c0[1] + (c1[1] - c0[1]) * f]));
+        }
+      }
+      for (let j = cuts.length - 1; j >= 2; j--) if (!(cuts[j] > 0 && cuts[j] < 1)) cuts.splice(j, 1);
+      cuts.sort((p, q) => p - q);
+      for (let j = 0; j < cuts.length - 1; j++) {
+        if (cuts[j + 1] - cuts[j] < 1e-6) continue;
+        const m = (cuts[j] + cuts[j + 1]) / 2, mx = a[0] + ex * m, ms = a[1] + es * m;
+        if (covers.some(({ ring: other, top: level, index }) => { const where = placeOf(other, mx, ms); return where === 'in' || (where === 'on' && (level > top + 1e-6 || index < k)); })) continue;
+        const p = { x: a[0] + ex * cuts[j], y: a[1] + es * cuts[j] }, q = { x: a[0] + ex * cuts[j + 1], y: a[1] + es * cuts[j + 1] };
+        c.bodies.wall([p, q], top, bottom, color);
+      }
+    }
+  }
+}
+// Where a point lies against a ring: 'on' its outline (within a millimetre), 'in' it, or outside (null)
+function placeOf(ring, x, s) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i], b = ring[j], ex = b[0] - a[0], es = b[1] - a[1], length2 = ex * ex + es * es;
+    const t = length2 ? Math.max(0, Math.min(1, ((x - a[0]) * ex + (s - a[1]) * es) / length2)) : 0;
+    if (Math.hypot(a[0] + ex * t - x, a[1] + es * t - s) < 1e-3) return 'on';
+    if ((a[1] > s) !== (b[1] > s) && x < a[0] + (s - a[1]) * ex / es) inside = !inside;
+  }
+  return inside ? 'in' : null;
 }
 export function rectanglePolygon(x, s, width, depth, yaw = 0) {
   const cos = Math.cos(yaw), sin = Math.sin(yaw);

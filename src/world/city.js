@@ -188,13 +188,13 @@ export function roundCorners(input, radius, minTurn = .35) {
 
 // A promenade piece's length: four lamps' spacing, so they stay evenly spaced
 const WALK_PIECE = 108;
-// A polyline cut every `length` metres. Each cut falls inside a segment, so
-// the pieces' square ends meet exactly.
-function inPieces(points, length) {
+// A polyline cut every `length` metres: each piece, and the same carried
+// `over` metres on over the cuts either side (never past the line's ends)
+function inPieces(points, length, over = 0) {
   const total = polylineLength(points), out = [];
   for (let from = 0; from < total; from += length) {
     const to = total - (from + length) < 1 ? total : from + length, piece = slicePolyline(points, from, to);
-    if (piece.length > 1) out.push(piece);
+    if (piece.length > 1) out.push({ piece, reach: slicePolyline(points, Math.max(0, from - over), Math.min(total, to + over)) });
     if (to === total) break;
   }
   return out;
@@ -425,8 +425,11 @@ export function* buildCityStages(seed = SEED) {
   // overlap is cut out of them
   // (in pieces of a few lamps' spacing, so asking what is underfoot never
   // walks a promenade the length of the city)
-  const walks = quays.flatMap(quay => crossingFree(map.roadIndex, quay.points, quay.halfWidth, quay.road).flatMap(run => inPieces(run, WALK_PIECE)).flatMap(points => {
-    const polygon = bufferPolyline(points, quay.halfWidth);
+  // (each piece's band is carried on over its neighbours' ends: a cut just
+  // past a bend left its end segment so short that one side of the band
+  // folded round the bend, and a notch of roadway showed between two pieces)
+  const walks = quays.flatMap(quay => crossingFree(map.roadIndex, quay.points, quay.halfWidth, quay.road).flatMap(run => inPieces(run, WALK_PIECE, quay.halfWidth + .5)).flatMap(({ piece: points, reach }) => {
+    const polygon = bufferPolyline(reach, quay.halfWidth);
     return difference([polygon], solids(roadsNear(polygon).map(carriageway))).filter(piece => calcPolygonArea(piece.outer) > 4).map(piece => ({ ...quay, points, polygon: piece.outer }));
   }));
   // Where the ring and the coast road meet end to end the two promenades end

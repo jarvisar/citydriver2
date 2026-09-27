@@ -9,7 +9,7 @@ import { residentWindow } from './resident.js';
 import { buildCityBuildingSteps } from './city-buildings.js';
 import { createSignMaterials, discoverySignFor, signCore } from './city-signs.js';
 import { cityItemMatrix, cityRigidFrame, cityAffinePoint, itemFrame } from './city-layout-render.js';
-import { addSurfacePolygon } from './city-surfaces.js';
+import { addSurfacePolygon, faceSlabEdges } from './city-surfaces.js';
 import { buildGrassFringe } from './city-grass.js';
 import { createWaterMaterial } from './city-water.js';
 import { Surface, setColor } from './surface.js';
@@ -625,7 +625,8 @@ export class CityChunk {
       return { kind: key, x: point.x + this.east, y: point.y, z: point.z - this.start, ground: point.y - drop, yaw: Math.atan2(matrix.elements[8], matrix.elements[10]), item };
     });
     this.features.lamps = [...lights('lamp', new THREE.Vector3(-1.75, 7.36, 0), 7.36), ...lights('lantern', new THREE.Vector3(0, LANTERN_HEIGHT, 0), LANTERN_HEIGHT)];
-    // The cell's building bodies are one flat-shaded mesh
+    // The cell's building bodies are one flat-shaded mesh, with the edges of its thin paving
+    faceSlabEdges(this);
     if (!this.bodies.empty) {
       const mesh = new THREE.Mesh(this.bodies.build(), this.materials['merged-solid']);
       mesh.name = 'citydriver-bodies'; mesh.userData.bodies = true; mesh.dispose = () => mesh.geometry.dispose();

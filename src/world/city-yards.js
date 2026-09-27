@@ -1,7 +1,7 @@
 import { CITY } from './city.js';
 import { seededRandom } from './route.js';
 import { placeForBlock, placeForLot } from '../city-exploration.js';
-import { difference, intersection, solids } from '../mapgen/booleans.js';
+import { clean, difference, intersection, solids } from '../mapgen/booleans.js';
 import { offsetPolygon, insidePolygon, calcPolygonArea, signedArea } from '../mapgen/polygon-util.js';
 
 // The paved yards behind the offices and warehouses are car parks: rows of
@@ -67,10 +67,12 @@ export function yardDrive(index) {
   return drive;
 }
 // What is left of a lot for its building once its driveway is cut from it
+// (without the spike the cut can leave along the drive's edge: a garden's
+// lawn laid on that outline spread back over the drive)
 export function lotWithoutDrive(index, polygon) {
   const block = CITY.lotBlocks?.[index], drive = block === undefined ? null : yardDrive(block);
   if (drive?.lot !== index) return null;
-  return difference(solids([polygon]), solids([drive.rect])).sort((p, q) => calcPolygonArea(q.outer) - calcPolygonArea(p.outer))[0]?.outer ?? null;
+  return clean(difference(solids([polygon]), solids([drive.rect]))).sort((p, q) => calcPolygonArea(q.outer) - calcPolygonArea(p.outer))[0]?.outer ?? null;
 }
 
 const yardBays = new Map();

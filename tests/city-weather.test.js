@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { CityWeather, sampleCityWeather, weatherLightning, WEATHER_CYCLE, WEATHER_INTERVAL, WEATHER_PRESETS } from '../src/world/city-weather.js';
+import { CityWeather, sampleCityWeather, weatherLightning, WEATHER_CYCLE, WEATHER_INTERVAL, WEATHER_PRESETS, WEATHER_START, WEATHER_TRANSITION } from '../src/world/city-weather.js';
 import { DriveAudio } from '../src/audio.js';
 import { SkyClouds } from '../src/sky-clouds.js';
 import { SoundDirector } from '../src/audio/director.js';
@@ -88,9 +88,12 @@ test('automatic weather covers every condition, repeats, and stays continuous at
   assert.equal(WEATHER_CYCLE.at(-1), 'night');
   assert.deepEqual(WEATHER_CYCLE.slice(1, -1).sort(), ['clear', 'clear', 'overcast', 'rain', 'snow', 'storm']);
   assert.deepEqual(new Set(WEATHER_CYCLE), new Set(Object.keys(WEATHER_PRESETS)));
-  for (let phase = 0; phase < WEATHER_CYCLE.length; phase++) {
-    const start = phase * WEATHER_INTERVAL;
-    assert.equal(sampleCityWeather(start).id, WEATHER_CYCLE[phase]);
+  // (the opening golden hour is half as long; every later phase is full length)
+  assert.equal(sampleCityWeather(WEATHER_INTERVAL - WEATHER_START - WEATHER_TRANSITION - .001).id, 'sunset');
+  assert.equal(sampleCityWeather(WEATHER_INTERVAL - WEATHER_START).id, WEATHER_CYCLE[1]);
+  for (let phase = 1; phase <= WEATHER_CYCLE.length; phase++) {
+    const start = phase * WEATHER_INTERVAL - WEATHER_START;
+    assert.equal(sampleCityWeather(start).id, WEATHER_CYCLE[phase % WEATHER_CYCLE.length]);
     assert.deepEqual(sampleCityWeather(start + 11), sampleCityWeather(start + 11 + period));
     const before = sampleCityWeather(start + WEATHER_INTERVAL - .001);
     const after = sampleCityWeather(start + WEATHER_INTERVAL + .001);

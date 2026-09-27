@@ -375,10 +375,11 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
     const drive = yardDrive(block.index);
     if (drive) {
       ground.polygon(drive.polygon, PAVEMENT_LEVEL + .035, yardGround(block));
-      const { mouth: m, tx, ty, nx, ny, width } = drive, at = (along, into) => ({ x: m.x + tx * along + nx * into, y: m.y + ty * along + ny * into });
       if (drive.crossing) ground.polygon(drive.crossing, PAVEMENT_LEVEL + .01, COLOURS.crossing);
-      // (and the driveway's edge where it meets it)
-      ground.wall([at(-width / 2, 0), at(width / 2, 0)], PAVEMENT_LEVEL + .035, PAVEMENT_LEVEL, yardGround(block));
+      // (and the driveway's edges, where it meets the pavement and the lot:
+      // a face along the whole mouth stood alone where a slanting lot line
+      // narrows the drive)
+      slabEdges(ground, { outer: drive.polygon }, PAVEMENT_LEVEL + .035, yardGround(block));
     }
     // A car park's bays, lined out down each side
     for (const bay of yardParking(block)) for (const side of [-1, 1]) {
@@ -404,7 +405,10 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
     const paving = parkSurfaces(entry, parkPaths);
     for (const [pieces, colour] of [[paving.walks, paved ? COLOURS.flags : COLOURS.path],
       [paving.plaza, paved ? COLOURS.flags : COLOURS.plaza], [paving.edging, COLOURS.coping]]) {
-      for (const piece of pieces) paths.polygon(piece.outer, PAVEMENT_LEVEL + .035, colour, null, true, piece.holes);
+      for (const piece of pieces) {
+        paths.polygon(piece.outer, PAVEMENT_LEVEL + .035, colour, null, true, piece.holes);
+        slabEdges(paths, piece, PAVEMENT_LEVEL + .035, colour);
+      }
     }
     // A pond: water a little below the lawn, inside a low stone coping
     if (entry.pond) {
@@ -509,6 +513,15 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
     walls.prism(cap, DECK_BOTTOM - .35, DECK_BOTTOM, COLOURS.pier);
     walls.polygon(cap, DECK_BOTTOM - .35, COLOURS.pier, null, false);
   }
+}
+// The edge of paving laid a little above the pavement and the lawns round it,
+// faced down to the pavement: at a park's kerb its walks meet the top of the
+// kerb's own face, rather than overhanging it as a sheet with a slot beneath
+function slabEdges(surface, { outer, holes = [] }, top, colour) {
+  const bottom = PAVEMENT_LEVEL;
+  surface.prism(outer, bottom, top, colour);
+  // (round a hole, facing into it)
+  for (const hole of holes) if (hole.length >= 3) surface.wall(signedArea(hole) > 0 ? hole : hole.slice().reverse(), top, bottom, colour, true);
 }
 // Piers under each bridge, evenly between its banks: as long as the deck is
 // wide there (a promenade carried over the water too), cut to a point up and

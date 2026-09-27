@@ -28,7 +28,29 @@ import { offsetPolygon, calcPolygonArea, insidePolygon, distanceToPolyline } fro
 
 const dome = new THREE.SphereGeometry(1, 18, 8, 0, Math.PI * 2, 0, Math.PI / 2);
 const spire = new THREE.ConeGeometry(1, 1, 4);
-const ring = new THREE.TorusGeometry(1, .42, 10, 22);
+// The rooftop donut as two shells of one ring that meet at their seams: the
+// icing round its outer rim and the dough across its faces and hole. (Two whole rings, one
+// a little wider and one a little fatter, crossed at a shallow slant and
+// flickered along where they met.)
+function donutShell(rims) {
+  const positions = [], tube = 10, around = 22;
+  const at = (i, j) => {
+    const u = i / around * Math.PI * 2, v = j / tube * Math.PI * 2, r = 1 + .42 * Math.cos(v);
+    return [r * Math.cos(u), r * Math.sin(u), .42 * Math.sin(v)];
+  };
+  for (let j = 0; j < tube; j++) {
+    if ((Math.cos((j + .5) / tube * Math.PI * 2) > .5) !== rims) continue;
+    for (let i = 0; i < around; i++) {
+      const a = at(i, j + 1), b = at(i, j), c = at(i + 1, j), d = at(i + 1, j + 1);
+      positions.push(...a, ...b, ...d, ...b, ...c, ...d);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.computeVertexNormals();
+  return geometry;
+}
+const icing = donutShell(true), dough = donutShell(false);
 // The half-disc that closes each end of a vaulted roof
 const gable = new THREE.CircleGeometry(1, 14, 0, Math.PI);
 const frontGlazing = new THREE.PlaneGeometry(1, 1);
@@ -165,12 +187,8 @@ export function buildLandmark(c, lot, place) {
       left: grow(spread.map(k => [-halfW, k * halfD]), -1, 0), right: grow(spread.map(k => [halfW, k * halfD]), 1, 0) };
     const around = [at(-halfW - out.left, -halfD - out.front), at(halfW + out.right, -halfD - out.front), at(halfW + out.right, halfD + out.back), at(-halfW - out.left, halfD + out.back)];
     const paving = intersection(region(union(solids([apron, around.map(p => ({ x: p.x, y: p.s }))]))), solids([lotLocal]));
-    for (const piece of paving) {
-      c.polygon(piece.outer.map(p => [p.x, p.y]), G + .07, .06, PAVING);
-      // Close the ten-centimetre edge at the pavement: the raised forecourt
-      // otherwise shows a green slit beneath its flat, floating front edge.
-      bodies.prism(piece.outer, G, G + .1, PAVING);
-    }
+    // (its ten-centimetre edge at the pavement is closed as every thin slab's is, see addSurfacePolygon)
+    for (const piece of paving) c.polygon(piece.outer.map(p => [p.x, p.y]), G + .07, .06, PAVING);
     if (c.distant) return;
     // Where a tree may stand: on the lawn, clear of the lot's edge, the
     // building and the forecourt
@@ -223,7 +241,9 @@ export function buildLandmark(c, lot, place) {
     }
   };
   const forecourtSign = () => plinthSign(plinthAt.u, plinthAt.into);
-  const steps = (w, into) => { for (let k = 0; k < 3; k++) box(0, G + .1 + k * .2, into - 1.6 + k * .5, w + 2 - k * .6, .2 + k * .2, 1.2, TRIM); };
+  // (each step down to the ground: the top one, reaching back past the one
+  // below it to the landing, hung ten centimetres over the forecourt there)
+  const steps = (w, into) => { for (let k = 0; k < 3; k++) box(0, G + (.2 + k * .3) / 2, into - 1.6 + k * .5, w + 2 - k * .6, .2 + k * .3, 1.2, TRIM); };
   const portico = (w, height, depth = 3.6) => {
     // Paired columns leave a central opening; the steps meet a landing all
     // the way back to the door rather than ending in a drop behind them.
@@ -482,8 +502,8 @@ export function buildLandmark(c, lot, place) {
       for (const side of [-1, 1]) box(side * core.width * .32, (deck + bottom + h / 2 + core.y) / 2, into + .1, .14, bottom + h / 2 + core.y - deck, .12, '#2f3538');
     }
     const middle = boardTop + .35 + radius * 1.42, p = at(0, into + 1.6);
-    c.item('landmark-ring', ring, c.materials.solid, [p.x, middle, -p.s], [radius, radius, radius], '#d98ea7', facing);
-    c.item('landmark-ring', ring, c.materials.solid, [p.x, middle, -p.s], [radius * .97, radius * .97, radius * 1.08], '#c98d5c', facing);
+    c.item('landmark-icing', icing, c.materials.solid, [p.x, middle, -p.s], [radius, radius, radius * 1.08], '#d98ea7', facing);
+    c.item('landmark-dough', dough, c.materials.solid, [p.x, middle, -p.s], [radius, radius, radius * 1.08], '#c98d5c', facing);
     for (const side of [-1, 1]) { const q = at(side * radius * .55, into + 1.6); round(c, q.x, (deck + middle - radius * 1.1) / 2, q.s, .22, middle - radius * 1.1 - deck, .22, '#3d4246'); }
     top = middle + radius * 1.42;
   } else if (kind === 'glasshouse') {

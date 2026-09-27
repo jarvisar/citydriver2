@@ -92,11 +92,13 @@ function cafeTable(colour) {
 function cafeChair() {
   const p = new Parts(), iron = '#3d4246';
   p.box([0, .44, 0], [.46, .06, .44], '#85745d');
+  // (the back legs stop inside the back, whose faces stand clear of theirs:
+  // flush, the timber and the iron flickered through each other)
   for (const side of [-.18, .18]) for (const back of [-.17, .17]) {
-    const h = back > 0 ? .85 : .42;
+    const h = back > 0 ? .84 : .42;
     p.box([side, h / 2, back], [.045, h, .045], iron);
   }
-  p.box([0, .73, .17], [.46, .24, .05], '#85745d');
+  p.box([0, .73, .17], [.46, .24, .06], '#85745d');
   return p.finish();
 }
 const chair = cafeChair();
@@ -121,7 +123,8 @@ function flowers(colour) {
   };
   for (let i = 0; i < 6; i++) {
     const point = (k, r, y) => [Math.cos(k * Math.PI / 3) * r, y, Math.sin(k * Math.PI / 3) * r];
-    const a = point(i, .38, .025), b = point(i + 1, .38, .025), c = point(i, .31, .21), d = point(i + 1, .31, .21);
+    // (the flanks start just in the soil rather than hovering over it)
+    const a = point(i, .38, -.01), b = point(i + 1, .38, -.01), c = point(i, .31, .21), d = point(i + 1, .31, .21);
     face(a, c, d, green); face(a, d, b, green);
     face(c, [.035, .3, -.02], d, i % 3 ? normal : pale);
   }
