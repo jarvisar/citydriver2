@@ -7,6 +7,7 @@ import { DrivingController } from '../src/vehicle.js';
 import { collideScenery } from '../src/collision.js';
 import { LooseProps } from '../src/loose-props.js';
 import { cityAssets } from '../src/world/city-assets.js';
+import { DemolitionRun, PRICES } from '../src/demolition-run.js';
 
 // One city for every test here, built round the start
 let city = null;
@@ -61,8 +62,9 @@ function aboveGround(body) {
 // A car driven along the nearest road into `target`, its side over it by .6 m,
 // for `seconds` (braking half a second after it, with `brake`): its speed just
 // before the knock and just after, and the loose pieces
-function drive(target, id = 'taxi', speed = 20, seconds = 4, brake = false, city = world()) {
+function drive(target, id = 'taxi', speed = 20, seconds = 4, brake = false, city = world(), onSmash = null) {
   const { scene, world: built } = city, props = new LooseProps(scene, built.materials.props), car = new DrivingController(citydriverRoute, journeyStart(), id);
+  props.onSmash = onSmash;
   car.toggleFreeDriving();
   const road = roadAt(-target.z, target.x, 40), heading = Math.atan2(road.tx, road.ty);
   let du = road.x - target.x, ds = road.y + target.z;
@@ -137,6 +139,17 @@ test('a lamp post hit at speed snaps and falls over, dark, and the car carries o
     // on into a bin further along)
     assert.ok(props.sounds.filter(s => Math.hypot(s.x - lamp.x, s.z - lamp.z) < 7).every(s => ['metal'].includes(s.kind)), JSON.stringify(props.sounds));
     assert.ok(car.trauma < .3, 'a post is no wall: the camera barely shakes');
+  } finally { props.reset(); props.dispose(); car.disposeModel(); }
+});
+
+test('a demolition run is told of each piece knocked loose, by kind and where it stood', () => {
+  const lamp = nearest('lamp'), run = new DemolitionRun(); run.start();
+  const { props, car } = drive(lamp, 'rig', 18, 1, false, world(), (kinds, at) => run.smash(kinds, at));
+  try {
+    const smash = run.drainEvents().find(event => event.kind === 'smash' && event.label === 'Lamp post');
+    assert.ok(smash, 'the lamp post is paid for');
+    assert.equal(smash.price, PRICES.lamp);
+    assert.ok(Math.hypot(smash.x - lamp.x, smash.z - lamp.z) < 2, 'where it stood');
   } finally { props.reset(); props.dispose(); car.disposeModel(); }
 });
 

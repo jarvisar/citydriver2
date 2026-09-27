@@ -245,7 +245,8 @@ test('a car struck side-on is knocked loose, skids to rest, then steers back ont
   const { traffic, edge, pinned: [car] } = pinnedStreet(player, [[40, 12]]);
   try {
     besideLane(traffic, edge, player, 40, 9, 5.5, 17);
-    const impacts = player.audioTelemetry.impactSerial, seen = new Set();
+    const impacts = player.audioTelemetry.impactSerial, seen = new Set(), blows = [];
+    traffic.onDamage = (struck, closing) => { if (struck === car) blows.push(closing); };
     let spun = 0, rocked = 0, restedOff = 0;
     for (let i = 0; i < 120 * 16; i++) {
       player.update(1 / 120, { forward: i < 120, brake: i >= 120 }); traffic.update(1 / 120, player);
@@ -261,6 +262,7 @@ test('a car struck side-on is knocked loose, skids to rest, then steers back ont
       assert.notEqual(surfaceAt(car.s, car.u), 'water');
     }
     assert.ok(player.audioTelemetry.impactSerial > impacts, 'they met');
+    assert.ok(Math.max(...blows) > 10, `and the blow was reported, for a demolition run to price (${blows.map(b => b.toFixed(1))})`);
     assert.ok(seen.has('loose') && seen.has('back'), [...seen].join());
     assert.ok(spun > .5 && rocked > .02 && restedOff > 2, `spun ${spun}, rocked ${rocked}, came to rest ${restedOff} m off its lane`);
     assert.ok(!car.loose && !car.recover && car.speed > 3, `back in its lane at ${car.speed} m/s`);

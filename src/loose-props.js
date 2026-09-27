@@ -305,6 +305,9 @@ export class LooseProps {
     this.bits = new Bits(this.group, material);
     // What was heard: { kind, strength (m/s), x, z }, for the sound to take (see DriveAudio)
     this.sounds = [];
+    // Told of each piece of furniture knocked loose, by whatever car:
+    // `(kinds, point)`, its pieces' kinds and where it was met (see DemolitionRun)
+    this.onSmash = null;
   }
   // A car running into standing furniture (`contact` as sceneryContacts
   // gives it, `car` as motion() gives it plus its ground height `y`): null if
@@ -323,6 +326,7 @@ export class LooseProps {
     const blow = kind.topples ? this.topple(hit, car, contact, point) : this.fling(hit, car, contact, point);
     if (kind.bits && !kind.topples) this.bits.burst(kind.bits, hit.p.x, hit.p.y, hit.p.z, hit.v.x * .4, hit.v.z * .4);
     this.sound(kind.sound, closing, point.x, point.z);
+    this.onSmash?.(prop.pieces.map(each => each.kind), { x: point.x, y: car.y ?? hit.p.y, z: point.z });
     return blow ?? { x: 0, z: 0, spin: 0, closing };
   }
   // Flung off the bumper, a piece is swept a little aside out of the car's

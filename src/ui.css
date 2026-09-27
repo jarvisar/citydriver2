@@ -5,7 +5,10 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
 }
-#app { height: 100dvh; min-height: 0; }
+/* The game's box is the window itself, never a viewport unit: in Android
+   Chrome's fullscreen, 100dvh came out a toolbar taller than the screen and
+   the bottom of the HUD went off it. The scene is sized from this box too. */
+#app { position: fixed; inset: 0; width: auto; height: auto; min-height: 0; }
 .touch-hint, .touch-utility-icon, .controller-hint { display: none; }
 button { touch-action: manipulation; }
 .controller-hint { margin-top: 14px; font-size: 12px; line-height: 1.7; }
@@ -81,7 +84,7 @@ body[data-controller=true] .controller-hint { display: block; }
   .pause-overlay { padding: calc(76px + var(--safe-top)) calc(24px + var(--safe-right)) calc(24px + var(--safe-bottom)) calc(24px + var(--safe-left)); overflow-y: auto; }
   .pause-overlay p { font-size: 14px; }
   .pause-overlay .start-button { min-height: 48px; font-size: 14px; }
-  .chooser { width: calc(100% - 24px - var(--safe-left) - var(--safe-right)); max-height: calc(100dvh - 24px - var(--safe-top) - var(--safe-bottom)); padding: 16px; overscroll-behavior: contain; }
+  .chooser { width: calc(100% - 24px - var(--safe-left) - var(--safe-right)); max-height: calc(100% - 24px - var(--safe-top) - var(--safe-bottom)); padding: 16px; overscroll-behavior: contain; }
   .chooser-options { grid-template-columns: 1fr; gap: 12px; }
   .chooser-card { display: grid; grid-template-columns: 92px 1fr; }
   .chooser-art { height: 100%; min-height: 112px; object-fit: cover; }
@@ -130,7 +133,7 @@ body[data-controller=true] .controller-hint { display: block; }
   .pause-overlay { padding: calc(64px + var(--safe-top)) 24px calc(16px + var(--safe-bottom)); justify-content: flex-start; }
   .pause-overlay h2 { font-size: 32px; margin-top: 10px; }
   .pause-overlay p { margin: 8px 0 14px; }
-  .chooser { max-height: calc(100dvh - 20px - var(--safe-top) - var(--safe-bottom)); }
+  .chooser { max-height: calc(100% - 20px - var(--safe-top) - var(--safe-bottom)); }
   .chooser-options { grid-template-columns: repeat(3, 1fr); }
   .chooser-card { display: block; }
   .chooser-art { height: 70px; min-height: 0; }

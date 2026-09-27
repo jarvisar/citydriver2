@@ -25,7 +25,7 @@ export function setupTaxiFleet(fleet, { running, onChange, career = null, onLive
       return `<article class="taxi-fleet-card" data-selected="${selected}" style="--car-paint:${paint ?? entry.paint}">
         <div class="fleet-card-top"><span>0${index + 1} / ${title}</span><span>${selected ? 'SELECTED' : owned ? 'OWNED' : fleetMoney(price)}</span></div>
         ${carArt(id)}<h3>${entry.name}</h3><p class="fleet-description">${description}</p>
-        <dl class="fleet-stats">${stats.map(([label, value, level]) => `<div><dt>${label}</dt><dd>${value}</dd><span aria-hidden="true"><i style="width:${level * 100}%"></i></span></div>`).join('')}</dl>
+        <dl class="fleet-stats">${stats.map(([label, value, level]) => `<div><dt>${label}</dt><dd>${value}</dd><span aria-hidden="true"><i style="width:${Math.min(1, level) * 100}%"></i></span></div>`).join('')}</dl>
         <p class="fleet-progress">${owned ? index === 0 ? 'Included with your fleet' : 'Yours for every taxi run' : short ? `${fleetMoney(short)} to go` : 'Ready for an upgrade'}</p>
         ${!owned ? `<progress max="${price}" value="${Math.min(price, fleet.balance)}" aria-label="Savings toward ${entry.name}"></progress>` : ''}
         <button type="button" data-fleet-car="${id}" aria-label="${entry.name}: ${action}" aria-pressed="${selected}" ${!owned && short ? 'disabled' : ''}>${action}</button>

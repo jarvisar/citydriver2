@@ -1,4 +1,4 @@
-#taxi-fleet-dialog { width: min(960px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); box-sizing: border-box; padding: 26px; color: #f5f1de; background: #17262f; border: 1px solid #64716d; border-radius: 18px; overflow-y: auto; }
+#taxi-fleet-dialog { width: min(960px, calc(100vw - 32px)); max-height: calc(100% - 32px); box-sizing: border-box; padding: 26px; color: #f5f1de; background: #17262f; border: 1px solid #64716d; border-radius: 18px; overflow-y: auto; }
 #taxi-fleet-dialog::backdrop { background: #0a141bd9; backdrop-filter: blur(8px); }
 #taxi-fleet-dialog .chooser-heading { display: flex; align-items: center; justify-content: space-between; background: #17262f; z-index: 1; }
 #taxi-fleet-dialog h2 { margin: 4px 0; font-size: 26px; letter-spacing: -.7px; }
@@ -45,7 +45,23 @@
 #fleet-feedback { min-height: 18px; margin: 8px 0 0; color: #a4e887; font-size: 12px; }
 #fleet-save { color: #ffd238; font-size: 12px; }
 #taxi-result-bank { color: #ffd238; line-height: 1.6; }
-.taxi-result-card { max-height: calc(100dvh - var(--ui-top) - var(--ui-bottom)); overflow-y: auto; box-sizing: border-box; }
+.taxi-result-card { max-height: calc(100% - var(--ui-top) - var(--ui-bottom)); overflow-y: auto; box-sizing: border-box; }
+.taxi-result-card button { min-height: 44px; }
+/* The smallest phones (568 px tall) fit the whole card, buttons and all. */
+@media (max-height: 600px) and (orientation: portrait) {
+  .taxi-result-card { padding: 14px 16px 12px; }
+  #taxi-result-cash { font-size: 40px; }
+  .taxi-license { margin: 6px 0 8px; }
+  .taxi-result-stats li { padding: 4px 4px 3px; }
+  .taxi-result-stats strong { font-size: 16px; }
+  .taxi-result-goals { margin-top: 8px; }
+  .taxi-result-goals li { padding-block: 3px; }
+  .taxi-result-more > * { margin-top: 8px; }
+  .taxi-result-card button { margin-top: 8px; padding-block: 10px; }
+}
+@media (orientation: landscape) and (max-height: 400px) {
+  .taxi-result-card { padding-block: 12px 10px; }
+}
 #pause-fleet[hidden], #change-car[hidden] { display: none; }
 @media (max-width: 680px) {
   #taxi-fleet-dialog { padding: 18px; }

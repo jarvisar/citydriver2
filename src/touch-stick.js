@@ -49,6 +49,24 @@ export class TouchStick {
   clear() { if (this.engaged || this.pointer !== null) this.release(); this.engaged = false; }
 }
 
+// A driving HUD button a touch presses on release (pointerup): with a thumb
+// on the stick, a second finger's tap may make no click. Sliding well off
+// the button first cancels it. The click a tap would make afterwards is
+// stopped (touchend), since it lands on whatever has taken the button's
+// place: the pause screen's Resume took the pause button's, so a tap paused
+// and resumed at once and only a long press (no click) paused. A mouse, pen
+// or key presses it with the click, as usual.
+export function pressOnRelease(button, press, slop = 16) {
+  button.addEventListener('click', event => { if (event.pointerType !== 'touch') press(); });
+  button.addEventListener('pointerup', event => {
+    if (event.pointerType !== 'touch') return;
+    event.preventDefault();
+    const box = button.getBoundingClientRect();
+    if (event.clientX > box.left - slop && event.clientX < box.right + slop && event.clientY > box.top - slop && event.clientY < box.bottom + slop) press();
+  });
+  button.addEventListener('touchend', event => { if (event.cancelable) event.preventDefault(); }, { passive: false });
+}
+
 // In the chase view the stick controls the car, independent of camera rotation.
 // Use the existing analog driving physics for gradual steering and brake/reverse.
 export function thirdPersonDrivingInput(stick) {

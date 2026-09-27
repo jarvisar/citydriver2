@@ -6,10 +6,12 @@
 #vr-error { position: absolute; top: var(--header-clear); right: var(--ui-right); max-width: min(360px, 85vw); padding: 12px; background: var(--cream); color: var(--ink); border-radius: 6px; z-index: 5; }
 :root {
   --edge: clamp(6px, 1.25vw, 16px);
-  --ui-top: calc(var(--edge) + var(--safe-top));
-  --ui-left: calc(var(--edge) + var(--safe-left));
-  --ui-right: calc(var(--edge) + var(--safe-right));
-  --ui-bottom: calc(var(--edge) + var(--safe-bottom));
+  /* A notch, cutout or home bar's inset is margin enough with a little
+     more; the full edge on top of it left a wide gap on those phones. */
+  --ui-top: max(var(--edge), calc(var(--safe-top) + 6px));
+  --ui-left: max(var(--edge), calc(var(--safe-left) + 6px));
+  --ui-right: max(var(--edge), calc(var(--safe-right) + 6px));
+  --ui-bottom: max(var(--edge), calc(var(--safe-bottom) + 6px));
   --header-clear: calc(var(--ui-top) + 60px);
   --stick-size: 145.2px;
 }
@@ -67,7 +69,7 @@ body[data-controller=true] .pause-overlay button:focus { outline: 2px solid var(
 #toast { top: var(--header-clear); max-width: calc(100% - var(--ui-left) - var(--ui-right)); width: max-content; white-space: normal; text-align: center; line-height: 1.5; }
 #app:has(.welcome:not(.hidden)) #toast { display: none; }
 
-.chooser { width: min(930px, calc(100% - var(--ui-left) - var(--ui-right))); max-height: calc(100dvh - var(--ui-top) - var(--ui-bottom)); padding: 20px; overscroll-behavior: contain; scrollbar-width: thin; }
+.chooser { width: min(930px, calc(100% - var(--ui-left) - var(--ui-right))); max-height: calc(100% - var(--ui-top) - var(--ui-bottom)); padding: 20px; overscroll-behavior: contain; scrollbar-width: thin; }
 .chooser-heading { position: sticky; top: -20px; z-index: 1; padding: 4px 0; background: #f6f5ea; }
 /* Focus moved by a controller or the keyboard scrolls clear of the pinned heading. */
 :is(.chooser, #taxi-fleet-dialog) { scroll-padding-block: 80px 16px; }
@@ -182,6 +184,10 @@ body[data-journey=city] .chooser-heading { background: #eef1f4; }
   font-size: 12px; font-weight: 600; white-space: nowrap;
 }
 .drive-actions button:hover { background: #25473e12; }
+/* Nothing on the driving HUD scrolls, so a finger that slides a little on a
+   button is still a tap: the browser would otherwise take it for a pan and
+   cancel the press. */
+.drive-actions, .city-guide-header, #taxi-buttons { touch-action: none; }
 .drive-actions svg { display: block; width: 18px; height: 18px; flex-shrink: 0; }
 .drive-actions kbd { display: none; }
 .drive-actions .control-label { margin: 0; text-transform: capitalize; }
@@ -221,7 +227,7 @@ body[data-controller=true] .drive-actions { display: none; }
 .pause-overlay .location-title { font-size: 10px; }
 .pause-overlay .location-sub { font-size: 12px; }
 @media (max-width: 760px), (max-height: 560px) {
-  .pause-overlay .location { position: static; display: flex; margin: clamp(0px, calc((100dvh - 620px) / 2), 180px) 0 14px; }
+  .pause-overlay .location { position: static; display: flex; margin: clamp(0px, calc((100svh - 620px) / 2), 180px) 0 14px; }
 }
 /* The drive's toasts sit above the pause screen, where sound, fullscreen and
    graphics are set. */

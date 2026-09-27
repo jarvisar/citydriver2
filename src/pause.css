@@ -48,11 +48,12 @@
 .graphics-toggle:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 body[data-controller=true] .pause-settings input:focus { outline: 2px solid var(--ink); outline-offset: 3px; }
 
-/* A taxi run has no autodrive and always has traffic, so neither switch shows. */
-body[data-mode=taxi] .pause-panel :is(#autodrive, #traffic) { display: none; }
+/* A run (taxi or demolition) has no autodrive and always has traffic, so neither switch shows. */
+body:not([data-mode=free]) .pause-panel :is(#autodrive, #traffic) { display: none; }
 /* Two groups side by side, then three. Of the two columns, one holds a
    single long group: the discoveries in free drive, the shift goals in a
-   taxi run. The other takes the two short ones. */
+   taxi run, the high scores in a demolition run. The other takes the two
+   short ones. */
 .pause-column { display: contents; }
 @media (min-width: 560px) {
   .pause-header { grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 20px; }
@@ -66,15 +67,15 @@ body[data-mode=taxi] .pause-panel :is(#autodrive, #traffic) { display: none; }
   .pause-column:nth-child(1) { grid-area: 1 / 1; }
   .pause-column:nth-child(2) { grid-area: 1 / 2 / span 2; }
   .pause-column:nth-child(3) { grid-area: 2 / 1; }
-  body[data-mode=taxi] .pause-column:nth-child(1) { grid-area: 1 / 1 / span 2; }
-  body[data-mode=taxi] .pause-column:nth-child(2) { grid-area: 1 / 2; }
-  body[data-mode=taxi] .pause-column:nth-child(3) { grid-area: 2 / 2; }
+  body:not([data-mode=free]) .pause-column:nth-child(1) { grid-area: 1 / 1 / span 2; }
+  body:not([data-mode=free]) .pause-column:nth-child(2) { grid-area: 1 / 2; }
+  body:not([data-mode=free]) .pause-column:nth-child(3) { grid-area: 2 / 2; }
   .pause-settings > :not(.pause-column) { grid-column: 1 / -1; }
 }
 @media (min-width: 1000px) {
   .pause-content { width: 1100px; }
   .pause-settings { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: auto; column-gap: 28px; }
-  .pause-column:nth-child(n), body[data-mode=taxi] .pause-column:nth-child(n) { grid-row: 1; grid-column: auto; }
+  .pause-column:nth-child(n), body:not([data-mode=free]) .pause-column:nth-child(n) { grid-row: 1; grid-column: auto; }
 }
 /* A narrow phone keeps the bar to two lines: the game's name is on the
    title screen already. */
@@ -92,7 +93,7 @@ body[data-mode=taxi] .pause-panel :is(#autodrive, #traffic) { display: none; }
 @media (prefers-reduced-motion: reduce) { .graphics-toggle .settings-chevron { transition: none; } }
 
 /* Shift goals sit with the driving settings while a taxi run is paused. */
-#goals-panel[hidden] { display: none; }
+#goals-panel[hidden], #scores-panel[hidden] { display: none; }
 .shift-goals { margin: 0; padding: 0; list-style: none; display: grid; }
 .shift-goals li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--ui-line); font-size: 12px; }
 .shift-goals .goal-check { display: grid; place-items: center; flex: none; width: 24px; height: 24px; border-radius: 50%; border: 1px dashed var(--ui-line); font-size: 13px; }
@@ -103,3 +104,8 @@ body[data-mode=taxi] .pause-panel :is(#autodrive, #traffic) { display: none; }
 .shift-goals small { font-size: 11px; opacity: .72; }
 #goals-summary { margin: 10px 0 0; }
 #goals-summary:empty { display: none; }
+/* In the one column of a phone, the discoveries (a long list) come after
+   display and sound, which would otherwise be a long scroll away. Beside
+   other columns they are already last in theirs. */
+.pause-settings .notebook-panel { order: 1; }
+.pause-settings > .controller-hint { order: 2; }

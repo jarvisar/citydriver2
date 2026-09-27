@@ -16,6 +16,7 @@ This is the sequel to [Citydriver](https://github.com/jarvisar/citydriver). The 
 - Traffic that follows signals, stop signs and give-way signs
 - Landmarks and shops that passengers can ask to go to
 - Taxi mode with group fares, shift goals, driver ranks and cabs to buy
+- Demolition mode with a truck, damage chains, ratings and high scores
 - Weather and night driving
 - Keyboard, controller and touch screen support
 - VR headsets such as Meta Quest, through WebXR
@@ -24,6 +25,8 @@ This is the sequel to [Citydriver](https://github.com/jarvisar/citydriver). The 
 ## How to Play
 
 Start a **Taxi run** to pick up passengers and earn money. Stop in a pickup ring, follow the arrow, then stop in the yellow drop-off ring before the fare clock runs out. Earnings can be spent on faster cabs in the taxi fleet. See [progression and balance](docs/taxi-progression.md) and [taxi fleet](docs/taxi-fleet.md) for more details.
+
+**Demolition** puts you in a truck with one minute to cause as much property damage as possible. Lamp posts, benches, signs, trees, bus shelters and cars all have a price, and parked cars are worth the most. Hits in quick succession build a chain. Every fourth hit raises the chain's multiplier, up to ×5, and the chain's damage is added to the total when it ends. Wrecking a moving car adds 3 seconds to the clock. Hitting a pedestrian costs a $5,000 fine and the chain in progress. Each run gets a rating, and the best five runs are kept as high scores. See [demolition](docs/demolition.md) for the prices and ratings.
 
 **Free drive** has no timer. All three taxis are available in the garage, and weather settings and city discoveries are in the pause menu. The garage also has a helicopter that can fly over the city and land on roofs. Press forward on the main menu to enter free drive, or press R to generate a new city.
 
@@ -108,7 +111,7 @@ npm test
 npm run test:smoke
 ```
 
-`npm test` runs the unit tests for the city generator, navigation, handling, audio, garage and taxi rules. It builds the city for seed 4817. Set `TEST_WORLD_SEED` to test a different city.
+`npm test` runs the unit tests for the city generator, navigation, handling, audio, garage, taxi and demolition rules. It builds the city for seed 4817. Set `TEST_WORLD_SEED` to test a different city.
 
 `npm run test:smoke` drives through the city in a headless browser and reports any console errors. Start the dev server first. Set `CHROME_PATH` to use a different Chrome.
 
@@ -127,6 +130,7 @@ Pushes to `main` are tested and deployed to GitHub Pages by GitHub Actions, usin
 - [Handling](docs/handling.md)
 - [Taxi progression](docs/taxi-progression.md)
 - [Taxi fleet](docs/taxi-fleet.md)
+- [Demolition](docs/demolition.md)
 - [Driving HUD](docs/driving-hud.md)
 - [UI styles](docs/ui-style.md)
 - [VR](docs/vr.md)

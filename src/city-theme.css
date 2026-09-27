@@ -1,5 +1,7 @@
 /* Citydriver's shared visual language. Layout stays in the component styles.
-   Slate panels come from the district HUD; taxi yellow marks action/selection. */
+   Slate panels come from the district HUD; the accent marks action/selection:
+   taxi yellow on a taxi run, site-work orange on a demolition run and
+   sea-glass teal in free drive (body[data-mode], below). */
 :root {
   --city-panel: #263b45;
   --city-glass: #263b45f2;
@@ -11,6 +13,8 @@
   --city-line: #afc9d13d;
   --city-accent: #ffd238;
   --city-accent-hover: #ffe177;
+  /* the accent as light text on a dark panel */
+  --city-accent-soft: #fff1ad;
   --city-gold: #f3d899;
   --city-on-accent: #17262f;
   --city-radius: 16px;
@@ -18,6 +22,8 @@
   --city-shadow: 0 6px 24px #101e282b;
   --city-font: 'Segoe UI', Arial, sans-serif;
 }
+body[data-mode=demolition] { --city-accent: #ff9433; --city-accent-hover: #ffb46e; --city-accent-soft: #ffd6ad; }
+body[data-mode=free] { --city-accent: #5fd0c0; --city-accent-hover: #8fe0d4; --city-accent-soft: #c4f1ea; }
 body, body[data-journey] {
   --ink: var(--city-text);
   --cream: var(--city-panel);
@@ -182,7 +188,7 @@ body[data-controller=true] #app #city-map-open::before { content: 'VIEW'; margin
   :root { --ui-scale: 1.15; }
   #app :is(.topbar, .taxi-hud, .taxi-task, .taxi-dash, .city-guide, .controls, .pause-content, .taxi-result-card, .chooser),
   #app :is(#taxi-buttons, #toast, #fps-counter, #vr-error, #taxi-fleet-dialog) { zoom: var(--ui-scale); }
-  #app :is(.chooser, .taxi-result-card), #app #taxi-fleet-dialog { max-height: calc((100dvh - var(--ui-top) - var(--ui-bottom)) / var(--ui-scale)); }
+  #app :is(.chooser, .taxi-result-card), #app #taxi-fleet-dialog { max-height: calc((100svh - var(--ui-top) - var(--ui-bottom)) / var(--ui-scale)); }
 }
 @media (min-width: 2200px) and (min-height: 1300px) { :root { --ui-scale: 1.35; } }
 @media (min-width: 3000px) and (min-height: 1800px) { :root { --ui-scale: 1.7; } }

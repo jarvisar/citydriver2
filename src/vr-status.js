@@ -9,8 +9,10 @@ const UI = {
   accent: '#ffd238', accentHover: '#ffe177', gold: '#f3d899', onAccent: '#17262f',
   urgent: '#ffb5a6', onUrgent: '#721e15', font: "'Segoe UI', Arial, sans-serif",
 };
-// Fare ratings and goals, as the taxi HUD colours them (taxi.css).
-export const TONES = { speedy: '#7ce787', normal: '#ffd238', slow: '#ff8a7a', goal: '#c3f4bb' };
+// Each mode's accent, as city-theme.css sets it: taxi yellow, demolition orange, free-drive teal
+export const ACCENTS = { taxi: ['#ffd238', '#ffe177'], demolition: ['#ff9433', '#ffb46e'], free: ['#5fd0c0', '#8fe0d4'] };
+// Fare ratings and goals, as the taxi HUD colours them (taxi.css), and a demolition run's news
+export const TONES = { speedy: '#7ce787', normal: '#ffd238', slow: '#ff8a7a', goal: '#c3f4bb', chain: '#ff9433', banked: '#ffd6ad', bonus: '#8ff0b0' };
 // Where the panels hang: metres from the eyes, degrees below eye level and
 // width in metres. Both are drawn at about 27 canvas pixels a degree, a
 // Quest 3's own sharpness. A menu opens in front of wherever the player is
@@ -155,6 +157,14 @@ export class VRStatus {
   }
   get visible() { return Boolean(this.model); }
   toast(text, tone = '') { this.flash = { text, tone, until: performance.now() + 2200 }; }
+  // The mode's accent for the main action, switches and the HUD's headings;
+  // whatever is showing is drawn again in it
+  setAccent(mode) {
+    const [accent, hover] = ACCENTS[mode] ?? ACCENTS.taxi;
+    if (UI.accent === accent) return;
+    UI.accent = accent; UI.accentHover = hover; this.signature = ''; this.hudSignature = '';
+    if (this.model) this.update(this.model);
+  }
   update(model) {
     if (!model) {
       if (this.menu) { this.menu.mesh.visible = false; for (const { ray, cursor } of this.rays) ray.visible = cursor.visible = false; }
@@ -349,7 +359,7 @@ export class VRStatus {
     ctx.fillText(label, ctx.textAlign === 'center' ? x + width / 2 : left, middle + 1);
     ctx.globalAlpha = 1; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
   }
-  // The driving HUD: `{ taxi, clock, urgent, cash, fares, stage, title,
+  // The driving HUD: `{ taxi, clockLabel, clock, urgent, cash, fares, stage, title,
   // distance, detail, timer: { text, tone, fraction }, heading, place,
   // weather, hint }`,
   // plus the latest toast, which takes the task's last line as it does on
@@ -375,7 +385,7 @@ export class VRStatus {
     const toast = flash && { text: flash.text, color: TONES[flash.tone] ?? UI.text };
     if (model.taxi) {
       glass(0, 160, model.urgent ? UI.urgent : UI.glass);
-      ctx.letterSpacing = '2px'; line('SHIFT', 80, 42, 20, 750, model.urgent ? UI.onUrgent : UI.muted, 140, 'center'); ctx.letterSpacing = '0px';
+      ctx.letterSpacing = '2px'; line(model.clockLabel ?? 'SHIFT', 80, 42, 20, 750, model.urgent ? UI.onUrgent : UI.muted, 140, 'center'); ctx.letterSpacing = '0px';
       line(model.clock, 80, 114, 64, 750, model.urgent ? UI.onUrgent : UI.text, 140, 'center');
       const x = 174, w = W - 174 * 2;
       glass(x, w);

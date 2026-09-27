@@ -154,7 +154,8 @@ test('turning to look is a spring: it starts gently and settles without snapping
 // until they are back: what they did, frame by frame
 function knockOver(vehicle, home, frame = new THREE.Matrix4(), seconds = 30) {
   const props = new LooseProps(new THREE.Scene(), new THREE.MeshBasicMaterial()), contacts = new PedestrianContacts();
-  const person = {}, matrix = new THREE.Matrix4(), frames = [], dt = 1 / 120;
+  const person = {}, matrix = new THREE.Matrix4(), frames = [], dt = 1 / 120, knocks = [];
+  contacts.onKnock = (by, at) => knocks.push({ by, at });
   for (let i = 0; i < seconds / dt; i++) {
     const time = i * dt;
     vehicle.drive(dt); props.update(dt, vehicle); props.render(1, 0);
@@ -164,7 +165,7 @@ function knockOver(vehicle, home, frame = new THREE.Matrix4(), seconds = 30) {
     frames.push({ time, away, state, matrix: matrix.clone(), world: new THREE.Matrix4().multiplyMatrices(frame, matrix), body: person.body });
     if (frames.some(f => f.state === 'flying') && state === 'home') break;
   }
-  return { frames, props };
+  return { frames, props, knocks };
 }
 
 test('a person a car meets is thrown, lies still, gets up and walks back to carry on, unharmed', () => {
@@ -172,7 +173,9 @@ test('a person a car meets is thrown, lies still, gets up and walks back to carr
   const x = road.x + road.tx * 20, z = -(road.y + road.ty * 20);
   const home = new THREE.Matrix4().compose(new THREE.Vector3(x, ROAD_LEVEL, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), heading + Math.PI / 2), new THREE.Vector3(1, 1.05, 1));
   for (const speed of [5, 15, 30]) {
-    const vehicle = driven(road.x, -road.y, heading, speed), { frames, props } = knockOver(vehicle, home);
+    const vehicle = driven(road.x, -road.y, heading, speed), { frames, props, knocks } = knockOver(vehicle, home);
+    // (told once, as the player's doing, where they stood: see DemolitionRun)
+    assert.deepEqual(knocks.map(k => k.by), ['player']); assert.ok(Math.hypot(knocks[0].at.x - x, knocks[0].at.z - z) < 1);
     const order = frames.map(f => f.state).filter((s, i, all) => s !== all[i - 1]);
     // (a person may land, be shoved on by the car and lie down again)
     assert.deepEqual(order.filter((s, i, all) => !(s === 'flying' && all[i - 1] === 'lying') && !(s === 'lying' && all[i - 1] === 'flying' && all.slice(0, i - 1).includes('lying'))),

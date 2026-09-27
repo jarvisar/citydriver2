@@ -52,6 +52,9 @@ export class CityTraffic {
     TRAFFIC_MODELS.forEach((spec, model) => { for (let k = 0; k < PARKED_POOL; k++) this.addStandIn(model); });
     // Street furniture a loose car can knock over, when there is any (see LooseProps)
     this.props = null;
+    // Told of each blow a car takes from the player, another car or the
+    // scenery it was sent into: `(car, closing)`, closing in m/s (see DemolitionRun)
+    this.onDamage = null;
     this.reset(route, s, journey, u);
   }
   addStandIn(model) {
@@ -186,7 +189,7 @@ export class CityTraffic {
       const knocked = solid.prop && this.props?.knock(solid, contact, { ...this.motion(car), y: car.position.y, height: 1.5 });
       if (knocked) { this.strike(car, knocked.x, knocked.z, knocked.spin); return; }
       const point = contact.point, blow = collisionImpulse(this.motion(car), { x: point.x, z: point.z, vx: 0, vz: 0, mass: Infinity }, contact, point, SCENERY_SURFACE);
-      if (blow) this.strike(car, blow.a.x, blow.a.z, blow.a.spin);
+      if (blow) { this.strike(car, blow.a.x, blow.a.z, blow.a.spin); this.onDamage?.(car, blow.closing); }
       car.u += contact.x * (contact.depth + .005); car.s -= contact.z * (contact.depth + .005);
     });
   }
@@ -263,6 +266,8 @@ export class CityTraffic {
     const [a, b, c] = collider.corners, long = Math.hypot(b.x - a.x, b.z - a.z) > Math.hypot(c.x - b.x, c.z - b.z) ? [a, b] : [b, c];
     let fu = long[1].x - long[0].x, fs = -(long[1].z - long[0].z);
     if (fu * info.nose.u + fs * info.nose.s < 0) { fu = -fu; fs = -fs; }
+    // (a new car, as far as anything keeping track of one is concerned)
+    car.generation = (car.generation ?? 0) + 1;
     Object.assign(car, { parked: collider, s: -collider.z, u: collider.x, heading: Math.atan2(fu, fs), bay: Math.atan2(fu, fs), loose: { vx: 0, vz: 0, spin: 0 }, rock: null, dazed: 0, moved: false });
     car.paint.color.set(info.colour); car.car.visible = true;
     collider.woken = true; info.hide(true);
@@ -305,7 +310,7 @@ export class CityTraffic {
     const a = player.motion(), b = this.motion(car), contact = trafficContact(a, b);
     if (!contact) return;
     const blow = collisionImpulse(a, b, contact, contactPoint(a, b, contact));
-    if (blow) this.strike(car, blow.b.x, blow.b.z, blow.b.spin);
+    if (blow) { this.strike(car, blow.b.x, blow.b.z, blow.b.spin); this.onDamage?.(car, blow.closing); }
     const share = car.loose ? b.mass / (a.mass + b.mass) : 1, depth = contact.depth + .005;
     player.resolveTrafficCollision(contact.x * depth * share, contact.z * depth * share, blow?.a.x ?? 0, blow?.a.z ?? 0, blow?.a.spin ?? 0, blow?.closing ?? 0, blow?.slide ?? 0);
     if (share < 1) this.nudge(car, -contact.x * depth * (1 - share), -contact.z * depth * (1 - share));
@@ -319,7 +324,10 @@ export class CityTraffic {
       const a = this.motion(car), b = this.motion(other), contact = trafficContact(a, b);
       if (!contact) continue;
       const blow = collisionImpulse(a, b, contact, contactPoint(a, b, contact));
-      if (blow) { this.strike(car, blow.a.x, blow.a.z, blow.a.spin); this.strike(other, blow.b.x, blow.b.z, blow.b.spin); }
+      if (blow) {
+        this.strike(car, blow.a.x, blow.a.z, blow.a.spin); this.strike(other, blow.b.x, blow.b.z, blow.b.spin);
+        this.onDamage?.(car, blow.closing); this.onDamage?.(other, blow.closing);
+      }
       const wa = car.loose ? b.mass : 0, wb = other.loose ? a.mass : 0, depth = contact.depth + .005;
       if (!wa && !wb) continue;
       const share = wa / (wa + wb);

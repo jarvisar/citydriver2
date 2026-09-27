@@ -200,7 +200,13 @@ const pieceAt = new THREE.Vector3();
 // Loose pieces in flight are kept as their points in the world, likewise
 // reused: nothing is flying most of the time.
 export class PedestrianContacts {
-  constructor() { this.history = new WeakMap(); this.cars = []; this.count = 0; this.pieces = []; this.flying = 0; this.props = null; this.player = null; this.traffic = null; }
+  constructor() {
+    this.history = new WeakMap(); this.cars = []; this.count = 0; this.pieces = []; this.flying = 0; this.props = null; this.player = null; this.traffic = null;
+    // Told of each person knocked flying: `(by, at)`, `by` the player's car,
+    // a loose `piece`, a `loose` car (knocked off its lane or out of its bay)
+    // or ordinary `traffic`, and `at` where they stood (see DemolitionRun)
+    this.onKnock = null;
+  }
   // `props` (LooseProps) takes those knocked flying; without it, nobody is
   update(player, traffic, time, props = null) {
     this.count = 0; this.flying = 0; this.player = player; this.traffic = traffic; this.props = props;
@@ -320,6 +326,7 @@ export class PedestrianContacts {
     const motion = piece ? this.props.motionOf(piece, car.points[car.hit], car.points[car.hit + 1], car.points[car.hit + 2]) : player ? this.props.carOf(this.player) : this.traffic.motion(car.car);
     if (!player && !piece) { motion.y = car.y; motion.height = 1.5; }
     const { body, blow } = this.props.person(cityWalker, world, motion);
+    this.onKnock?.(piece ? 'piece' : player ? 'player' : car.car.loose || car.car.parked ? 'loose' : 'traffic', { x: at.x, y: at.y, z: at.z });
     if (player && blow) this.player.strike(blow.x, blow.z, blow.spin, Math.hypot(blow.x, blow.z));
     if (piece && blow) { piece.v.x += blow.x; piece.v.z += blow.z; }
     person.body = body; person.rise = person.back = null;

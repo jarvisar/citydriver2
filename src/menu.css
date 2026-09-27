@@ -9,8 +9,8 @@ body { --action: #263f4b; --action-hover: #3d5f6b; --ink: #253e49; --cream: #f4f
 
 .topbar { justify-content: space-between; }
 #welcome {
-  top: max(calc(var(--ui-top) + 62px), 13dvh);
-  right: var(--ui-right); bottom: max(calc(var(--ui-bottom) + 20px), 21dvh); left: var(--ui-left);
+  top: max(calc(var(--ui-top) + 62px), 13%);
+  right: var(--ui-right); bottom: max(calc(var(--ui-bottom) + 20px), 21%); left: var(--ui-left);
   display: flex; flex-direction: column; align-items: center; justify-content: space-between;
   width: auto; height: auto; max-width: none; max-height: none;
   padding: 0; border: 0; border-radius: 0; background: none; backdrop-filter: none;
@@ -28,7 +28,7 @@ body { --action: #263f4b; --action-hover: #3d5f6b; --ink: #253e49; --cream: #f4f
   background: radial-gradient(ellipse, #10272060 0%, #10272034 38%, #10272000 72%);
 }
 #welcome .menu-actions::before { width: min(560px, 100vw); top: -56px; bottom: -48px; }
-#welcome .brand-mark { display: block; width: clamp(68px, 8.5dvh, 96px); height: auto; filter: drop-shadow(0 2px 3px #10272060) drop-shadow(0 6px 16px #10272030); }
+#welcome .brand-mark { display: block; width: clamp(68px, 8.5svh, 96px); height: auto; filter: drop-shadow(0 2px 3px #10272060) drop-shadow(0 6px 16px #10272030); }
 #welcome .wordmark {
   margin: 3px 0 18px; font-family: 'Arial Rounded MT Bold', 'Trebuchet MS', 'Segoe UI', sans-serif;
   font-size: clamp(48px, 6.2vw, 80px); font-weight: 750; line-height: 1; letter-spacing: -.055em;
@@ -83,7 +83,7 @@ button svg:not(.chooser-art) { stroke-linecap: round; stroke-linejoin: round; }
 .chooser-current { letter-spacing: 1.5px; }
 .chooser-heading .icon-button { border-color: var(--ui-line); background: color-mix(in srgb, var(--ink) 5%, transparent); }
 .pause-overlay > .start-button { margin-bottom: 24px; min-width: 220px; }
-.pause-overlay > h2 { margin-top: clamp(8px, calc((100dvh - 760px) / 2), 96px); }
+.pause-overlay > h2 { margin-top: clamp(8px, calc((100svh - 760px) / 2), 96px); }
 .pause-panel, .graphics-panel, #enter-vr-pause { width: 360px; }
 .panel-button, .panel-toggle, .graphics-levels button { border-radius: 12px; border-color: var(--ui-line); min-height: 44px; }
 .graphics-levels button { padding-inline: 10px; }
@@ -94,7 +94,7 @@ button svg:not(.chooser-art) { stroke-linecap: round; stroke-linejoin: round; }
 #stick-help .dismiss-control-help svg { width: 14px; height: 14px; }
 
 @media (max-width: 760px) {
-  #welcome { top: max(calc(var(--ui-top) + 66px), 15dvh); bottom: max(calc(var(--ui-bottom) + 28px), 23dvh); }
+  #welcome { top: max(calc(var(--ui-top) + 66px), 15%); bottom: max(calc(var(--ui-bottom) + 28px), 23%); }
   #welcome .wordmark { font-size: clamp(46px, 10.8vw, 64px); margin-bottom: 15px; }
   #welcome .start-button { min-height: 76px; }
   #welcome .eyebrow { font-size: 11px; gap: 12px; letter-spacing: .28em; }

@@ -37,13 +37,17 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   // level this page starts on decides it.
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: graphics.antialias, powerPreference: 'high-performance' });
   let canvasWidth, canvasHeight, pixelRatio;
+  // The canvas fills the page's own box (#app, fixed to the window), the same
+  // box the HUD is laid out in, so the scene and the panels always agree. The
+  // window's size can disagree with it: in Android Chrome's fullscreen,
+  // viewport units came out a toolbar taller than the screen.
+  const viewSize = () => ({ width: canvas.clientWidth || window.innerWidth, height: canvas.clientHeight || window.innerHeight });
   function resizeCanvas() {
     if (renderer.xr.isPresenting) return;
-    const width = window.innerWidth, height = window.innerHeight, ratio = drawingPixelRatio(graphics.settings, window.devicePixelRatio, width, height);
+    const { width, height } = viewSize(), ratio = drawingPixelRatio(graphics.settings, window.devicePixelRatio, width, height);
     if (width === canvasWidth && height === canvasHeight && ratio === pixelRatio) return;
     // Update size and density together: setPixelRatio followed by setSize allocates twice.
     renderer.setDrawingBufferSize(width, height, ratio);
-    canvas.style.width = `${width}px`; canvas.style.height = `${height}px`;
     canvasWidth = width; canvasHeight = height; pixelRatio = ratio;
   }
   resizeCanvas();
@@ -137,7 +141,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
     fitFogDistance(lens, scene.fog);
   }
   function resize() {
-    const width = window.innerWidth, height = window.innerHeight;
+    const { width, height } = viewSize();
     const aspect = width / height;
     // Portrait leaves a little more room ahead for the surrounding streets.
     const size = viewHeight * (aspect < 1 ? 1.12 : 1);
@@ -166,7 +170,10 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
     fitSunShadow(activeCamera(), sun, 0, origin);
   }
   // Zoom only changes the projection; resizing the canvas every zoom frame reallocates its buffers.
-  window.addEventListener('resize', () => { graphics.suspend(); resizeCanvas(); resize(); }); resize();
+  // The box changes without a window resize too (entering fullscreen, the
+  // toolbars settling after a turn), so it is watched itself.
+  const onResize = () => { graphics.suspend(); resizeCanvas(); resize(); };
+  window.addEventListener('resize', onResize); globalThis.ResizeObserver && new ResizeObserver(onResize).observe(canvas); resize();
   // Called when starting or resetting the city.
   function setJourney() {
     weatherFog = null;

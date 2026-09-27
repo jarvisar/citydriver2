@@ -1,0 +1,63 @@
+/* Demolition: the taxi's HUD and results card, in the run's orange (see
+   city-theme.css), with a few site-work touches. */
+
+/* On the title, Demolition is a main action beside the taxi run's, as big,
+   in its own orange whatever the page's accent. (In a headset's browser,
+   where Enter VR leads, it steps back with Start run, keeping the crane.) */
+#app #welcome #demolition:not(.menu-secondary) { margin-top: 14px; color: #17262f; background: #ff9433; border-color: #ff9433; }
+#app #welcome #demolition:not(.menu-secondary):hover { background: #ffb46e; border-color: #ffb46e; }
+#welcome #demolition:not(.menu-secondary) .demolition-icon { width: 43px; height: 43px; flex-shrink: 0; }
+#app #welcome #demolition.menu-secondary .demolition-icon { color: #ff9433; }
+@media (max-height: 560px) {
+  #app #welcome #demolition:not(.menu-secondary) { margin-top: 10px; }
+  #welcome #demolition:not(.menu-secondary) .demolition-icon { width: 32px; height: 32px; }
+}
+@media (max-height: 380px) and (orientation: landscape) {
+  #app #welcome #demolition:not(.menu-secondary) { margin-top: 8px; }
+}
+
+/* The clock in hazard stripes, two oranges close enough to keep it legible */
+body[data-mode=demolition] .taxi-clock-box:not(:has([data-urgent=true])) { background: repeating-linear-gradient(-45deg, var(--city-accent) 0 9px, #ffa24d 9px 18px); }
+
+/* The chain: its pill and the wait for the next smash in the accent, the pot
+   it would bank bright, and the last smash's price with no fare-band dot */
+[data-rating=chain], [data-band=damage] { --rating-color: var(--city-accent); }
+.taxi-task[data-stage=demolition] .taxi-timer-track::before, .taxi-task[data-stage=demolition] .taxi-timer-track::after { display: none; }
+#app .taxi-task[data-stage=demolition] #taxi-fare-status { color: var(--city-accent-soft); font-weight: 800; font-size: 13px; }
+#taxi-party[data-band=damage]:not([data-band='']) { font-size: 15px; font-weight: 800; }
+#taxi-party[data-band=damage]:not([data-band=''])::before { content: none; }
+body[data-mode=demolition] .taxi-task #toast[data-tone=chain] { color: var(--city-accent); font-weight: 800; letter-spacing: .3px; }
+body[data-mode=demolition] .taxi-task #toast[data-tone=banked] { color: var(--city-accent-soft); font-weight: 700; }
+body[data-mode=demolition] .taxi-task #toast[data-tone=bonus] { color: #8ff0b0; font-weight: 700; }
+body[data-mode=demolition] .taxi-task #toast[data-tone=slow] { color: #ff8a7a; font-weight: 700; }
+
+/* The results card wears a strip of hazard tape along its top. */
+#app #demolition-results .taxi-result-card {
+  background: repeating-linear-gradient(-45deg, var(--city-accent) 0 10px, var(--city-recessed) 10px 20px) top / 100% 7px no-repeat, var(--city-panel);
+}
+.taxi-result-stats li[data-bad=true] strong { color: #ff8a7a; }
+
+/* The high score table, on the results card and the pause screen */
+.demolition-result-scores { margin: 16px 0 0; text-align: left; }
+.demolition-score-list { margin: 6px 0 0; padding: 0; list-style: none; display: grid; font-variant-numeric: tabular-nums; }
+.demolition-score-list li { display: grid; grid-template-columns: 18px minmax(0, 1fr) 24px 48px; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid #ffffff14; font-size: 13px; color: var(--city-muted); }
+.demolition-score-list li > span:first-child { color: #9fb0b6; text-align: center; }
+.demolition-score-list strong { color: var(--city-text); font-weight: 700; text-align: left; }
+.demolition-score-list small { font-size: 11px; text-align: right; }
+.demolition-score-rank { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; background: #ffffff14; color: var(--city-text); font-size: 12px; font-weight: 800; }
+.demolition-score-list li[data-current=true] strong { color: var(--city-accent); }
+.demolition-score-list li[data-current=true] .demolition-score-rank { background: var(--city-accent); color: var(--city-on-accent); }
+.demolition-score-list .demolition-score-empty { display: block; font-size: 12px; }
+#scores-panel .demolition-score-list li:first-child { border-top: 0; }
+@media (max-height: 700px) {
+  .demolition-score-list li { padding-block: 4px; }
+}
+/* A short screen keeps the results card to its height: the top three runs,
+   or the top two and this one when it placed lower */
+@media (max-height: 600px) {
+  .demolition-result-scores li:nth-child(n+4):not([data-current=true]),
+  .demolition-result-scores .demolition-score-list:has(li:nth-child(n+4)[data-current=true]) li:nth-child(3) { display: none; }
+}
+@media (orientation: landscape) and (max-height: 400px) {
+  .demolition-score-list li { padding-block: 2px; }
+}

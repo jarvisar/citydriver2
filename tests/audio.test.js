@@ -235,8 +235,8 @@ test('the director places the city\'s life by where the car is and the hour', ()
 
 test('game cues stay in the city\'s key, short and quiet', () => {
   const scale = [0, 2, 4, 5, 7, 9, 11].map(step => (53 + step) % 12);
-  for (const kind of ['pickup', 'dropoff', 'paid', 'missed', 'tip', 'tick', 'goal', 'discovery']) {
-    const notes = cueNotes(kind, { rating: 'speedy', combo: 3, urgent: true });
+  for (const kind of ['pickup', 'dropoff', 'paid', 'missed', 'tip', 'tick', 'goal', 'discovery', 'smash', 'wreck', 'multiplier', 'banked', 'penalty', 'bonus']) {
+    const notes = cueNotes(kind, { rating: 'speedy', combo: 3, urgent: true, chain: 12, multiplier: 8 });
     assert.ok(notes.length > 0, kind);
     for (const note of notes) {
       assert.ok(scale.includes((53 + 24 + note.step) % 12), `${kind} is out of key`);
@@ -245,6 +245,7 @@ test('game cues stay in the city\'s key, short and quiet', () => {
   }
   assert.deepEqual(cueNotes('crash'), []);
   assert.ok(cueNotes('tip', { combo: 5 })[0].step > cueNotes('tip', { combo: 1 })[0].step, 'a combo climbs');
+  assert.ok(cueNotes('smash', { chain: 5 })[0].step > cueNotes('smash', { chain: 1 })[0].step, 'a demolition chain climbs');
 });
 
 // A stand-in for the parts of a Web Audio graph DriveAudio touches

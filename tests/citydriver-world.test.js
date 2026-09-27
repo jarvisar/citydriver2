@@ -13,6 +13,7 @@ import { CityTraffic } from '../src/city-traffic.js';
 import { DrivingController } from '../src/vehicle.js';
 import { citydriverRoute, nearestLanePose, PAVEMENT_LEVEL } from '../src/world/city-route.js';
 import { ThirdPersonCamera } from '../src/third-person-camera.js';
+import { DemolitionRun } from '../src/demolition-run.js';
 
 test('the world streams detailed chunks around the car and keeps the skyline everywhere else', () => {
   const scene = new THREE.Scene(), world = new CitydriverWorld(scene);
@@ -241,6 +242,9 @@ test('a parked car the player runs into is knocked loose, and put back in its ba
     traffic.vehicles.forEach(c => { c.edge = null; c.car.visible = false; c.position.set(1e6, 0, 1e6); });
     traffic.spawn = () => false;
     const from = { x: parked.x, z: parked.z };
+    // (a demolition run is paid for it, as a parked car: see DemolitionRun)
+    const run = new DemolitionRun(); run.start();
+    traffic.onDamage = (struck, closing) => run.damageCar(struck, closing);
     let stand = null;
     for (let i = 0; i < 120 * 2; i++) {
       car.update(1 / 120, { forward: i < 60 });
@@ -249,6 +253,7 @@ test('a parked car the player runs into is knocked loose, and put back in its ba
       stand ??= traffic.woken.find(c => c.parked === parked);
     }
     assert.ok(stand && parked.woken, 'knocked loose');
+    assert.ok(run.drainEvents().some(event => event.kind === 'dent' && event.label.startsWith('Parked ')), 'and priced as a parked car');
     assert.ok(Math.hypot(stand.u - from.x, -stand.s - from.z) > 1, 'and shoved along');
     assert.equal(stand.car.visible, true);
     assert.equal(parked.parked.hidden, true, 'its bay stands empty while it is out of it');
