@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SHEET_SIGNS, SIGN_SHEET_SIZE } from '../src/world/city-sign-sheet.js';
-import { SIGN_CATALOG, SIGN_ATLAS, SIGN_USES, SIGNS_BY_USE, BUSINESS_SIGNS, DISCOVERY_SIGNS, dealSign } from '../src/world/city-signs.js';
+import { SIGN_CATALOG, SIGN_ATLAS, SIGN_USES, SIGNS_BY_USE, BUSINESS_SIGNS, DISCOVERY_SIGNS, dealSign, createSignMaterials } from '../src/world/city-signs.js';
+import { CitydriverWorld } from '../src/world/citydriver-world.js';
+import * as THREE from 'three';
 import { hangs, crownSign, upstairsSign } from '../src/world/city-building-signs.js';
 import { planLot, edgeFacade, edgeWindows, windowBays, shopFront } from '../src/world/city-buildings.js';
 import { CITY } from '../src/world/city.js';
@@ -198,4 +200,21 @@ test('a name on the roof stands on a frame behind the parapet, as wide as the fr
     // (the strip kept clear of chimneys covers the frame)
     for (const p of [...legs, face]) assert.ok(insidePolygon({ x: p.x, y: p.s }, strip), 'the frame is inside the strip kept clear');
   }
+});
+
+test('signs are lit like the paint round them, light up after dark, and stay in front of their boards far off', () => {
+  const { signs, edges } = createSignMaterials();
+  for (const material of [signs, edges]) {
+    assert.ok(material.isMeshStandardMaterial && material.toneMapped, 'lit and tone mapped as the scene is');
+    assert.ok(material.polygonOffset && material.polygonOffsetUnits < 0, 'drawn nearer than it stands');
+  }
+  // (a face beats its board, and the board the wall, however far the depth
+  // buffer's steps have grown)
+  assert.ok(signs.polygonOffsetUnits < edges.polygonOffsetUnits && signs.polygonOffsetFactor < edges.polygonOffsetFactor);
+  // The windows' night light lights the signs too
+  const world = { materials: { lit: new THREE.MeshBasicMaterial(), signs } };
+  CitydriverWorld.prototype.setWindowGlow.call(world, 1);
+  assert.ok(signs.userData.glow.value > .5, 'aglow at night');
+  CitydriverWorld.prototype.setWindowGlow.call(world, 0);
+  assert.equal(signs.userData.glow.value, 0, 'plain paint by day');
 });

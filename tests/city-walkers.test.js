@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { cityWalker, WALKER_STYLES, WALKER_LOOKS, WALKER_SKIN, WALKER_HAIR, walkerAppearance, taxiGroupAppearance } from '../src/world/city-walkers.js';
+import { cityWalker, WALKER_STYLES, WALKER_LOOKS, WALKER_SKIN, WALKER_HAIR, walkerAppearance, taxiGroupAppearance, createWalkerMaterial, createWalkerAlert, addWalkerAlert, setWalkerAppearance } from '../src/world/city-walkers.js';
 
 // Every style is a morph target of one small shape, drawn by the thousand
 test('the twelve walker styles share one lightweight topology', () => {
@@ -77,4 +77,41 @@ test('no resident has hair the colour of their face', () => {
     const [s, h] = [rgb(WALKER_SKIN[skin]), rgb(WALKER_HAIR[hair])];
     assert.ok(Math.hypot(...s.map((c, i) => c - h[i])) >= 34, `${WALKER_SKIN[skin]} with ${WALKER_HAIR[hair]}`);
   }
+});
+
+// Demolition's warning: the mask marks the stencil where a resident stands in
+// front of the buildings (drawn after them, before anything else), and the
+// ghost draws last, only there and only behind something nearer. Off, and
+// drawing nothing, until a run switches it on.
+test('the demolition warning shows residents through props but not buildings, and is off by default', () => {
+  const alert = createWalkerAlert(), material = createWalkerMaterial();
+  assert.equal(material.userData.alert.value, 0);
+  assert.equal(alert.mask.visible, false); assert.equal(alert.ghost.visible, false);
+  assert.equal(alert.mask.colorWrite, false); assert.equal(alert.mask.depthWrite, false);
+  assert.equal(alert.mask.stencilWrite, true); assert.equal(alert.mask.stencilZPass, THREE.ReplaceStencilOp);
+  assert.equal(alert.ghost.transparent, true); assert.equal(alert.ghost.depthWrite, false);
+  assert.equal(alert.ghost.depthFunc, THREE.GreaterDepth);
+  assert.equal(alert.ghost.stencilFunc, THREE.EqualStencilFunc); assert.equal(alert.ghost.stencilRef, alert.mask.stencilRef);
+  // (each pixel once: parts of one resident never blend over each other)
+  assert.equal(alert.ghost.stencilZPass, THREE.ZeroStencilOp);
+
+  const mesh = new THREE.InstancedMesh(cityWalker, material, 3);
+  for (let i = 0; i < 3; i++) setWalkerAppearance(mesh, i, walkerAppearance(i));
+  mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 50);
+  addWalkerAlert(mesh, alert);
+  const [mask, ghost] = mesh.children;
+  assert.equal(mask.material, alert.mask); assert.equal(ghost.material, alert.ghost);
+  // buildings draw at -2 and everything else from 0, so the mask sits between
+  assert.equal(mask.renderOrder, -1); assert.equal(ghost.renderOrder, 2);
+  for (const copy of [mask, ghost]) {
+    assert.equal(copy.geometry, cityWalker); assert.equal(copy.count, 3);
+    assert.equal(copy.instanceMatrix, mesh.instanceMatrix); assert.equal(copy.instanceColor, mesh.instanceColor);
+    assert.equal(copy.morphTexture, mesh.morphTexture); assert.equal(copy.boundingSphere, mesh.boundingSphere);
+    assert.equal(copy.castShadow, false); assert.equal(copy.userData.ambientOcclusion, false);
+  }
+  let disposed = false;
+  cityWalker.addEventListener('dispose', () => { disposed = true; });
+  mesh.dispose();
+  assert.equal(disposed, false, 'the shared geometry stays');
+  assert.equal(mask.morphTexture, null); assert.equal(ghost.morphTexture, null);
 });

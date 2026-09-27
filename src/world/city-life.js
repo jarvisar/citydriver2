@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-export { cityWalker, WALKER_COLORS, createWalkerMaterial, walkerAppearance, setWalkerAppearance, pairWalkers, taxiGroupAppearance } from './city-walkers.js';
+export { cityWalker, WALKER_COLORS, createWalkerMaterial, createWalkerAlert, addWalkerAlert, walkerAppearance, setWalkerAppearance, pairWalkers, taxiGroupAppearance } from './city-walkers.js';
 
 // Shared by street residents and waiting passengers. Absolute time means
 // culled residents resume in the right place without maintaining a rig.

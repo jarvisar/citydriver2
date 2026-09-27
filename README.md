@@ -32,7 +32,7 @@ Start a **Taxi run** to pick up passengers and earn money. Stop in a pickup ring
 
 **Free drive** has no timer. All three taxis are available in the garage, and weather settings and city discoveries are in the pause menu. The garage also has a helicopter that can fly over the city and land on roofs. Press forward on the main menu to enter free drive. Press R or select New city in the pause menu to generate a new city.
 
-In free drive, press E to get out of the car and walk around. Walk up to your car, a car in traffic or a car parked along the street and press E to get in. A car taken from traffic drives off on its own when you get out. A parked car stays where you leave it and goes back to its space once you are far away. Your own car stays where you left it and is marked on both maps. Picking a car in the garage puts you in it. The helicopter can't be left. In first-person view the mouse looks around in fullscreen. Without it, A and D turn you on foot.
+In free drive, press E to get out of the car and walk around. Walk up to your car, a car in traffic or a car parked along the street and press E to get in. A car taken from traffic drives off on its own when you get out. A parked car stays where you leave it and goes back to its space once you are far away. Your own car stays where you left it and is marked on both maps. Picking a car in the garage puts you in it. The helicopter can't be left. In first-person view on foot, A and D turn you. Once a click on the view lets the mouse look around, they step sideways instead, as the left stick does on a controller.
 
 Every visit generates a new city. Add `?seed=4817` to the URL to load the same city again.
 
@@ -47,7 +47,7 @@ Every visit generates a new city. Add `?seed=4817` to the URL to load the same c
 | Drift / handbrake | Space | LB / L1 |
 | Climb / descend (helicopter) | Space / Shift, or E / Q | Right stick, or RB / R1 and LB / L1 |
 | Camera | V | X / Square |
-| Pause | P / Escape | Start / Menu |
+| Pause | P / Escape (Escape also frees the mouse) | Start / Menu |
 | Reset | R | Y / Triangle (in a run) |
 | Garage / Taxi fleet | C / G | L3 |
 | Autodrive (free drive) | H | D-pad Up |
@@ -55,9 +55,8 @@ Every visit generates a new city. Add `?seed=4817` to the URL to load the same c
 | Walk (on foot) | W A S D / arrows | Left stick |
 | Sprint (on foot) | Shift | RT / R2 or RB / R1 |
 | Jump (on foot) | Space | A / Cross or LB / L1 |
-| Fullscreen | F, or hold Escape to leave | D-pad Down (while driving) |
-| Auto-fullscreen (on unless switched off) | Pause menu | Pause menu |
-| Look around (chase and first-person view) | Mouse, in fullscreen | Right stick |
+| Fullscreen | F, or Fullscreen in the pause menu | D-pad Down (while driving), or Fullscreen in the pause menu |
+| Look around (chase and first-person view) | Mouse, after a click on the view (at once in fullscreen) | Right stick (sideways only in the helicopter) |
 | Camera distance (chase view) | Mouse wheel | |
 | Sound | Pause menu | Pause menu |
 | City map | M, or City map on the street map | View / Share |
@@ -81,7 +80,7 @@ In a headset's browser, such as the Meta Quest Browser, select **Enter VR** on t
 | Get out / get in (free drive) | Y |
 | Walk (on foot) | Left thumbstick |
 | Jump / sprint (on foot) | Left grip / right grip or right trigger |
-| Look around (on foot) | Right thumbstick |
+| Look around | Right thumbstick (left and right) |
 | Camera | A |
 | Pause | B or left thumbstick click, and Y in a run |
 | Reset car | X |

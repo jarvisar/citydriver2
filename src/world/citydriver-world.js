@@ -13,7 +13,7 @@ import { addSurfacePolygon, faceSlabEdges } from './city-surfaces.js';
 import { buildGrassFringe, grassGeometry, MAX_LAWN_TUFTS } from './city-grass.js';
 import { createWaterMaterial } from './city-water.js';
 import { Surface, setColor } from './surface.js';
-import { cityWalker, walkerFloat, WALKER_COLORS, createWalkerMaterial, walkerAppearance, setWalkerAppearance, pairWalkers, offsetWalkerPose } from './city-life.js';
+import { cityWalker, walkerFloat, WALKER_COLORS, createWalkerMaterial, createWalkerAlert, addWalkerAlert, walkerAppearance, setWalkerAppearance, pairWalkers, offsetWalkerPose } from './city-life.js';
 import { walkedAt, paceAt, standing, rejoinWalk, stopWalkers, regroupWalkers, lookYaw, lean } from './pedestrian-reactions.js';
 import { stableShadowDepth } from './shadow-depth.js';
 import { navGraph } from './nav-graph.js';
@@ -69,12 +69,16 @@ function chunkBounds(group) {
   return bounds;
 }
 
+// How much of its own colour a sign gives off at full night
+const SIGN_GLOW = .85;
 function batchFlags(key, material) {
   const flags = {
     castShadow: !key.startsWith('surface-') && !key.startsWith('public-water') && !['road', 'water', 'lit', 'signal-lens', 'detail-clock', 'glass', 'grass-fringe'].includes(key),
     receiveShadow: !['lit', 'signal-lens', 'detail-clock'].includes(key), ambientOcclusion: true,
   };
-  if (material.userData.signAtlas) flags.castShadow = flags.receiveShadow = flags.ambientOcclusion = false;
+  // (signs take the shade of what stands round them, but cast none, and
+  // keep out of the AO prepass, which would see their whole rectangles)
+  if (material.userData.signAtlas) flags.castShadow = flags.ambientOcclusion = false;
   if (key === 'water' || key === 'grass-fringe') flags.ambientOcclusion = false;
   return flags;
 }
@@ -697,6 +701,7 @@ export class CityChunk {
       this.peopleMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       // Their initial positions do not bound the full walk around the block.
       this.peopleMesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(CITY_CELL / 2, PAVEMENT_LEVEL + 1, -CITY_CELL / 2), CITY_CELL * 1.3);
+      addWalkerAlert(this.peopleMesh, this.world.peopleAlert);
     }
     this.group.matrixAutoUpdate = false;
     this.collisionBounds = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
@@ -743,6 +748,8 @@ export class CitydriverWorld {
     // Counts lamps knocked down or put back, for the night lighting to notice
     this.lampRevision = 0;
     this.pending = []; this.building = null; this.materials = resources(); this.nav = navGraph();
+    // Demolition's red residents, off until setPeopleAlert
+    this.peopleAlert = createWalkerAlert();
     this.animationFrustum = new THREE.Frustum(); this.animationMatrix = new THREE.Matrix4(); this.animationSphere = new THREE.Sphere();
     this.prepareLots(); this.bridges = findBridges(); this.placeFurniture();
     this.harbour = new HarbourBoats(scene, this.materials);
@@ -994,6 +1001,15 @@ export class CitydriverWorld {
     if (glow === this.windowGlow) return;
     this.windowGlow = glow;
     this.materials.lit.color.copy(dayWindow).lerp(nightWindow, glow * glow);
+    // (and the signs light up as the windows do)
+    this.materials.signs.userData.glow.value = glow * glow * SIGN_GLOW;
+  }
+  // A demolition run warns of the residents, whose every knock is a fine:
+  // they glow red, and show through anything but buildings when `ghosts`
+  // (a stencil buffer) allows
+  setPeopleAlert(on, ghosts = true) {
+    this.materials.residents.userData.alert.value = on ? 1 : 0;
+    this.peopleAlert.mask.visible = this.peopleAlert.ghost.visible = on && ghosts;
   }
   setWetness(amount) {
     const wet = Math.max(0, Math.min(1, amount));
@@ -1039,5 +1055,6 @@ export class CitydriverWorld {
     for (const mesh of this.staticGroup.children) if (!mesh.isInstancedMesh) mesh.geometry.dispose(); else mesh.dispose();
     this.staticGroup.removeFromParent();
     for (const material of Object.values(this.materials)) { material.map?.dispose(); material.dispose(); }
+    this.peopleAlert.mask.dispose(); this.peopleAlert.ghost.dispose();
   }
 }

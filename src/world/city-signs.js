@@ -205,7 +205,14 @@ function drawAtlas() {
 
 // The painted faces, and a board for each: the same silhouette in dark paint
 // a little bigger, behind the face, so a sign's board follows its shape (an
-// oval board behind an oval sign) rather than showing a box's corners
+// oval board behind an oval sign) rather than showing a box's corners.
+// Both are lit as painted panels are, in the sun and the shade of what
+// stands round them; after dark the faces light up (`glow`, see
+// CitydriverWorld.setWindowGlow), their own colours added as light.
+// A face lies a few centimetres in front of its board, and the board in
+// front of the wall: past a couple of hundred metres that is less than a
+// step of the depth buffer, so each is also drawn a few steps nearer than
+// it stands (the face more than its board), or they fight far off.
 export function createSignMaterials() {
   const signs = createSignMaterial(), edges = createSignMaterial({ map: signs.map, edge: '#2f3538' });
   return { signs, edges };
@@ -220,10 +227,14 @@ export function createSignMaterial({ map: shared = undefined, edge = null } = {}
     map.anisotropy = 8;
     signSheet.then(image => { if (image) map.needsUpdate = true; });
   }
-  const material = new THREE.MeshBasicMaterial({ map, alphaTest: .5, toneMapped: false, side: edge ? THREE.DoubleSide : THREE.FrontSide });
+  const material = new THREE.MeshStandardMaterial({
+    map, alphaTest: .5, roughness: edge ? .8 : .62, metalness: 0, side: edge ? THREE.DoubleSide : THREE.FrontSide,
+    polygonOffset: true, polygonOffsetFactor: edge ? -1 : -2, polygonOffsetUnits: edge ? -2 : -4,
+  });
   material.userData.signAtlas = true;
+  const glow = material.userData.glow = { value: 0 };
   const ink = edge ? new THREE.Color(edge) : null;
-  material.customProgramCacheKey = () => `citydriver-sign-atlas-v3-${width}x${height}${edge ? '-edge' : ''}`;
+  material.customProgramCacheKey = () => `citydriver-sign-atlas-v4-${width}x${height}${edge ? '-edge' : ''}`;
   material.onBeforeCompile = shader => {
     // Reuse instanceColor as the face's atlas rectangle (see tint); no
     // per-sign uniforms, geometries or per-frame uploads. Keep the atlas
@@ -245,6 +256,14 @@ export function createSignMaterial({ map: shared = undefined, edge = null } = {}
         #include <map_fragment>
         diffuseColor.rgb = vec3(${ink.r.toFixed(4)}, ${ink.g.toFixed(4)}, ${ink.b.toFixed(4)});
       `);
+    // (a face lit from within after dark)
+    else {
+      shader.uniforms.signGlow = glow;
+      shader.fragmentShader = `uniform float signGlow;\n${shader.fragmentShader}`.replace('#include <emissivemap_fragment>', `
+        #include <emissivemap_fragment>
+        totalEmissiveRadiance += diffuseColor.rgb * signGlow;
+      `);
+    }
   };
   return material;
 }

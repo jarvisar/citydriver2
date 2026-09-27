@@ -34,8 +34,9 @@ export function shakeCamera(camera, trauma, time, scale = 1) {
 export function createRendering(canvas, graphics = new Graphics(), { showCarSilhouette = () => true, beforeDraw = () => {} } = {}) {
   stabilizeShadowFiltering();
   // Multisampling belongs to the context and cannot be changed later, so the
-  // level this page starts on decides it.
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: graphics.antialias, powerPreference: 'high-performance' });
+  // level this page starts on decides it. The stencil lets demolition's red
+  // residents show through props but not buildings (see createWalkerAlert).
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: graphics.antialias, stencil: true, powerPreference: 'high-performance' });
   let canvasWidth, canvasHeight, pixelRatio;
   // The canvas fills the page's own box (#app, fixed to the window), the same
   // box the HUD is laid out in, so the scene and the panels always agree. The
@@ -266,5 +267,6 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   // The mouse turns the chase camera round the car, or the view through the
   // player's eyes, and the wheel brings the chase camera in or out (see MouseLook)
   const look = (yaw, pitch) => (views[view].firstPerson ? firstPerson : thirdPerson).look(yaw, pitch), zoom = factor => thirdPerson.zoomBy(factor);
-  return { renderer, scene, graphics, ambientOcclusion, vrCamera, render, precompile, addCuller, setSightLine, setGround, look, zoom, enterVR, exitVR, setView, toggleAO() { return graphics.toggleAmbientOcclusion(); }, get camera() { return activeCamera(); }, update, resize, recordFrame, setJourney, setWeather, get viewLabel() { return views[view].label; }, get chaseView() { return Boolean(views[view].thirdPerson); }, get firstPersonView() { return Boolean(views[view].firstPerson); }, toggleView() { return setView((view + 1) % views.length); }, snap() { initialized = false; thirdPerson.snap(); firstPerson.snap(); } };
+  const stencil = renderer.getContext().getContextAttributes()?.stencil === true;
+  return { renderer, scene, graphics, ambientOcclusion, vrCamera, stencil, render, precompile, addCuller, setSightLine, setGround, look, zoom, enterVR, exitVR, setView, toggleAO() { return graphics.toggleAmbientOcclusion(); }, get camera() { return activeCamera(); }, update, resize, recordFrame, setJourney, setWeather, get viewLabel() { return views[view].label; }, get chaseView() { return Boolean(views[view].thirdPerson); }, get firstPersonView() { return Boolean(views[view].firstPerson); }, toggleView() { return setView((view + 1) % views.length); }, snap() { initialized = false; thirdPerson.snap(); firstPerson.snap(); } };
 }

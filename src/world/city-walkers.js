@@ -389,12 +389,27 @@ const legsPalette = ['#44506a', '#3b3d44', '#4d4039'].map(color => new THREE.Col
 
 export function createWalkerMaterial() {
   const material = new THREE.MeshStandardMaterial({ color: '#ffffff', vertexColors: true, roughness: .92 });
-  material.customProgramCacheKey = () => 'citydriver-walker-palettes-v3';
+  material.customProgramCacheKey = () => 'citydriver-walker-palettes-v4';
+  // Demolition's warning (see createWalkerAlert): 1 glows them red at the
+  // edges; 0, as everywhere else, leaves them exactly as they were
+  material.userData.alert = { value: 0 };
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, {
       walkerCoats: { value: coatPalette }, walkerTrims: { value: trimPalette },
       walkerSkin: { value: skinPalette }, walkerHair: { value: hairPalette }, walkerLegs: { value: legsPalette },
+      walkerAlert: material.userData.alert,
     });
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `
+      #include <common>
+      uniform float walkerAlert;
+    `).replace('#include <emissivemap_fragment>', `
+      #include <emissivemap_fragment>
+      if (walkerAlert > 0.0) {
+        float walkerRim = 1.0 - abs(dot(normal, isOrthographic ? vec3(0.0, 0.0, 1.0) : normalize(vViewPosition)));
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.85, .1, .07), .45 * walkerAlert);
+        totalEmissiveRadiance += walkerAlert * mix(vec3(.5, .03, .02), vec3(1.2, .6, .5), walkerRim * walkerRim) * (.2 + 1.2 * walkerRim * walkerRim);
+      }
+    `);
     shader.vertexShader = shader.vertexShader.replace('#include <common>', `
       #include <common>
       uniform vec3 walkerCoats[${coatPalette.length}];
@@ -428,6 +443,92 @@ export function createWalkerMaterial() {
     `);
   };
   return material;
+}
+
+// Demolition's warning: a resident costs a fine, so they glow red (the
+// walker material's `alert`) and show as red ghosts through anything but a
+// building: trees, posts, signals, signs, cars. Buildings draw first
+// (renderOrder -2, as for the car silhouette); the mask then marks in the
+// stencil where a resident stands in front of them, before anything else
+// draws; the ghost draws last, only there, and only where something nearer
+// covers them. `lift` brings a pass that far toward the lens along its own
+// ray: the ghost's keeps a resident's head from counting as cover over their
+// own coat, and the mask's lets one brushing a wall keep their glow. Needs a
+// stencil buffer (see createRendering). No render targets or extra geometry:
+// two more instanced draws a chunk, only while the warning is on.
+const alertVertex = /* glsl */`
+  #include <common>
+  #include <morphtarget_pars_vertex>
+  uniform float lift;
+  varying float vRim;
+  varying float vFade;
+  void main() {
+    vec3 transformed = position, objectNormal = normal;
+    #ifdef USE_MORPHTARGETS
+      int walkerShape = 0;
+      #ifdef USE_INSTANCING_COLOR
+        walkerShape = int(fract(instanceColor.r) * 16.0 + 0.5);
+      #endif
+      transformed = getMorph(gl_VertexID, walkerShape, 0).xyz;
+      objectNormal = getMorph(gl_VertexID, walkerShape, 1).xyz;
+    #endif
+    vec4 mvPosition = vec4(transformed, 1.0);
+    #ifdef USE_INSTANCING
+      mvPosition = instanceMatrix * mvPosition;
+      objectNormal = mat3(instanceMatrix) * objectNormal;
+    #endif
+    mvPosition = modelViewMatrix * mvPosition;
+    float reach = length(mvPosition.xyz);
+    vec3 toLens = isOrthographic ? vec3(0.0, 0.0, 1.0) : -mvPosition.xyz / reach;
+    vRim = 1.0 - abs(dot(normalize(normalMatrix * objectNormal), toLens));
+    // (overhead, every resident in view is near the car)
+    vFade = isOrthographic ? 1.0 : 1.0 - smoothstep(90.0, 150.0, reach);
+    mvPosition.xyz += toLens * min(lift, reach * .5);
+    gl_Position = projectionMatrix * mvPosition;
+  }
+`;
+export function createWalkerAlert() {
+  const mask = new THREE.ShaderMaterial({
+    name: 'walker-alert-mask', uniforms: { lift: { value: .25 } }, vertexShader: alertVertex,
+    fragmentShader: 'void main() { gl_FragColor = vec4(0.0); }',
+    colorWrite: false, depthWrite: false,
+    stencilWrite: true, stencilRef: 1, stencilFunc: THREE.AlwaysStencilFunc, stencilZPass: THREE.ReplaceStencilOp,
+  });
+  // (drawn once a pixel: the first face there clears its mark, so no part of
+  // a resident blends over another)
+  const ghost = new THREE.ShaderMaterial({
+    name: 'walker-alert-ghost', uniforms: { lift: { value: .6 } }, vertexShader: alertVertex,
+    fragmentShader: /* glsl */`
+      varying float vRim;
+      varying float vFade;
+      // (light enough to stand out by brightness alone, whatever the
+      // player's colour vision: dark red on leaves is one shade to many)
+      void main() {
+        float edge = smoothstep(.3, .85, vRim);
+        gl_FragColor = vec4(mix(vec3(1.0, .36, .28), vec3(1.0, .93, .9), edge), (.75 + .25 * edge) * vFade);
+      }
+    `,
+    transparent: true, depthWrite: false, depthFunc: THREE.GreaterDepth,
+    stencilWrite: true, stencilRef: 1, stencilFunc: THREE.EqualStencilFunc, stencilZPass: THREE.ZeroStencilOp,
+  });
+  mask.visible = ghost.visible = false;
+  return { mask, ghost };
+}
+// The mask and ghost of a mesh of residents: copies sharing its geometry and
+// instances, so they follow it wherever it is drawn
+export function addWalkerAlert(mesh, { mask, ghost }) {
+  const copies = [[mask, -1], [ghost, 2]].map(([material, order]) => {
+    const copy = new THREE.InstancedMesh(mesh.geometry, material, mesh.count);
+    copy.name = `${mesh.name}-${material.name}`; copy.renderOrder = order;
+    // (an instanced mesh with morphs needs its morph texture, though the
+    // shader picks the shape from the instance colour)
+    copy.instanceMatrix = mesh.instanceMatrix; copy.instanceColor = mesh.instanceColor; copy.morphTexture = mesh.morphTexture;
+    copy.boundingSphere = mesh.boundingSphere; copy.userData.ambientOcclusion = false;
+    mesh.add(copy);
+    return copy;
+  });
+  const dispose = mesh.dispose.bind(mesh);
+  mesh.dispose = () => { for (const copy of copies) { copy.morphTexture = null; copy.dispose(); } return dispose(); };
 }
 
 function hash(seed) {

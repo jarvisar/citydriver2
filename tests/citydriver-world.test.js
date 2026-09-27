@@ -60,6 +60,36 @@ test('the world streams detailed chunks around the car and keeps the skyline eve
   assert.equal(scene.getObjectByName('citydriver-roads'), undefined);
 });
 
+// Demolition's red residents rely on the draw order: every building before
+// the mask (-1), everything else after it, and a mask and ghost on every
+// chunk's residents, switched together with their glow
+test('the residents of every chunk carry the demolition warning, drawn between the buildings and the rest', () => {
+  const scene = new THREE.Scene(), world = new CitydriverWorld(scene);
+  try {
+    const start = journeyStart();
+    world.update(start.s, start.u);
+    while (world.pending.length) world.update(start.s, start.u);
+    let residents = 0;
+    for (const chunk of world.chunks.values()) {
+      for (const mesh of chunk.group.children) assert.ok(mesh.renderOrder === -2 || mesh.renderOrder >= 0, `${mesh.name} draws at ${mesh.renderOrder}`);
+      if (!chunk.peopleMesh) continue;
+      residents++;
+      const [mask, ghost] = chunk.peopleMesh.children;
+      assert.equal(mask.material, world.peopleAlert.mask); assert.equal(ghost.material, world.peopleAlert.ghost);
+      assert.equal(mask.instanceMatrix, chunk.peopleMesh.instanceMatrix);
+    }
+    assert.ok(residents >= 5, `${residents} chunks with residents`);
+    const glow = world.materials.residents.userData.alert;
+    world.setPeopleAlert(true, true);
+    assert.equal(glow.value, 1); assert.equal(world.peopleAlert.mask.visible, true); assert.equal(world.peopleAlert.ghost.visible, true);
+    // (with no stencil buffer the ghost would show through walls: glow only)
+    world.setPeopleAlert(true, false);
+    assert.equal(glow.value, 1); assert.equal(world.peopleAlert.ghost.visible, false); assert.equal(world.peopleAlert.mask.visible, false);
+    world.setPeopleAlert(false, true);
+    assert.equal(glow.value, 0); assert.equal(world.peopleAlert.ghost.visible, false);
+  } finally { world.dispose(); }
+});
+
 test('buildings block the car and the parks and water stay open', () => {
   const scene = new THREE.Scene(), world = new CitydriverWorld(scene);
   const car = new DrivingController(citydriverRoute, journeyStart(), 'taxi');

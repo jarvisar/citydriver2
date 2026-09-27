@@ -10,9 +10,10 @@ const stick = (left, right, axis) => {
 // indices are the xr-standard layout, including its empty touchpad slots.
 // The grips are the pad's bumpers: left drifts, right boosts. B pauses, and
 // so does Y except in free drive, where it gets in and out of cars, so no
-// single press leaves the headset; Exit VR is in the pause menu. On foot the
-// left stick walks, the right looks round, the left grip jumps and the
-// right grip or trigger sprints (see walkingInput).
+// single press leaves the headset; Exit VR is in the pause menu. The right
+// stick turns the view, round the car or the player. On foot the left stick
+// walks, the left grip jumps and the right grip or trigger sprints (see
+// walkingInput).
 export class XRInput {
   constructor(onAction) {
     this.onAction = onAction;
@@ -44,7 +45,9 @@ export class XRInput {
       // The helicopter climbs and descends on the right stick, or the right and left grips
       climb: Math.max(rise, button(right, 1) > .5 ? 1 : 0, 0),
       descend: Math.max(-rise, button(left, 1) > .5 ? 1 : 0, 0),
-      moveX: steer, moveY: ahead, lookX: left && right ? deadzone(right.axes[2]) : 0,
+      // (the right stick only turns: the headset looks up and down, and its
+      // up and down climbs in the helicopter)
+      moveX: steer, moveY: ahead, lookX: left && right ? deadzone(right.axes[2]) : 0, lookY: left && right ? deadzone(right.axes[3]) : 0,
       jump: button(left, 1) > .5, sprint: button(right, 1) > .5 || button(right, 0) > .5,
     };
     // (Y is the way back in a menu, as B is)
