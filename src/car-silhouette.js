@@ -1,5 +1,19 @@
 import * as THREE from 'three';
 
+// A resident's geometry (the player on foot is one, see Walker) carries every
+// hairstyle and palette as morphs, which a plain material cannot draw: its
+// outline is its first shape alone, made once and shared like the geometry.
+const outlines = new WeakMap();
+function outline(geometry) {
+  if (!geometry.morphAttributes.position) return geometry;
+  let shape = outlines.get(geometry);
+  if (!shape) {
+    shape = new THREE.BufferGeometry().setAttribute('position', geometry.attributes.position).setIndex(geometry.index);
+    shape.boundingSphere = geometry.boundingSphere; outlines.set(geometry, shape);
+  }
+  return shape;
+}
+
 // Reuse the car's geometry and world matrices: no render targets or building
 // queries. Only structures draw before the silhouette; other scenery and the
 // normal car draw afterward, so trees and vehicles cannot trigger it.
@@ -30,7 +44,7 @@ export class CarSilhouette {
       this.car = car;
       car?.traverse(source => {
         if (!source.isMesh) return;
-        const mesh = new THREE.Mesh(source.geometry, this.material);
+        const mesh = new THREE.Mesh(outline(source.geometry), this.material);
         mesh.matrixAutoUpdate = false;
         mesh.matrixWorldAutoUpdate = false;
         mesh.matrixWorld = source.matrixWorld;

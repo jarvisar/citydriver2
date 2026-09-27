@@ -18,6 +18,14 @@ const TILT_LOW = -.25, TILT_HIGH = 1.05, LOOK_REST = 1.5, LOOK_MOVING = 2, LOOK_
 const ZOOM_NEAR = .45, ZOOM_FAR = 2, ZOOM_RATE = 10;
 // However it is turned, it keeps this far over the ground under it
 const GROUND_CLEAR = .6;
+// Someone on foot (see Walker) says how much closer and lower to frame them,
+// as a share of a car's distances (`chaseScale`), which the camera eases to
+// at SCALE_RATE as they get out or in. It follows them on a leash
+// (`leash`) rather than swinging round behind: it turns only as they walk
+// across its view (`velocity`), so walking toward it shows their face
+// instead of spinning it round, as Hit & Run's and Mario 64's cameras do.
+// The mouse turns it for good.
+const SCALE_RATE = 3;
 // (eases toward a goal, and lands on it exactly, so the camera comes back bit for bit)
 const settle = (value, goal, rate, dt) => {
   const next = THREE.MathUtils.damp(value, goal, rate, dt);
@@ -48,6 +56,9 @@ export class ThirdPersonCamera {
     this.lookYaw = 0; this.lookPitch = 0; this.rested = 0;
     this.zoom = 1; this.zoomTarget = 1;
     this.axis = new THREE.Vector3();
+    // How far toward framing someone on foot it has come (see SCALE_RATE),
+    // and the lift it has come to
+    this.scale = 1; this.lift = 0;
   }
   // Turns the camera round the car by these many radians: to the right, and
   // up to look down on it
@@ -80,6 +91,9 @@ export class ThirdPersonCamera {
     // A flying machine says how far to look down, 0 on the ground to 1 high up
     const dip = THREE.MathUtils.clamp(car.userData.chaseDip ?? 0, 0, 1);
     this.dip = this.initialized ? THREE.MathUtils.damp(this.dip, dip, 1.5, dt) : dip;
+    const framing = car.userData.chaseScale ?? 1, raised = car.userData.chaseLift ?? 0;
+    this.scale = this.initialized ? settle(this.scale, framing, SCALE_RATE, dt) : framing;
+    this.lift = this.initialized ? settle(this.lift, raised, SCALE_RATE, dt) : raised;
     const fov = this.baseFov * (1 + (RUSH_FOV - 1) * this.rush);
     if (Math.abs(fov - this.camera.fov) > .01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
     // Look partly along travel during a slide so the exit stays in view and
@@ -91,10 +105,17 @@ export class ThirdPersonCamera {
       this.heading = heading; this.headingVelocity = 0;
       this.pitch = pitch; this.height = car.position.y; this.zoom = this.zoomTarget; this.initialized = true;
     } else {
+      if (car.userData.leash) {
+        // On a leash: turned toward where they have walked to from where the
+        // camera stood, and wherever the mouse has turned it
+        this.heading += this.lookYaw; this.lookYaw = 0; this.headingVelocity = 0;
+        const velocity = car.userData.velocity, distance = (14 + 2.2 * this.rush) * this.scale;
+        if (velocity && dt > 0) this.heading = Math.atan2(Math.sin(this.heading) * distance + velocity.x * dt, Math.cos(this.heading) * distance - velocity.z * dt);
+      }
       // A critically damped spring eases into and out of turns. Limit its error
       // so even a sudden U-turn produces a controlled orbit (about 125 deg/s).
       // Small steps keep the speed limit consistent across display refresh rates.
-      for (let remaining = dt; remaining > 1e-8;) {
+      else for (let remaining = dt; remaining > 1e-8;) {
         const step = Math.min(remaining, 1 / 120);
         const difference = Math.atan2(Math.sin(heading - this.heading), Math.cos(heading - this.heading));
         const frequency = 10, change = THREE.MathUtils.clamp(difference, -.43, .43);
@@ -116,16 +137,16 @@ export class ThirdPersonCamera {
     }
     const yaw = this.heading + this.lookYaw;
     this.forward.set(Math.sin(yaw), 0, -Math.cos(yaw));
-    const distance = 14 + 2.2 * this.rush;
+    const scale = this.scale, distance = (14 + 2.2 * this.rush) * scale;
     this.camera.position.copy(car.position).addScaledVector(this.forward, -distance);
     // A lower chase position and a higher, farther aim show more of the road
     // and horizon, with the car sitting in the lower part of the frame.
     // A tall machine lifts the camera with it, so the road stays in view over its roof.
-    const lift = car.userData.chaseLift ?? 0;
-    this.camera.position.y = this.height + 4.5 + lift - Math.sin(this.pitch) * distance + this.dip * DIP_RISE;
-    this.target.copy(car.position).addScaledVector(this.forward, 7);
-    this.target.y = this.height + 2.2 + lift * .35 + Math.sin(this.pitch) * 7 - this.dip * DIP_DROP;
-    this.pivot.set(car.position.x, this.height + PIVOT + lift, car.position.z);
+    const lift = this.lift;
+    this.camera.position.y = this.height + 4.5 * scale + lift - Math.sin(this.pitch) * distance + this.dip * DIP_RISE;
+    this.target.copy(car.position).addScaledVector(this.forward, 7 * scale);
+    this.target.y = this.height + 2.2 * scale + lift * .35 + Math.sin(this.pitch) * 7 * scale - this.dip * DIP_DROP;
+    this.pivot.set(car.position.x, this.height + PIVOT * scale + lift, car.position.z);
     // The mouse's tilt and the wheel's distance turn and scale the camera and
     // its aim together about the pivot, so the car keeps its place in the
     // frame. (The axis points to the car's left: a positive tilt raises it.)

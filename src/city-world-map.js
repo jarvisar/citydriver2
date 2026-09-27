@@ -1,5 +1,5 @@
 import { CITY, cityDistrict } from './world/city.js';
-import { CityMapCache } from './city-map.js';
+import { CityMapCache, drawParkedCar } from './city-map.js';
 
 // The whole city on one page for the pause screen: every block tinted by its
 // district, each neighbourhood named where its blocks are, downtown, and the
@@ -66,7 +66,8 @@ export class WorldMap {
     if (u < b.minX || u > b.maxX || s < b.minY || s > b.maxY || this.city.mask.at(u, s)) return null;
     return cityDistrict(s, u);
   }
-  draw(canvas, vehicle) {
+  // (`parked`: the car the player left, { s, u }, if there is one: see OnFoot)
+  draw(canvas, vehicle, parked = null) {
     const width = canvas.clientWidth || canvas.width, { scale, height, toCanvas } = this.frame(width);
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
     const pixelWidth = Math.round(width * ratio), pixelHeight = Math.round(height * ratio);
@@ -104,6 +105,7 @@ export class WorldMap {
         ctx.fillStyle = label.downtown ? '#ffd238' : '#f5f4e9'; ctx.fillText(line, x, top + i * lineHeight);
       });
     }
+    if (parked) drawParkedCar(ctx, ...toCanvas(parked.u, parked.s), small ? 7 : 9);
     // The car: a white arrow pointing the way it faces (heading 0 is north)
     if (vehicle) {
       const [x, y] = toCanvas(vehicle.u, vehicle.s);

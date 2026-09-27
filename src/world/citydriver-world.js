@@ -627,9 +627,11 @@ export class CityChunk {
       const x = pose.x - this.east, z = -(pose.s - this.start), pace = paceAt(walker, time);
       // The slower they go, the less they bob; standing still, barely. Waiting
       // for someone knocked over or catching up, they turn to watch them;
-      // going back to meet them, they face that way.
+      // going back to meet them, they face that way. Shoved aside by the
+      // player on foot, they look round at them.
       let look = null;
       if (pace < 0) look = pose.yaw + Math.PI;
+      else if (walker.shovedBy && time < walker.shovedBy.until) look = Math.atan2(x - walker.shovedBy.x, z - walker.shovedBy.z);
       else if (standing(walker, time) && partner?.drawn && (partner.away || !standing(partner, time))) look = Math.atan2(x - partner.drawn.x, z - partner.drawn.z);
       const bob = .3 + .7 * Math.min(1, Math.abs(pace) / walker.speed);
       residentItem.p[0] = x; residentItem.p[1] = PAVEMENT_LEVEL + motion.lift * bob; residentItem.p[2] = z;

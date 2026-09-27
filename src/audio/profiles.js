@@ -30,6 +30,8 @@ export const ENGINES = {
   // No gears: a turbine that spools with the rotor, under the blades' beat,
   // `rotor` times a second at full speed (see DriveSoundModel)
   helicopter: voice({ idle: 1200, redline: 2800, cylinders: 6, gears: 1, body: .55, rasp: .3, intake: .5, harmonics: [1, .3, .45, .12, .2, .06], rotor: 17 }),
+  // On foot (see Walker): no engine at all, only footsteps
+  walker: voice({ rasp: 0, intake: 0, silent: true }),
 };
 const ALIASES = { auto: 'city', taxiGT: 'sports', taxiFormula: 'formula' };
 export const engineFor = car => ENGINES[ALIASES[car] ?? car] ?? ENGINES.city;

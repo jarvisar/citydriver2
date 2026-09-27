@@ -22,7 +22,8 @@ export class GamepadInput {
   }
   // `menu` is 'pause' for the pause screen and the results card, 'welcome' for
   // the title screen, truthy for a modal chooser, and false during a drive.
-  update({ blocked = false, paused = false, menu = false } = {}) {
+  // In free drive (`freeDrive`) Y gets in and out of cars; in a run it resets the car.
+  update({ blocked = false, paused = false, menu = false, freeDrive = false } = {}) {
     let pads;
     try { pads = Array.from(this.getGamepads()).filter(pad => pad?.connected); }
     catch { pads = []; } // Unsupported or restricted Gamepad API: keep other inputs available.
@@ -47,7 +48,7 @@ export class GamepadInput {
     buttons[19] = (pad.axes[1] ?? 0) < -.5;
     buttons[20] = (pad.axes[1] ?? 0) > .5;
     const pressed = index => buttons[index] && !this.previousButtons[index];
-    const steer = deadzone(pad.axes[0]), rise = -deadzone(pad.axes[3], .2);
+    const steer = deadzone(pad.axes[0]), rise = -deadzone(pad.axes[3], .2), dpad = buttonValue(pad, 15) - buttonValue(pad, 14);
     const state = {
       forward: Math.max(deadzone(buttonValue(pad, 7), .08), buttonValue(pad, 0)),
       brake: Math.max(deadzone(buttonValue(pad, 6), .08), buttonValue(pad, 1)),
@@ -59,6 +60,12 @@ export class GamepadInput {
       // The helicopter climbs and descends on the right stick, or R1 / RB and L1 / LB
       climb: Math.max(rise, buttonValue(pad, 5), 0),
       descend: Math.max(-rise, buttonValue(pad, 4), 0),
+      // On foot the left stick walks, the right looks round, A / Cross or
+      // L1 / LB jumps and RT / R2 or R1 / RB sprints (see walkingInput)
+      moveX: Math.max(-1, Math.min(1, steer + dpad)), moveY: -deadzone(pad.axes[1]),
+      lookX: deadzone(pad.axes[2], .2), lookY: deadzone(pad.axes[3], .2),
+      jump: Math.max(buttonValue(pad, 0), buttonValue(pad, 4)),
+      sprint: Math.max(deadzone(buttonValue(pad, 7), .08), buttonValue(pad, 5)),
     };
     const active = Object.values(state).some(Boolean) || buttons.some(Boolean);
     if (blocked || this.requireNeutral) {
@@ -136,6 +143,6 @@ export class GamepadInput {
     // D-pad Down is fullscreen while driving; in a menu it moves the focus
     if (fullscreen) this.onAction('fullscreen');
     if (view) this.onAction('view');
-    if (reset) this.onAction('reset');
+    if (reset) this.onAction(freeDrive ? 'use' : 'reset');
   }
 }

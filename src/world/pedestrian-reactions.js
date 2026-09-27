@@ -187,6 +187,16 @@ function crossesBox(ax, az, bx, bz, width, length) {
 // A matrix facing world direction (dx, dz): people's faces look down their -z
 const facing = (dx, dz, out) => out.setFromAxisAngle(UP, Math.atan2(-dx, -dz));
 
+// The player on foot (see Walker) shoves people aside rather than knocking
+// them flying: whoever they walk into gives way, stepping ASIDE out of the
+// way the player is going as much as back, and returns to their walk at
+// RETURN m/s, no further than SHOVED m off it. Pushing through someone slows
+// the player at RESIST (a share a second of their way toward them).
+// Sprinting into someone faster than TACKLE (m/s) bowls them over, as a car
+// does, their weight behind it (CHARGE, tonnes). Someone shoved turns to
+// look for LOOK s.
+const ASIDE = 1, RETURN = 1.1, SHOVED = 2.5, RESIST = 5, TACKLE = 5.5, CHARGE = .35, LOOK = 1.4;
+
 // Loose furniture knocks people over too, and so does anyone already sent
 // flying: a piece whose fastest point moves faster than FLUNG (m/s), with
 // enough behind it (tonnes times m/s: a bin at 2 m/s, a cafe chair only
@@ -201,7 +211,7 @@ const pieceAt = new THREE.Vector3();
 // reused: nothing is flying most of the time.
 export class PedestrianContacts {
   constructor() {
-    this.history = new WeakMap(); this.cars = []; this.count = 0; this.pieces = []; this.flying = 0; this.props = null; this.player = null; this.traffic = null;
+    this.history = new WeakMap(); this.cars = []; this.count = 0; this.pieces = []; this.flying = 0; this.props = null; this.player = null; this.traffic = null; this.onFoot = null;
     // Told of each person knocked flying: `(by, at)`, `by` the player's car,
     // a loose `piece`, a `loose` car (knocked off its lane or out of its bay)
     // or ordinary `traffic`, and `at` where they stood (see DemolitionRun)
@@ -210,7 +220,9 @@ export class PedestrianContacts {
   // `props` (LooseProps) takes those knocked flying; without it, nobody is
   update(player, traffic, time, props = null) {
     this.count = 0; this.flying = 0; this.player = player; this.traffic = traffic; this.props = props;
-    this.add(player, time);
+    // (the player on foot is no car: see shove)
+    this.onFoot = player?.walker ? player : null;
+    if (!this.onFoot) this.add(player, time);
     if (traffic?.enabled) {
       for (const car of traffic.vehicles) this.add(car, time);
       // (and parked cars knocked loose, while they are out of their bays)
@@ -317,7 +329,9 @@ export class PedestrianContacts {
       rejoin?.(person, body.p.x, -body.p.z, time);
     }
     const away = this.away(person, matrix, frame, time);
-    const at = position.setFromMatrixPosition(matrix).applyMatrix4(frame), car = this.props && this.hit(person, at.x, at.y, at.z, radius);
+    // Shoved aside by the player on foot, or at a charge bowled over
+    const charged = !away && this.onFoot ? this.shove(person, matrix, frame, radius, time) : false;
+    const at = position.setFromMatrixPosition(matrix).applyMatrix4(frame), car = this.props && (charged ? { car: this.player } : this.hit(person, at.x, at.y, at.z, radius));
     if (!car) return away;
     world.multiplyMatrices(frame, matrix);
     // Knocked flying: whatever they were doing, a body takes their place.
@@ -325,12 +339,52 @@ export class PedestrianContacts {
     const piece = car.body, player = !piece && car.car === this.player;
     const motion = piece ? this.props.motionOf(piece, car.points[car.hit], car.points[car.hit + 1], car.points[car.hit + 2]) : player ? this.props.carOf(this.player) : this.traffic.motion(car.car);
     if (!player && !piece) { motion.y = car.y; motion.height = 1.5; }
+    if (charged) motion.mass = CHARGE;
     const { body, blow } = this.props.person(cityWalker, world, motion);
     this.onKnock?.(piece ? 'piece' : player ? 'player' : car.car.loose || car.car.parked ? 'loose' : 'traffic', { x: at.x, y: at.y, z: at.z });
     if (player && blow) this.player.strike(blow.x, blow.z, blow.spin, Math.hypot(blow.x, blow.z));
     if (piece && blow) { piece.v.x += blow.x; piece.v.z += blow.z; }
     person.body = body; person.rise = person.back = null;
     return true;
+  }
+  // The player on foot against someone drawn by `matrix` (in `frame`): they
+  // give way, moved out of the player's path (and one pushed as far as
+  // SHOVED will go no further: the player is stopped instead), and turn to
+  // look (`shovedBy`, where the player stood in their frame). What a shove
+  // left of them fades as they step back onto their walk. True if the
+  // player charged into them, to be bowled over as by a car.
+  shove(person, matrix, frame, radius, time) {
+    const e = matrix.elements, f = frame.elements, player = this.onFoot, p = player.groundedPosition;
+    let shove = person.shove;
+    const elapsed = shove ? Math.max(0, time - shove.time) : 1 / 60, dt = Math.min(.1, elapsed);
+    if (shove) {
+      const far = Math.hypot(shove.x, shove.z), back = Math.max(0, far - elapsed * RETURN) / (far || 1);
+      shove.x *= back; shove.z *= back; shove.time = time;
+      if (back === 0) shove = person.shove = null;
+    }
+    const x = e[12] + f[12] + (shove?.x ?? 0), z = e[14] + f[14] + (shove?.z ?? 0), reach = radius + player.spec.radius;
+    const dx = x - p.x, dz = z - p.z, distance = Math.hypot(dx, dz);
+    if (distance < reach && Math.abs(e[13] + f[13] - p.y) < 1.5) {
+      const nx = distance > 1e-6 ? dx / distance : 1, nz = distance > 1e-6 ? dz / distance : 0, v = player.velocity, speed = Math.hypot(v.x, v.z);
+      if (speed > TACKLE && v.x * nx + v.z * nz > speed * .5) { person.shove = null; return true; }
+      shove ??= person.shove = { x: 0, z: 0, time };
+      // Out of the way the player is going: back from them, and aside, to
+      // whichever side of their path they were on
+      let ax = nx, az = nz;
+      if (speed > .1) {
+        const along = (nx * v.x + nz * v.z) / speed, side = Math.sign(nx * v.z - nz * v.x) || 1;
+        ax += side * v.z / speed * ASIDE * Math.max(0, along); az -= side * v.x / speed * ASIDE * Math.max(0, along);
+        const length = Math.hypot(ax, az); ax /= length; az /= length;
+      }
+      const push = (reach - distance) / Math.max(.3, ax * nx + az * nz);
+      shove.x += ax * push; shove.z += az * push;
+      const far = Math.hypot(shove.x, shove.z), over = Math.max(0, far - SHOVED);
+      if (over) { shove.x *= SHOVED / far; shove.z *= SHOVED / far; }
+      player.walker.brush(nx, nz, over, Math.exp(-RESIST * dt));
+      person.shovedBy = { x: p.x - f[12], z: p.z - f[14], until: time + LOOK };
+    }
+    if (shove) { e[12] += shove.x; e[14] += shove.z; }
+    return false;
   }
   // Getting up, then walking back to where they would be now (where they
   // rejoin their walk, which waits for them, or their own spot), briskly

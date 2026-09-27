@@ -88,7 +88,11 @@ body:not([data-mode=free]) :is(.city-hud, .notebook-panel, .controls) { display:
 body:not([data-mode=free]) .topbar { justify-content: flex-end; }
 body:not([data-mode=free]) :is(#city-stamps, .city-guide-stop) { display: none; }
 body[data-mode=taxi] #welcome .start-button:first-child { background: #ffd238; color: #172229; }
-body[data-controller=true] #taxi-buttons { display: none; }
+/* A controller has its own buttons for these, but is still told it can get in or out */
+body[data-controller=true] #taxi-buttons > :not(#use-car) { display: none; }
+#use-car .pad-hint, body[data-controller=true] #use-car .key-hint { display: none; }
+body[data-controller=true] #use-car .pad-hint { display: inline-block; }
+#use-car small:empty { display: none; }
 body:not([data-mode=free]) #toast { top: calc(var(--ui-top) + 120px); }
 #app:has(#welcome:not(.hidden), #pause-overlay:not([hidden]), dialog[open], #taxi-results:not([hidden]), #demolition-results:not([hidden])) :is(.taxi-hud, .taxi-task, .taxi-dash, #taxi-buttons) { visibility: hidden; pointer-events: none; }
 #app:has(#taxi-results:not([hidden]), #demolition-results:not([hidden])) :is(.topbar, .bottom-bar, .touch-controls, .city-guide, #toast) { visibility: hidden; pointer-events: none; }

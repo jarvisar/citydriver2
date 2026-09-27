@@ -8,6 +8,7 @@ import { createShapeCar } from './car-models.js';
 import { createFormulaCar } from './formula-model.js';
 import { createSpecialCar } from './special-models.js';
 import { createHelicopter, Helicopter } from './helicopter.js';
+import { createWalkerModel, Walker, WALKER_SPEC, WALKER_STATS } from './walker.js';
 import { collisionImpulse, footprintMass, heft, leadingPoint, rock, rockFrom, SCENERY_SURFACE } from './impact.js';
 import { steerCurve, steeringResponse, driftDirection, turnRate, corneringLoad, travelHeading } from './handling.js';
 
@@ -179,8 +180,10 @@ export class DrivingController {
     this.night = false; this.journeyId = 'coast';
     // The helicopter's pilot flies it instead while it is the chosen car (see
     // helicopter.js); `airborne` is true once it is up above the traffic, and
-    // `scenery` (the world's chunks) holds the roofs it can set down on.
-    this.pilot = null; this.airborne = false; this.scenery = null;
+    // `scenery` (the world's chunks) holds the roofs it can set down on. Out
+    // of the car, the walker walks the player instead (see walker.js and
+    // stepOut), and `props` (LooseProps) takes them when a car knocks them over.
+    this.pilot = null; this.airborne = false; this.scenery = null; this.walker = null; this.props = null;
     this.setCar(carId, { rebuild: false, paint });
     this.s = state.s ?? 24; this.u = state.u ?? 2.4; this.speed = 0; this.steer = 0; this.heading = state.heading ?? route.frame(this.s).angle;
     this.distance = state.distance ?? 0; this.pitch = 0; this.roll = 0; this.previousSpeed = 0; this.groundedPosition = new THREE.Vector3();
@@ -193,7 +196,7 @@ export class DrivingController {
     this.knock = { x: 0, z: 0, spin: 0 }; this.jolt = { pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 };
     // The turn the driver is making, and how shaken the view is (0 to 1).
     this.yawRate = 0; this.trauma = 0; this.pushing = 0;
-    this.audioTelemetry = { speed: 0, throttle: 0, brake: 0, offRoad: 0, steer: 0, handbrake: 0, slip: 0, impact: 0, impactSerial: 0, scrape: 0, boost: 0, bump: 0, bumpSerial: 0 };
+    this.audioTelemetry = { speed: 0, throttle: 0, brake: 0, offRoad: 0, steer: 0, handbrake: 0, slip: 0, impact: 0, impactSerial: 0, scrape: 0, boost: 0, bump: 0, bumpSerial: 0, step: 0, stepSerial: 0 };
     const pose = () => ({ position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), bodyPitch: 0, bodyRoll: 0, wheelSpin: 0, steer: 0, slip: 0 });
     this.previousPose = pose(); this.currentPose = pose();
     this.update(0, {});
@@ -202,14 +205,18 @@ export class DrivingController {
   // Paint belongs to the car being fitted, so it is passed in rather than kept.
   setCar(id, { rebuild = true, paint = null } = {}) {
     const carId = CARS[id] ? id : DEFAULT_CAR;
-    const previous = this.car, parent = previous?.parent ?? null, flew = Boolean(this.pilot);
     this.disposeModel?.();
+    this.fit(carId, createCar(carId), { rebuild, paint });
+  }
+  // Into a machine whose model (as createCar makes one) is already built:
+  // the last one's model is the caller's to dispose of or to keep.
+  fit(carId, { rotors, ...model }, { rebuild = true, paint = null } = {}) {
+    const previous = this.car, parent = previous?.parent ?? null, flew = Boolean(this.pilot);
     previous?.removeFromParent();
-    this.carId = carId;
-    const { rotors, ...model } = createCar(carId);
+    this.carId = carId; this.model = model;
     Object.assign(this, model);
     const entry = carEntry(carId);
-    this.pilot = rotors ? new Helicopter(this, rotors) : null; this.airborne = false;
+    this.pilot = rotors ? new Helicopter(this, rotors) : null; this.walker = null; this.airborne = false;
     const { width, length, cabin, cabinZ, cabinY = 1.22, drop = 0, eye, chaseLift = 0 } = entry.shape;
     // Center the view just in front of the windshield for every body shape.
     // Traffic-shaped cabins slope back by .24 m at the top of the glass, and a
@@ -231,6 +238,25 @@ export class DrivingController {
     this.pilot?.takeOver(this.heading, this.speed, this.groundedPosition.y);
     if (flew && !this.pilot) this.reset(); else this.update(0, {});
   }
+  // Out of the car, on foot where the controller stands (see OnFoot, which
+  // puts it by the car's door): the car's model is handed back, as it
+  // stands, with what it takes to get back into it (see stepIn), and the
+  // controller walks one of the city's residents instead (see Walker).
+  stepOut(appearance) {
+    const kept = { carId: this.carId, model: this.model, paint: this.paintColor }, parent = this.car.parent;
+    const model = createWalkerModel(appearance);
+    this.car = null; this.fit(WALKER_SPEC.name, model, { rebuild: false });
+    parent?.add(this.car);
+    this.spec = WALKER_SPEC; this.stats = WALKER_STATS; this.walker = new Walker(this, model);
+    this.speed = 0; this.knock.x = this.knock.z = this.knock.spin = 0; this.trauma = 0; this.pushing = 0;
+    this.walker.takeOver(); this.update(0, {});
+    return kept;
+  }
+  // Back into a car stepOut handed back, where the controller now stands
+  stepIn({ carId, model, paint }) {
+    this.disposeModel?.();
+    this.fit(carId, model, { paint });
+  }
   // A garage colour, or null for the finish the car left the factory in.
   setPaint(color) { this.paintColor = color ?? null; this.updatePaint(); }
   updatePaint(dt = 0) {
@@ -242,7 +268,7 @@ export class DrivingController {
     } else this.paintCar(this.paintColor);
   }
   reset() {
-    this.pilot?.land();
+    this.pilot?.land(); this.walker?.takeOver();
     this.speed = 0; this.steer = 0; this.weight = 0; this.load = 0; this.driftArmed = 0; this.knock.x = this.knock.z = this.knock.spin = 0;
     Object.assign(this.jolt, { pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 }); this.yawRate = 0; this.trauma = 0; this.pushing = 0; this.audioTelemetry.scrape = 0;
     // A generated street network has no lane at u = 2.4: settle into the nearest lane instead.
@@ -275,7 +301,7 @@ export class DrivingController {
     for (const key of ['bodyPitch', 'bodyRoll', 'wheelSpin', 'steer', 'slip']) target[key] = source[key];
   }
   // Which way the car is really going: its own drive, and any knock on top.
-  get velocity() { if (this.pilot) return this.pilot.velocity; const heading = this.slideHeading ?? this.heading; return { x: Math.sin(heading) * this.speed + this.knock.x, z: -Math.cos(heading) * this.speed + this.knock.z }; }
+  get velocity() { if (this.pilot) return this.pilot.velocity; if (this.walker) return this.walker.velocity; const heading = this.slideHeading ?? this.heading; return { x: Math.sin(heading) * this.speed + this.knock.x, z: -Math.cos(heading) * this.speed + this.knock.z }; }
   // A move in world metres, in the road's terms, as a step of driving is.
   shift(dx, dz) {
     const frame = this.route.frame(this.s);
@@ -298,6 +324,7 @@ export class DrivingController {
   // The body rocks with it (see rock in impact.js).
   strike(dvx, dvz, spin, impact, scrape = 0) {
     if (this.pilot) { this.pilot.strike(dvx, dvz, spin, impact, scrape); return; }
+    if (this.walker) { this.walker.strike(dvx, dvz, spin, impact); return; }
     if (impact > TOUCH) {
       this.audioTelemetry.impact = impact; this.audioTelemetry.impactSerial++;
       this.trauma = Math.min(1, this.trauma + (impact - TOUCH) / 28);
@@ -315,6 +342,7 @@ export class DrivingController {
   // that is not smooth motion.
   placeAfterCollision() {
     if (this.pilot) { this.pilot.pose(); return; }
+    if (this.walker) { this.walker.pose(); return; }
     const p = this.route.position(this.s, this.u);
     this.groundedPosition.set(p.x, p.y, p.z);
     this.currentPose.position.copy(this.groundedPosition);
@@ -324,6 +352,7 @@ export class DrivingController {
   // Another car gives way as far as its weight allows. This one is put back
   // outside it and takes its share of the blow (see impact.js and strike).
   resolveTrafficCollision(dx, dz, dvx = 0, dvz = 0, spin = 0, impact = Math.hypot(dvx, dvz), scrape = 0) {
+    if (this.walker) { this.walker.resolveTrafficCollision(dx, dz, dvx, dvz, spin, impact); return; }
     this.strike(dvx, dvz, spin, impact, scrape); this.pushing = PUSHING;
     this.shift(dx, dz);
     if (!this.freeDriving) this.u = clamp(this.u, ...this.route.bounds(this.s));
@@ -344,6 +373,7 @@ export class DrivingController {
   // slides off it instead of grinding to a halt against it.
   resolveSceneryCollision(nx, nz, depth, dt, point = null) {
     if (this.pilot) { this.pilot.resolveSceneryCollision(nx, nz, depth, point); return; }
+    if (this.walker) { this.walker.resolveSceneryCollision(nx, nz, depth); return; }
     const car = this.motion(), normal = { x: nx, z: nz };
     point ??= leadingPoint(car, normal);
     const blow = collisionImpulse(car, { x: point.x, z: point.z, vx: 0, vz: 0, mass: Infinity }, normal, point, SCENERY_SURFACE);
@@ -394,11 +424,12 @@ export class DrivingController {
       if (w.front) w.pivot.rotation.y = -steer * .38;
       w.wheel.rotation.x = w.hub.rotation.x = spin * (w.spinRatio ?? 1);
     }
-    this.pilot?.animate(spin);
+    this.pilot?.animate(spin); this.walker?.animate(spin, origin);
   }
   update(dt, input) {
     if (this.rainbow) this.updatePaint(dt);
     if (this.pilot) { this.pilot.update(dt, input); return; }
+    if (this.walker) { this.walker.update(dt, input); return; }
     this.copyPose(this.previousPose, this.currentPose);
     const { frame: roadFrame, position: positionAt } = this.route;
     const stats = this.stats;

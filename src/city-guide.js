@@ -1,4 +1,4 @@
-import { CityMapCache } from './city-map.js';
+import { CityMapCache, drawParkedCar } from './city-map.js';
 import { CITY_PLACES, PLACE_TYPES } from './world/city-places.js';
 import { CityExploration } from './city-exploration.js';
 import { taxiRoute } from './taxi-run.js';
@@ -63,7 +63,7 @@ export class CityGuide {
     if (this.taxi?.running) { this.updateTaxi(); return; }
     attribute(this.canvas, 'title', 'Local street map');
     hide($('taxi-offer'), true);
-    attribute(this.canvas, 'aria-label', 'Local street map. Your heading is up; the white arrow is your car.');
+    attribute(this.canvas, 'aria-label', `Local street map. Your heading is up; the white arrow is ${vehicle.walker ? 'you' : 'your car'}.${this.onFoot?.parked ? ' The car in a teal ring is your own, where you left it.' : ''}`);
     if (this.expanded) this.draw(vehicle);
   }
   updateTaxi() {
@@ -122,6 +122,17 @@ export class CityGuide {
         ctx.save(); ctx.fillStyle = '#17262f'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(place.passengers), x, y); ctx.restore();
       }
       if (selected) { ctx.strokeStyle = '#fff4dc'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.stroke(); }
+    }
+    // The car the player left, or where it is from the edge, pointed at
+    const parked = this.onFoot?.parked;
+    if (parked) {
+      const [x, y] = point(parked), dx = x - width / 2, dy = y - height / 2, edge = 10;
+      const factor = Math.min(1, (width / 2 - edge) / Math.max(Math.abs(dx), .001), (height / 2 - edge) / Math.max(Math.abs(dy), .001));
+      if (factor < 1) {
+        ctx.save(); ctx.translate(width / 2 + dx * factor, height / 2 + dy * factor); ctx.rotate(Math.atan2(dy, dx));
+        ctx.fillStyle = '#5fd0c0'; ctx.beginPath(); ctx.moveTo(9, 0); ctx.lineTo(5, -3.5); ctx.lineTo(5, 3.5); ctx.closePath(); ctx.fill(); ctx.restore();
+      }
+      drawParkedCar(ctx, width / 2 + dx * factor, height / 2 + dy * factor, factor < 1 ? 5 : 6.5);
     }
     if (target) {
       const [x, y] = point(target), dx = x - width / 2, dy = y - height / 2;

@@ -31,6 +31,7 @@ export class DriveSoundModel {
   update(telemetry = {}, delta = 1 / 60) {
     const dt = clamp(finite(delta), 0, .1);
     if (this.profile.rotor) return this.rotor(telemetry, dt);
+    if (this.profile.silent) return this.quiet();
     const { idle, redline } = this.profile, ratios = this.ratios, last = ratios.length - 1;
     const signedSpeed = clamp(finite(telemetry.speed), -120, 120);
     const speed = Math.abs(signedSpeed), reverse = signedSpeed < -.3;
@@ -71,6 +72,15 @@ export class DriveSoundModel {
       windLevel: Math.pow(motion, 1.7) * .12,
       reverseLevel: reverse ? Math.min(1, speed / 5) * .035 : 0,
       reverseFrequency: 260 + speed * 65,
+    };
+  }
+  // On foot: no engine, no tyres, no wind to speak of (the footsteps are
+  // events: see DriveAudio.effects)
+  quiet() {
+    this.rpm = this.profile.idle; this.load = 0;
+    return {
+      rpm: this.rpm, load: 0, gear: 0, motion: 0, boost: 0, shiftSerial: this.shiftSerial, liftSerial: this.liftSerial, clutch: 1,
+      engineLevel: 0, engineCutoff: 380, roadLevel: 0, roughLevel: 0, windLevel: 0, reverseLevel: 0, reverseFrequency: 260,
     };
   }
   // The helicopter: the turbine's revs follow the rotor spooling up

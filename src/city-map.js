@@ -2,6 +2,20 @@ import { CITY } from './world/city.js';
 import { placeForBlock } from './city-exploration.js';
 import { cityIslands } from './world/city-islands.js';
 
+// The car the player left parked (see OnFoot), on either map: a car in a
+// ring of free drive's teal, `radius` pixels across, at (x, y)
+export function drawParkedCar(ctx, x, y, radius = 6.5) {
+  const k = radius / 6.5;
+  ctx.save(); ctx.translate(x, y);
+  ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fillStyle = '#17262f'; ctx.fill();
+  ctx.lineWidth = 1.8 * k; ctx.strokeStyle = '#5fd0c0'; ctx.stroke();
+  ctx.fillStyle = '#f5f4e9';
+  ctx.fillRect(-3.6 * k, -.5 * k, 7.2 * k, 2.3 * k); ctx.fillRect(-2 * k, -2.5 * k, 4 * k, 2.2 * k);
+  ctx.fillStyle = '#17262f';
+  for (const side of [-1, 1]) { ctx.beginPath(); ctx.arc(side * 2 * k, 1.9 * k, .95 * k, 0, Math.PI * 2); ctx.fill(); }
+  ctx.restore();
+}
+
 // The local street map: the generated roads, water, parks and lots drawn
 // from cached Path2D shapes in world coordinates, so each redraw is a few
 // fills and strokes however far the car has come. A venue with a block to

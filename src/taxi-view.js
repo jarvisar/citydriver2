@@ -188,7 +188,7 @@ export class TaxiView {
     hide($('taxi-dash'), !run.running);
     if (!run.running) {
       if (!free) return;
-      text('taxi-boost-state', vehicle.boosting ? 'Boosting' : 'Hold');
+      text('taxi-boost-state', vehicle.boosting ? vehicle.walker ? 'Sprinting' : 'Boosting' : 'Hold');
       data('taxi-buttons', 'boosting', String(vehicle.boosting));
       data('taxi-buttons', 'drifting', String(vehicle.drifting));
       return;

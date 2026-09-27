@@ -21,7 +21,7 @@ export class DriveAudio {
     // Whether sound was on last visit: it comes back on at the first click or key
     try { this.remembered = storage()?.getItem(SOUND_KEY) === 'on'; } catch { this.remembered = false; }
     this.trafficSlots = Array(4).fill(null); this.nearby = [];
-    this.impactSerial = 0; this.bumpSerial = 0; this.shiftSerial = 0; this.liftSerial = 0; this.lastImpact = -Infinity;
+    this.impactSerial = 0; this.bumpSerial = 0; this.stepSerial = 0; this.shiftSerial = 0; this.liftSerial = 0; this.lastImpact = -Infinity;
     this.boosting = false; this.deck = null; this.duckUntil = -Infinity; this.lastHonk = -Infinity; this.honks = new WeakMap();
     // Where the car is, eased so the soundscape changes as smoothly as the streets do
     this.place = { urban: .6, green: .1, water: 0, sea: 0 };
@@ -164,6 +164,7 @@ export class DriveAudio {
       this.shiftSerial = state.shiftSerial; this.liftSerial = state.liftSerial; this.boosting = Boolean(telemetry.boost);
       if (Number.isFinite(telemetry.impactSerial)) this.impactSerial = telemetry.impactSerial;
       if (Number.isFinite(telemetry.bumpSerial)) this.bumpSerial = telemetry.bumpSerial;
+      if (Number.isFinite(telemetry.stepSerial)) this.stepSerial = telemetry.stepSerial;
       if (scene?.props) scene.props.sounds.length = 0;
     }
     if (!force && (!this.audible || this.context.state !== 'running' || now - this.lastUpdate < 1 / 30)) return;
@@ -255,6 +256,12 @@ export class DriveAudio {
     if (Number.isFinite(telemetry.bumpSerial) && telemetry.bumpSerial !== this.bumpSerial) {
       this.bumpSerial = telemetry.bumpSerial;
       this.bump(now, speed, Math.min(1, (Number(telemetry.bump) || .12) / .12));
+    }
+    // On foot, each footfall, and landing from a hop (see Walker): soft, and a little different each time
+    if (Number.isFinite(telemetry.stepSerial) && telemetry.stepSerial !== this.stepSerial) {
+      this.stepSerial = telemetry.stepSerial;
+      const strength = Math.min(1, Math.max(0, Number(telemetry.step) || .5)), v = .9 + g.random() * .2;
+      g.event('road', { duration: .045 + strength * .03, frequency: 1100 * v, endFrequency: 420 * v, level: .012 + strength * .02, attack: .002, q: .9 });
     }
     // Over a bridge's expansion joint, at either end
     const deck = scene?.deck === undefined ? null : Boolean(scene.deck);

@@ -138,6 +138,8 @@ body[data-mode=free] #app #city-location { max-width: none; white-space: normal;
 .world-map-legend li { display: flex; align-items: center; gap: 7px; }
 .world-map-legend small { font-size: 11px; color: var(--city-muted); }
 .world-map-swatch { width: 14px; height: 14px; border-radius: 4px; background: var(--district-color); box-shadow: inset 0 0 0 1px #0003; }
+/* The player's own car, where they left it (see OnFoot), as the map rings it */
+.world-map-marker { width: 14px; height: 14px; border-radius: 50%; background: #17262f; box-shadow: inset 0 0 0 2px #5fd0c0; }
 .world-map-note { margin: 0 0 8px; font-size: 11px; line-height: 1.5; text-align: center; color: var(--city-muted); }
 .world-map-dialog .controller-hint { text-align: center; }
 /* The key sits beside the map wherever the screen is wider than it is tall. */

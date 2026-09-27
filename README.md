@@ -17,6 +17,7 @@ This is the sequel to [Citydriver](https://github.com/jarvisar/citydriver). The 
 - Landmarks and shops that passengers can ask to go to
 - Taxi mode with group fares, shift goals, driver ranks and cabs to buy
 - Demolition mode with a truck, damage chains, ratings and high scores
+- Get out and walk around in free drive, and borrow cars from traffic
 - Weather and night driving
 - Keyboard, controller and touch screen support
 - VR headsets such as Meta Quest, through WebXR
@@ -28,7 +29,9 @@ Start a **Taxi run** to pick up passengers and earn money. Stop in a pickup ring
 
 **Demolition** puts you in a truck with one minute to cause as much property damage as possible. Lamp posts, benches, signs, trees, bus shelters and cars all have a price, and parked cars are worth the most. Hits in quick succession build a chain. Every fourth hit raises the chain's multiplier, up to ×5, and the chain's damage is added to the total when it ends. Wrecking a moving car adds 3 seconds to the clock. Hitting a pedestrian costs a $5,000 fine and the chain in progress. Each run gets a rating, and the best five runs are kept as high scores. See [demolition](docs/demolition.md) for the prices and ratings.
 
-**Free drive** has no timer. All three taxis are available in the garage, and weather settings and city discoveries are in the pause menu. The garage also has a helicopter that can fly over the city and land on roofs. Press forward on the main menu to enter free drive, or press R to generate a new city.
+**Free drive** has no timer. All three taxis are available in the garage, and weather settings and city discoveries are in the pause menu. The garage also has a helicopter that can fly over the city and land on roofs. Press forward on the main menu to enter free drive. Press R or select New city in the pause menu to generate a new city.
+
+In free drive, press E to get out of the car and walk around. Walk up to your car or any car in traffic and press E to get in. A car taken from traffic drives off on its own when you get out. Your own car stays where you left it and is marked on both maps. Picking a car in the garage puts you in it. The helicopter can't be left.
 
 Every visit generates a new city. Add `?seed=4817` to the URL to load the same city again.
 
@@ -44,19 +47,23 @@ Every visit generates a new city. Add `?seed=4817` to the URL to load the same c
 | Climb / descend (helicopter) | Space / Shift, or E / Q | Right stick, or RB / R1 and LB / L1 |
 | Camera | V | X / Square |
 | Pause | P / Escape | Start / Menu |
-| Reset | R | Y / Triangle |
+| Reset | R | Y / Triangle (in a run) |
 | Garage / Taxi fleet | C / G | L3 |
 | Autodrive (free drive) | H | D-pad Up |
+| Get out / get in (free drive) | E | Y / Triangle |
+| Walk (on foot) | W A S D / arrows | Left stick |
+| Sprint (on foot) | Shift | RT / R2 or RB / R1 |
+| Jump (on foot) | Space | A / Cross or LB / L1 |
 | Fullscreen | F, or hold Escape to leave | D-pad Down (while driving) |
 | Auto-fullscreen (on unless switched off) | Pause menu | Pause menu |
-| Look around the car (chase view, fullscreen) | Mouse | |
+| Look around (chase view) | Mouse, in fullscreen | Right stick |
 | Camera distance (chase view) | Mouse wheel | |
 | Sound | Pause menu | Pause menu |
 | City map | M, or City map on the street map | View / Share |
 | Street map (show / hide) | Its arrow button | |
 | Menus | Tab, Enter | D-pad or left stick to choose, A / Cross to select, B / Circle to go back |
 
-On touch screens, use the stick to drive, hold Boost, and tap Drift while steering in chase view. Release the stick to stop. In the helicopter, hold Climb or Descend.
+On touch screens, use the stick to drive, hold Boost, and tap Drift while steering in chase view. Release the stick to stop. In the helicopter, hold Climb or Descend. On foot, drag the stick the way to walk and push it further to run. Tap Jump, hold Sprint, and tap Get out or Get in.
 
 ### VR
 
@@ -70,8 +77,12 @@ In a headset's browser, such as the Meta Quest Browser, select **Enter VR** on t
 | Boost | Right grip |
 | Drift / handbrake | Left grip |
 | Climb / descend (helicopter) | Right thumbstick, or right and left grip |
+| Get out / get in (free drive) | Y |
+| Walk (on foot) | Left thumbstick |
+| Jump / sprint (on foot) | Left grip / right grip or right trigger |
+| Look around (on foot) | Right thumbstick |
 | Camera | A |
-| Pause | B, Y or left thumbstick click |
+| Pause | B or left thumbstick click, and Y in a run |
 | Reset car | X |
 | Recenter view | Right thumbstick click |
 | Menus | Point and pull the trigger, or a thumbstick to choose and A / X to select. B / Y to go back |

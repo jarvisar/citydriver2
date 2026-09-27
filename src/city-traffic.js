@@ -49,6 +49,10 @@ export class CityTraffic {
     });
     // Stand-ins for parked cars knocked loose (see wake)
     this.woken = []; this.standInLimit = PARKED_MOST;
+    // The player's own car where they got out of it (see OnFoot): not the
+    // traffic's to drive, but in its way, and knocked about as a parked car
+    // knocked loose is
+    this.playerCars = [];
     TRAFFIC_MODELS.forEach((spec, model) => { for (let k = 0; k < PARKED_POOL; k++) this.addStandIn(model); });
     // Street furniture a loose car can knock over, when there is any (see LooseProps)
     this.props = null;
@@ -169,7 +173,7 @@ export class CityTraffic {
   slide(car, dt, chunks) {
     const loose = car.loose;
     if (loose.vx || loose.vz || loose.spin) {
-      skid(loose, car.heading, dt, car.parked ? HANDBRAKE_GRIP : LOOSE_GRIP);
+      skid(loose, car.heading, dt, car.parked || car.handbrake ? HANDBRAKE_GRIP : LOOSE_GRIP);
       const s = car.s, u = car.u;
       car.u += loose.vx * dt; car.s -= loose.vz * dt; car.heading += loose.spin * dt;
       if (this.route.water?.(car.s, car.u)) { car.s = s; car.u = u; loose.vx = loose.vz = 0; }
@@ -300,18 +304,45 @@ export class CityTraffic {
     car.parked.woken = false; car.parked.parked.hide(false);
     car.parked = null; car.loose = null; car.car.visible = false;
   }
+  // The player gets into one of the traffic's cars (see OnFoot): it leaves
+  // the traffic, and its model the scene, until they give it back
+  take(car) {
+    const at = this.vehicles.indexOf(car);
+    if (at < 0) return false;
+    this.vehicles.splice(at, 1); this.junctions.release(car);
+    car.claim = car.leaving = car.pending = null; car.car.visible = false;
+    return true;
+  }
+  // Back from the player where they got out of it, `pose` ({ s, u, heading
+  // }): its driver drives on from there, back to the nearest lane going the
+  // way the car faces, as after a knock (see steerBack), never back the way
+  // it came. With no pose, or no street near, it turns up again elsewhere.
+  giveBack(car, pose = null) {
+    this.vehicles.push(car); car.generation++;
+    const hit = pose && this.nav.index.nearest(pose.u, pose.s, 200, (segment, distance) => segment.road.edge.kind === 'path' ? Infinity : distance);
+    if (!hit) { car.edge = null; return; }
+    const edge = hit.road.edge, along = edge.cumulative[hit.segment.index] + hit.t * hit.segment.length;
+    const direction = Math.sin(pose.heading) * hit.tx + Math.cos(pose.heading) * hit.ty >= 0 ? 1 : -1;
+    Object.assign(car, { s: pose.s, u: pose.u, heading: pose.heading, edge, direction, along: direction > 0 ? along : edge.length - along, lane: edge.profile.lane,
+      next: null, turn: null, after: null, stopWait: 0, loose: { vx: 0, vz: 0, spin: 0 }, recover: null, rock: null, dazed: 0, shoved: false, bumped: 0, tries: 0, stranded: 0, speed: 0, held: 0 });
+    car.cruiseSpeed = edge.profile.speed * (car.pace ?? 1);
+    this.choose(car); this.pose(car);
+    car.previousPosition.copy(car.position); car.previousQuaternion.copy(car.quaternion); car.car.visible = true;
+  }
   // The player against a car. They share the blow by weight and, once the car
   // is free to move, are parted by weight too: a heavy car shoves a light one.
-  // A helicopter up above the traffic (`airborne`) is not in its way at all.
+  // A helicopter up above the traffic (`airborne`) is not in its way at all,
+  // and someone on foot (`walker`) moves no car: they are only put back
+  // outside it, and take the car's blow (see Walker.resolveTrafficCollision).
   collidePlayer(car, player) {
     if (player.airborne) return;
     const p = player.groundedPosition;
     if (Math.abs(car.position.x - p.x) > 7 || Math.abs(car.position.z - p.z) > 7) return;
     const a = player.motion(), b = this.motion(car), contact = trafficContact(a, b);
     if (!contact) return;
-    const blow = collisionImpulse(a, b, contact, contactPoint(a, b, contact));
-    if (blow) { this.strike(car, blow.b.x, blow.b.z, blow.b.spin); this.onDamage?.(car, blow.closing); }
-    const share = car.loose ? b.mass / (a.mass + b.mass) : 1, depth = contact.depth + .005;
+    const blow = collisionImpulse(a, b, contact, contactPoint(a, b, contact)), walking = Boolean(player.walker);
+    if (blow && !walking) { this.strike(car, blow.b.x, blow.b.z, blow.b.spin); this.onDamage?.(car, blow.closing); }
+    const share = car.loose && !walking ? b.mass / (a.mass + b.mass) : 1, depth = contact.depth + .005;
     player.resolveTrafficCollision(contact.x * depth * share, contact.z * depth * share, blow?.a.x ?? 0, blow?.a.z ?? 0, blow?.a.spin ?? 0, blow?.closing ?? 0, blow?.slide ?? 0);
     if (share < 1) this.nudge(car, -contact.x * depth * (1 - share), -contact.z * depth * (1 - share));
   }
@@ -319,8 +350,8 @@ export class CityTraffic {
   // another, which takes its share of the blow in turn; the two are parted
   // by weight, as far as each is free to move
   knockOn(car) {
-    for (const list of [this.vehicles, this.woken]) for (const other of list) {
-      if (other === car || !(other.edge || other.parked) || Math.abs(other.position.x - car.position.x) > 7 || Math.abs(other.position.z - car.position.z) > 7) continue;
+    for (const list of [this.vehicles, this.woken, this.playerCars]) for (const other of list) {
+      if (other === car || (list !== this.playerCars && !(other.edge || other.parked)) || Math.abs(other.position.x - car.position.x) > 7 || Math.abs(other.position.z - car.position.z) > 7) continue;
       const a = this.motion(car), b = this.motion(other), contact = trafficContact(a, b);
       if (!contact) continue;
       const blow = collisionImpulse(a, b, contact, contactPoint(a, b, contact));
@@ -397,11 +428,12 @@ export class CityTraffic {
     // (the path ahead is walked only once something is near enough to be on it)
     let path = null, crossing = null;
     let limit = Infinity, blocker = null;
-    // (parked cars knocked loose into the road are in the way too)
-    const count = this.vehicles.length, total = count + this.woken.length;
+    // (parked cars knocked loose into the road are in the way too, and so is
+    // the player's own car wherever they left it)
+    const count = this.vehicles.length, woken = count + this.woken.length, total = woken + this.playerCars.length;
     for (let i = 0; i <= total; i++) {
-      const other = i === total ? player : i < count ? this.vehicles[i] : this.woken[i - count];
-      if (other === car || (other !== player && !other.edge && !other.parked) || !Number.isFinite(other.heading) || other.airborne) continue;
+      const other = i === total ? player : i < count ? this.vehicles[i] : i < woken ? this.woken[i - count] : this.playerCars[i - woken];
+      if (other === car || (i < woken && !other.edge && !other.parked) || !Number.isFinite(other.heading) || other.airborne) continue;
       if (Math.abs(other.s - car.s) > reach + 6 || Math.abs(other.u - car.u) > reach + 6) continue;
       crossing ??= new Set([...(car.claim?.nodes ?? []), ...(car.leaving?.nodes ?? [])]);
       if (other !== player && other.edge && crossing.size && this.passes(car, other, crossing)) continue;
@@ -475,9 +507,11 @@ export class CityTraffic {
       // and slow for the street's own bends before the turn
       if (!car.turn || car.along < car.turn.start) target = Math.min(target, bendSpeed(this.nav, car.edge, car.direction, car.along, car.lane));
       const follow = this.following(car, player);
-      // Seconds held up by the player alone, not a light or the traffic: the
-      // driver sounds the horn (see DriveAudio.horn)
-      car.held = this.blocker === player && car.speed < .5 && follow < Math.min(target, after) - .5 ? (car.held || 0) + dt : 0;
+      // Seconds held up by the player alone (or the car they left in the
+      // road), not a light or the traffic: the driver sounds the horn (see
+      // DriveAudio.horn)
+      const theirs = this.blocker === player || this.playerCars.includes(this.blocker);
+      car.held = theirs && car.speed < .5 && follow < Math.min(target, after) - .5 ? (car.held || 0) + dt : 0;
       target = Math.min(target, after, follow);
       car.targetSpeed = target;
     }

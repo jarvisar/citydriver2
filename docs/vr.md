@@ -28,19 +28,19 @@ The page's menus and HUD can't be seen in a headset, so `src/vr-status.js` draws
 - The HUD sits below the car, from 21° below eye level. It moves with the car like a dashboard and can't be pointed at.
 - It shows the same text as the page's HUD. In a taxi run that is the shift clock, earnings, stage, destination, distance and fare clock. In free drive it is the heading, district and weather. Messages replace the last line for two seconds.
 - During a fare a green arrow floats above the car and points to the drop-off. In first-person view it floats ahead of the car.
-- The controls are listed under the HUD until the player has driven for 10 seconds.
+- The controls are listed under the HUD until the player has driven for 10 seconds. On foot the list shows the walking controls.
 
 ## Comfort
 
 - The camera follows the chase camera's position and heading only. Pitch and roll come from the headset, and there is no camera shake.
-- The comfort vignette darkens the edge of the view when the camera turns faster than about 20° a second, or the car speeds up or slows down sharply. It keeps the middle of the view clear, fades once the turn ends and never shows in menus. When the chase camera has to jump in because a building is in the way, the view blinks dark for a moment, and the vignette closes in while the camera eases back out. The helicopter's climbs and dives count the same way as speeding up. All of this can be turned off in the pause menu. The setting is saved.
+- The comfort vignette darkens the edge of the view when the camera turns faster than about 20° a second, or the car speeds up or slows down sharply. It keeps the middle of the view clear, fades once the turn ends and never shows in menus. On foot the camera also turns as the player walks across its view, and the right thumbstick turns it. When the chase camera has to jump in because a building is in the way, the view blinks dark for a moment, and the vignette closes in while the camera eases back out. The helicopter's climbs and dives count the same way as speeding up. All of this can be turned off in the pause menu. The setting is saved.
 
 ## Controls
 
-See the [README](../README.md#vr). B and Y both pause, so no single button leaves VR. X in free drive puts the car back on the road instead of making a new city.
+See the [README](../README.md#vr). B pauses, and so does Y in a run, so no single button leaves VR. In free drive Y gets out of the car, and into the car the player is standing by. X in free drive puts the car back on the road instead of making a new city.
 
 ## Testing
 
 - Run `npm run dev` and add `?xr` to the URL (`?xr=stereo` shows both eyes). This installs Meta's Immersive Web Emulation Runtime (IWER) as a Quest 3 and reports a Quest's user agent. It is only in development builds. `window.__xr` moves the headset and controllers, for example `__xr.controllers.right.updateButtonValue('trigger', 1)`.
-- `node scripts/vr-review.mjs [output directory]` enters VR this way, steps through every menu and checks the game's state at each step. It saves the headset's view, a close-up at about a Quest 3's sharpness and each panel's canvas.
+- `node scripts/vr-review.mjs [output directory]` enters VR this way, steps through every menu, gets out of the car and walks in free drive, and checks the game's state at each step. It saves the headset's view, a close-up at about a Quest 3's sharpness and each panel's canvas.
 - `tests/xr.test.js` covers the controls, menu layout, pointing, rig and vignette.

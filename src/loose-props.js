@@ -656,7 +656,8 @@ export class LooseProps {
   }
   // A step of everything loose: what has been left far behind goes back, the
   // player's car and the traffic shove what they meet, and the rest fly,
-  // tumble and settle. The traffic takes nothing back from a loose piece.
+  // tumble and settle. The traffic takes nothing back from a loose piece,
+  // and the player on foot moves none (see Walker).
   update(dt, player, traffic = null, chunks = null) {
     const at = player.groundedPosition;
     this.breaks = player.spec?.breaks ?? [];
@@ -679,11 +680,11 @@ export class LooseProps {
       else this.restore(collider);
     }
     if (this.bodies.length) {
-      const car = this.carOf(player), cars = traffic?.enabled ? [...traffic.vehicles, ...traffic.woken ?? []] : [];
+      const car = player.walker ? null : this.carOf(player), cars = traffic?.enabled ? [...traffic.vehicles, ...traffic.woken ?? []] : [];
       for (const body of this.bodies) {
         if (body.sunk) continue;
         body.last.p.copy(body.p); body.last.q.copy(body.q);
-        const blow = this.contact(body, car);
+        const blow = car && this.contact(body, car);
         if (blow) player.strike(blow.x, blow.z, blow.spin, Math.hypot(blow.x, blow.z) * FELT);
         for (const other of cars) {
           if (!other.car.visible || Math.abs(other.position.x - body.p.x) > 8 || Math.abs(other.position.z - body.p.z) > 8) continue;

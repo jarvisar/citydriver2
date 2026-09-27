@@ -4,7 +4,7 @@ import { KonamiCode } from './konami-code.js';
 import { XRInput } from './xr-input.js';
 
 // What the touch buttons press, which the stick can be held with
-const BUTTONS = new Set(['boost', 'handbrake', 'climb', 'descend']);
+const BUTTONS = new Set(['boost', 'handbrake', 'climb', 'descend', 'jump', 'sprint']);
 
 export class Input {
   constructor(onAction, onControllerConnection = () => {}, onKonami = () => {}) {
@@ -13,11 +13,12 @@ export class Input {
     this.konami = new KonamiCode();
     this.touchStick = new TouchStick(document.querySelector('#touch-stick'), () => onAction('drive'), document.querySelector('#scene'));
     // Climb and descend fly the helicopter, on the keys a car uses to drift
-    // and boost (and E / Q), which the helicopter has no use for
-    this.codes = { forward: ['KeyW', 'ArrowUp', 'Numpad8'], brake: ['KeyS', 'ArrowDown', 'Numpad2'], left: ['KeyA', 'ArrowLeft', 'Numpad4'], right: ['KeyD', 'ArrowRight', 'Numpad6'], handbrake: ['Space'], boost: ['ShiftLeft', 'ShiftRight'], climb: ['Space', 'KeyE'], descend: ['ShiftLeft', 'ShiftRight', 'KeyQ'] };
+    // and boost (and E / Q), which the helicopter has no use for; on foot
+    // they jump and sprint (see walkingInput)
+    this.codes = { forward: ['KeyW', 'ArrowUp', 'Numpad8'], brake: ['KeyS', 'ArrowDown', 'Numpad2'], left: ['KeyA', 'ArrowLeft', 'Numpad4'], right: ['KeyD', 'ArrowRight', 'Numpad6'], handbrake: ['Space'], boost: ['ShiftLeft', 'ShiftRight'], climb: ['Space', 'KeyE'], descend: ['ShiftLeft', 'ShiftRight', 'KeyQ'], jump: ['Space'], sprint: ['ShiftLeft', 'ShiftRight'] };
     this.touchButtons = {};
-    // Each touch button presses what its key does: Space's drifts or climbs, Shift's boosts or descends
-    for (const [key, actions] of [['boost', ['boost', 'descend']], ['handbrake', ['handbrake', 'climb']]]) {
+    // Each touch button presses what its key does: Space's drifts, climbs or jumps, Shift's boosts, descends or sprints
+    for (const [key, actions] of [['boost', ['boost', 'descend', 'sprint']], ['handbrake', ['handbrake', 'climb', 'jump']]]) {
       const button = document.querySelector(`[data-drive-button="${key}"]`);
       if (!button) continue;
       const hold = held => { for (const action of actions) this.touchButtons[action] = held; };
@@ -27,7 +28,7 @@ export class Input {
     // The driving simulation reads this up to twelve times per displayed frame, so
     // it fills one reused record rather than building a fresh object each step.
     this.actions = Object.keys(this.codes);
-    this.driving = Object.fromEntries([...this.actions.map(action => [action, false]), ['touchStick', null], ['touchDrive', null]]);
+    this.driving = Object.fromEntries([...this.actions.map(action => [action, false]), ['moveX', 0], ['moveY', 0], ['lookX', 0], ['lookY', 0], ['touchStick', null], ['touchDrive', null]]);
     this.gamepad = new GamepadInput(onAction, connected => {
       this.keys.clear(); this.touchStick.clear();
       document.body.dataset.controller = String(connected);
@@ -66,6 +67,8 @@ export class Input {
         return;
       }
       if (document.querySelector('dialog[open]')) return;
+      // E gets out of the car and into another (free drive; in the helicopter it climbs)
+      if (e.code === 'KeyE' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) onAction('use');
       if (e.target.matches?.('input[type="range"]') && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.code)) return;
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Numpad8', 'Numpad2', 'Numpad4', 'Numpad6', 'Space'].includes(e.code)) e.preventDefault();
       this.keys.add(e.code);
@@ -91,14 +94,20 @@ export class Input {
     }
     // Set iteration preserves press order. Overlapping A/D presses select the
     // newest direction immediately; releasing it restores the still-held key.
+    let steering = 0, ahead = 0;
     if (!this.xrActive) {
-      let steering = 0;
       for (const code of this.keys) {
         if (this.codes.left.includes(code)) steering = -1;
         if (this.codes.right.includes(code)) steering = 1;
       }
       if (steering) { state.left = steering < 0; state.right = steering > 0; }
+      ahead = Number(this.codes.forward.some(code => this.keys.has(code))) - Number(this.codes.brake.some(code => this.keys.has(code)));
     }
+    // On foot (see walkingInput): the way to walk, as a stick pushes it
+    // (right, and away), and the way the right stick looks
+    const pad = this.xrActive ? this.xr.state : this.gamepad.state;
+    state.moveX = steering || pad.moveX || 0; state.moveY = ahead || pad.moveY || 0;
+    state.lookX = pad.lookX || 0; state.lookY = pad.lookY || 0;
     state.touchStick = null; state.touchDrive = null;
     if (held || this.gamepad.connected || this.xrActive) this.touchStick.clear();
     else if (this.touchStick.engaged) state.touchStick = this.touchStick.vector;

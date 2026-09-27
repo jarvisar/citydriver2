@@ -8,8 +8,11 @@ const stick = (left, right, axis) => {
 
 // XR controllers belong to the session, not navigator.getGamepads(). These
 // indices are the xr-standard layout, including its empty touchpad slots.
-// The grips are the pad's bumpers: left drifts, right boosts. B and Y both
-// pause, so no single press leaves the headset; Exit VR is in the pause menu.
+// The grips are the pad's bumpers: left drifts, right boosts. B pauses, and
+// so does Y except in free drive, where it gets in and out of cars, so no
+// single press leaves the headset; Exit VR is in the pause menu. On foot the
+// left stick walks, the right looks round, the left grip jumps and the
+// right grip or trigger sprints (see walkingInput).
 export class XRInput {
   constructor(onAction) {
     this.onAction = onAction;
@@ -21,7 +24,7 @@ export class XRInput {
   clear() { this.state = {}; this.requireNeutral = true; }
   // `paused` is true while a headset menu is up: the pause menu, a chooser,
   // the results or the title. The drive is still, and the sticks walk the menu.
-  update(sources = [], { blocked = false, paused = false } = {}) {
+  update(sources = [], { blocked = false, paused = false, freeDrive = false } = {}) {
     const controllers = Array.from(sources).filter(source => source.gamepad?.mapping === 'xr-standard' && !source.hand);
     if (this.sources.some(source => !controllers.includes(source)) || controllers.some(source => !this.sources.includes(source))) this.clear();
     const lost = this.sources.length > 0 && !controllers.length;
@@ -31,7 +34,7 @@ export class XRInput {
     if (lost && !paused && !blocked) this.onAction('pause');
     const left = controllers.find(source => source.handedness === 'left')?.gamepad;
     const right = controllers.find(source => source.handedness === 'right')?.gamepad;
-    const steer = deadzone(left?.axes[2] ?? right?.axes[2]), rise = left && right ? -deadzone(right.axes[3]) : 0;
+    const steer = deadzone(left?.axes[2] ?? right?.axes[2]), ahead = -deadzone(left?.axes[3] ?? right?.axes[3]), rise = left && right ? -deadzone(right.axes[3]) : 0;
     const state = {
       forward: deadzone(button(right, 0), .08),
       brake: deadzone(button(left, 0), .08),
@@ -41,9 +44,13 @@ export class XRInput {
       // The helicopter climbs and descends on the right stick, or the right and left grips
       climb: Math.max(rise, button(right, 1) > .5 ? 1 : 0, 0),
       descend: Math.max(-rise, button(left, 1) > .5 ? 1 : 0, 0),
+      moveX: steer, moveY: ahead, lookX: left && right ? deadzone(right.axes[2]) : 0,
+      jump: button(left, 1) > .5, sprint: button(right, 1) > .5 || button(right, 0) > .5,
     };
+    // (Y is the way back in a menu, as B is)
+    const door = freeDrive && !paused, y = button(left, 5) > .5;
     const buttons = {
-      view: button(right, 4) > .5, pause: button(right, 5) > .5 || button(left, 5) > .5 || button(left, 3) > .5,
+      view: button(right, 4) > .5, pause: button(right, 5) > .5 || (y && !door) || button(left, 3) > .5, use: y && door,
       reset: button(left, 4) > .5, recenterVR: button(right, 3) > .5,
       vrMenuPrevious: stick(left, right, 3) < -.5, vrMenuNext: stick(left, right, 3) > .5,
       vrMenuLeft: stick(left, right, 2) < -.5, vrMenuRight: stick(left, right, 2) > .5,
@@ -69,6 +76,7 @@ export class XRInput {
       return;
     }
     if (pressed.includes('view')) this.onAction('view');
+    if (pressed.includes('use')) this.onAction('use');
     if (pressed.includes('reset')) { this.onAction('reset'); return; }
     if (state.forward || state.brake) this.onAction('drive');
   }

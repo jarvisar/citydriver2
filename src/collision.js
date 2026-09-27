@@ -74,6 +74,31 @@ export function footprintContact(car, solid) {
   contact.point = touching.length ? { x: touching.reduce((sum, p) => sum + p.x, 0) / touching.length, z: touching.reduce((sum, p) => sum + p.z, 0) / touching.length } : leadingPoint(car, contact);
   return contact;
 }
+// A round footprint (someone on foot, `radius` across) against a standing
+// thing, answering as postContact does. It slides round a corner rather than
+// catching on it, whichever way it meets it.
+export function circleContact(circle, solid) {
+  const r = circle.radius;
+  if (solid.heading === undefined && !solid.corners) {
+    const dx = circle.x - solid.x, dz = circle.z - solid.z, distance = Math.hypot(dx, dz), depth = r + solid.reach - distance;
+    if (depth <= 0) return null;
+    const x = distance > 1e-6 ? dx / distance : 1, z = distance > 1e-6 ? dz / distance : 0;
+    return { x, z, depth, point: { x: solid.x + x * solid.reach, z: solid.z + z * solid.reach } };
+  }
+  // The nearest point of the outline; from inside, the way out is through the nearest edge
+  const corners = (solid.corners ? solid : boxOutline(solid)).corners;
+  let best = Infinity, nx = 0, nz = 0;
+  for (let i = 0; i < corners.length; i++) {
+    const a = corners[i], b = corners[(i + 1) % corners.length], ex = b.x - a.x, ez = b.z - a.z, length = ex * ex + ez * ez;
+    const t = length > 1e-12 ? clamp(((circle.x - a.x) * ex + (circle.z - a.z) * ez) / length, 0, 1) : 0;
+    const px = a.x + ex * t, pz = a.z + ez * t, d = (circle.x - px) ** 2 + (circle.z - pz) ** 2;
+    if (d < best) { best = d; nx = px; nz = pz; }
+  }
+  const inside = insideConvex(circle, corners), dx = circle.x - nx, dz = circle.z - nz, distance = Math.sqrt(best);
+  if (!inside && distance >= r) return null;
+  const sign = inside ? -1 : 1, x = distance > 1e-6 ? sign * dx / distance : 1, z = distance > 1e-6 ? sign * dz / distance : 0;
+  return { x, z, depth: inside ? r + distance : r - distance, point: { x: nx, z: nz } };
+}
 // The outline of a rectangle turned by its heading, as trafficContact reads one.
 function boxOutline(box) {
   const cos = Math.cos(box.heading), sin = Math.sin(box.heading);
@@ -97,12 +122,13 @@ function insideConvex(p, polygon) {
 
 // Whatever stands in `chunks` that a car's footprint overlaps, handed to
 // `visit(contact, solid)` one at a time. `box()` answers where the car is now,
-// since each contact may move it. Nearly every footprint is turned away by two
+// since each contact may move it; one with a `radius` is round, as someone on
+// foot is (see circleContact). Nearly every footprint is turned away by two
 // subtractions, so a chunk's few hundred cost less than posing one traffic car.
 // A parked car knocked loose (`woken`) is no longer scenery.
 export function sceneryContacts(box, chunks, visit) {
   let car = box();
-  const reach = Math.hypot(car.halfWidth, car.halfLength);
+  const reach = car.radius ?? Math.hypot(car.halfWidth, car.halfLength);
   for (const chunk of chunks) {
     const bounds = chunk?.collisionBounds;
     if (bounds && (car.x + reach < bounds.minX || car.x - reach > bounds.maxX || car.z + reach < bounds.minZ || car.z - reach > bounds.maxZ)) continue;
@@ -110,7 +136,7 @@ export function sceneryContacts(box, chunks, visit) {
     if (!colliders) continue;
     for (const solid of colliders) {
       if (solid.woken || Math.abs(solid.z - car.z) > reach + solid.reach || Math.abs(solid.x - car.x) > reach + solid.reach) continue;
-      const contact = solid.heading === undefined && !solid.corners ? postContact(car, solid) : footprintContact(car, solid.corners ? solid : boxOutline(solid));
+      const contact = car.radius ? circleContact(car, solid) : solid.heading === undefined && !solid.corners ? postContact(car, solid) : footprintContact(car, solid.corners ? solid : boxOutline(solid));
       if (contact) { visit(contact, solid); car = box(); }
     }
   }
@@ -119,32 +145,60 @@ export function sceneryContacts(box, chunks, visit) {
 // balconies stand up to about 2 m out from its walls. With the car itself
 // nearer a wall than that, it keeps at least CLOSE off that one.
 const CLEAR = 2.2, CLOSE = .5;
+// Someone on foot is framed low (see Walker), so cars come between them and
+// the camera too: they count ROOF high, and the camera keeps CAR_CLEAR off them.
+const ROOF = 2.1, CAR_CLEAR = .35;
 // How far along the chase camera's line of sight, from `from` over the car to
 // `to` where the camera would be, it first comes within CLEAR of a building
 // below the building's roof: 0 to 1, and 1 if it never does. Only solids with
 // a `top` (buildings) count, so the camera sees over walls and hedges and
-// through trees and railings. Points are in the scene, which lies `origin`
+// through trees and railings; and with `cars` ({ ground, bodies }), for a
+// camera following someone on foot, the cars parked along the kerbs and
+// `bodies` ({ x, z, heading, halfWidth, halfLength, y }: the traffic, and the
+// player's own car) as well. Points are in the scene, which lies `origin`
 // along z from the colliders.
-export function sightLine(chunks, from, to, origin = 0) {
+export function sightLine(chunks, from, to, origin = 0, cars = null) {
   const x = from.x, z = from.z - origin, dx = to.x - from.x, dz = to.z - from.z;
   const minX = Math.min(x, x + dx) - CLEAR, maxX = Math.max(x, x + dx) + CLEAR, minZ = Math.min(z, z + dz) - CLEAR, maxZ = Math.max(z, z + dz) + CLEAR;
   let open = 1;
+  const block = (solid, top, clear) => {
+    let crossing = lineThrough(solid, x, z, dx, dz, clear);
+    if (crossing?.[0] < 0 && clear > CLOSE) crossing = lineThrough(solid, x, z, dx, dz, CLOSE);
+    // (a line that starts inside even that, with the car in the wall, has nowhere better to be)
+    if (!crossing || crossing[0] < 0 || crossing[0] >= open) return;
+    // Rising or falling, the line is lowest where it enters or leaves
+    const enters = from.y + crossing[0] * (to.y - from.y), leaves = from.y + Math.min(crossing[1], 1) * (to.y - from.y);
+    if (Math.min(enters, leaves) < top + CLOSE) open = crossing[0];
+  };
+  const outside = (at, reach) => at.x - reach > maxX || at.x + reach < minX || at.z - reach > maxZ || at.z + reach < minZ;
   for (const chunk of chunks) {
     // (a chunk still being built has no bounds, nor its colliders' corners)
     const bounds = chunk?.collisionBounds;
     if (!bounds || maxX < bounds.minX || minX > bounds.maxX || maxZ < bounds.minZ || minZ > bounds.maxZ) continue;
     for (const solid of chunk.features.colliders) {
-      if (solid.top === undefined || solid.x - solid.reach > maxX || solid.x + solid.reach < minX || solid.z - solid.reach > maxZ || solid.z + solid.reach < minZ) continue;
-      let crossing = lineThrough(solid, x, z, dx, dz, CLEAR);
-      if (crossing?.[0] < 0) crossing = lineThrough(solid, x, z, dx, dz, CLOSE);
-      // (a line that starts inside even that, with the car in the wall, has nowhere better to be)
-      if (!crossing || crossing[0] < 0 || crossing[0] >= open) continue;
-      // Rising or falling, the line is lowest where it enters or leaves
-      const enters = from.y + crossing[0] * (to.y - from.y), leaves = from.y + Math.min(crossing[1], 1) * (to.y - from.y);
-      if (Math.min(enters, leaves) < solid.top + CLOSE) open = crossing[0];
+      const car = cars && solid.parked && !solid.woken;
+      // (and a post, a trunk or a lamp, the camera would stand inside: it
+      // comes in to just before it, rather than look out through it)
+      if (cars && solid.heading === undefined && !solid.corners) { if (!outside(solid, solid.reach)) open = Math.min(open, postEnd(solid, x, z, dx, dz)); continue; }
+      if ((solid.top === undefined && !car) || outside(solid, solid.reach)) continue;
+      block(solid, car ? cars.ground + ROOF : solid.top, car ? CAR_CLEAR : CLEAR);
     }
   }
+  for (const body of cars?.bodies ?? []) {
+    const reach = Math.hypot(body.halfWidth, body.halfLength);
+    if (!outside(body, reach)) block({ ...boxOutline(body), x: body.x, z: body.z }, body.y + ROOF, CAR_CLEAR);
+  }
   return open;
+}
+// Where the line from (x, z) along (dx, dz) enters a post, grown by
+// CAR_CLEAR, if it ends inside it (and does not start there), as a fraction
+// along it; otherwise 1
+function postEnd(post, x, z, dx, dz) {
+  const r = post.reach + CAR_CLEAR, ex = x + dx - post.x, ez = z + dz - post.z;
+  if (ex * ex + ez * ez >= r * r) return 1;
+  const fx = x - post.x, fz = z - post.z, a = dx * dx + dz * dz, b = fx * dx + fz * dz, c = fx * fx + fz * fz - r * r;
+  if (c <= 0 || a < 1e-12) return 1;
+  return Math.max(0, (-b - Math.sqrt(Math.max(0, b * b - a * c))) / a);
 }
 // Where the line from (x, z) along (dx, dz) enters and leaves a convex outline
 // grown by `grow` all round, as fractions along it, or null if it misses. Its
@@ -196,11 +250,11 @@ export function roofUnder(chunks, points, below) {
 // street furniture it touches may be knocked loose (`wake(solid, contact)`,
 // see CityTraffic.wake and LooseProps.hit), and then it is no longer a wall.
 // Whatever the player's machine clears (`passes`: the helicopter, over it)
-// is left alone.
+// is left alone. Someone on foot is round (`spec.radius`, see Walker).
 export function collideScenery(player, chunks, dt, wake = null) {
-  const halfWidth = player.spec.width / 2, halfLength = player.spec.length / 2, center = Math.floor(player.s / CHUNK_LENGTH);
+  const halfWidth = player.spec.width / 2, halfLength = player.spec.length / 2, radius = player.spec.radius, center = Math.floor(player.s / CHUNK_LENGTH);
   const nearby = player.route.grid ? chunks.values() : [chunks.get(center - 1), chunks.get(center), chunks.get(center + 1)];
-  const box = () => ({ x: player.groundedPosition.x, z: player.groundedPosition.z, heading: player.heading, halfWidth, halfLength });
+  const box = () => ({ x: player.groundedPosition.x, z: player.groundedPosition.z, heading: player.heading, halfWidth, halfLength, radius });
   sceneryContacts(box, nearby, (contact, solid) => {
     if (player.passes?.(solid)) return;
     if ((solid.parked || solid.prop) && wake?.(solid, contact)) return;

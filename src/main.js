@@ -37,6 +37,8 @@ import { DemolitionRun, DEMOLITION_CAR, DEMOLITION_PAINT } from './demolition-ru
 import { DemolitionView } from './demolition-view.js';
 import { setResidentWindow } from './world/resident.js';
 import { DrivingController } from './vehicle.js';
+import { OnFoot } from './on-foot.js';
+import { walkingInput, createWalkerModel } from './walker.js';
 import { CityTraffic as Traffic } from './city-traffic.js';
 import { TRAFFIC_CRUISE_SPEED } from './traffic.js';
 import { collideScenery, sightLine } from './collision.js';
@@ -65,6 +67,8 @@ setupPwaFullscreen(() => autoFullscreen);
 const $ = selector => document.querySelector(selector);
 const MENU_MOVES = ['menuNext', 'menuPrevious', 'menuUp', 'menuDown'];
 const MENU_CRUISE_SPEED = TRAFFIC_CRUISE_SPEED * 1.4;
+// How fast the right stick turns the chase camera, pushed all the way (rad/s)
+const STICK_LOOK = 2.4;
 const mileageFormat = new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 let paused = false, started = false, time = 0, hudTime = 0, gameMode = 'taxi';
 document.body.dataset.mode = gameMode;
@@ -136,8 +140,9 @@ async function boot() {
     await loadingStage('furniture');
     const world = new JOURNEYS[journey].World(scene);
     rendering.addCuller((camera, shadow) => world.cull(camera, shadow));
-    // The chase camera stays out of the buildings and above the ground
-    rendering.setSightLine((from, to) => sightLine(world.chunks.values(), from, to, world.origin));
+    // The chase camera stays out of the buildings and above the ground, and
+    // following someone on foot, out of the cars
+    rendering.setSightLine((from, to) => sightLine(world.chunks.values(), from, to, world.origin, vehicle.walker ? onFoot.sightCars() : null));
     rendering.setGround((x, z) => cityHeight(world.origin - z, x));
     const weather = new CityWeather(scene);
     try { weather.setMode(localStorage.getItem('citydriver-weather') ?? 'auto', { immediate: true }); } catch { /* Storage is optional. */ }
@@ -181,6 +186,10 @@ async function boot() {
     // Street furniture knocked loose (see loose-props.js), which loose traffic can knock over too
     const props = new LooseProps(scene, world.materials.props);
     traffic.props = props;
+    // (and takes the player on foot, when a car knocks them over)
+    vehicle.props = props;
+    // Getting out of the car and into another, in free drive (see on-foot.js)
+    const onFoot = new OnFoot(vehicle, traffic);
     const pedestrianContacts = new PedestrianContacts();
     const nightLighting = new NightLighting(scene);
     // The weather's light, sky and wet roads, on the scene and every car
@@ -188,7 +197,7 @@ async function boot() {
       weather.update(time, vehicle, world.origin); rendering.setWeather(weather.state, dt);
       world.setWetness(weather.state.wetness); world.setWindowGlow(weather.state.windowGlow); vehicle.setLights(weather.state.lightLevel); traffic.models.setLights(weather.state.lightLevel);
     }
-    const haltCar = () => { vehicle.speed = 0; vehicle.knock.x = vehicle.knock.z = vehicle.knock.spin = 0; vehicle.pilot?.stop(); vehicle.update(0, {}); };
+    const haltCar = () => { vehicle.speed = 0; vehicle.knock.x = vehicle.knock.z = vehicle.knock.spin = 0; vehicle.pilot?.stop(); vehicle.walker?.stop(); vehicle.update(0, {}); };
     const drawScene = rendering.render;
     rendering.render = (...args) => {
       nightLighting.update(world, vehicle, traffic, weather.state.lightLevel);
@@ -197,6 +206,8 @@ async function boot() {
     const cityGuide = new CityGuide(text => { toast(text); audio.cue('discovery'); }, () => vehicle);
     let taxiStorage; try { taxiStorage = localStorage; } catch { /* Optional storage. */ }
     const taxi = new TaxiRun(taxiStorage), taxiView = new TaxiView(scene); cityGuide.taxi = taxi;
+    // (the street map marks the car the player left parked)
+    cityGuide.onFoot = onFoot;
     // Demolition: the truck's timed run, scored by the damage it does (see
     // demolition-run.js). While it runs, everything knocked loose is the
     // truck's doing, directly or through what it sent flying; ordinary
@@ -244,7 +255,7 @@ async function boot() {
       const chrome = worldMapDialog.offsetHeight - body.offsetHeight + (below ? key.offsetHeight + parseFloat(getComputedStyle(body).rowGap) : 0);
       const room = Math.max(140, parseFloat(getComputedStyle(worldMapDialog).maxHeight) - chrome - 2);
       worldMapCanvas.style.width = `${Math.floor(Math.min(worldMapCanvas.parentElement.clientWidth, room * worldMap.aspect))}px`;
-      worldMap.draw(worldMapCanvas, vehicle);
+      worldMap.draw(worldMapCanvas, vehicle, onFoot.parked);
     }
     function openWorldMap() {
       if (!holdForChooser()) return;
@@ -255,14 +266,19 @@ async function boot() {
         for (const label of worldMap.labels) blocks.set(label.style, (blocks.get(label.style) ?? 0) + label.blocks);
         const total = [...blocks.values()].reduce((sum, n) => sum + n, 0);
         $('#world-map-legend').innerHTML = Object.keys(DISTRICT_COLORS).filter(style => blocks.has(style)).map(style =>
-          `<li><span class="world-map-swatch" style="--district-color:${DISTRICT_COLORS[style]}"></span>${style}<small>${Math.round(blocks.get(style) / total * 100)}%</small></li>`).join('');
+          `<li><span class="world-map-swatch" style="--district-color:${DISTRICT_COLORS[style]}"></span>${style}<small>${Math.round(blocks.get(style) / total * 100)}%</small></li>`).join('')
+          + '<li id="world-map-car" hidden><span class="world-map-marker"></span>Your car<small></small></li>';
       }
+      // and the player's own car, where they left it, and how far off
+      const parked = onFoot.parked;
+      $('#world-map-car').hidden = !parked;
+      if (parked) $('#world-map-car small').textContent = `${Math.round(Math.hypot(parked.s - vehicle.s, parked.u - vehicle.u) / 10) * 10} m`;
       worldMapCanvas.style.aspectRatio = String(worldMap.aspect);
       $('#world-map-status').textContent = hereText();
       worldMapDialog.showModal();
       drawWorldMap();
       // (and once more for the headset's panel, which cannot show the page)
-      if (vr?.active) { vrMapCanvas ??= document.createElement('canvas'); vrMapCanvas.width = 940; worldMap.draw(vrMapCanvas, vehicle); vrMapKey++; }
+      if (vr?.active) { vrMapCanvas ??= document.createElement('canvas'); vrMapCanvas.width = 940; worldMap.draw(vrMapCanvas, vehicle, onFoot.parked); vrMapKey++; }
       $('#close-world-map').focus();
     }
     $('#open-world-map').addEventListener('click', openWorldMap);
@@ -325,7 +341,10 @@ async function boot() {
       for (const id of ['change-car', 'autodrive', 'traffic']) $(`#${id}`).disabled = run;
       $('#change-car').hidden = run;
       $('#pause-fleet').hidden = gameMode !== 'taxi';
-      $('#restart-run').hidden = !run;
+      // (free drive's makes a new city, as R does: a controller's Y gets in and out of cars there,
+      // and it comes last, well away from Resume)
+      $('#restart-run span').textContent = run ? 'Restart run' : 'New city';
+      if (run) $('#switch-mode').before($('#restart-run')); else $('#traffic').after($('#restart-run'));
       $('#goals-panel').hidden = gameMode !== 'taxi';
       $('#scores-panel').hidden = gameMode !== 'demolition';
       $('#switch-mode span').textContent = run ? 'Free drive' : 'Taxi run';
@@ -350,7 +369,7 @@ async function boot() {
       if (changingJourney) return;
       if (freeTraffic === undefined || gameMode === 'free') freeTraffic = traffic.enabled;
       demolition.stop(); started = true; gameMode = 'taxi'; autodrive.reset(); vehicle.arcade = true;
-      vehicle.setCar(taxi.fleet.selected, { paint: taxi.fleet.liveryColor }); recoverCar(); traffic.setEnabled(true, vehicle);
+      onFoot.clear(); vehicle.setCar(taxi.fleet.selected, { paint: taxi.fleet.liveryColor }); recoverCar(); traffic.setEnabled(true, vehicle);
       $('#traffic').setAttribute('aria-pressed', 'true'); $('#autodrive').setAttribute('aria-pressed', 'false');
       taxi.start(vehicle); taxiView.reset(); renderGoals(); $('#taxi-results').hidden = true; $('#demolition-results').hidden = true; $('#welcome').classList.add('hidden');
       rendering.setView(4); updateViewUi(); setPaused(false); modeUi(); updateHud();
@@ -362,7 +381,7 @@ async function boot() {
       if (changingJourney) return;
       if (freeTraffic === undefined || gameMode === 'free') freeTraffic = traffic.enabled;
       taxi.stop(); started = true; gameMode = 'demolition'; autodrive.reset(); vehicle.arcade = true;
-      props.reset(); vehicle.setCar(DEMOLITION_CAR, { paint: DEMOLITION_PAINT }); recoverCar(); traffic.setEnabled(true, vehicle);
+      props.reset(); onFoot.clear(); vehicle.setCar(DEMOLITION_CAR, { paint: DEMOLITION_PAINT }); recoverCar(); traffic.setEnabled(true, vehicle);
       $('#traffic').setAttribute('aria-pressed', 'true'); $('#autodrive').setAttribute('aria-pressed', 'false');
       demolition.start(); demolitionView.reset(); $('#taxi-results').hidden = true; $('#demolition-results').hidden = true; $('#welcome').classList.add('hidden');
       rendering.setView(4); updateViewUi(); setPaused(false); modeUi(); updateHud();
@@ -372,7 +391,7 @@ async function boot() {
     function beginFree({ preserveInput = false } = {}) {
       if (changingJourney) return;
       const wasRun = taxi.status !== 'idle' || demolition.status !== 'idle'; taxi.stop(); demolition.stop(); started = true; gameMode = 'free';
-      autodrive.reset(); vehicle.arcade = false; vehicle.setCar(carId, { paint }); vehicle.speed = 0; vehicle.pilot?.stop(); vehicle.update(0, {});
+      autodrive.reset(); vehicle.arcade = false; onFoot.clear(); vehicle.setCar(carId, { paint }); vehicle.speed = 0; vehicle.pilot?.stop(); vehicle.update(0, {});
       if (wasRun && freeTraffic !== undefined) traffic.setEnabled(freeTraffic, vehicle);
       $('#traffic').setAttribute('aria-pressed', String(traffic.enabled)); $('#autodrive').setAttribute('aria-pressed', 'false');
       $('#taxi-results').hidden = true; $('#demolition-results').hidden = true; $('#welcome').classList.add('hidden');
@@ -465,25 +484,44 @@ async function boot() {
       const color = value === DEFAULT_PAINT ? null : readPaint(value);
       if (value !== DEFAULT_PAINT && !color) return;
       paint = color;
-      if (started) vehicle.setPaint(paint);
+      // (on the garage car, wherever it is: under the player, or parked)
+      if (started && !onFoot.paint(paint)) vehicle.setPaint(paint);
       paintCards(); updatePaintUi();
       vehicle.render(0, world.origin); rendering.update(vehicle.car, 0, world.origin); needsRender = true;
     }
-    // Free drive's two buttons climb and descend in the helicopter (Space and
-    // Shift do, see Input), and are named for it
-    const flightButtons = [['handbrake', 'Climb', 'Drift', 'Tap + steer'], ['boost', 'Descend', 'Boost', null]];
-    function updateFlightUi() {
-      const flying = Boolean(vehicle.pilot) && started && gameMode === 'free';
-      if (document.body.dataset.flying === String(flying)) return;
-      document.body.dataset.flying = String(flying); updateViewUi();
-      for (const [key, climbing, driving, hint] of flightButtons) {
-        const button = $(`[data-drive-button="${key}"]`);
-        button.querySelector('span').textContent = flying ? climbing : driving;
-        if (hint) button.querySelector('small').textContent = flying ? 'Hold' : hint;
-      }
+    // Free drive's two buttons climb and descend in the helicopter, and jump
+    // and sprint on foot (Space and Shift do, see Input), and are named for it
+    const driveButtons = { driving: [['Drift', 'Tap + steer'], ['Boost']], flying: [['Climb', 'Hold'], ['Descend']], walking: [['Jump', 'Tap'], ['Sprint']] };
+    let driveMode = null;
+    function updateDriveUi() {
+      const free = started && gameMode === 'free', mode = free && vehicle.pilot ? 'flying' : free && vehicle.walker ? 'walking' : 'driving';
+      if (mode === driveMode) return;
+      driveMode = mode; document.body.dataset.flying = String(mode === 'flying'); document.body.dataset.walking = String(mode === 'walking'); updateViewUi();
+      ['handbrake', 'boost'].forEach((key, i) => {
+        const button = $(`[data-drive-button="${key}"]`), [label, hint] = driveButtons[mode][i];
+        button.querySelector('span').textContent = label;
+        if (hint) button.querySelector('small').textContent = hint;
+      });
+      $('.controls .control-label').textContent = mode === 'walking' ? 'walk' : mode === 'flying' ? 'fly' : 'drive';
+    }
+    // Getting out, and into the car within reach: the button beside Jump and
+    // Sprint, which is E's and Y's prompt too, says which (see OnFoot.offer)
+    const useButton = $('#use-car');
+    function updateUseUi() {
+      const offer = started && !paused && gameMode === 'free' ? onFoot.offer() : null;
+      if (useButton.hidden !== !offer) useButton.hidden = !offer;
+      if (!offer) return;
+      const label = offer.out ? offer.stopping ? 'Stopping' : 'Get out' : 'Get in', detail = offer.out ? '' : offer.own ? 'Your car' : offer.name;
+      if (useButton.querySelector('span').textContent !== label) useButton.querySelector('span').textContent = label;
+      if (useButton.querySelector('small').textContent !== detail) useButton.querySelector('small').textContent = detail;
+    }
+    pressOnRelease(useButton, () => action('use'));
+    // After getting in or out: the buttons, the camera and the HUD follow
+    function changedCar() {
+      updateCarUi(); updateUseUi(); needsRender = true;
     }
     function updateCarUi() {
-      updateFlightUi();
+      updateDriveUi();
       for (const button of carDialog.querySelectorAll('[data-car]')) button.setAttribute('aria-current', String(button.dataset.car === carId));
       $('#current-car').textContent = started && gameMode !== 'free' ? carEntry(vehicle.carId).name : carEntry(carId).name;
       $('#change-car').setAttribute('aria-label', started && gameMode !== 'free' ? 'Garage: free drive only' : `Garage: ${carEntry(carId).name}`);
@@ -495,7 +533,13 @@ async function boot() {
       if (id === carId || !CARS[id]) return;
       carId = id;
       try { localStorage.setItem(carStorageKey, id); } catch { /* Still drive it for this visit. */ }
-      if (started) { vehicle.setCar(id, { paint }); vehicle.render(0, world.origin); }
+      // One garage car at a time: the new one takes the player where they are,
+      // in the nearest lane if they were on foot, and the parked one goes
+      if (started) {
+        const walked = onFoot.walking;
+        onFoot.clear(); vehicle.setCar(id, { paint }); vehicle.render(0, world.origin);
+        if (walked) recoverCar();
+      }
       autodrive.reset();
       rendering.update(vehicle.car, 0, world.origin);
       updateCarUi(); updateHud(); needsRender = true;
@@ -557,9 +601,18 @@ async function boot() {
       if (taxi.status === 'over') { if (name === 'reset') beginTaxi(); return; }
       if (demolition.status === 'over') { if (name === 'reset') beginDemolition(); return; }
       if (name === 'car') { openCars(); return; }
+      // E, Y or the button: out of the car, or into the one within reach (free drive only)
+      if (name === 'use') {
+        if (!started || paused || gameMode !== 'free') return;
+        if (autodrive.enabled) action('autodrive');
+        const said = onFoot.use();
+        if (said) toast(said);
+        changedCar();
+        return;
+      }
       if (name === 'autodrive') {
         if (started && gameMode !== 'free') { toast('Autodrive: free drive only'); return; }
-        if (!autodrive.enabled && vehicle.pilot) { toast('Autodrive: cars only'); return; }
+        if (!autodrive.enabled && (vehicle.pilot || vehicle.walker)) { toast('Autodrive: cars only'); return; }
         if (!autodrive.enabled && !autodrive.canStart(vehicle)) { toast('Autodrive requires a street'); return; }
         const enabled = autodrive.toggle();
         revealTouchControls();
@@ -774,7 +827,7 @@ async function boot() {
     $('#demolition-retry').addEventListener('click', beginDemolition);
     $('#demolition-taxi').addEventListener('click', beginTaxi);
     $('#demolition-free').addEventListener('click', beginFree);
-    $('#restart-run').addEventListener('click', () => gameMode === 'demolition' ? beginDemolition() : beginTaxi());
+    $('#restart-run').addEventListener('click', () => gameMode === 'demolition' ? beginDemolition() : gameMode === 'taxi' ? beginTaxi() : action('reset'));
     $('#switch-mode').addEventListener('click', () => gameMode === 'free' ? beginTaxi() : beginFree());
     $('#other-run').addEventListener('click', () => gameMode === 'demolition' ? beginTaxi() : beginDemolition());
     window.addEventListener('keydown', event => {
@@ -849,18 +902,21 @@ async function boot() {
       cityGuide.update(started && !paused && !changingJourney);
       if (gameMode === 'demolition') demolitionView.hud(demolition, vehicle);
       else taxiView.hud(taxi, vehicle, started && gameMode === 'free');
+      updateUseUi();
       if (vr?.active) vrStatus.hud(vrHudModel());
     }
     function updateViewUi() {
       $('#view').title = `${rendering.viewLabel} · Change camera (V)`;
       $('#view').setAttribute('aria-label', `${rendering.viewLabel}. Change camera`);
-      const thirdPerson = rendering.camera.isPerspectiveCamera, flying = document.body.dataset.flying === 'true';
-      $('.stick-help-copy').firstChild.textContent = thirdPerson ? `Touch anywhere · ↑ ${flying ? 'Fly' : 'Drive'} · ↔ ${flying ? 'Turn' : 'Steer'}` : `Drag anywhere to ${flying ? 'fly' : 'drive'}`;
-      $('.stick-help-line').textContent = flying ? thirdPerson ? '↓ Back · Release to hover' : 'Release to hover' : thirdPerson ? '↓ Brake · Release to stop' : 'Release to stop';
-      $('#touch-stick').setAttribute('aria-label', thirdPerson ? 'Virtual joystick: up to accelerate, left and right to steer, down to brake or reverse, release to stop' : 'Virtual joystick');
+      const thirdPerson = rendering.camera.isPerspectiveCamera, flying = document.body.dataset.flying === 'true', walking = document.body.dataset.walking === 'true';
+      $('.stick-help-copy').firstChild.textContent = walking ? 'Drag anywhere to walk' : thirdPerson ? `Touch anywhere · ↑ ${flying ? 'Fly' : 'Drive'} · ↔ ${flying ? 'Turn' : 'Steer'}` : `Drag anywhere to ${flying ? 'fly' : 'drive'}`;
+      $('.stick-help-line').textContent = walking ? 'Push further to run' : flying ? thirdPerson ? '↓ Back · Release to hover' : 'Release to hover' : thirdPerson ? '↓ Brake · Release to stop' : 'Release to stop';
+      $('#touch-stick').setAttribute('aria-label', walking ? 'Virtual joystick: push the way to walk, further to run' : thirdPerson ? 'Virtual joystick: up to accelerate, left and right to steer, down to brake or reverse, release to stop' : 'Virtual joystick');
     }
     // The headset's menus: the page's own choices, drawn by VRStatus.
     const VR_CONTROLS = 'Right trigger: gas · Left trigger: brake\nLeft stick: steer · Left grip: drift\nRight grip: boost · A: camera · B: pause';
+    // (in free drive, Y gets out of the car, and into another)
+    const vrControls = () => started && gameMode === 'free' ? `${VR_CONTROLS} · Y: get out` : VR_CONTROLS;
     const VR_POINTING = 'Point and pull the trigger, or use either stick and A · B: back';
     function vrMenuModel() {
       if (!vr.active) return null;
@@ -901,7 +957,7 @@ async function boot() {
       const taxiMode = gameMode === 'taxi', cycle = (list, value) => list[(list.indexOf(value) + 1) % list.length];
       const drive = (label, activate, extra) => ({ group: 'Driving', label, activate, ...extra });
       const option = weatherSelect.options[weatherSelect.selectedIndex];
-      return { id: 'pause', title: 'Paused', subtitle: `${cityDistrict(vehicle.s, vehicle.u)} · ${hud.distance.textContent} mi driven`, columns: 2, hint: VR_CONTROLS, items: [
+      return { id: 'pause', title: 'Paused', subtitle: `${cityDistrict(vehicle.s, vehicle.u)} · ${hud.distance.textContent} mi driven`, columns: 2, hint: vrControls(), items: [
         { label: 'Resume', primary: true, header: true, activate: () => setPaused(false) },
         ...(taxiMode ? [drive('Restart run', beginTaxi), drive('Free drive', beginFree), drive('Demolition', beginDemolition), drive('Taxi fleet', openFleet, { value: carEntry(taxi.fleet.selected).name })]
           : gameMode === 'demolition' ? [drive('Restart run', beginDemolition), drive('Free drive', beginFree), drive('Taxi run', beginTaxi)]
@@ -925,7 +981,8 @@ async function boot() {
       if (!vr.active || !started || paused || changingJourney) return null;
       const read = id => document.getElementById(id).textContent;
       const hint = vrHintTime >= 10 ? '' : vehicle.pilot ? 'Triggers: forward, back · Left stick: turn · Right stick or grips: up, down · B: pause'
-        : 'Right trigger: gas · Left trigger: brake · Left stick: steer · Grips: drift, boost · B: pause';
+        : vehicle.walker ? 'Left stick: walk · Right stick: look · Left grip: jump · Right grip: sprint · Y: get in · B: pause'
+          : `Right trigger: gas · Left trigger: brake · Left stick: steer · Grips: drift, boost${gameMode === 'free' ? ' · Y: get out' : ''} · B: pause`;
       if (!taxi.running && !demolition.running) return { heading: read('city-heading'), place: read('city-location'), weather: read('weather-label'), hint };
       // (a demolition run writes its chain into the same panels)
       const pickup = taxi.status === 'pickup', timer = $('#taxi-timer');
@@ -937,9 +994,11 @@ async function boot() {
         // (to the percent: each change redraws and uploads the HUD's texture)
         timer: timer.hidden ? null : { text: read('taxi-timer'), tone: timer.dataset.rating, fraction: Math.round(parseFloat($('#taxi-timer-fill').style.width)) / 100 || 0 }, hint };
     }
+    // (what the controls ask of the player on foot, refilled each step)
+    const walking = { walk: { x: 0, z: 0 } };
     const simulate = dt => {
-      // (the autodrive drives cars, and the helicopter is not one)
-      if (autodrive.enabled && vehicle.pilot) action('autodrive');
+      // (the autodrive drives cars: the helicopter is not one, nor are feet)
+      if (autodrive.enabled && (vehicle.pilot || vehicle.walker)) action('autodrive');
       let state = started ? input.state : {};
       if (autodrive.enabled && (state.forward || state.brake || state.left || state.right || state.handbrake || state.touchStick)) action('autodrive');
       // Cruise behind the welcome menu without toggling the player's setting
@@ -948,7 +1007,9 @@ async function boot() {
       // steering makes for an uneasy start.
       if (!started && vr.active) state = {};
       else if (!started || autodrive.enabled) state = autodrive.update(vehicle, traffic, started ? vehicle.stats.topSpeed : MENU_CRUISE_SPEED, dt);
-      if (state.touchStick) {
+      // On foot the stick and keys point the way to walk, from the camera's point of view
+      if (vehicle.walker) state = walkingInput(state, rendering.camera, { firstPerson: rendering.firstPersonView, heading: vehicle.heading }, walking);
+      else if (state.touchStick) {
         if (rendering.camera.isPerspectiveCamera) {
           const touch = thirdPersonDrivingInput(state.touchStick);
           touch.handbrake ||= state.handbrake;
@@ -959,12 +1020,18 @@ async function boot() {
       if (paused || changingJourney) return;
       if (taxi.running) state = taxi.controls(dt, state);
       else if (demolition.running) state = demolition.controls(dt, state);
+      // (stopping, to get out)
+      state = onFoot.control(state);
       vehicle.update(dt, state);
       if (started) updateControlHelp(vehicle.speed);
       // Furniture the player hits may be knocked flying, and a parked car
-      // knocked loose while there is traffic to take it
-      collideScenery(vehicle, world.chunks, dt, (collider, contact) => collider.prop ? props.hit(collider, contact, vehicle) : traffic.enabled && traffic.wake(collider));
+      // knocked loose while there is traffic to take it; on foot, nothing is
+      collideScenery(vehicle, world.chunks, dt, vehicle.walker ? null : (collider, contact) => collider.prop ? props.hit(collider, contact, vehicle) : traffic.enabled && traffic.wake(collider));
       traffic.update(dt, vehicle, world.chunks);
+      // Out of the car once it has stopped, and the car left parked
+      const walked = onFoot.walking, said = onFoot.update(dt, world.chunks);
+      if (said) toast(said);
+      if (onFoot.walking !== walked) changedCar();
       props.update(dt, vehicle, traffic, world.chunks);
       if (started && taxi.running) {
         taxi.update(dt, vehicle, traffic.enabled ? traffic.vehicles : []);
@@ -1010,9 +1077,11 @@ async function boot() {
     }
     function frame(timestamp, xrFrame) {
       vrStatus.update(vrMenuModel());
-      if (vr.active) input.xr.update(vr.session.inputSources, { blocked: !vr.visible || changingJourney, paused: paused || vrStatus.visible });
+      // (in free drive, Y gets in and out of cars)
+      const freeDrive = started && gameMode === 'free';
+      if (vr.active) input.xr.update(vr.session.inputSources, { blocked: !vr.visible || changingJourney, paused: paused || vrStatus.visible, freeDrive });
       else {
-        input.gamepad.update({ blocked: document.hidden || !document.hasFocus() || changingJourney, paused, menu: openChooser() ? 'chooser' : openPauseMenu() ? 'pause' : openWelcomeMenu() ? 'welcome' : false });
+        input.gamepad.update({ blocked: document.hidden || !document.hasFocus() || changingJourney, paused, menu: openChooser() ? 'chooser' : openPauseMenu() ? 'pause' : openWelcomeMenu() ? 'welcome' : false, freeDrive });
         const menu = input.gamepad.scroll && (openChooser() ?? openPauseMenu() ?? openWelcomeMenu());
         if (menu) scrollMenu(menu, input.gamepad.scroll * 18);
       }
@@ -1023,7 +1092,11 @@ async function boot() {
       if (running) {
         time += dt;
         if (vr.active && started && (Math.abs(vehicle.speed) > 2 || vehicle.airborne)) vrHintTime += dt;
-        world.update(vehicle.s, vehicle.u, { budgetMs: 3 }); vehicle.render(frameClock.alpha, world.origin);
+        // The right stick looks round in the chase view, as the mouse does
+        // (not the helicopter's, which climbs; a headset's only turns)
+        const stick = vr.active ? input.xr.state : input.gamepad.state;
+        if (started && rendering.chaseView && !vehicle.pilot && (stick.lookX || stick.lookY)) rendering.look(stick.lookX * STICK_LOOK * dt, vr.active ? 0 : (stick.lookY || 0) * STICK_LOOK * dt);
+        world.update(vehicle.s, vehicle.u, { budgetMs: 3 }); vehicle.render(frameClock.alpha, world.origin); onFoot.render(frameClock.alpha, world.origin);
         traffic.render(frameClock.alpha, world.origin); props.render(frameClock.alpha, world.origin);
         pedestrianContacts.update(vehicle, traffic, time, props);
         rendering.update(vehicle.car, dt, world.origin); world.animate(time, traffic.time, vr.active ? null : rendering.camera, pedestrianContacts);
@@ -1033,7 +1106,7 @@ async function boot() {
       }
       // (a helicopter's climbs and dives count as surges too)
       comfort.update(rendering.camera, vehicle.pilot ? Math.hypot(vehicle.speed, vehicle.pilot.vy) : vehicle.speed, running ? dt : 0, vr.active && running && started);
-      soundScene.interior = rendering.viewLabel === 'First-person view';
+      soundScene.interior = rendering.viewLabel === 'First-person view' && !vehicle.walker;
       soundScene.lightning = weather.flash; soundScene.rain = weather.state.rain; soundScene.wetness = weather.state.wetness;
       soundScene.snow = weather.state.snow; soundScene.night = weather.state.stars;
       // Where the car is, for the soundscape (twice a second, and only with sound on)
@@ -1073,7 +1146,7 @@ async function boot() {
     vehicle.render(0, world.origin); traffic.render(1, world.origin); rendering.update(vehicle.car, 1, world.origin); updateHud(); updateJourneyUi(); updateViewUi(); updateGraphicsUi();
     nightLighting.update(world, vehicle, traffic, weather.state.lightLevel);
     await loadingStage('graphics');
-    await rendering.precompile([...world.warmupObjects(), ...taxiView.warmupObjects(), ...demolitionView.warmupObjects()]);
+    await rendering.precompile([...world.warmupObjects(), ...taxiView.warmupObjects(), ...demolitionView.warmupObjects(), createWalkerModel().figure]);
     try { taxiView.navigation.prepare(); } catch { /* The first fare tries again. */ }
     changingJourney = false;
     renderer.setAnimationLoop(frame);
@@ -1082,7 +1155,7 @@ async function boot() {
     if (import.meta.env.DEV && emulate !== null) (await import('./xr-emulator.js')).installXREmulator(emulate);
     void vr.detect();
     // Development-only inspection surface for automated driving and streaming checks.
-    if (import.meta.env.DEV) window.__citydriver = { seed: SEED, city: CITY, nav: navGraph(), lanePose, roadAt, nearestLanePose, vehicle, traffic, props, nightLighting, weather, autodrive, audio, graphics, vr, vrStatus, cityGuide, taxi, taxiView, beginTaxi, beginFree, demolition, demolitionView, beginDemolition, get gameMode() { return gameMode; }, world, rendering, input, action, chooseCar, applyPaint, get carId() { return carId; }, get paint() { return paint; }, get journey() { return journey; }, get changingJourney() { return changingJourney; }, get paused() { return paused; }, get started() { return started; } };
+    if (import.meta.env.DEV) window.__citydriver = { seed: SEED, city: CITY, nav: navGraph(), lanePose, roadAt, nearestLanePose, vehicle, onFoot, traffic, props, nightLighting, weather, autodrive, audio, graphics, vr, vrStatus, cityGuide, taxi, taxiView, beginTaxi, beginFree, demolition, demolitionView, beginDemolition, get gameMode() { return gameMode; }, world, rendering, input, action, chooseCar, applyPaint, get carId() { return carId; }, get paint() { return paint; }, get journey() { return journey; }, get changingJourney() { return changingJourney; }, get paused() { return paused; }, get started() { return started; } };
   } catch (error) { console.error('Could not start Citydriver:', error); $('#loading').classList.add('loaded'); $('#error').hidden = false; }
 }
 boot();

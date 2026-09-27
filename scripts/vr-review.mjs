@@ -1,6 +1,6 @@
 // The headset's menus and HUD, through Meta's WebXR emulator (IWER, the dev
 // server's `?xr` hook): enters VR, walks the title, a taxi run, the pause
-// menu, the city map, the fleet, the garage, free drive and the results, and
+// menu, the city map, the fleet, free drive (and out of the car on foot), the garage and the results, and
 // checks the game's state at each step. Saves the headset's view, a close-up
 // at about a Quest 3's sharpness and each panel's own canvas.
 // node scripts/vr-review.mjs [output directory]   (STEREO=1 draws both eyes)
@@ -54,7 +54,8 @@ async function aim(hand, label) {
 const state = () => page.evaluate(() => {
   const game = window.__citydriver, status = game.vrStatus;
   return { vr: game.vr.active, paused: game.paused, started: game.started, mode: game.gameMode, taxi: game.taxi.status,
-    menu: status.model?.id ?? null, selected: status.entries[status.selected]?.label ?? null, hud: Boolean(status.hudPanel?.mesh.visible), speed: game.vehicle.speed };
+    menu: status.model?.id ?? null, selected: status.entries[status.selected]?.label ?? null, hud: Boolean(status.hudPanel?.mesh.visible), speed: game.vehicle.speed,
+    walking: Boolean(game.vehicle.walker), s: game.vehicle.s, u: game.vehicle.u, look: game.rendering.camera.rotation.y };
 });
 async function shot(name, { close = false } = {}) {
   await wait(350);
@@ -144,6 +145,32 @@ try {
   const address = await page.evaluate(() => location.href);
   await press('left', 'x-button'); await wait(500);
   check('X resets the car and keeps the session and the city', (await state()).vr && await page.evaluate(() => location.href) === address);
+  // On foot: Y gets out in free drive, the left stick walks, the right looks
+  // round, walking straight back returns to the car, and Y gets back in
+  await press('left', 'y-button'); await wait(700);
+  now = await shot('11a-on-foot', { close: true });
+  check('Y gets out of the car in free drive, the drive still running', now.walking && !now.paused && now.menu === null && now.hud);
+  const out = now;
+  await page.evaluate(() => window.__xr.controllers.left.updateAxes('thumbstick', 0, -1)); await wait(1000);
+  await page.evaluate(() => window.__xr.controllers.left.updateAxes('thumbstick', 0, 0)); await wait(400);
+  now = await shot('11b-walked');
+  check('the left stick walks', Math.hypot(now.s - out.s, now.u - out.u) > 3, `${Math.hypot(now.s - out.s, now.u - out.u).toFixed(1)} m`);
+  const walked = now;
+  await page.evaluate(() => window.__xr.controllers.right.updateAxes('thumbstick', 1, 0)); await wait(500);
+  await page.evaluate(() => window.__xr.controllers.right.updateAxes('thumbstick', 0, 0)); await wait(200);
+  check('the right stick turns the view round them', Math.abs((await state()).look - walked.look) > .3);
+  await page.evaluate(() => window.__xr.controllers.right.updateAxes('thumbstick', -1, 0)); await wait(500);
+  await page.evaluate(() => window.__xr.controllers.right.updateAxes('thumbstick', 0, 0)); await wait(200);
+  await set('left', 'squeeze', 1); await wait(150);
+  check('the left grip jumps', await page.evaluate(() => !window.__citydriver.vehicle.walker.grounded));
+  await set('left', 'squeeze', 0); await wait(600);
+  await page.evaluate(() => window.__xr.controllers.left.updateAxes('thumbstick', 0, 1)); await wait(1000);
+  await page.evaluate(() => window.__xr.controllers.left.updateAxes('thumbstick', 0, 0)); await wait(400);
+  now = await shot('11c-back-by-the-car');
+  check('walking back toward the camera returns to the car', await page.evaluate(() => window.__citydriver.onFoot.offer()?.own === true));
+  await press('left', 'y-button'); await wait(500);
+  now = await state();
+  check('Y gets back in', !now.walking && !now.paused);
   await press('right', 'b-button');
   await aim('right', 'Garage'); await press('right', 'trigger');
   now = await shot('12-garage');
