@@ -1,75 +1,118 @@
 import * as THREE from 'three';
-import { Parts } from './city-assets.js';
-import { compactGeometry } from './compact-geometry.js';
 
-// Outfit, trim and silhouette are art-directed; skin and hair are selected
-// independently. These are linear colors in the vertex shader, not tinting
-// the entire person with their coat color.
+// A resident is a peg: a coat or top over a stub of trousers, and a head
+// floating over the collar, with no limbs at all. Four slots are mixed per
+// person: the outfit, the hair or hat (with the ears it leaves showing), the
+// face and what they wear on their back. Each slot is a set of morph targets
+// of one fixed topology, so any combination is one instanced draw.
+
+// Coats and their trim are art-directed pairs; everything else is chosen
+// independently. Linear colours, mapped in the vertex shader.
 export const WALKER_LOOKS = [
-  { name: 'Harbor', coat: '#376f78', trim: '#e9c890', style: 0 },
-  { name: 'Marigold', coat: '#c99438', trim: '#f2dfb8', style: 1 },
-  { name: 'Clay', coat: '#b96753', trim: '#e7cdb3', style: 2 },
-  { name: 'Iris', coat: '#7984b5', trim: '#edc5ac', style: 3 },
-  { name: 'Fern', coat: '#7a9574', trim: '#efd9a8', style: 4 },
-  { name: 'Mulberry', coat: '#855872', trim: '#edc9a3', style: 5 },
-  { name: 'Cornflower', coat: '#5082b3', trim: '#efd8b9', style: 0 },
-  { name: 'Oat', coat: '#d9c8a6', trim: '#568780', style: 1 },
-  { name: 'Apricot', coat: '#d58d70', trim: '#f4dbad', style: 2 },
-  { name: 'Olive', coat: '#78814f', trim: '#d9aa66', style: 3 },
-  { name: 'Ink', coat: '#515d6a', trim: '#c88062', style: 4 },
-  { name: 'Heather', coat: '#ac94b5', trim: '#ece0c3', style: 5 },
-  { name: 'Copper', coat: '#a96643', trim: '#e2caa2', style: 6 },
-  { name: 'Lagoon', coat: '#4c958d', trim: '#e9d99d', style: 7 },
-  { name: 'Rosewood', coat: '#ad6075', trim: '#e6c1ad', style: 8 },
-  { name: 'Atelier', coat: '#e1d3b5', trim: '#647a96', style: 9 },
-  { name: 'Midnight', coat: '#394d70', trim: '#ce9c52', style: 10 },
-  { name: 'Mist', coat: '#94b3b9', trim: '#e8d9c1', style: 11 },
-  { name: 'Espresso', coat: '#705449', trim: '#cba780', style: 6 },
-  { name: 'Seagrass', coat: '#8ba693', trim: '#eee2bc', style: 7 },
-  { name: 'Aubergine', coat: '#68516e', trim: '#d8a2a0', style: 8 },
-  { name: 'Saffron', coat: '#b9a04f', trim: '#576c68', style: 9 },
-  { name: 'Evergreen', coat: '#43685d', trim: '#dda38b', style: 10 },
-  { name: 'Peony', coat: '#c48f9a', trim: '#ecd5af', style: 11 },
+  { name: 'Harbor', coat: '#376f78', trim: '#e9c890' },
+  { name: 'Marigold', coat: '#c99438', trim: '#f2dfb8' },
+  { name: 'Clay', coat: '#b96753', trim: '#e7cdb3' },
+  { name: 'Iris', coat: '#7984b5', trim: '#edc5ac' },
+  { name: 'Fern', coat: '#7a9574', trim: '#efd9a8' },
+  { name: 'Mulberry', coat: '#855872', trim: '#edc9a3' },
+  { name: 'Cornflower', coat: '#5082b3', trim: '#efd8b9' },
+  { name: 'Oat', coat: '#d9c8a6', trim: '#568780' },
+  { name: 'Apricot', coat: '#d58d70', trim: '#f4dbad' },
+  { name: 'Olive', coat: '#78814f', trim: '#d9aa66' },
+  { name: 'Ink', coat: '#515d6a', trim: '#c88062' },
+  { name: 'Heather', coat: '#ac94b5', trim: '#ece0c3' },
+  { name: 'Copper', coat: '#a96643', trim: '#e2caa2' },
+  { name: 'Lagoon', coat: '#4c958d', trim: '#e9d99d' },
+  { name: 'Rosewood', coat: '#ad6075', trim: '#e6c1ad' },
+  { name: 'Atelier', coat: '#e1d3b5', trim: '#647a96' },
+  { name: 'Midnight', coat: '#394d70', trim: '#ce9c52' },
+  { name: 'Mist', coat: '#94b3b9', trim: '#e8d9c1' },
+  { name: 'Espresso', coat: '#705449', trim: '#cba780' },
+  { name: 'Seagrass', coat: '#8ba693', trim: '#eee2bc' },
+  { name: 'Aubergine', coat: '#68516e', trim: '#d8a2a0' },
+  { name: 'Saffron', coat: '#b9a04f', trim: '#576c68' },
+  { name: 'Evergreen', coat: '#43685d', trim: '#dda38b' },
+  { name: 'Peony', coat: '#c48f9a', trim: '#ecd5af' },
+  // Office suits, and the warehouse district's high-visibility work wear
+  { name: 'Navy suit', coat: '#2f3b55', trim: '#c9cdd3' },
+  { name: 'Charcoal suit', coat: '#3d3f45', trim: '#b8bcc2' },
+  { name: 'Stone suit', coat: '#8c8577', trim: '#e6e1d6' },
+  { name: 'Hi-vis', coat: '#d6d23c', trim: '#c4cacc' },
+  { name: 'Safety orange', coat: '#df7432', trim: '#d2d6d6' },
+  { name: 'Workwear', coat: '#3f5566', trim: '#e0b049' },
 ];
 export const WALKER_SKIN = ['#f4d3b6', '#e5b78f', '#cf996f', '#b97d56', '#a46949', '#96654a', '#79533f', '#654737'];
 const skinWeights = [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 4, 4, 5, 6, 7];
 export const WALKER_HAIR = ['#302b2c', '#523c31', '#80533b', '#ae6740', '#ccaa6e', '#c6c1b5', '#686260', '#ece4d3'];
-export const WALKER_STYLES = ['quiff', 'side-part', 'curls', 'bob', 'bun', 'bald',
-  'crop-and-beard', 'rounded-curls', 'ponytail', 'beret', 'beanie', 'long-sweep'];
+// Trousers, and the accents: caps, bags, ties and headscarves
+export const WALKER_LEGS = ['#44506a', '#3b3d44', '#4d4039', '#2e3a55', '#857a60', '#56604a', '#2a2a2e'];
+export const WALKER_ACCENTS = ['#a8433a', '#c9973a', '#35506e', '#6f8a5b', '#7b5a45', '#2d2b2e', '#d6cbb6', '#b86a8d'];
 export const WALKER_COLORS = WALKER_LOOKS.map(look => look.coat);
 
-// Channel masks pick the palette: cloth (r, 0, 0), skin (0, g, 0) and hair
-// (0, 0, b), each shaded by its channel, trim (r, g, 0) and trousers
-// (0, g, 1) shaded by g. Muted face details have all three channels and keep
-// their own color. No textures or fragment shader branches are needed.
-const cloth = new THREE.Color(1, 0, 0), skin = new THREE.Color(0, 1, 0);
-const hair = new THREE.Color(0, 0, 1), trim = new THREE.Color(1, 1, 0);
-const ink = '#302c32';
+export const WALKER_OUTFITS = ['scarf-coat', 'team-top', 'parka', 'belted-coat', 'duffel', 'pullover', 'cardigan',
+  'hooped-top', 'fitted-coat', 'jacket', 'vest', 'wrap-coat', 'dress', 'hoodie', 'suit', 'puffer'];
+export const WALKER_STYLES = ['quiff', 'side-part', 'curls', 'bob', 'bun', 'bald', 'crop', 'afro',
+  'ponytail', 'beret', 'beanie', 'long-sweep', 'cap', 'flat-cap', 'headscarf', 'sun-hat'];
+export const WALKER_FACES = ['plain', 'glasses', 'moustache', 'sunglasses', 'round-glasses'];
+export const WALKER_GEAR = ['none', 'backpack', 'shoulder-bag', 'satchel'];
+const SLOTS = [WALKER_OUTFITS, WALKER_STYLES, WALKER_FACES, WALKER_GEAR];
+// Each slot's targets follow the one before's
+const SLOT_BASE = SLOTS.map((_, i) => SLOTS.slice(0, i).reduce((sum, slot) => sum + slot.length, 0));
+export const WALKER_TARGETS = SLOT_BASE[3] + WALKER_GEAR.length;
 
-function ellipsoid(p, position, scale, color, segments = 8, rings = 4) {
-  const geometry = new THREE.SphereGeometry(1, segments, rings);
-  geometry.scale(...scale); p.add(geometry, position, color);
+// What colours a vertex: one of these palettes (or a fixed colour), times a
+// shade. The morphed "colour" attribute carries [channel, shade, 0, 1].
+const CH = { coat: 0, trim: 1, skin: 2, hair: 3, legs: 4, accent: 5, ink: 6, lens: 7, shirt: 8, straw: 9 };
+export const WALKER_CHANNELS = CH;
+
+// ---------------------------------------------------------------------------
+// Building pieces. A slot's pieces go in the same order in every variant; a
+// variant without one collapses it to a point (inside the head or body).
+
+class Piece {
+  constructor(slot) { this.slot = slot; this.position = []; this.normal = []; this.data = []; }
+  // `paint` is [channel, shade], or a function of the triangle's index
+  add(source, paint, position = [0, 0, 0], rotation = [0, 0, 0], scale = null) {
+    // (scaled while still indexed, so smooth normals stay smooth)
+    if (scale) source.scale(...scale);
+    let g = source.index ? source.toNonIndexed() : source;
+    if (g !== source) source.dispose();
+    g.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(...rotation)));
+    g.translate(...position);
+    if (!g.attributes.normal) g.computeVertexNormals();
+    const p = g.attributes.position, n = g.attributes.normal;
+    for (let i = 0; i < p.count; i++) {
+      const [channel, shade] = typeof paint === 'function' ? paint(Math.floor(i / 3)) : paint;
+      this.position.push(p.getX(i), p.getY(i), p.getZ(i));
+      // (a piece collapsed to a point has no normal of its own)
+      const nx = n.getX(i), ny = n.getY(i), nz = n.getZ(i), length = Math.hypot(nx, ny, nz) || 1;
+      this.normal.push(nx / length, ny / length, nz / length);
+      this.data.push(channel, shade, 0, 1);
+    }
+    g.dispose();
+  }
+  get count() { return this.position.length / 3; }
 }
 
-// Every silhouette adds the same pieces in the same order (a style without
-// one collapses it to a point), so all twelve share one topology and the
-// shader can morph between them: the coat, and the head (hair or hat, and
-// the face); then what is worn is painted on the coat.
-function silhouette(style) {
-  const p = new Parts();
-  walkerBody(p, style);
-  walkerHead(p, style);
-  walkerClothing(p, style);
-  const merged = p.finish({ preserveNormals: true });
-  const result = merged.toNonIndexed(); merged.dispose(); return result;
+function sphere(w, h, scale, at, paint, piece) {
+  piece.add(new THREE.SphereGeometry(1, w, h), paint, at, [0, 0, 0], scale);
+}
+// Something a variant does not have: every vertex at one point
+function collapse(g, at) {
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) p.setXYZ(i, ...at);
+  g.computeVertexNormals();
+  return g;
 }
 
-// Garments by style: long A-line coats, hip-length tops over trousers, and
-// scarves wrapped round the collar.
-const LONG = [3, 8, 11], TROUSERS = [1, 5, 6, 7, 9, 10], SCARF = [0, 4, 8, 11];
+// ------------------------------------------------------------- the outfit
+
+// Garments by outfit: long A-line coats and a dress, hip-length tops over
+// trousers, and scarves wrapped round the collar.
+const LONG = [3, 8, 11, 12], TROUSERS = [1, 5, 6, 7, 9, 10, 13, 14, 15], SCARF = [0, 4, 8, 11];
 
 // The coat's rings, [radius, height] from the hem up to the collar. Every
-// style has nine: by default hem, hem roll, hip, waist, chest, shoulder (the
+// outfit has nine: by default hem, hem roll, hip, waist, chest, shoulder (the
 // widest, as a person's is), its round, its top and the collar.
 function coatProfile(style) {
   const rows = [[.255, .3], [.272, .318], [.27, .45], [.274, .62], [.283, .8], [.29, .95], [.275, 1.03], [.21, 1.09], [.135, 1.12]];
@@ -91,6 +134,14 @@ function coatProfile(style) {
   // loosely from a higher waist. Keep this shaping after the scarf's rings.
   if (style === 8) Object.assign(rows, { 0: [.286, .3], 1: [.307, .325], 2: [.253, .64], 3: [.263, .8] });
   if (style === 11) Object.assign(rows, { 0: [.312, .3], 1: [.324, .325], 2: [.286, .64], 3: [.263, .8], 4: [.28, .95], 6: [.255, 1.04], 7: [.22, 1.105] });
+  // A dress: a full skirt from a belted waist, a fitted bodice
+  if (style === 12) Object.assign(rows, { 0: [.318, .3], 1: [.33, .32], 2: [.29, .47], 3: [.246, .64], 4: [.252, .68], 5: [.276, .9], 6: [.27, 1.0] });
+  // A hoodie: roomy, with a pocket across the front
+  if (style === 13) Object.assign(rows, { 2: [.28, .53], 3: [.29, .56], 4: [.29, .7], 5: [.296, .95] });
+  // A suit: a jacket cut in at the waist and square at the shoulder
+  if (style === 14) Object.assign(rows, { 2: [.275, .53], 3: [.262, .66], 4: [.28, .82], 5: [.3, .97], 6: [.285, 1.035] });
+  // A puffer: fat quilted rings, one between each seam
+  if (style === 15) Object.assign(rows, { 2: [.3, .54], 3: [.31, .66], 4: [.318, .8], 5: [.318, .93], 6: [.29, 1.03], 7: [.215, 1.1], 8: [.15, 1.14] });
   return rows;
 }
 
@@ -98,17 +149,19 @@ function coatProfile(style) {
 // two close beside it, so a neckline comes to a point and an open front or a
 // scarf's tail can be drawn on the coat itself.
 const COLUMNS = [0, 24, 58, 90, 135, 180, -135, -90, -58, -24].map(a => a * Math.PI / 180);
+// How broad each outfit is across the shoulders and front
+const WIDTHS = [1, 1.07, .96, 1.04, .93, 1.08, 1.02, 1.08, .96, 1.06, 1.08, .94, .95, 1.06, 1.04, 1.04];
 
 // The coat: a lathe built by hand, with fans for the hem and collar (the
 // stock lathe spent sixteen degenerate triangles on its poles). The chest is
 // rounder than the flatter back. Each face notes its place for the clothing.
-function walkerBody(p, style) {
-  const width = [1, 1.07, .96, 1.04, .93, 1.08, 1.02, 1.08, .96, 1.06, 1.08, .94][style];
+function walkerBody(piece, style) {
+  const width = WIDTHS[style];
   const rows = coatProfile(style), columns = COLUMNS.length, top = rows.length - 1, grid = [];
   // The open fronts narrow toward their hem instead of looking like a
   // broad pasted-on stripe. The parka's panels close to a slim placket.
   const opening = style === 6 ? [.5, .5, .5, .55, .65, .8, .9, .9, .9]
-    : style === 9 ? [.7, .7, .7, .8, .9, 1, 1, 1, 1] : null;
+    : style === 9 ? [.7, .7, .7, .8, .9, 1, 1, 1, 1] : style === 14 ? [.34, .34, .34, .34, .34, .34, 1.2, 1, 1] : null;
   rows.forEach(([r, y], j) => {
     const pinch = style === 2 ? .2 : opening?.[j] ?? 1;
     const angles = COLUMNS.map(a => Math.abs(a) < .5 ? a * pinch : a);
@@ -116,9 +169,10 @@ function walkerBody(p, style) {
     const dip = j === top ? .018 : j === top - 1 ? .01 : 0;
     // The chest swells forward under the shoulders; the back stays flat
     const chest = .8 + .08 * Math.max(0, 1 - Math.abs(y - .9) / .25);
-    // The parka's hood lies folded down the back: a pouch over the shoulder
-    // blades, its rim open behind the head, where the collar's cap lines it
-    const hood = (style === 2 && [[.025, 0], [.06, .01], [.08, .035], [.075, .07]][j - top + 3]) || [0, 0];
+    // The parka's and hoodie's hoods lie folded down the back: a pouch over
+    // the shoulder blades, its rim open behind the head, where the collar's
+    // cap lines it
+    const hood = ((style === 2 || style === 13) && [[.025, 0], [.06, .01], [.08, .035], [.075, .07]][j - top + 3]) || [0, 0];
     for (const a of angles) {
       const c = Math.cos(a), back = Math.max(0, -c - .3) / .7;
       grid.push(new THREE.Vector3(Math.sin(a) * r * width, y - dip * c + hood[1] * back,
@@ -159,60 +213,148 @@ function walkerBody(p, style) {
   const coat = new THREE.BufferGeometry();
   coat.setAttribute('position', new THREE.Float32BufferAttribute(position, 3));
   coat.setAttribute('normal', new THREE.Float32BufferAttribute(normal, 3));
-  coat.userData.places = places;
-  p.add(coat, [0, 0, 0], cloth);
+  piece.add(coat, t => clothingColor(style, places[t]));
 }
 
-// The head, the hair or hat over it (a sculpted cap), one extra piece (a
-// bun, beard, ponytail, pompom or beret) and the face: ears, eyes and brows.
-function walkerHead(p, style) {
-  ellipsoid(p, [0, 1.45, 0], [.25, .265, .235], skin, 10, 6);
-  // A point `lift` out from the head's own facets toward `turn` radians
-  // round from the face (toward +x) and `rise` up from its middle. Pieces
-  // laid on the facets rather than the ideal ellipsoid meet them cleanly.
-  const facets = p.parts.at(-1).attributes.position, centre = new THREE.Vector3(0, 1.45, 0);
-  const ray = new THREE.Ray(), hit = new THREE.Vector3(), corner = [0, 1, 2].map(() => new THREE.Vector3());
-  const onFace = (turn, rise, lift = 0) => {
-    ray.set(centre, new THREE.Vector3(Math.sin(turn) * Math.cos(rise) * .25, Math.sin(rise) * .265,
-      -Math.cos(turn) * Math.cos(rise) * .235).normalize());
-    for (let i = 0; i < facets.count; i += 3) {
-      corner.forEach((v, j) => v.fromBufferAttribute(facets, i + j));
-      if (ray.intersectTriangle(...corner, false, hit)) return hit.addScaledVector(ray.direction, lift).toArray();
-    }
-    return onFace(turn + 1e-6, rise - 1e-6, lift); // exactly on an edge
-  };
-  // Remake a sphere as another closed shape: `at(ring, c)` places each ring
-  // (pole to pole) round its section, keeping the sphere's winding.
-  const reshape = (sphere, at) => {
-    const { widthSegments } = sphere.parameters, position = sphere.attributes.position;
-    for (let i = 0; i < position.count; i++) {
-      position.setXYZ(i, ...at(Math.floor(i / (widthSegments + 1)), i % (widthSegments + 1) / widthSegments * Math.PI * 2));
-    }
-    sphere.computeVertexNormals(); return sphere;
-  };
-  // A shell lying on the head, along rings of [turn, rises, thick] (turn
-  // increasing) between two [turn, rise] poles tucked into the head. Each
-  // section runs from its upper edge out over three rises to its lower edge,
-  // and back inside. Rings sit on the head's creases, and each face of the
-  // shell over one row of facets, so none of the head shows through it.
-  const shell = rings => (ring, c) => {
-    if (rings[ring].length === 2) return onFace(...rings[ring], -.006);
-    const [turn, rises, thick] = rings[ring], k = Math.round(c / (Math.PI / 4)) % 8;
-    return onFace(turn, rises[Math.min(k, 8 - k)], [-.003, .65 * thick, thick, .8 * thick, -.003, -.03, -.03, -.03][k]);
-  };
-  const crease = Math.PI / 10; // half a facet's width
+// What is worn, drawn on the coat's own faces (no decals floating off it).
+// Quads 0 and 9 are the narrow panels either side of the front's middle, 4
+// and 5 the back. Returns [channel, shade].
+const COAT = [CH.coat, 1], TRIM = [CH.trim, 1];
+function clothingColor(style, { band, q, near }) {
+  const panel = q === 0 || q === 9, side = [2, 3, 6, 7].includes(q), back = q === 4 || q === 5, trousers = TROUSERS.includes(style);
+  const front = panel || q === 1 || q === 8;
+  if (band < 0) return trousers ? [CH.legs, .6] : [CH.coat, .6];
+  if (band === 8) return style === 14 ? [CH.shirt, .8] : [CH.trim, .7];
+  // A suit's trousers match its jacket
+  if (trousers && band === 0) return style === 14 ? [CH.coat, .82] : [CH.legs, 1];
+  // A scarf's roll, and one tail down the chest
+  if (SCARF.includes(style) && (band >= 5 || q === 9 && band >= 2)) return TRIM;
+  // Crew necks' collars go all round, the others' show at the front; the
+  // parka's hood is lined, and it closes on a placket
+  if (band === 7 && style === 2) return back ? [CH.trim, .8] : COAT;
+  if (style === 13) {
+    // The hood's lining, drawstrings, and a pocket across the front
+    if (band === 7) return back ? [CH.coat, .7] : panel ? TRIM : COAT;
+    if (band === 6 && panel && near) return TRIM;
+    if (band === 3 && front) return [CH.coat, .86];
+    if (band === 2) return [CH.coat, .9];
+    return COAT;
+  }
+  if (style === 14) {
+    // A shirt's V under the lapels, and a narrow tie from the knot to its
+    // point above the jacket's button
+    if (panel && band >= 5) return band === 5 && near ? [CH.accent, .9] : [CH.shirt, 1];
+    if (panel && (band === 3 || band === 4)) return [CH.accent, 1];
+    if (panel && band === 2 && near) return [CH.accent, 1];
+    if ((q === 1 || q === 8) && band >= 5 && band <= 6) return [CH.coat, .78];
+    if (band === 7) return [CH.coat, .9];
+    return COAT;
+  }
+  if (style === 15) {
+    // Quilted rings: the seams are shadowed
+    if (band === 7) return [CH.coat, .8];
+    return [CH.coat, [1, 1, .74, 1, .76, 1, .86][band] ?? 1];
+  }
+  if (style === 12) {
+    // A belt at the waist; a round neck
+    if (band === 3) return [CH.trim, .9];
+    if (band === 7) return [CH.coat, .92];
+    return [CH.coat, band === 0 ? .76 : 1];
+  }
+  if (band === 7) return [1, 5, 7, 10].includes(style) || panel ? TRIM : COAT;
+  if (style === 2 && panel && band >= 1) return TRIM;
+  // The belted coat's V neck, and open fronts over a shirt
+  if (style === 3 && (panel && (band === 6 || band === 5 && near) || band === 3)) return TRIM;
+  if ([6, 9].includes(style) && panel && band >= 2) return TRIM;
+  if ([1, 5].includes(style) && band === 3) return TRIM;
+  // Hoops: two bands round the chest
+  if (style === 7 && (band === 3 || band === 5)) return TRIM;
+  // A vest over a jumper, whose sleeves show at the sides
+  if (style === 10 && side && band >= 2) return TRIM;
+  return [CH.coat, !trousers && band === 0 ? .76 : 1];
+}
 
+function outfitSlot(style) {
+  const piece = new Piece(0);
+  walkerBody(piece, style);
+  return piece;
+}
+
+// --------------------------------------------------------------- the head
+
+const HEAD = new THREE.Vector3(0, 1.45, 0), HEAD_SIZE = [.25, .265, .235];
+// The head's facets, for laying things on them
+const headFacets = (() => {
+  const g = new THREE.SphereGeometry(1, 10, 6).toNonIndexed();
+  g.scale(...HEAD_SIZE); g.translate(HEAD.x, HEAD.y, HEAD.z);
+  return g.attributes.position;
+})();
+const ray = new THREE.Ray(), hit = new THREE.Vector3(), corner = [0, 1, 2].map(() => new THREE.Vector3());
+// A point `lift` out from the head's own facets toward `turn` radians round
+// from the face (toward +x) and `rise` up from its middle. Pieces laid on the
+// facets rather than the ideal ellipsoid meet them cleanly.
+function onFace(turn, rise, lift = 0) {
+  ray.set(HEAD, new THREE.Vector3(Math.sin(turn) * Math.cos(rise) * .25, Math.sin(rise) * .265,
+    -Math.cos(turn) * Math.cos(rise) * .235).normalize());
+  for (let i = 0; i < headFacets.count; i += 3) {
+    corner.forEach((v, j) => v.fromBufferAttribute(headFacets, i + j));
+    if (ray.intersectTriangle(...corner, false, hit)) return hit.addScaledVector(ray.direction, lift).toArray();
+  }
+  return onFace(turn + 1e-6, rise - 1e-6, lift); // exactly on an edge
+}
+// Remake a sphere as another closed shape: `at(ring, c)` places each ring
+// (pole to pole) round its section, keeping the sphere's winding.
+function reshape(sphereGeometry, at) {
+  const { widthSegments } = sphereGeometry.parameters, position = sphereGeometry.attributes.position;
+  for (let i = 0; i < position.count; i++) {
+    position.setXYZ(i, ...at(Math.floor(i / (widthSegments + 1)), i % (widthSegments + 1) / widthSegments * Math.PI * 2));
+  }
+  sphereGeometry.computeVertexNormals(); return sphereGeometry;
+}
+// A shell lying on the head, along rings of [turn, rises, thick] (turn
+// increasing) between two [turn, rise] poles tucked into the head. Each
+// section runs from its upper edge out over three rises to its lower edge,
+// and back inside. Rings sit on the head's creases, and each face of the
+// shell over one row of facets, so none of the head shows through it.
+const shell = rings => (ring, c) => {
+  if (rings[ring].length === 2) return onFace(...rings[ring], -.006);
+  const [turn, rises, thick] = rings[ring], k = Math.round(c / (Math.PI / 4)) % 8;
+  return onFace(turn, rises[Math.min(k, 8 - k)], [-.003, .65 * thick, thick, .8 * thick, -.003, -.03, -.03, -.03][k]);
+};
+const crease = Math.PI / 10; // half a facet's width
+// A strip of quads laid on the facets through [turn, rise, half-height]
+// points, as the brows are, so no edge lifts off the face
+function faceStrip(points, lift = .0025) {
+  const ends = points.flatMap(([turn, rise, half]) => [onFace(turn, rise + half, lift), onFace(turn, rise - half, lift)]);
+  const index = [];
+  for (let k = 0; k + 3 < ends.length; k += 2) {
+    for (const [i, j, l] of [[k, k + 1, k + 2], [k + 2, k + 1, k + 3]]) {
+      const [u, v, w] = [i, j, l].map(n => new THREE.Vector3(...ends[n]));
+      const outward = v.clone().sub(u).cross(w.clone().sub(u)).dot(u.clone().sub(HEAD)) > 0;
+      index.push(...(outward ? [i, j, l] : [i, l, j]));
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(ends.flat(), 3)); g.setIndex(index);
+  g.computeVertexNormals(); return g;
+}
+
+// Hair and hats: a sculpted cap over the head, one extra piece (a bun,
+// ponytail, pompom, beret, peak, brim or drape) and the ears it leaves showing.
+function hairSlot(style) {
+  const piece = new Piece(1);
   // A separate sculpted cap leaves a real forehead. Its boundary goes behind
   // the temples instead of drawing a horizontal line across the face.
   const scalp = new THREE.SphereGeometry(1, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2);
   const vertex = scalp.attributes.position, uv = scalp.attributes.uv;
+  const hat = style === 12 || style === 13 || style === 15;
   for (let i = 0; i < vertex.count; i++) {
     const phi = Math.atan2(vertex.getZ(i), -vertex.getX(i));
     const front = Math.max(0, -Math.sin(phi)), side = Math.cos(phi), back = Math.max(0, Math.sin(phi));
     const latitude = (1 - uv.getY(i)) * 1.25, ring = Math.min(4, Math.round(latitude * 4));
-    // The beanie uses two rings at the same height for the lip of its folded
-    // cuff; all other caps keep their evenly spaced rows.
-    const row = style === 10 ? [0, .4, .78, .78, 1][ring] : Math.min(1, latitude);
+    // The beanie and the caps use two rings at the same height for the lip
+    // of a cuff or a crown's edge; all other caps keep evenly spaced rows.
+    const row = style === 10 ? [0, .4, .78, .78, 1][ring] : hat ? [0, .4, .66, .68, 1][ring] : Math.min(1, latitude);
     // The hairline, in radians from the crown. Short hair clears the ears and
     // comes down the back of the head to the nape: a cap stopping at the
     // ears read as hair on a bald ball from behind, and even as a face.
@@ -224,13 +366,18 @@ function walkerHead(p, style) {
     if (style === 6) edge = 1.7 - front * .68 + back * .75;
     if (style === 7) edge = 2.05 - front * .95 + back * .45;
     if (style === 10) edge = 1.6 - front * .3 + back * .3;
+    // A cap's crown comes down to the brow in front; hair shows under it
+    // round the back
+    if (hat) edge = 1.9 - front * .45 + back * .55;
+    // A headscarf wraps the whole head and frames the face
+    if (style === 14) edge = 2.75 - front * (1.62 - side * .25);
     const theta = row * edge, top = 1 - row;
     // No curl at the crown, whose vertices must meet
     const curl = (style === 2 || style === 7) && row ? .022 * Math.cos(phi * 5 + row * Math.PI * 3) : 0;
-    // Close crops under the beard and the beret
-    const radius = (style === 6 || style === 9 ? .27 : style === 7 ? .335 : .28) + curl + (style === 2 ? .024 : 0);
+    // Close crops under the beret; a hat's crown stands proud of the hair
+    const radius = (style === 6 || style === 9 ? .27 : style === 7 ? .335 : hat ? .285 : style === 14 ? .272 : .28) + curl + (style === 2 ? .024 : 0);
     let x = -Math.cos(phi) * Math.sin(theta) * radius;
-    let y = Math.cos(theta) * ((style === 6 || style === 9 ? .283 : style === 7 ? .34 : .3) + curl);
+    let y = Math.cos(theta) * ((style === 6 || style === 9 ? .283 : style === 7 ? .34 : hat ? .3 : style === 14 ? .292 : .3) + curl);
     let z = Math.sin(phi) * Math.sin(theta) * radius * .94;
     // Below the ears hair closes in to lie on the head, as cut hair does,
     // instead of flaring like a helmet; a beanie is pulled down behind.
@@ -240,14 +387,16 @@ function walkerHead(p, style) {
     x += (snug[0] - x) * hug; y += (snug[1] - y) * hug; z += (snug[2] - z) * hug;
     if (style === 0) { x -= .045 * top; y += .085 * top + .03 * front * Math.sin(theta); }
     if (style === 1) { x -= .065 * top; y += .055 * top; }
-    if (style === 3 || style === 11) {
+    if (style === 3 || style === 11 || style === 14) {
       // Cut hair hangs from the temples instead of following the skull back
       // in under the jaw. The bob has a blunt edge; the long sweep drops
-      // farther behind and over one shoulder, with its face left clear.
+      // farther behind and over one shoulder, with its face left clear. A
+      // headscarf falls to the collar all round.
       const hang = THREE.MathUtils.smoothstep(theta, 1.35, 2.45);
-      const fall = style === 11 ? .285 + .025 * side : .255;
-      x += (-Math.cos(phi) * .264 - x) * hang;
-      z += (Math.sin(phi) * .239 - z) * hang;
+      const fall = style === 11 ? .285 + .025 * side : style === 14 ? .3 : .255;
+      const out = style === 14 ? [.266, .245] : [.264, .239];
+      x += (-Math.cos(phi) * out[0] - x) * hang;
+      z += (Math.sin(phi) * out[1] - z) * hang;
       y += (-fall - y) * hang;
       // These longer faces cross the head's widest facets between rows.
       // Leave a little clearance there, or a temple pokes through the hair.
@@ -257,6 +406,10 @@ function walkerHead(p, style) {
       y += .055 * top;
       if (ring >= 3) { x *= 1.08; z *= 1.08; }
     }
+    // A flat cap slopes forward from a raised back; a sun hat's crown is tall
+    if (style === 13) { y += .03 * top - .045 * front * top; z *= 1.04; x *= 1.04; }
+    if (style === 15) y += .06 * top;
+    if (hat && ring >= 3) { x *= 1.04; z *= 1.04; }
     // A sparse cap spans across, rather than along, some head facets at the
     // temples. Its close-fitting styles need the same small clearance.
     if ([0, 1, 4, 6, 8, 9].includes(style)) { x *= 1.04; z *= 1.04; }
@@ -275,26 +428,25 @@ function walkerHead(p, style) {
     // Return the rim inside the head. An open, paper-thin cap can leave
     // detached-looking slivers around the temples from oblique cameras.
     if (latitude > 1.01) {
-      const long = style === 3 || style === 11;
+      const long = style === 3 || style === 11 || style === 14;
       x *= long ? .35 : .72; y *= long ? .65 : .72; z *= long ? .35 : .72;
     }
     vertex.setXYZ(i, x, y, z);
   }
-  scalp.computeVertexNormals(); p.add(scalp, [0, 1.46, 0], style === 10 ? trim : hair);
+  scalp.computeVertexNormals();
+  // (the sphere's rows are faces of 20 triangles a band, bar the first ten)
+  const band = t => t < 10 ? 0 : 1 + Math.floor((t - 10) / 20);
+  const paint = style === 10 ? () => TRIM : style === 14 ? t => [CH.accent, [1.06, 1.02, 1, .96, .82][band(t)]]
+    : hat ? t => band(t) >= 3 ? [CH.hair, 1] : style === 15 ? (band(t) === 2 ? [CH.accent, 1] : [CH.straw, 1]) : [CH.accent, band(t) === 2 ? .82 : 1]
+      : () => [CH.hair, 1];
+  piece.add(scalp, paint, [0, 1.46, 0]);
 
-  // Reuse this same small piece for tied hair, a beard, a wool pompom or a
-  // beret worn over short hair. The other styles collapse it inside the head,
-  // with no extra draw calls.
+  // One piece reused for tied hair, a wool pompom, a beret worn over short
+  // hair, a cap's peak, a sun hat's brim or a headscarf's drape. The other
+  // styles collapse it inside the head.
   const extra = new THREE.SphereGeometry(1, 8, 5);
-  if (style === 6) {
-    // A beard: a shell along the jaw from sideburn to sideburn, rising from
-    // under the jaw to the cheek. A flat disc under the chin read as a strap
-    // across the face, and an edge straight across under the eyes as a mask:
-    // it dips from the sideburns to leave the upper lip bare.
-    const cheek = [-.24, -.524, -.7, -.85, -.95], chin = [-.44, -.524, -.785, -1.047, -1.25];
-    reshape(extra, shell([[-1.5, -.02], [-3 * crease, cheek, .022], [-crease, chin, .036],
-      [crease, chin, .036], [3 * crease, cheek, .022], [1.5, -.02]]));
-  } else if (style === 8) {
+  let extraPaint = [CH.hair, 1];
+  if (style === 8) {
     // A ponytail gathered at the back of the crown, full below the tie and
     // tapering to its tip at the nape: rings of [y, z, width, depth].
     const rings = [[1.655, .19, 0, 0], [1.6, .255, .03, .028], [1.52, .3, .07, .058], [1.42, .315, .082, .066], [1.3, .305, .06, .05], [1.2, .28, 0, 0]];
@@ -309,120 +461,321 @@ function walkerHead(p, style) {
     const rings = [[0, .1], [.2, .088], [.315, .05], [.36, 0], [.23, -.04], [0, -.05]];
     reshape(extra, (ring, c) => [-Math.cos(c) * rings[ring][0], rings[ring][1], Math.sin(c) * rings[ring][0] * .96]);
     extra.rotateZ(.22).rotateX(-.1).translate(-.04, 1.68, .02);
+    extraPaint = TRIM;
+  } else if (style === 12 || style === 13) {
+    // A cap's peak: a stiff half disc standing out over the brow, tipped
+    // down a little. A flat cap's is short and flush with its crown.
+    const [reach, wide, lift] = style === 12 ? [.2, .19, 1.605] : [.12, .2, 1.63];
+    const rings = [[0, .012], [.55, .012], [.9, .006], [1, 0], [.9, -.006], [0, -.008]];
+    reshape(extra, (ring, c) => {
+      const [r, y] = rings[ring], s = Math.sin(c);
+      // the back half of the disc lies under the crown
+      return [-Math.cos(c) * r * wide, y, s > 0 ? s * r * .08 : s * r * reach];
+    });
+    extra.rotateX(style === 12 ? .22 : .3).translate(0, lift, -.2);
+    extraPaint = [CH.accent, style === 12 ? .85 : .9];
+  } else if (style === 15) {
+    // A sun hat's wide brim, drooping at its edge
+    const rings = [[0, .018], [.2, .016], [.34, .006], [.4, -.018], [.3, -.008], [0, -.002]];
+    reshape(extra, (ring, c) => [-Math.cos(c) * rings[ring][0], rings[ring][1], Math.sin(c) * rings[ring][0] * .95]);
+    extra.rotateX(-.06).translate(0, 1.64, .01);
+    extraPaint = [CH.straw, .92];
+  } else if (style === 14) {
+    // A headscarf's drape: under the chin and round the throat, spreading
+    // over the collar onto the shoulders ([radius, y] rings)
+    const rings = [[0, 1.33], [.215, 1.31], [.265, 1.21], [.315, 1.1], [.265, 1.05], [0, 1.06]];
+    reshape(extra, (ring, c) => {
+      const [r, y] = rings[ring], front = Math.max(0, -Math.sin(c));
+      // (it comes down under the jaw in front, clear of the mouth)
+      return [-Math.cos(c) * r, y - (ring < 3 ? .09 * front * front : 0), Math.sin(c) * r * .92 + .02];
+    });
+    extraPaint = [CH.accent, .92];
   } else {
     // A bun, a pompom, or nothing
     const [at, size] = { 4: [[0, 1.71, .13], [.135, .12, .13]], 10: [[0, 1.83, 0], [.075, .075, .075]] }[style] ?? [[0, 1.45, 0], [0, 0, 0]];
-    extra.scale(...size).translate(...at);
+    if (size[0]) extra.scale(...size).translate(...at); else collapse(extra, at);
+    if (style === 10) extraPaint = TRIM;
   }
-  p.add(extra, [0, 0, 0], style === 9 || style === 10 ? trim : hair);
+  piece.add(extra, extraPaint);
 
+  // Ears: small five-sided bipyramids leaning back, their inner half in
+  // the head. Long hair, the afro and a headscarf cover them.
+  const covered = [2, 3, 7, 11, 14].includes(style);
   for (const side of [-1, 1]) {
-    // Ears: small five-sided bipyramids leaning back, their inner half in
-    // the head. Long hair and the afro cover them.
     const ear = new THREE.SphereGeometry(1, 5, 2);
-    ear.scale(...([2, 3, 7, 11].includes(style) ? [0, 0, 0] : [.042, .022, .028]));
-    p.add(ear, [side * .246, 1.44, .01], skin, [.25, 0, -side * Math.PI / 2]);
-    // Oval eyes, not diamonds
-    const eye = new THREE.CircleGeometry(.017, 6, Math.PI / 2); eye.scale(1, 1.25, 1);
-    p.add(eye, [side * .074, 1.458, -.226], ink, [0, Math.PI - side * .3, 0]);
+    if (covered) collapse(ear, [side * .2, 1.44, 0]);
+    else ear.scale(.042, .022, .028).applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(.25, 0, -side * Math.PI / 2))).translate(side * .246, 1.44, .01);
+    piece.add(ear, [CH.skin, .96]);
+  }
+  return piece;
+}
+
+// The face: the head, eyes, brows, a nose, glasses and facial hair. No
+// mouth: the face stays as quiet as a toy's.
+function faceSlot(face) {
+  const piece = new Piece(2);
+  sphere(10, 6, HEAD_SIZE, HEAD.toArray(), [CH.skin, 1], piece);
+  const glasses = [1, 3, 4].includes(face);
+  for (const side of [-1, 1]) {
+    // Tall oval eyes, not diamonds
+    const eye = new THREE.CircleGeometry(.018, 8); eye.scale(1, 1.3, 1);
+    piece.add(eye, [CH.ink, 1], [side * .076, 1.458, -.226], [0, Math.PI - side * .3, 0]);
     // Short brows in a darker shade of the hair, laid on the facets and bent
-    // over the crease between them, so no edge lifts off the face.
-    const brow = [[.14, .245, .025], [crease, .248, .021], [.44, .232, .013]]
-      .flatMap(([turn, rise, half]) => [onFace(side * turn, rise + half, .0025), onFace(side * turn, rise - half, .0025)]);
-    const strip = [];
-    for (const k of [0, 2]) {
-      const [a, b, c, d] = brow.slice(k, k + 4);
-      for (const triangle of [[a, b, c], [c, b, d]]) {
-        const [u, v, w] = triangle.map(point => new THREE.Vector3(...point));
-        const outward = v.clone().sub(u).cross(w.clone().sub(u)).dot(u.clone().sub(centre)) > 0;
-        strip.push(...(outward ? [u, v, w] : [u, w, v]).flatMap(point => point.toArray()));
-      }
-    }
-    const browGeometry = new THREE.BufferGeometry();
-    browGeometry.setAttribute('position', new THREE.Float32BufferAttribute(strip, 3));
-    browGeometry.computeVertexNormals();
-    p.add(browGeometry, [0, 0, 0], new THREE.Color(0, 0, .8));
-    const glasses = new THREE.RingGeometry(.033, .044, 8);
-    if (![5, 6, 9].includes(style)) glasses.scale(0, 0, 0);
-    p.add(glasses, [side * .074, 1.46, -.24], ink, [0, Math.PI - side * .3, 0]);
+    // over the crease between them
+    piece.add(faceStrip([[side * .14, .245, .025], [side * crease, .248, .021], [side * .44, .232, .013]]), [CH.hair, .8]);
+    const ring = new THREE.RingGeometry(face === 3 ? 0 : face === 4 ? .038 : .034, face === 4 ? .048 : .045, 8);
+    if (face === 1) ring.scale(1.12, .82, 1);
+    if (face === 3) ring.scale(1.15, .9, 1);
+    if (!glasses) collapse(ring, [side * .07, 1.46, -.2]);
+    piece.add(ring, face === 3 ? [CH.lens, 1] : [CH.ink, 1], [side * .074, 1.46, -.24], glasses ? [0, Math.PI - side * .3, 0] : [0, 0, 0]);
   }
   const bridge = new THREE.PlaneGeometry(.065, .012);
-  if (![5, 6, 9].includes(style)) bridge.scale(0, 0, 0);
-  p.add(bridge, [0, 1.46, -.251], ink, [0, Math.PI, 0]);
+  if (!glasses) collapse(bridge, [0, 1.46, -.2]);
+  piece.add(bridge, [CH.ink, 1], glasses ? [0, 1.46, -.251] : [0, 0, 0], glasses ? [0, Math.PI, 0] : [0, 0, 0]);
+  // A four-sided nose, broader or longer on some faces
+  const nose = [[.036, .031, .036], [.034, .034, .038], [.043, .034, .038], [.031, .031, .036], [.036, .036, .041]][face];
+  sphere(4, 2, nose, onFace(0, -.1, -.012), [CH.skin, .97], piece);
+  // Facial hair: a moustache under the nose. (No beards: a shell along the
+  // jaw looked ugly, the user found, and a goatee read as an open mouth.)
+  const whiskers = new THREE.SphereGeometry(1, 8, 5);
+  if (face === 2) {
+    const lip = [-.17, -.19, -.23, -.27, -.29];
+    reshape(whiskers, shell([[-.5, -.3], [-.3, lip, .012], [-.12, lip, .018], [.12, lip, .018], [.3, lip, .012], [.5, -.3]]));
+  } else collapse(whiskers, HEAD.toArray());
+  piece.add(whiskers, [CH.hair, .92]);
+  return piece;
 }
 
-// What is worn, drawn on the coat's own faces (no decals floating off it)
-// as colour masks: the coat, shaded, trim (shaded too) and trousers. Quads 0
-// and 9 are the narrow panels either side of the front's middle, 4 and 5
-// the back. Faces meeting in one colour in every style share vertices, so
-// undersides are left to the light rather than shaded here.
-const TRIM = [1, 1, 0], legs = shade => [0, shade, 1];
-function clothingColor(style, { band, q, near }) {
-  const panel = q === 0 || q === 9, side = [2, 3, 6, 7].includes(q), trousers = TROUSERS.includes(style);
-  if (band < 0) return trousers ? legs(.6) : [.6, 0, 0];
-  if (band === 8) return [1, .7, 0];
-  if (trousers && band === 0) return legs(1);
-  // A scarf's roll, and one tail down the chest
-  if (SCARF.includes(style) && (band >= 5 || q === 9 && band >= 2)) return TRIM;
-  // Crew necks' collars go all round, the others' show at the front; the
-  // parka's hood is lined, and it closes on a placket
-  if (band === 7 && style === 2) return q === 4 || q === 5 ? [1, .8, 0] : [1, 0, 0];
-  if (band === 7) return [1, 5, 7, 10].includes(style) || panel ? TRIM : [1, 0, 0];
-  if (style === 2 && panel && band >= 1) return TRIM;
-  // The belted coat's V neck, and open fronts over a shirt
-  if (style === 3 && (panel && (band === 6 || band === 5 && near) || band === 3)) return TRIM;
-  if ([6, 9].includes(style) && panel && band >= 2) return TRIM;
-  if ([1, 5, 7].includes(style) && band === 3) return TRIM;
-  // A vest over a jumper, whose sleeves show at the sides
-  if (style === 10 && side && band >= 2) return TRIM;
-  return [!trousers && band === 0 ? .76 : 1, 0, 0];
-}
-function walkerClothing(p, style) {
-  const coat = p.parts.find(part => part.userData.places), colors = coat.attributes.color;
-  coat.userData.places.forEach((place, t) => {
-    const mask = clothingColor(style, place);
-    for (let i = 0; i < 3; i++) colors.setXYZ(t * 3 + i, ...mask);
+// ------------------------------------------------------------ what's worn
+
+// On the back only: a backpack, a bag hung at the hip from one shoulder, or
+// a satchel slung across the back. Straps are strips wrapped over the
+// outermost of every outfit's surfaces, so they lie along a coat (a little
+// proud of the slimmest) instead of standing off it as straight bars.
+let profiles = null;
+function coatReach(angle, y) {
+  let most = 0;
+  profiles ??= WALKER_OUTFITS.map((_, style) => coatProfile(style));
+  profiles.forEach((rows, style) => {
+    let r = rows[0][0];
+    for (let j = 0; j + 1 < rows.length; j++) {
+      const [[ra, ya], [rb, yb]] = [rows[j], rows[j + 1]];
+      if (y >= ya && y <= yb) { r = ra + (rb - ra) * (y - ya) / (yb - ya || 1); break; }
+      if (y > yb) r = rb;
+    }
+    const c = Math.cos(angle), w = WIDTHS[style], chest = .8 + .08 * Math.max(0, 1 - Math.abs(y - .9) / .25);
+    const x = Math.sin(angle) * r * w, z = c > 0 ? -c * r * w * chest : Math.sqrt(-c) * r * w * .72;
+    // the parka's and hoodie's hoods over the shoulder blades
+    const hood = (style === 2 || style === 13) && c < -.3 && y > .9 ? .07 * Math.min(1, (y - .9) / .15) * (-c - .3) / .7 : 0;
+    most = Math.max(most, Math.hypot(x, z + hood));
   });
-  delete coat.userData.places;
+  return most;
+}
+// A strip `width` wide through [angle from the front, y] points, `lift` off
+// the coat: one face each segment's width, facing out
+const STRAP_STEPS = 4;
+function strap(points, width = .045, lift = .012) {
+  const along = [];
+  for (let k = 0; k <= STRAP_STEPS; k++) {
+    const t = k / STRAP_STEPS * (points.length - 1), i = Math.min(points.length - 2, Math.floor(t)), f = t - i;
+    const angle = points[i][0] + (points[i + 1][0] - points[i][0]) * f, y = points[i][1] + (points[i + 1][1] - points[i][1]) * f;
+    along.push([angle, y]);
+  }
+  const at = (angle, y) => {
+    const r = coatReach(angle, y) + lift, d = new THREE.Vector2(Math.sin(angle), -Math.cos(angle));
+    return new THREE.Vector3(d.x * r, y, d.y * r);
+  };
+  const rails = along.map(([angle, y], k) => {
+    const [a0, y0] = along[Math.max(0, k - 1)], [a1, y1] = along[Math.min(along.length - 1, k + 1)];
+    const tangent = at(a1, y1).sub(at(a0, y0)).normalize(), out = at(angle, y).setY(0).normalize();
+    const across = new THREE.Vector3().crossVectors(tangent, out).multiplyScalar(width / 2);
+    const middle = at(angle, y);
+    // each rail back onto the surface
+    return [middle.clone().add(across), middle.clone().sub(across)].map(p => at(Math.atan2(p.x, -p.z), p.y));
+  });
+  // (indexed, so its faces share smooth corners)
+  const position = rails.flat().flatMap(p => p.toArray()), index = [];
+  for (let k = 0; k < STRAP_STEPS; k++) {
+    const [a, b, c, d] = [k * 2, k * 2 + 1, k * 2 + 2, k * 2 + 3], [u, v, w] = [a, b, c].map(i => rails[i >> 1][i & 1]);
+    const outward = v.clone().sub(u).cross(w.clone().sub(u)).dot(u.clone().setY(0)) > 0;
+    index.push(...(outward ? [a, b, c, c, b, d] : [a, c, b, c, d, b]));
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(position, 3)); g.setIndex(index);
+  g.computeVertexNormals(); return g;
+}
+const DEG = Math.PI / 180;
+function gearSlot(gear) {
+  const piece = new Piece(3);
+  const bag = new THREE.BoxGeometry(1, 1, 1), flap = new THREE.BoxGeometry(1, 1, 1);
+  let straps;
+  const place = (g, size, at, rotation = [0, 0, 0]) => {
+    g.scale(...size).applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(...rotation))).translate(...at);
+  };
+  if (gear === 1) {
+    // A backpack high on the back, its straps over the shoulders to the chest
+    place(bag, [.3, .34, .13], [0, .79, .29], [-.08, 0, 0]);
+    place(flap, [.28, .1, .14], [0, .965, .292], [-.2, 0, 0]);
+    straps = [-1, 1].map(side => strap([[side * 150 * DEG, .93], [side * 120 * DEG, 1.07], [side * 55 * DEG, 1.06], [side * 35 * DEG, .86]]));
+  } else if (gear === 2) {
+    // A bag at the right hip, its strap up the side and over the shoulder
+    place(bag, [.1, .22, .26], [.35, .6, .03], [0, 0, .06]);
+    place(flap, [.11, .09, .27], [.353, .69, .03], [0, 0, .06]);
+    straps = [strap([[88 * DEG, .7], [90 * DEG, .95], [95 * DEG, 1.07]]), strap([[95 * DEG, 1.07], [60 * DEG, 1.08], [30 * DEG, 1.02]])];
+  } else if (gear === 3) {
+    // A satchel at the small of the back, slung from the left shoulder
+    place(bag, [.32, .22, .09], [.05, .66, .275], [0, 0, -.12]);
+    place(flap, [.3, .12, .1], [.04, .74, .279], [-.1, 0, -.12]);
+    straps = [strap([[160 * DEG, .76], [-150 * DEG, .95], [-110 * DEG, 1.07]]), strap([[-110 * DEG, 1.07], [-45 * DEG, 1.0], [30 * DEG, .78], [75 * DEG, .66]])];
+  } else {
+    for (const g of [bag, flap]) collapse(g, [0, .9, 0]);
+    straps = [0, 1].map(() => collapse(strap([[0, .8], [0, .9]]), [0, .9, 0]));
+  }
+  piece.add(bag, [CH.accent, 1]);
+  piece.add(flap, [CH.accent, .82]);
+  for (const g of straps) piece.add(g, [CH.accent, .72]);
+  return piece;
 }
 
+// ---------------------------------------------------------------- assembly
+
+// Every slot's variants share their topology; the base geometry is the first
+// variant of each. The targets hold each variant's difference from it, zero
+// outside its own slot, so the stock morph path (shadow and AO passes, with
+// one weight per slot) builds exactly the combination the colour pass does.
 function walkerGeometry() {
-  const variants = WALKER_STYLES.map((_, style) => silhouette(style));
-  for (const variant of variants) {
-    const color = variant.attributes.color, rgba = new Float32Array(color.count * 4);
-    for (let i = 0; i < color.count; i++) rgba.set([color.getX(i), color.getY(i), color.getZ(i), 1], i * 4);
-    variant.setAttribute('color', new THREE.BufferAttribute(rgba, 4));
+  const slots = [outfitSlot, hairSlot, faceSlot, gearSlot].map((build, s) => SLOTS[s].map((_, v) => build(v)));
+  for (const [s, variants] of slots.entries()) for (const [v, piece] of variants.entries()) {
+    if (piece.count !== variants[0].count) throw new Error(`walker slot ${s} variant ${v}: ${piece.count} vertices, not ${variants[0].count}`);
   }
-  const geometry = variants[0];
-  // Index against ALL silhouettes, so a seam/normal needed by a different
-  // hairstyle cannot be lost. The stock morph path also works in shadow/AO
-  // passes, avoiding a second custom animation or depth implementation.
-  for (let i = 0; i < variants.length; i++) for (const name of ['position', 'normal', 'color']) {
-    geometry.setAttribute(`${name}${i}`, variants[i].attributes[name]);
+  // Index exact duplicates: two corners are one vertex only if they agree in
+  // every variant of their slot (and are in the same slot). Corners are
+  // hashed by their float bits, and a hash's first corner checked in full.
+  const bits = slots.map(variants => variants.map(piece => ({
+    position: new Uint32Array(new Float32Array(piece.position).buffer),
+    normal: new Uint32Array(new Float32Array(piece.normal).buffer),
+    data: new Uint32Array(new Float32Array(piece.data).buffer),
+  })));
+  const same = (variants, i, j) => variants.every(({ position, normal, data }) => {
+    for (let n = 0; n < 3; n++) if (position[i * 3 + n] !== position[j * 3 + n] || normal[i * 3 + n] !== normal[j * 3 + n]) return false;
+    return data[i * 4] === data[j * 4] && data[i * 4 + 1] === data[j * 4 + 1];
+  });
+  const unique = new Map(), sources = [], index = [];
+  for (const [s, variants] of slots.entries()) {
+    for (let i = 0; i < variants[0].count; i++) {
+      let key = s + 1;
+      for (const { position, normal, data } of bits[s]) {
+        for (let n = 0; n < 3; n++) key = Math.imul(key ^ position[i * 3 + n], 0x01000193) ^ Math.imul(normal[i * 3 + n], 0x9e3779b1);
+        key = Math.imul(key ^ data[i * 4], 0x01000193) ^ data[i * 4 + 1];
+      }
+      let at = -1;
+      for (const candidate of unique.get(key) ?? []) if (sources[candidate][0] === s && same(bits[s], sources[candidate][1], i)) { at = candidate; break; }
+      if (at < 0) {
+        at = sources.length; sources.push([s, i]);
+        if (unique.has(key)) unique.get(key).push(at); else unique.set(key, [at]);
+      }
+      index.push(at);
+    }
   }
-  compactGeometry(geometry);
+  const count = sources.length, geometry = new THREE.BufferGeometry();
+  const base = { position: new Float32Array(count * 3), normal: new Float32Array(count * 3), color: new Float32Array(count * 4) };
+  const slotOf = new Float32Array(count);
+  const targets = { position: [], normal: [], color: [] };
+  for (let t = 0; t < WALKER_TARGETS; t++) for (const name of ['position', 'normal', 'color']) targets[name].push(new Float32Array(count * (name === 'color' ? 4 : 3)));
+  const source = { position: 'position', normal: 'normal', color: 'data' };
+  sources.forEach(([s, i], k) => {
+    slotOf[k] = s;
+    const variants = slots[s];
+    for (const [name, key] of Object.entries(source)) {
+      const size = name === 'color' ? 4 : 3, first = variants[0][key].slice(i * size, i * size + size);
+      base[name].set(first, k * size);
+      variants.forEach((piece, v) => {
+        const values = piece[key].slice(i * size, i * size + size);
+        targets[name][SLOT_BASE[s] + v].set(values.map((value, n) => value - first[n]), k * size);
+      });
+    }
+  });
+  geometry.setAttribute('position', new THREE.BufferAttribute(base.position, 3));
+  geometry.setAttribute('normal', new THREE.BufferAttribute(base.normal, 3));
+  geometry.setAttribute('color', new THREE.BufferAttribute(base.color, 4));
+  geometry.setAttribute('walkerSlot', new THREE.BufferAttribute(slotOf, 1));
+  geometry.setIndex(index);
+  geometry.morphTargetsRelative = true;
+  const names = SLOTS.flat();
   for (const name of ['position', 'normal', 'color']) {
-    geometry.morphAttributes[name] = variants.map((_, i) => {
-      const attribute = geometry.getAttribute(`${name}${i}`);
-      attribute.name = WALKER_STYLES[i]; geometry.deleteAttribute(`${name}${i}`); return attribute;
+    geometry.morphAttributes[name] = targets[name].map((array, t) => {
+      const attribute = new THREE.BufferAttribute(array, name === 'color' ? 4 : 3); attribute.name = names[t]; return attribute;
     });
   }
-  for (const variant of variants.slice(1)) variant.dispose();
-  geometry.computeBoundingBox(); geometry.computeBoundingSphere();
+  // Bound every combination: the tallest hat, the widest brim, the backpack
+  geometry.boundingBox = new THREE.Box3(new THREE.Vector3(-.5, .25, -.5), new THREE.Vector3(.5, 1.95, .5));
+  geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1.05, 0), 1.05);
   return geometry;
 }
 export const cityWalker = walkerGeometry();
 
-const coatPalette = WALKER_LOOKS.map(look => new THREE.Color(look.coat));
-const trimPalette = WALKER_LOOKS.map(look => new THREE.Color(look.trim));
-const skinPalette = WALKER_SKIN.map(color => new THREE.Color(color));
-const hairPalette = WALKER_HAIR.map(color => new THREE.Color(color));
-// Trousers: denim, charcoal and brown, by look
-const legsPalette = ['#44506a', '#3b3d44', '#4d4039'].map(color => new THREE.Color(color));
+// The shape of one combination, for tests and tools: positions, normals and
+// [channel, shade] per vertex of the indexed geometry
+export function walkerShape({ outfit = 0, style = 0, face = 0, gear = 0 } = {}) {
+  const picks = [outfit, style, face, gear].map((v, s) => SLOT_BASE[s] + v), slot = cityWalker.attributes.walkerSlot.array;
+  const out = {};
+  for (const name of ['position', 'normal', 'color']) {
+    const base = cityWalker.attributes[name].array, size = name === 'color' ? 4 : 3, values = new Float32Array(base.length);
+    for (let k = 0; k < slot.length; k++) {
+      const target = cityWalker.morphAttributes[name][picks[slot[k]]].array;
+      for (let n = 0; n < size; n++) values[k * size + n] = base[k * size + n] + target[k * size + n];
+    }
+    out[name] = values;
+  }
+  out.slot = slot; out.index = cityWalker.index.array;
+  return out;
+}
+
+// -------------------------------------------------------------- materials
+
+const palette = colors => colors.map(color => new THREE.Color(color));
+const coatPalette = palette(WALKER_LOOKS.map(look => look.coat)), trimPalette = palette(WALKER_LOOKS.map(look => look.trim));
+const skinPalette = palette(WALKER_SKIN), hairPalette = palette(WALKER_HAIR);
+const legsPalette = palette(WALKER_LEGS), accentPalette = palette(WALKER_ACCENTS);
+// Fixed colours: ink (eyes, frames), dark lenses, shirt white, straw
+const fixed = palette(['#302c32', '#26282c', '#eceae4', '#d7bf86']);
+
+// Each instance's colour holds its choices as whole numbers (exact in a
+// float): red the shapes and coat, green the other palettes. Blue is the
+// head's turn (see setWalkerTurn).
+const PACK = {
+  outfit: [0, 4], style: [4, 4], face: [8, 3], gear: [11, 2], look: [13, 5],
+  skin: [0, 3], hair: [3, 3], legs: [6, 3], accent: [9, 3],
+};
+const glslBits = (word, [shift, size]) => `int((${word} >> ${shift}u) & ${(1 << size) - 1}u)`;
+const decode = /* glsl */`
+  uvec2 walkerBits = uvec2(0u);
+  #ifdef USE_INSTANCING_COLOR
+    walkerBits = uvec2(instanceColor.rg + .5);
+  #endif
+  // The head's turn from the body (radians), set each frame
+  float walkerTurn = 0.0;
+  #ifdef USE_INSTANCING_COLOR
+    walkerTurn = instanceColor.b;
+  #endif
+  int walkerSlotIndex = int(walkerSlot + .5);
+  bool walkerHead = walkerSlotIndex == 1 || walkerSlotIndex == 2;
+  mat2 walkerYaw = mat2(cos(walkerTurn), -sin(walkerTurn), sin(walkerTurn), cos(walkerTurn));
+  int walkerPick = walkerSlotIndex == 0 ? ${glslBits('walkerBits.x', PACK.outfit)}
+    : walkerSlotIndex == 1 ? ${SLOT_BASE[1]} + ${glslBits('walkerBits.x', PACK.style)}
+    : walkerSlotIndex == 2 ? ${SLOT_BASE[2]} + ${glslBits('walkerBits.x', PACK.face)}
+    : ${SLOT_BASE[3]} + ${glslBits('walkerBits.x', PACK.gear)};
+`;
+const slotAttribute = 'attribute float walkerSlot;';
+// The morphed shape, the head turned about its upright axis
+const shaped = /* glsl */`
+  transformed += getMorph(gl_VertexID, walkerPick, 0).xyz;
+  if (walkerHead) transformed.xz = walkerYaw * transformed.xz;
+`;
 
 export function createWalkerMaterial() {
   const material = new THREE.MeshStandardMaterial({ color: '#ffffff', vertexColors: true, roughness: .92 });
-  material.customProgramCacheKey = () => 'citydriver-walker-palettes-v4';
+  material.customProgramCacheKey = () => 'citydriver-walker-slots-v5';
   // Demolition's warning (see createWalkerAlert): 1 glows them red at the
   // edges; 0, as everywhere else, leaves them exactly as they were
   material.userData.alert = { value: 0 };
@@ -430,6 +783,7 @@ export function createWalkerMaterial() {
     Object.assign(shader.uniforms, {
       walkerCoats: { value: coatPalette }, walkerTrims: { value: trimPalette },
       walkerSkin: { value: skinPalette }, walkerHair: { value: hairPalette }, walkerLegs: { value: legsPalette },
+      walkerAccents: { value: accentPalette }, walkerFixed: { value: fixed },
       walkerAlert: material.userData.alert,
     });
     shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `
@@ -445,37 +799,57 @@ export function createWalkerMaterial() {
     `);
     shader.vertexShader = shader.vertexShader.replace('#include <common>', `
       #include <common>
+      ${slotAttribute}
       uniform vec3 walkerCoats[${coatPalette.length}];
       uniform vec3 walkerTrims[${trimPalette.length}];
       uniform vec3 walkerSkin[${skinPalette.length}];
       uniform vec3 walkerHair[${hairPalette.length}];
       uniform vec3 walkerLegs[${legsPalette.length}];
-    `).replace('#include <color_vertex>', 'vColor = color;')
-      // Select the one active shape directly in the color pass: three fetches
-      // per vertex regardless of cast size. Keep stock morph weights for the
-      // renderer's shadow and optional AO override materials.
-      .replace('#include <morphinstance_vertex>', `
-      int walkerShape = 0;
-      #ifdef USE_INSTANCING_COLOR
-        walkerShape = int(fract(instanceColor.r) * 16.0 + 0.5);
-      #endif
-    `).replace('#include <morphnormal_vertex>', 'objectNormal = getMorph(gl_VertexID, walkerShape, 1).xyz;')
-      .replace('#include <morphtarget_vertex>', 'transformed = getMorph(gl_VertexID, walkerShape, 0).xyz;')
+      uniform vec3 walkerAccents[${accentPalette.length}];
+      uniform vec3 walkerFixed[${fixed.length}];
+    `).replace('#include <color_vertex>', 'vColor = vec4(1.0);')
+      // Fetch only this vertex's own slot's choice: three fetches a vertex,
+      // however many variants there are
+      .replace('#include <morphinstance_vertex>', decode)
+      .replace('#include <morphnormal_vertex>', `
+        objectNormal += getMorph(gl_VertexID, walkerPick, 1).xyz;
+        if (walkerHead) objectNormal.xz = walkerYaw * objectNormal.xz;
+      `)
+      .replace('#include <morphtarget_vertex>', shaped)
       .replace('#include <morphcolor_vertex>', `
-      vColor = getMorph(gl_VertexID, walkerShape, 2);
-      ivec3 look = ivec3(0, 2, 0);
-      #ifdef USE_INSTANCING_COLOR
-        look = ivec3(instanceColor);
-      #endif
-      vec3 mask = vColor.rgb;
-      if (mask.b == 0.0 && mask.r > 0.0 && mask.g > 0.0) vColor.rgb = walkerTrims[look.x] * mask.g;
-      else if (mask.g == 0.0 && mask.b == 0.0) vColor.rgb = walkerCoats[look.x] * mask.r;
-      else if (mask.r == 0.0 && mask.b == 0.0) vColor.rgb = walkerSkin[look.y] * mask.g;
-      else if (mask.r == 0.0 && mask.g == 0.0) vColor.rgb = walkerHair[look.z] * mask.b;
-      else if (mask.r == 0.0 && mask.b == 1.0) vColor.rgb = walkerLegs[look.x % ${legsPalette.length}] * mask.g;
+      vec4 walkerPaint = color + getMorph(gl_VertexID, walkerPick, 2);
+      int channel = int(walkerPaint.x + .5);
+      int look = ${glslBits('walkerBits.x', PACK.look)}, skin = ${glslBits('walkerBits.y', PACK.skin)};
+      vec3 paint = walkerFixed[0];
+      if (channel == ${CH.coat}) paint = walkerCoats[look];
+      else if (channel == ${CH.trim}) paint = walkerTrims[look];
+      else if (channel == ${CH.skin}) paint = walkerSkin[skin];
+      else if (channel == ${CH.hair}) paint = walkerHair[${glslBits('walkerBits.y', PACK.hair)}];
+      else if (channel == ${CH.legs}) paint = walkerLegs[${glslBits('walkerBits.y', PACK.legs)}];
+      else if (channel == ${CH.accent}) paint = walkerAccents[${glslBits('walkerBits.y', PACK.accent)}];
+      else if (channel == ${CH.lens}) paint = walkerFixed[1];
+      else if (channel == ${CH.shirt}) paint = walkerFixed[2];
+      else if (channel == ${CH.straw}) paint = walkerFixed[3];
+      vColor = vec4(paint * walkerPaint.y, 1.0);
     `);
   };
   return material;
+}
+
+// The shadow caster: the same combination, by the same fetch (the stock
+// path would read every target's weight at every vertex)
+let depthMaterial = null;
+function walkerDepthMaterial() {
+  if (depthMaterial) return depthMaterial;
+  depthMaterial = new THREE.MeshDepthMaterial({ side: THREE.BackSide, colorWrite: false });
+  depthMaterial.name = 'shadow-depth-walker';
+  depthMaterial.customProgramCacheKey = () => 'citydriver-walker-depth-v5';
+  depthMaterial.onBeforeCompile = shader => {
+    shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>\n${slotAttribute}`)
+      .replace('#include <morphinstance_vertex>', decode)
+      .replace('#include <morphtarget_vertex>', shaped);
+  };
+  return depthMaterial;
 }
 
 // Demolition's warning: a resident costs a fine, so they glow red (the
@@ -492,18 +866,17 @@ export function createWalkerMaterial() {
 const alertVertex = /* glsl */`
   #include <common>
   #include <morphtarget_pars_vertex>
+  ${slotAttribute}
   uniform float lift;
   varying float vRim;
   varying float vFade;
   void main() {
     vec3 transformed = position, objectNormal = normal;
     #ifdef USE_MORPHTARGETS
-      int walkerShape = 0;
-      #ifdef USE_INSTANCING_COLOR
-        walkerShape = int(fract(instanceColor.r) * 16.0 + 0.5);
-      #endif
-      transformed = getMorph(gl_VertexID, walkerShape, 0).xyz;
-      objectNormal = getMorph(gl_VertexID, walkerShape, 1).xyz;
+      ${decode}
+      ${shaped}
+      objectNormal += getMorph(gl_VertexID, walkerPick, 1).xyz;
+      if (walkerHead) objectNormal.xz = walkerYaw * objectNormal.xz;
     #endif
     vec4 mvPosition = vec4(transformed, 1.0);
     #ifdef USE_INSTANCING
@@ -564,73 +937,139 @@ export function addWalkerAlert(mesh, { mask, ghost }) {
   mesh.dispose = () => { for (const copy of copies) { copy.morphTexture = null; copy.dispose(); } return dispose(); };
 }
 
+// ------------------------------------------------------------- wardrobes
+
 function hash(seed) {
   let n = Math.imul(seed ^ (seed >>> 16), 0x45d9f3b);
   n = Math.imul(n ^ (n >>> 16), 0x45d9f3b);
   return (n ^ (n >>> 16)) >>> 0;
 }
+// A weighted pick: [value, weight] pairs
+function pick(key, pairs) {
+  const total = pairs.reduce((sum, [, weight]) => sum + weight, 0);
+  let at = key % total;
+  for (const [value, weight] of pairs) { if (at < weight) return value; at -= weight; }
+  return pairs[0][0];
+}
 // Hair within a shade of the face (blond on tan, brown on brown) loses the
-// hairline, brows and beard in it; such a pair takes the next darker hair.
+// hairline, brows and moustache in it; such a pair takes the next darker hair.
 const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
-const hairClash = WALKER_SKIN.map(s => WALKER_HAIR.map(h => Math.hypot(...rgb(s).map((c, i) => c - rgb(h)[i])) < 34));
-export function walkerAppearance(seed) {
-  const look = hash(seed) % WALKER_LOOKS.length, skin = skinWeights[hash(seed ^ 0x3671) % skinWeights.length];
+const distance = (a, b) => Math.hypot(...rgb(a).map((c, i) => c - rgb(b)[i]));
+const luma = hex => { const [r, g, b] = rgb(hex); return .3 * r + .59 * g + .11 * b; };
+const hairClash = WALKER_SKIN.map(s => WALKER_HAIR.map(h => distance(s, h) < 34));
+
+// Hairstyles by presentation, and those anyone wears
+const HAIR_BY = {
+  masculine: [[0, 3], [1, 3], [5, 2], [6, 3], [12, 2], [13, 2], [2, 1], [7, 1], [10, 1], [9, 1]],
+  feminine: [[3, 3], [4, 3], [8, 3], [11, 3], [14, 1], [15, 1], [2, 2], [7, 1], [9, 1], [10, 1]],
+};
+const FACES_BY = {
+  masculine: [[0, 8], [1, 4], [2, 3], [3, 1], [4, 2]],
+  feminine: [[0, 9], [1, 3], [3, 2], [4, 3]],
+};
+// Each district dresses its own way: which outfits, which coats (look
+// indices, beside the common ones), what is carried and worn on the head
+const COMMON = Array.from({ length: 24 }, (_, i) => i);
+const DISTRICTS = {
+  Midtown: { outfits: [[14, 6], [3, 3], [8, 3], [0, 2], [9, 2], [6, 1], [12, 1]], looks: [24, 25, 26, 16, 10, 7, 15, 20], gear: [[0, 6], [2, 3], [3, 3], [1, 1]] },
+  'Civic quarter': { outfits: [[14, 3], [3, 3], [0, 3], [11, 2], [9, 2], [6, 2], [12, 2], [5, 1]], looks: [24, 26], gear: [[0, 6], [2, 3], [3, 2], [1, 1]] },
+  'Old town': { outfits: [[0, 3], [3, 3], [4, 3], [8, 3], [11, 3], [6, 2], [12, 2], [5, 1]], looks: [], gear: [[0, 7], [2, 3], [3, 2]], hats: [[13, 3], [9, 2]] },
+  'Garden quarter': { outfits: [[6, 3], [5, 3], [12, 3], [1, 2], [7, 2], [11, 2], [4, 2], [10, 1]], looks: [], gear: [[0, 7], [2, 2], [1, 2]], hats: [[15, 3]] },
+  'Market district': { outfits: [[13, 3], [1, 3], [7, 3], [5, 2], [6, 2], [2, 2], [15, 2], [12, 2], [9, 1]], looks: [], gear: [[0, 4], [1, 4], [2, 3], [3, 1]], hats: [[12, 2]] },
+  'Warehouse district': { outfits: [[10, 4], [15, 3], [13, 3], [2, 3], [9, 2], [1, 2], [5, 1]], looks: [27, 28, 29, 29], gear: [[0, 5], [1, 4], [3, 1]], hats: [[10, 3], [12, 3]] },
+};
+const ANY = { outfits: WALKER_OUTFITS.map((_, i) => [i, i === 14 ? 1 : 2]), looks: [], gear: [[0, 6], [1, 2], [2, 2], [3, 1]] };
+const FEMININE_ONLY = [12], BACKLESS = [2, 13]; // dresses; hoods where a pack would sit
+export function walkerAppearance(seed, district = null) {
+  const wardrobe = DISTRICTS[district] ?? ANY;
+  const presentation = hash(seed ^ 0x5bd1) % 2 ? 'feminine' : 'masculine';
+  const skin = skinWeights[hash(seed ^ 0x3671) % skinWeights.length];
   let hair = hash(seed ^ 0x9173) % WALKER_HAIR.length;
   while (hairClash[skin][hair]) hair = (hair + WALKER_HAIR.length - 1) % WALKER_HAIR.length;
-  return { look, skin, hair, style: WALKER_LOOKS[look].style };
+  let outfit = pick(hash(seed ^ 0x2e41), wardrobe.outfits);
+  if (presentation === 'masculine' && FEMININE_ONLY.includes(outfit)) outfit = 9;
+  // A district's own coats one time in three (its suits and work wear only
+  // on the outfits cut for them); otherwise any of the common coats
+  const own = wardrobe.looks.filter(look => look < 24 || (look < 27 ? outfit === 14 : [10, 15, 13, 2, 9].includes(outfit)));
+  let look = own.length && hash(seed ^ 0x77a1) % 3 === 0 ? own[hash(seed ^ 0x13) % own.length] : COMMON[hash(seed) % COMMON.length];
+  if (outfit === 14 && look < 24) look = 24 + hash(seed ^ 0x41) % 3;
+  // Hats come with the district's weather and work
+  let style = pick(hash(seed ^ 0x61c3), [...HAIR_BY[presentation], ...(wardrobe.hats ?? [])]);
+  const face = pick(hash(seed ^ 0x0f3d), FACES_BY[presentation]);
+  let gear = pick(hash(seed ^ 0x4a7b), wardrobe.gear);
+  if (BACKLESS.includes(outfit) && gear !== 2) gear = 0;
+  // Trousers a clear step lighter or darker than the top over them
+  let legs = hash(seed ^ 0x2d9) % WALKER_LEGS.length;
+  for (let tries = 0; tries < WALKER_LEGS.length && Math.abs(luma(WALKER_LEGS[legs]) - luma(WALKER_LOOKS[look].coat)) < 28; tries++) legs = (legs + 1) % WALKER_LEGS.length;
+  // One accent a person: never the coat's own colour
+  let accent = hash(seed ^ 0x6e11) % WALKER_ACCENTS.length;
+  if (distance(WALKER_ACCENTS[accent], WALKER_LOOKS[look].coat) < 60) accent = (accent + 3) % WALKER_ACCENTS.length;
+  // Ties and headscarves in the deeper accents
+  if ((outfit === 14 || style === 14) && ![0, 2, 3, 5, 7].includes(accent)) accent = [0, 2, 3, 5, 7][accent % 5];
+  return { look, skin, hair, style, outfit, face, gear, legs, accent, presentation };
 }
 
 // One small wardrobe per fare makes a party readable at driving distance.
 // A team shares its tops; other groups take turns between two coordinated
 // coats across different silhouettes (four of one coat read as clones).
 const taxiWardrobes = [
-  { looks: [10, 16], styles: [0, 6, 8] }, // work friends
-  { looks: [5, 18], styles: [3, 4, 11] }, // evening out
-  { looks: [13, 17], styles: [1, 7], uniform: true }, // matching team tops
-  { looks: [15, 21], styles: [9] }, // art club
-  { looks: [16, 22], styles: [10] }, // winter outing
-  { looks: [2, 8], styles: [0, 2, 4, 8] }, // festival friends
+  { looks: [24, 25], outfits: [14, 3, 8] }, // work friends
+  { looks: [5, 18], outfits: [3, 11, 12] }, // evening out
+  { looks: [13, 17], outfits: [1, 7], uniform: true }, // matching team tops
+  { looks: [15, 21], outfits: [9, 6] }, // art club
+  { looks: [16, 22], outfits: [10, 15] }, // winter outing
+  { looks: [2, 8], outfits: [13, 5, 12, 2] }, // festival friends
 ];
 export function taxiGroupAppearance(seed, passenger) {
   const wardrobe = taxiWardrobes[hash(seed ^ 0x6321) % taxiWardrobes.length];
   const appearance = walkerAppearance(seed + passenger * 719);
   appearance.look = wardrobe.looks[(hash(seed ^ 0x1709) + (wardrobe.uniform ? 0 : passenger)) % wardrobe.looks.length];
-  appearance.style = wardrobe.styles[hash(seed + passenger * 31) % wardrobe.styles.length];
+  appearance.outfit = wardrobe.outfits[hash(seed + passenger * 31) % wardrobe.outfits.length];
+  if (appearance.presentation === 'masculine' && FEMININE_ONLY.includes(appearance.outfit)) appearance.outfit = 3;
+  if (BACKLESS.includes(appearance.outfit) && appearance.gear !== 2) appearance.gear = 0;
   return appearance;
 }
 
 // Pair existing residents rather than increasing the crowd. Shared travel
 // phase/speed keeps them together through culling and streaming; their bob,
 // proportions and wardrobe remain individual.
-const pairStyles = { masculine: [0, 1, 5, 6], feminine: [3, 4, 8, 11] };
 export function pairWalkers(walkers, seed) {
   for (let i = 0; i + 1 < walkers.length; i += 2) {
     const key = hash(seed + i * 941);
     if (key % 100 >= 38) continue;
-    const a = walkers[i], b = walkers[i + 1], kind = hash(key) % 100;
-    const mixed = kind < 70, first = kind >= 85 || (mixed && key % 2) ? 'feminine' : 'masculine';
-    const second = mixed ? (first === 'masculine' ? 'feminine' : 'masculine') : first;
-    for (const [walker, presentation, offset] of [[a, first, -.46], [b, second, .46]]) {
+    const a = walkers[i], b = walkers[i + 1];
+    for (const [walker, offset] of [[a, -.46], [b, .46]]) {
       walker.floatPhase = walker.phase;
       walker.pairOffset = offset;
-      walker.appearance.presentation = presentation;
-      walker.appearance.style = pairStyles[presentation][hash(key + (offset > 0 ? 73 : 29)) % 4];
     }
     b.phase = a.phase; b.speed = a.speed; b.side = a.side; b.direction = a.direction;
-    if (a.appearance.look === b.appearance.look) b.appearance.look = (b.appearance.look + 7) % WALKER_LOOKS.length;
+    // Partners dress apart: another coat, and another cut
+    if (a.appearance.look === b.appearance.look) b.appearance.look = (b.appearance.look + 7) % 24;
+    if (a.appearance.outfit === b.appearance.outfit) b.appearance.outfit = (b.appearance.outfit + 5) % WALKER_OUTFITS.length;
+    if (b.appearance.presentation === 'masculine' && FEMININE_ONLY.includes(b.appearance.outfit)) b.appearance.outfit = 9;
+    if (BACKLESS.includes(b.appearance.outfit) && b.appearance.gear !== 2) b.appearance.gear = 0;
   }
 }
 
-const encoded = new THREE.Color();
-const selection = { morphTargetInfluences: new Array(WALKER_STYLES.length).fill(0) };
+const selection = { morphTargetInfluences: new Array(WALKER_TARGETS).fill(0) };
+const packed = (appearance, names) => names.reduce((sum, name) => sum + ((appearance[name] ?? 0) << PACK[name][0]), 0);
 export function setWalkerAppearance(mesh, index, appearance) {
-  const { look, skin, hair } = appearance;
-  // Reuse the existing per-instance color buffer for three palette indices.
-  // These and the one-hot shape selection are uploaded only at creation.
-  const style = appearance.style ?? WALKER_LOOKS[look].style;
-  mesh.setColorAt(index, encoded.setRGB(look + style / 16, skin, hair));
+  const full = { outfit: 0, face: 0, gear: 0, legs: appearance.look % 3, accent: 0, ...appearance };
+  // Two whole numbers in the per-instance colour; the one-hot weights (one a
+  // slot) for the renderer's own shadow and AO passes. Both are uploaded
+  // only when a resident is made.
+  mesh.setColorAt(index, new THREE.Color().setRGB(
+    packed(full, ['outfit', 'style', 'face', 'gear', 'look']), packed(full, ['skin', 'hair', 'legs', 'accent']), 0));
   selection.morphTargetInfluences.fill(0);
-  selection.morphTargetInfluences[style] = 1;
+  [full.outfit, full.style, full.face, full.gear].forEach((v, s) => { selection.morphTargetInfluences[SLOT_BASE[s] + v] = 1; });
   mesh.setMorphAt(index, selection);
   mesh.instanceColor.needsUpdate = true; mesh.morphTexture.needsUpdate = true;
+  mesh.customDepthMaterial ??= walkerDepthMaterial();
+}
+
+// Turn a resident's head from their body, radians about the upright (the
+// same sense as their yaw). Only the colour pass, shadow and warning see it;
+// the caller flags `instanceColor.needsUpdate` once for the whole mesh.
+export function setWalkerTurn(mesh, index, angle) {
+  mesh.instanceColor.array[index * 3 + 2] = angle;
 }

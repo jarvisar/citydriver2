@@ -13,9 +13,26 @@ The city is streamed in 160 m blocks around the car. High has 49 detailed blocks
 
 Setting the density slider manually overrides these limits and is saved locally. VR uses its own framebuffer.
 
-Ambient occlusion is optional. It only loads when turned on and frees its GPU resources when turned off. The offline cache includes it.
+Ambient occlusion (Soft shading) is on by default only on computers with a dedicated graphics card: NVIDIA RTX and GTX 960 or newer, AMD Radeon RX, Pro and VII, Intel Arc A and B, and Apple's Pro, Max and Ultra chips. The computer also has to start on High or Balanced. It stays off on phones, tablets, built-in graphics and anything the browser won't name. Turning it on or off in the Display settings is saved and always wins over the default. If the default slows the frame rate, the game turns it off and remembers that for the next visit. Add `?ao=0` to the URL to start without it.
+
+Soft shading loads behind the loading screen when it's on, and frees its GPU resources when turned off. The offline cache includes it.
 
 Smooth and Basic turn off the background blur behind the driving HUD.
+
+## Shadows
+
+The sun's shadow map covers less ground on the lower presets, so it stays sharp and draws fewer objects.
+
+| Preset | Shadow map | Shadow distance | Small objects cast shadows |
+| --- | ---: | ---: | --- |
+| High | 2048 (4096 with a dedicated graphics card) | 100 m (140 m) | Yes |
+| Balanced | 1536 | 80 m | Yes |
+| Smooth | 1024 | 60 m | No |
+| Basic | 512 | 45 m | No |
+
+Small objects are people, short street furniture like bins and signs, and the trim on buildings like window frames and sills. Buildings, trees, cars, street lamps and signal poles always cast shadows. Shadows fade out at the edge of the covered area.
+
+In VR the shadows cover the area around the headset in every direction. Standalone headsets like the Meta Quest use a 1024 map, 50 m and no small objects. Headsets on a dedicated graphics card use a 2048 map and 90 m.
 
 ## Rendering
 
@@ -23,7 +40,7 @@ Smooth and Basic turn off the background blur behind the driving HUD.
 - A whole block is hidden when it's outside both the camera and the sun's shadow area. Skyline blocks that are out of range or under a detailed block are removed from the scene.
 - Detailed blocks instance their scenery (trees, lamps, benches, bins, signals, stops and small roof parts). Small batches of up to 32 instances that share a material merge into one mesh, up to 18,000 vertices per block. `blockBatches()` lists a block's batches.
 - Parked cars share the traffic cars' bodies and ten-sided tyres, at 568–640 triangles each. Pedestrians, signal lights, boats and water stay instanced because they change after building.
-- All twelve resident styles, taxi passengers and the walking player share one 504-triangle, 498-vertex model. Clothing and hair variation use existing morphs and palette colours, with one instanced draw per resident chunk and no clothing textures or accessory meshes.
+- Residents, taxi passengers and the walking player share one 620-triangle, 693-vertex model. Outfits, hair and hats, faces and bags are morph targets of it, mixed per person, with one instanced draw per resident chunk and no textures. Each vertex reads only its own part's shape, and shadows use the same shortcut. A head turning to watch a passing car costs one number per resident each frame.
 - Static matrices are cached. Off-screen objects skip updates until they're visible again, except traffic signals. Collision checks skip blocks that are too far away before checking individual colliders.
 - Perspective cameras stop drawing one metre past the point where the fog is fully opaque.
 - Loading compiles every shader before the first frame, including stand-ins for things that aren't on screen yet, like fare markers. Compiling a shader mid-drive stalls a phone for 50–200 ms.

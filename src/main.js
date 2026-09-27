@@ -93,7 +93,7 @@ const toast = (message, tone = '') => {
 
 async function boot() {
   try {
-    // `?ao=0` forces the soft shading off, whatever the quality level is.
+    // `?ao=0` turns soft shading off for this visit, whatever was saved or detected.
     const graphics = new Graphics({ ambientOcclusion: new URLSearchParams(window.location.search).get('ao') === '0' ? false : null });
     // How much of the route stays built is a quality setting too, so it has to
     // be in place before the first world is streamed.
@@ -135,6 +135,8 @@ async function boot() {
     const journey = 'city';
     await loadingStage('furniture');
     const world = new JOURNEYS[journey].World(scene);
+    // (at lower levels, and in a standalone headset, small things cast no shadow)
+    world.setShadowDetail(graphics.settings.shadowDetail); graphics.onChange(settings => world.setShadowDetail(settings.shadowDetail));
     rendering.addCuller((camera, shadow) => world.cull(camera, shadow));
     // The chase camera stays out of the buildings and above the ground, and
     // following someone on foot, out of the cars
@@ -1218,6 +1220,9 @@ async function boot() {
     await signSheet;
     await rendering.precompile([...world.warmupObjects(), ...taxiView.warmupObjects(), ...demolitionView.warmupObjects(), createWalkerModel().figure]);
     try { taxiView.navigation.prepare(); } catch { /* The first fare tries again. */ }
+    // Soft shading too, where it is on: loaded and drawn once behind the
+    // loading screen, since its first frame compiles for ~200 ms.
+    await rendering.ambientOcclusion.prepare();
     changingJourney = false;
     renderer.setAnimationLoop(frame);
     // `?xr` in development emulates a Quest 3 (see xr-emulator.js).

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { cityWalker, walkerFloat, createWalkerMaterial, walkerAppearance, setWalkerAppearance, taxiGroupAppearance } from './world/city-life.js';
+import { cityWalker, walkerFloat, createWalkerMaterial, walkerAppearance, setWalkerAppearance, setWalkerTurn, taxiGroupAppearance } from './world/city-life.js';
 import { ROAD_LEVEL, PAVEMENT_LEVEL, roadAt } from './world/city-route.js';
 import { profileOf } from './world/city.js';
 import { STOP_RADIUS, STOP_SECONDS, RATINGS, taxiRoute, fareBand, arrivalRating } from './taxi-run.js';
@@ -7,7 +7,7 @@ import { taxiLicense } from './taxi-license.js';
 import { goalProgress } from './taxi-goals.js';
 import { routeDistance } from './world/nav-graph.js';
 import { DestinationArrow } from './destination-arrow.js';
-import { lookYaw } from './world/pedestrian-reactions.js';
+import { lookYaw, glance } from './world/pedestrian-reactions.js';
 
 const $ = id => document.getElementById(id);
 const money = value => `$${Math.round(value ?? 0).toLocaleString('en-US')}`;
@@ -47,6 +47,7 @@ export class TaxiView {
     this.skids.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.skids.frustumCulled = false; this.skids.userData.ambientOcclusion = false;
     this.group.add(this.skids); this.trails = []; this.trailIndex = 0; this.lastTrail = 0; this.transform = new THREE.Object3D();
+    this.watch = new THREE.Vector3(); this.unplace = new THREE.Matrix4();
   }
   // Every waiting fare gets a badge: a dollar sign in the ring's distance
   // colour, as in Crazy Taxi, plus a white ×N when a group shares the ride.
@@ -141,6 +142,8 @@ export class TaxiView {
         marker.group.updateMatrix();
         // Whoever of the party is knocked over, the rest turn to watch until they are back
         const down = marker.reactions.find(reaction => reaction.drawn && (reaction.body || reaction.rise || reaction.back));
+        // (the taxi, where they stand, for them to watch it pull up)
+        const taxi = this.watch.set(vehicle.u, 0, -vehicle.s).applyMatrix4(this.unplace.copy(marker.group.matrix).invert());
         for (let i = 0; i < person.count; i++) {
           const motion = walkerFloat(marker.float, time + i * .7, passengerFloat), reaction = marker.reactions[i];
           const along = (i - (person.count - 1) / 2) * 1.35;
@@ -153,8 +156,9 @@ export class TaxiView {
           reaction.drawn ??= { x: 0, z: 0 };
           reaction.drawn.x = this.transform.matrix.elements[12]; reaction.drawn.z = this.transform.matrix.elements[14];
           person.setMatrixAt(i, this.transform.matrix);
+          setWalkerTurn(person, i, glance(reaction, this.transform.rotation.y, curb, along, taxi, time));
         }
-        person.instanceMatrix.needsUpdate = true;
+        person.instanceMatrix.needsUpdate = true; person.instanceColor.needsUpdate = true;
       }
       marker.arrow.position.y = ROAD_LEVEL + 7 + Math.sin(time * 3) * .35;
       marker.arrow.scale.setScalar(selected ? 1 : .65);

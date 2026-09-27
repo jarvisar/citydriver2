@@ -19,7 +19,7 @@ import { stableShadowDepth } from './world/shadow-depth.js';
 // and the chase camera's framing tell the difference.
 
 // A resident's coat and haircut for the player: an existing look for now
-export const PLAYER_LOOK = { look: 13, skin: 2, hair: 1, style: 0 };
+export const PLAYER_LOOK = { look: 13, skin: 2, hair: 1, style: 0, outfit: 9, face: 0, gear: 1, legs: 0, accent: 1 };
 // The footprint traffic and the furniture meet: a person's width, round
 // (`radius`, see circleContact), and what they weigh in a blow (tonnes)
 export const WALKER_SPEC = { name: 'walker', width: .64, length: .64, radius: .32, mass: .08, breaks: [] };

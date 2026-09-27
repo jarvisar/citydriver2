@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CITY, cityCell, CITY_CELL } from './city.js';
+import { CITY, cityCell, CITY_CELL, cityStyleDistrict } from './city.js';
 import { ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL } from './city-route.js';
 import { HarbourBoats } from './city-boats.js';
 import { cityAssets, cityTrees, looseTree, twinLamp, signalMastPiece, LANTERN_HEIGHT, SIGNAL_LENSES, MAST_HEIGHT, parkedCars, PARKED_PAINTS, boatModels } from './city-assets.js';
@@ -13,8 +13,8 @@ import { addSurfacePolygon, faceSlabEdges } from './city-surfaces.js';
 import { buildGrassFringe, grassGeometry, MAX_LAWN_TUFTS } from './city-grass.js';
 import { createWaterMaterial } from './city-water.js';
 import { Surface, setColor } from './surface.js';
-import { cityWalker, walkerFloat, WALKER_COLORS, createWalkerMaterial, createWalkerAlert, addWalkerAlert, walkerAppearance, setWalkerAppearance, pairWalkers, offsetWalkerPose } from './city-life.js';
-import { walkedAt, paceAt, standing, rejoinWalk, stopWalkers, regroupWalkers, lookYaw, lean } from './pedestrian-reactions.js';
+import { cityWalker, walkerFloat, WALKER_COLORS, createWalkerMaterial, createWalkerAlert, addWalkerAlert, walkerAppearance, setWalkerAppearance, setWalkerTurn, pairWalkers, offsetWalkerPose } from './city-life.js';
+import { walkedAt, paceAt, standing, rejoinWalk, stopWalkers, regroupWalkers, lookYaw, lean, glance } from './pedestrian-reactions.js';
 import { stableShadowDepth } from './shadow-depth.js';
 import { navGraph } from './nav-graph.js';
 import { cityGreen } from '../city-junctions.js';
@@ -30,7 +30,7 @@ const windowGeometry = new THREE.PlaneGeometry(1, 1);
 const warmupMergedGeometry = new THREE.BufferGeometry();
 for (const name of ['position', 'normal', 'color']) warmupMergedGeometry.setAttribute(name, new THREE.BufferAttribute(new Float32Array(9), 3));
 const transform = new THREE.Object3D();
-const residentItem = { p: [0, 0, 0], scale: [1, 1, 1], yaw: 0, roll: 0 };
+const residentItem = { p: [0, 0, 0], scale: [1, 1, 1], yaw: 0, roll: 0 }, watching = { x: 0, z: 0, set(x, z) { this.x = x; this.z = z; return this; } };
 const residentFloat = {};
 // How far either side of a corner of their walk a resident turns through it (m)
 const WALKER_TURN = 1.2;
@@ -82,6 +82,42 @@ function batchFlags(key, material) {
   if (key === 'water' || key === 'grass-fringe') flags.ambientOcclusion = false;
   return flags;
 }
+// At low shadow detail (see QUALITY_LEVELS' shadowDetail) only buildings,
+// trees, vehicles and tall posts cast (a street lamp's or a signal mast's
+// evening shadow crosses the road). People and short street furniture keep
+// out of the shadow pass, and so does facade trim: frames, sills, ledges,
+// pilasters and courses, nine in ten of a building's boxes and most of the
+// pass's triangles, for shadows a texel or two wide. A box casts if it is
+// 30 cm or more every way (a cornice, a chimney, a column) or a slab 60 cm
+// deep (a balcony). A mesh keeps what always casts first and the pass draws
+// only that much of it (`shadowFrom`: its instances, or a merged mesh's
+// indices), so no split costs another draw; one with nothing before that
+// point stops casting.
+const SMALL_CASTERS = new Set(['residents', 'lantern', 'bin', 'bollard', 'railing', 'signal', 'signal-head', 'stop', 'yield', 'parking-sign', 'mooring-line']);
+const smallCaster = key => SMALL_CASTERS.has(key) || key.startsWith('square-flowers-');
+const facadeTrim = ({ scale: [x, y, z] }) => Math.min(x, y, z) < .3 && Math.min(x, z) < .6;
+function castFirst() {
+  if (!this.userData.lowShadow) return;
+  if (this.isInstancedMesh) { this.userData.drawn = this.count; this.count = Math.min(this.count, this.userData.shadowFrom); }
+  else { this.userData.drawn = this.geometry.drawRange.count; this.geometry.drawRange.count = this.userData.shadowFrom; }
+}
+function castAll() {
+  if (this.userData.drawn === undefined) return;
+  if (this.isInstancedMesh) this.count = this.userData.drawn; else this.geometry.drawRange.count = this.userData.drawn;
+  this.userData.drawn = undefined;
+}
+function castFrom(mesh, from) {
+  if (from === undefined) return;
+  mesh.userData.shadowFrom = from;
+  if (from > 0) { mesh.onBeforeShadow = castFirst; mesh.onAfterShadow = castAll; }
+}
+function applyShadowDetail(group, full) {
+  for (const mesh of group.children) {
+    const from = mesh.userData.shadowFrom;
+    if (from === 0) mesh.castShadow = full;
+    else if (from !== undefined) mesh.userData.lowShadow = !full;
+  }
+}
 function finishBatchMesh(mesh, { castShadow, receiveShadow, ambientOcclusion }, structure) {
   mesh.renderOrder = structure ? -2 : 0;
   mesh.castShadow = castShadow; mesh.receiveShadow = receiveShadow;
@@ -123,7 +159,9 @@ function vectors(attribute) {
   }
   return values;
 }
-function* mergeBatchSteps(entries, east, start) {
+function* mergeBatchSteps(entries, east, start, small = () => false) {
+  // (what casts at low shadow detail first: see smallCaster)
+  entries = [...entries.filter(([key]) => !small(key)), ...entries.filter(([key]) => small(key))];
   const batches = entries.map(([, batch]) => batch);
   let vertexCount = 0, indexCount = 0;
   for (const { geometry, items } of batches) {
@@ -135,7 +173,9 @@ function* mergeBatchSteps(entries, east, start) {
   const f = Math.fround;
   let vertex = 0, next = 0;
   const record = {}, wakeable = [];
+  let shadowFrom;
   for (const [batchKey, { geometry, items }] of entries) {
+    if (shadowFrom === undefined && small(batchKey)) shadowFrom = next;
     const matrices = record[batchKey] = new Float32Array(items.length * 16);
     const count = geometry.attributes.position.count, source = geometry.index?.array;
     const p = vectors(geometry.attributes.position), n = vectors(geometry.attributes.normal), c = vectors(geometry.attributes.color);
@@ -173,6 +213,7 @@ function* mergeBatchSteps(entries, east, start) {
   geometry.setIndex(new THREE.BufferAttribute(index, 1));
   const mesh = new THREE.Mesh(geometry, mergedMaterials.get(batches[0].material));
   mesh.name = 'citydriver-merged'; mesh.userData.batches = record;
+  castFrom(mesh, shadowFrom);
   for (const render of wakeable) render.mesh = mesh;
   mesh.dispose = () => { geometry.dispose(); mesh.dispatchEvent({ type: 'dispose' }); };
   return mesh;
@@ -211,9 +252,11 @@ function* renderBatchSteps(group, batches, east = 0, start = 0) {
     budget -= spent; merges.set(id, { ...group, keys });
   }
   const merged = new Set([...merges.values()].flatMap(merge => merge.keys));
-  for (const [batchKey, { geometry, material, items, structure }] of batches) {
+  for (const [batchKey, { geometry, material, items: built, structure }] of batches) {
     const key = structure ? batchKey.slice('structure-'.length) : batchKey;
-    if (!items.length || merged.has(batchKey)) continue;
+    if (!built.length || merged.has(batchKey)) continue;
+    // (a building's trim last: see facadeTrim)
+    const items = batchKey === 'structure-solid' ? [...built.filter(item => !facadeTrim(item)), ...built.filter(facadeTrim)] : built;
     const mesh = new THREE.InstancedMesh(geometry, material, items.length); mesh.name = `citydriver-${batchKey}`;
     for (let i = 0; i < items.length; i++) {
       // (a big batch, such as a block's window frames, spans several steps)
@@ -225,12 +268,18 @@ function* renderBatchSteps(group, batches, east = 0, start = 0) {
       if (item.signTile !== undefined) mesh.setColorAt(i, tint.setRGB(...item.signTile));
       if (key === 'residents') setWalkerAppearance(mesh, i, item.appearance);
     }
-    finishBatchMesh(mesh, batchFlags(key, material), structure);
+    const flags = batchFlags(key, material);
+    finishBatchMesh(mesh, flags, structure);
+    if (flags.castShadow) {
+      const trimFrom = items === built ? -1 : items.findIndex(facadeTrim);
+      castFrom(mesh, smallCaster(key) ? 0 : trimFrom === -1 ? undefined : trimFrom);
+    }
     group.add(mesh);
     yield;
   }
+  const small = batchKey => smallCaster(batchKey.startsWith('structure-') ? batchKey.slice('structure-'.length) : batchKey);
   for (const { keys, flags, structure } of merges.values()) {
-    const mesh = yield* mergeBatchSteps(keys.map(key => [key, batches.get(key)]), east, start);
+    const mesh = yield* mergeBatchSteps(keys.map(key => [key, batches.get(key)]), east, start, flags.castShadow ? small : undefined);
     group.add(finishBatchMesh(mesh, flags, structure));
     yield;
   }
@@ -589,10 +638,13 @@ export class CityChunk {
     const random = seededRandom(this.plan.seed + 912);
     for (const block of this.world.blocksByChunk.get(this.index) ?? []) {
       const count = block.perimeter > 140 ? 3 : 2, walkers = [];
+      // (residents dress for their district)
+      const middle = block.points.reduce((sum, p) => ({ x: sum.x + p.x / block.points.length, y: sum.y + p.y / block.points.length }), { x: 0, y: 0 });
+      const district = cityStyleDistrict(middle.y, middle.x);
       for (let i = 0; i < count; i++) walkers.push({
         loop: block, phase: random() * block.perimeter, speed: 1.1 + random() * 1.1, side: 0,
         direction: i % 2 ? -1 : 1, size: .9 + random() * .22, width: .92 + random() * .16, color: pick(WALKER_COLORS, random),
-        appearance: walkerAppearance(this.plan.seed + block.index * 131 + i * 719),
+        appearance: walkerAppearance(this.plan.seed + block.index * 131 + i * 719, district),
       });
       pairWalkers(walkers, this.plan.seed + block.index);
       this.walkers.push(...walkers);
@@ -631,6 +683,8 @@ export class CityChunk {
     const mesh = this.peopleMesh;
     // (from where the residents are drawn to the world, for those knocked flying)
     this.peopleFrame ??= new THREE.Matrix4().makeTranslation(this.east, 0, -this.start);
+    // (the player, in the residents' frame, for them to look round at)
+    const player = contacts?.player, watch = player ? watching.set(player.u - this.east, -player.s + this.start) : null;
     for (let i = 0; i < this.walkers.length; i++) {
       const walker = this.walkers[i], partner = walker.pairOffset ? this.walkers[i + (walker.pairOffset < 0 ? 1 : -1)] : null;
       const pose = offsetWalkerPose(this.walkerPose(walker, walkedAt(walker, time)), walker);
@@ -647,6 +701,7 @@ export class CityChunk {
       const bob = .3 + .7 * Math.min(1, Math.abs(pace) / walker.speed);
       residentItem.p[0] = x; residentItem.p[1] = PAVEMENT_LEVEL + motion.lift * bob; residentItem.p[2] = z;
       residentItem.yaw = lookYaw(walker, pose.yaw, look, time); residentItem.roll = motion.roll * bob;
+      setWalkerTurn(mesh, i, walker.away ? 0 : glance(walker, residentItem.yaw, x, z, watch, time, partner ? Math.sign(-walker.pairOffset) : 0));
       residentItem.scale[0] = residentItem.scale[2] = width; residentItem.scale[1] = walker.size * motion.stretch;
       const matrix = cityItemMatrix(residentItem, this.east, this.start, transform.matrix);
       lean(matrix, pace - walker.speed - .3);
@@ -660,7 +715,7 @@ export class CityChunk {
       walker.drawn.x = matrix.elements[12]; walker.drawn.z = matrix.elements[14];
       mesh.setMatrixAt(i, matrix);
     }
-    mesh.instanceMatrix.needsUpdate = true;
+    mesh.instanceMatrix.needsUpdate = true; mesh.instanceColor.needsUpdate = true;
   }
   animateSignals(signalTime) {
     const phase = Math.floor(signalTime % 24);
@@ -763,6 +818,7 @@ export class CitydriverWorld {
     // the ones built ahead of it: crossing back over a cell edge, or into the
     // cell it was heading for, needs no build at all
     this.spare = new Map(); this.prefetching = null;
+    this.shadowDetail = true;
     for (let ix = CITY.ix0; ix <= CITY.ix1; ix++) for (let iz = CITY.iz0; iz <= CITY.iz1; iz++) this.distantPending.push({ ix, iz, key: `${ix},${iz}` });
   }
   inCity(ix, iz) { return ix >= CITY.ix0 && ix <= CITY.ix1 && iz >= CITY.iz0 && iz <= CITY.iz1; }
@@ -911,7 +967,7 @@ export class CitydriverWorld {
   // A detailed chunk into the scene, over its skyline
   place(chunk) {
     chunk.group.position.set(chunk.east, 0, -chunk.start); chunk.group.updateMatrix();
-    chunk.group.visible = true;
+    chunk.group.visible = true; applyShadowDetail(chunk.group, this.shadowDetail);
     this.chunks.set(chunk.index, chunk); this.scene.add(chunk.group);
     const distant = this.distant.get(chunk.index); if (distant) this.showDistant(distant, false);
   }
@@ -1010,6 +1066,12 @@ export class CitydriverWorld {
   setPeopleAlert(on, ghosts = true) {
     this.materials.residents.userData.alert.value = on ? 1 : 0;
     this.peopleAlert.mask.visible = this.peopleAlert.ghost.visible = on && ghosts;
+  }
+  // Whether people, short street furniture and facade trim cast (see SMALL_CASTERS)
+  setShadowDetail(full) {
+    if (full === this.shadowDetail) return;
+    this.shadowDetail = full;
+    for (const chunk of this.chunks.values()) applyShadowDetail(chunk.group, full);
   }
   setWetness(amount) {
     const wet = Math.max(0, Math.min(1, amount));

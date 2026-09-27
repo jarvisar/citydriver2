@@ -15,14 +15,14 @@
       "sizes": "1280x800",
       "type": "image/jpeg",
       "form_factor": "wide",
-      "label": "Citydriver on desktop"
+      "label": "A taxi run in the chase view"
     },
     {
       "src": "screenshots/mobile.jpg",
       "sizes": "540x960",
       "type": "image/jpeg",
       "form_factor": "narrow",
-      "label": "Citydriver with touch driving controls"
+      "label": "A taxi run with touch driving controls"
     }
   ],
   "icons": [

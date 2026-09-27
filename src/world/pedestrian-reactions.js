@@ -163,6 +163,37 @@ export function lookYaw(person, base, look, time) {
   }
   return base + person.look;
 }
+// Where a person's head turns from their body (radians, their yaw's sense):
+// toward `watch` ({x, z} in their frame, or null) when it is near and not
+// behind them, so people look round at a car going by; otherwise now and
+// then at a partner beside them (`side`, their partner's way across, -1 or
+// 1) as if talking, or at the shops. On a spring kept on `person`.
+const GLANCE_REACH = 16, GLANCE_MOST = 1.1, GLANCE_RATE = 5;
+export function glance(person, yaw, x, z, watch, time, side = 0) {
+  let goal = 0, watching = false;
+  if (watch) {
+    const dx = watch.x - x, dz = watch.z - z, d = dx * dx + dz * dz;
+    if (d < GLANCE_REACH * GLANCE_REACH && d > .09) {
+      const turn = wrap(Math.atan2(-dx, -dz) - yaw);
+      if (Math.abs(turn) < 2) { goal = Math.max(-GLANCE_MOST, Math.min(GLANCE_MOST, turn)); watching = true; }
+    }
+  }
+  if (!watching) {
+    // (a new whim every few seconds, different for everyone)
+    const beat = Math.floor(time / 3.2 + (person.phase ?? 0) * .37), whim = Math.abs(Math.sin(beat * 12.9898 + (person.phase ?? 0) * 78.233) * 43758.5453) % 1;
+    if (side && whim < .4) goal = -side * .85;
+    else if (whim > .82) goal = whim > .91 ? .6 : -.6;
+  }
+  const dt = time - (person.glanceTime ?? -Infinity);
+  person.glanceTime = time;
+  if (!(dt >= 0 && dt < .25)) { person.glance = goal; person.glancing = 0; return goal; }
+  for (let left = dt; left > 1e-6; left -= 1 / 30) {
+    const step = Math.min(left, 1 / 30);
+    person.glancing += (GLANCE_RATE * GLANCE_RATE * (goal - person.glance) - 2 * GLANCE_RATE * person.glancing) * step;
+    person.glance += person.glancing * step;
+  }
+  return person.glance;
+}
 // A person leaning into a hurry, about their feet, by how far they go over `pace` (m/s)
 export function lean(matrix, over) {
   return over > 0 ? matrix.multiply(tilt.makeRotationX(-LEAN * Math.min(1, over))) : matrix;

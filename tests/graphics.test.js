@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Graphics, QUALITY_LEVELS, detectLevel, levelIndex, renderScale } from '../src/graphics.js';
+import { DEDICATED_HIGH_SHADOWS, Graphics, HEADSET_SHADOWS, QUALITY_LEVELS, dedicatedGpu, detectLevel, gpuName, levelIndex, renderScale } from '../src/graphics.js';
 
 function memoryStorage(initial = {}) {
   const map = new Map(Object.entries(initial));
@@ -11,10 +11,14 @@ const stored = storage => JSON.parse(storage.map.get('citydriver.graphics'));
 // A stand-in device with a running clock, like requestAnimationFrame has.
 // `rates` is either a fixed refresh rate or the frame rate this device reaches
 // at each quality level, so dropping a level actually buys frames — the signal
-// the controller is reading. A fixed rate models a display or browser cap.
+// the controller is reading. A fixed rate models a display or browser cap, and
+// `withAO` the rates while AO is on, where it costs something.
 class Device {
-  constructor(graphics, rates = 60) { this.graphics = graphics; this.rates = rates; this.time = 0; this.changes = 0; this.levels = []; this.steps = []; }
-  get hz() { return typeof this.rates === 'number' ? this.rates : this.rates[levelIndex(this.graphics.levelId)]; }
+  constructor(graphics, rates = 60, withAO = null) { this.graphics = graphics; this.rates = rates; this.withAO = withAO; this.time = 0; this.changes = 0; this.levels = []; this.steps = []; }
+  get hz() {
+    const rates = this.graphics.ambientOcclusion ? this.withAO ?? this.rates : this.rates;
+    return typeof rates === 'number' ? rates : rates[levelIndex(this.graphics.levelId)];
+  }
   run(seconds, { hz, active = true } = {}) {
     for (let remaining = seconds * 1000; remaining > 0;) {
       const step = 1000 / (hz ?? this.hz);
@@ -28,6 +32,9 @@ class Device {
   }
 }
 const graphicsAt = (level, options = {}) => new Graphics({ storage: memoryStorage(), detect: () => level, ...options });
+// The card Chrome names on this machine: one of its own, so AO is on by default.
+const RTX = 'ANGLE (NVIDIA, NVIDIA GeForce RTX 4080 (0x00002704) Direct3D11 vs_5_0 ps_5_0, D3D11)';
+const capableAt = (level, options = {}) => { const graphics = graphicsAt(level, options); graphics.setGpu(RTX); return graphics; };
 
 test('quality levels get cheaper in every dimension, from high down to basic', () => {
   const AO_COST = { low: 0, high: 1 };
@@ -36,6 +43,8 @@ test('quality levels get cheaper in every dimension, from high down to basic', (
     const previous = QUALITY_LEVELS[i - 1], level = QUALITY_LEVELS[i];
     assert.ok(level.density < previous.density, `${level.id} density`);
     assert.ok(level.shadowMap <= previous.shadowMap, `${level.id} shadow map`);
+    assert.ok(level.shadowDistance < previous.shadowDistance, `${level.id} shadow reach`);
+    assert.ok(Number(level.shadowDetail) <= Number(previous.shadowDetail), `${level.id} shadow casters`);
     assert.ok(level.chunks.behind <= previous.chunks.behind, `${level.id} chunks behind`);
     assert.ok(level.chunks.ahead <= previous.chunks.ahead, `${level.id} chunks ahead`);
     assert.ok(Number(level.antialias) <= Number(previous.antialias), `${level.id} antialiasing`);
@@ -43,7 +52,7 @@ test('quality levels get cheaper in every dimension, from high down to basic', (
   }
   // The top level must draw everything, at the density the display asks for.
   assert.deepEqual({ ...QUALITY_LEVELS[0], id: undefined, label: undefined, summary: undefined },
-    { id: undefined, label: undefined, summary: undefined, density: 1, shadowMap: 2048, chunks: { behind: 3, ahead: 5 }, antialias: true, aoQuality: 'high' });
+    { id: undefined, label: undefined, summary: undefined, density: 1, shadowMap: 2048, shadowDistance: 100, shadowDetail: true, chunks: { behind: 3, ahead: 5 }, antialias: true, aoQuality: 'high' });
 });
 
 test('every level removes pixels, on a 1x panel as much as on a dense one', () => {
@@ -193,7 +202,7 @@ test('a chosen level is pinned, adapts to nothing, and is remembered', () => {
   assert.equal(graphics.levelId, 'high');
   new Device(graphics, 8).run(120);
   assert.equal(graphics.levelId, 'high', 'a pinned level stays pinned');
-  assert.deepEqual(stored(storage), { mode: 'high', level: 'high', density: null, ambientOcclusion: false });
+  assert.deepEqual(stored(storage), { mode: 'high', level: 'high', density: null, ambientOcclusion: null, aoDropped: false });
 
   const next = new Graphics({ storage, detect: () => levelIndex('basic') });
   assert.equal(next.mode, 'high');
@@ -208,22 +217,81 @@ test('auto remembers the level it settled on so the next visit starts there', ()
   const graphics = new Graphics({ storage, detect: () => levelIndex('high') });
   new Device(graphics, [22, 31, 43, 61]).run(60);
   assert.equal(graphics.levelId, 'basic');
-  assert.deepEqual(stored(storage), { mode: 'auto', level: 'basic', density: null, ambientOcclusion: false });
+  assert.deepEqual(stored(storage), { mode: 'auto', level: 'basic', density: null, ambientOcclusion: null, aoDropped: false }, 'no AO choice is saved as none');
   const next = new Graphics({ storage, detect: () => levelIndex('high') });
   assert.equal(next.auto, true);
   assert.equal(next.levelId, 'basic');
   assert.equal(next.settings.ambientOcclusion, false, 'and it is still off on the next visit');
 });
 
-test('AO defaults off and its explicit choice survives presets and reloads', () => {
+test('the card is named the way each browser allows', () => {
+  const RENDERER = 0x1F01, UNMASKED = 0x9246;
+  const context = (renderer, unmasked) => ({ RENDERER, asked: [],
+    getParameter(name) { return name === RENDERER ? renderer : name === UNMASKED ? unmasked : null; },
+    getExtension(name) { this.asked.push(name); return unmasked === undefined ? null : { UNMASKED_RENDERER_WEBGL: UNMASKED }; } });
+  // Chrome, Edge and the desktop app only name it through the extension.
+  assert.equal(gpuName(context('WebKit WebGL', RTX)), RTX);
+  assert.equal(gpuName(context('WebKit WebGL', 'Apple GPU')), 'Apple GPU', 'Safari');
+  assert.equal(gpuName(context('WebKit WebGL')), 'WebKit WebGL', 'extension refused');
+  // Firefox names it directly, and warns about the extension, so it is not asked.
+  const firefox = context('NVIDIA GeForce GTX 980, or similar', 'unused');
+  assert.equal(gpuName(firefox), 'NVIDIA GeForce GTX 980, or similar');
+  assert.deepEqual(firefox.asked, []);
+  assert.equal(gpuName(context(null)), '');
+});
+
+test('only a graphics card of its own counts as dedicated', () => {
+  for (const name of [RTX, 'NVIDIA GeForce RTX 3060 Laptop GPU/PCIe/SSE2', 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1060 6GB (0x00001C03) Direct3D11 vs_5_0 ps_5_0, D3D11)',
+    'NVIDIA GeForce GTX 980, or similar', 'NVIDIA TITAN Xp', 'ANGLE (AMD, AMD Radeon RX 7800 XT (0x0000747E) Direct3D11 vs_5_0 ps_5_0, D3D11)',
+    'AMD Radeon RX 6700 XT (radeonsi, navi22, LLVM 15.0.7, DRM 3.49), Mesa 23.0.4', 'AMD Radeon Pro 5500M OpenGL Engine',
+    'ANGLE (Intel, Intel(R) Arc(TM) A770 Graphics (0x000056A0) Direct3D11 vs_5_0 ps_5_0, D3D11)', 'ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Pro, Unspecified Version)']) {
+    assert.equal(dedicatedGpu(name), true, name);
+  }
+  for (const name of ['ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00005917) Direct3D11 vs_5_0 ps_5_0, D3D11)',
+    'ANGLE (Intel, Intel(R) Arc(TM) Graphics (0x00007D55) Direct3D11 vs_5_0 ps_5_0, D3D11)', 'ANGLE (AMD, AMD Radeon(TM) Graphics (0x00001681) Direct3D11 vs_5_0 ps_5_0, D3D11)',
+    'ANGLE (AMD, AMD Radeon RX Vega 11 Graphics (0x000015D8) Direct3D11 vs_5_0 ps_5_0, D3D11)', 'AMD Custom GPU 0405 (radeonsi, vangogh, LLVM 15.0.7, DRM 3.49)',
+    'ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)', 'Apple GPU', 'Adreno (TM) 740', 'Mali-G78 MC24', 'NVIDIA GeForce GT 1030',
+    'ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)', 'WebKit WebGL', '']) {
+    assert.equal(dedicatedGpu(name), false, name);
+  }
+});
+
+test('AO is on by default only on a dedicated card in a machine that starts at Balanced or better', () => {
+  assert.equal(graphicsAt(0).ambientOcclusion, false, 'off until the card drawing the game is known');
+  assert.equal(capableAt(0).ambientOcclusion, true);
+  assert.equal(capableAt(levelIndex('balanced')).settings.ambientOcclusion, true, 'a 4K panel on a discrete card');
+  assert.equal(capableAt(levelIndex('smooth')).ambientOcclusion, false, 'a discrete card in a thin machine');
+  assert.equal(capableAt(levelIndex('basic')).ambientOcclusion, false);
+  for (const name of ['Apple GPU', 'Adreno (TM) 740', 'ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x00009A49) Direct3D11 vs_5_0 ps_5_0, D3D11)', 'WebKit WebGL', '']) {
+    const graphics = graphicsAt(0);
+    graphics.setGpu(name);
+    assert.equal(graphics.ambientOcclusion, false, name);
+  }
+  // No preset switches it, and the default is never saved as a choice.
   const storage = memoryStorage();
-  const graphics = graphicsAt(0, { storage });
-  for (const enabled of [false, true, false]) {
-    if (graphics.ambientOcclusion !== enabled) graphics.toggleAmbientOcclusion();
-    for (const mode of ['high', 'balanced', 'smooth', 'basic', 'auto']) {
-      graphics.setMode(mode);
-      assert.equal(graphics.settings.ambientOcclusion, enabled, mode);
-      assert.equal(graphicsAt(0, { storage }).ambientOcclusion, enabled, 'saved independent choice');
+  const graphics = capableAt(0, { storage });
+  for (const mode of ['basic', 'smooth', 'balanced', 'high', 'auto']) {
+    graphics.setMode(mode);
+    assert.equal(graphics.settings.ambientOcclusion, true, mode);
+    assert.equal(stored(storage).ambientOcclusion, null);
+  }
+  assert.equal(graphicsAt(0, { storage }).ambientOcclusion, false, 'the next visit decides again, on its own card');
+});
+
+test('an explicit AO choice survives presets and reloads, whatever the card', () => {
+  for (const at of [graphicsAt, capableAt]) {
+    const storage = memoryStorage();
+    const graphics = at(0, { storage });
+    for (const enabled of [false, true, false]) {
+      // (twice, where the default already matches)
+      while (graphics.aoChoice !== enabled) graphics.toggleAmbientOcclusion();
+      for (const mode of ['high', 'balanced', 'smooth', 'basic', 'auto']) {
+        graphics.setMode(mode);
+        assert.equal(graphics.settings.ambientOcclusion, enabled, mode);
+        assert.equal(stored(storage).ambientOcclusion, enabled);
+        assert.equal(graphicsAt(0, { storage }).ambientOcclusion, enabled, 'saved independent choice');
+        assert.equal(capableAt(0, { storage }).ambientOcclusion, enabled, 'over the default');
+      }
     }
   }
 });
@@ -271,8 +339,19 @@ test('?ao=0 starts every level without soft shading, and can still be switched b
   const storage = memoryStorage({ 'citydriver.graphics': JSON.stringify({ mode: 'auto', level: 'high', ambientOcclusion: true }) });
   const graphics = new Graphics({ storage, detect: () => 0, ambientOcclusion: false });
   assert.equal(graphics.settings.ambientOcclusion, false, 'the URL beats a remembered choice');
+  graphics.setMode('balanced');
+  assert.equal(stored(storage).ambientOcclusion, true, 'for this visit only');
   assert.equal(graphics.toggleAmbientOcclusion(), true);
   assert.equal(graphics.settings.ambientOcclusion, true);
+  // It beats the default too, which then stays for the next visit to decide.
+  const fresh = memoryStorage();
+  const capable = capableAt(0, { storage: fresh, ambientOcclusion: false });
+  assert.equal(capable.ambientOcclusion, false);
+  new Device(capable, 30).run(60);
+  assert.equal(capable.ambientOcclusion, false);
+  assert.equal(stored(fresh).ambientOcclusion, null);
+  assert.equal(stored(fresh).aoDropped, false, 'off by the URL, so never dropped');
+  assert.equal(capableAt(0, { storage: fresh }).ambientOcclusion, true);
 });
 
 test('changes reach listeners, and unusable storage never breaks the game', () => {
@@ -314,13 +393,132 @@ test('Auto adjustments and route changes never change the AO choice', () => {
   }
 });
 
-test('legacy preset and adaptive AO defaults do not count as explicit opt-in', () => {
-  for (const ambientOcclusion of [null, undefined, false, 'true']) {
+test('legacy preset and adaptive AO defaults are no choice, and an opt-in era false is kept', () => {
+  for (const ambientOcclusion of [null, undefined, 'true']) {
     const storage = memoryStorage({ 'citydriver.graphics': JSON.stringify({
       mode: 'high', level: 'high', ambientOcclusion, softShading: true,
     }) });
-    assert.equal(graphicsAt(0, { storage }).ambientOcclusion, false);
+    assert.equal(graphicsAt(0, { storage }).ambientOcclusion, false, 'no opt-in');
+    assert.equal(capableAt(0, { storage }).ambientOcclusion, true, 'so the default applies');
   }
+  // While AO was opt-in every save held false, chosen or not. It might be a
+  // choice, and a saved choice always wins.
+  const opted = memoryStorage({ 'citydriver.graphics': JSON.stringify({ mode: 'auto', level: 'high', density: null, ambientOcclusion: false }) });
+  assert.equal(capableAt(0, { storage: opted }).ambientOcclusion, false);
   const storage = memoryStorage({ 'citydriver.graphics': JSON.stringify({ ambientOcclusion: true }) });
   assert.equal(graphicsAt(0, { storage }).ambientOcclusion, true, 'explicit opt-in is preserved');
+});
+
+test('AO on by default is the first thing given up for frame rate, and stays given up', () => {
+  const storage = memoryStorage();
+  const graphics = capableAt(0, { storage });
+  // AO is what this device cannot afford: without it, High holds the display's rate.
+  const device = new Device(graphics, 61, 40).run(120);
+  assert.deepEqual(device.steps, ['high-ao'], 'the level is kept');
+  assert.equal(graphics.settings.ambientOcclusion, false);
+  assert.deepEqual(stored(storage), { mode: 'auto', level: 'high', density: null, ambientOcclusion: null, aoDropped: true },
+    'remembered as the default giving way, not as a choice');
+  const next = capableAt(0, { storage });
+  assert.equal(next.ambientOcclusion, false, 'the next visit starts without it');
+  new Device(next, 61, 40).run(120);
+  assert.equal(next.levelId, 'high');
+  // The player can still have it, and then keeps it however slow it is.
+  assert.equal(next.toggleAmbientOcclusion(), true);
+  const chosen = new Device(next, 61, 40).run(120);
+  assert.equal(next.ambientOcclusion, true);
+  assert.equal(chosen.steps[0], 'balanced+ao', 'levels give way instead');
+  assert.equal(capableAt(0, { storage }).ambientOcclusion, true);
+});
+
+test('a single hitch does not cost AO, and levels go only once it has gone', () => {
+  const graphics = capableAt(0);
+  const display = new Device(graphics, 60).run(40).run(.3, { hz: 12 }).run(40);
+  assert.equal(display.changes, 0);
+  assert.equal(graphics.settings.ambientOcclusion, true);
+  // Dropping AO helps, but not enough: then the levels step down as before.
+  const phone = new Device(capableAt(0), [30, 61, 61, 61], [20, 45, 61, 61]).run(120);
+  assert.deepEqual(phone.steps, ['high-ao', 'balanced-ao']);
+});
+
+test('AO dropped on a capped display comes back with the level, once dropping bought nothing', () => {
+  const graphics = capableAt(0);
+  const display = new Device(graphics, 30).run(90);
+  assert.deepEqual(display.steps, ['high-ao', 'balanced-ao', 'high+ao']);
+  assert.ok(graphics.target <= 31 && graphics.target >= 29, `target follows the display: ${graphics.target}`);
+  display.run(300);
+  assert.equal(display.changes, 3, 'and it stops probing once it knows the rate');
+  assert.equal(graphics.aoDropped, false);
+});
+
+test('AO never comes back by climbing', () => {
+  // A cautious start at Balanced: AO goes, then the level climbs without it.
+  const graphics = capableAt(levelIndex('balanced'));
+  const device = new Device(graphics, 61, 40).run(200);
+  assert.deepEqual(device.steps, ['balanced-ao', 'high-ao']);
+  assert.equal(graphics.ambientOcclusion, false);
+});
+
+test('a pinned level keeps its level, but AO on by default still gives way', () => {
+  const graphics = capableAt(0);
+  graphics.setMode('high');
+  const device = new Device(graphics, 61, 40).run(120);
+  assert.deepEqual(device.steps, ['high-ao']);
+  device.rates = 8; device.withAO = 8;
+  device.run(120);
+  assert.equal(graphics.levelId, 'high', 'nothing else adapts');
+  assert.equal(device.changes, 1);
+  // At a capped rate dropping AO buys nothing, and a pinned level has nothing
+  // else to try, so it comes straight back.
+  const capped = capableAt(0);
+  capped.setMode('balanced');
+  const display = new Device(capped, 30).run(200);
+  assert.deepEqual(display.steps, ['balanced-ao', 'balanced+ao']);
+  assert.equal(capped.levelId, 'balanced');
+  // A pinned level with AO chosen, or not on at all, is not even measured.
+  for (const pinned of [graphicsAt(0), capableAt(0, { ambientOcclusion: true })]) {
+    pinned.setMode('high');
+    new Device(pinned, 8).run(120);
+    assert.equal(pinned.fps, undefined);
+  }
+});
+
+test('a lower level reaches less far with its shadows instead of only blurring them, so a texel stays about the same size', () => {
+  // The sphere a 16:9 chase lens fits is about .86 of the reach wide, and the
+  // map covers it with a fade band beyond (see fitSunShadow).
+  const texel = ({ shadowMap, shadowDistance }) => 2 * .86 * shadowDistance / .9 / shadowMap;
+  for (const level of QUALITY_LEVELS) {
+    const size = texel(level);
+    assert.ok(size > .08 && size < .2, `${level.id}: ${(size * 100).toFixed(1)} cm texels`);
+  }
+  assert.ok(texel(QUALITY_LEVELS[levelIndex('basic')]) < .43 / 2, 'Basic less than half the old 43 cm');
+});
+
+test('High sharpens its shadows on a dedicated card, and a headset never draws more than its level', () => {
+  const plain = graphicsAt(0), dedicated = capableAt(0);
+  assert.deepEqual(plain.shadows, { shadowMap: 2048, shadowDistance: 100, shadowDetail: true });
+  assert.deepEqual(dedicated.shadows, { ...DEDICATED_HIGH_SHADOWS, shadowDetail: true });
+  assert.ok(dedicated.settings.shadowMap === 4096 && dedicated.settings.shadowDistance > 100);
+  dedicated.setMode('balanced');
+  assert.equal(dedicated.settings.shadowMap, 1536, 'only High changes');
+  // A standalone headset (a phone's chip) and one on a PC's card
+  const seen = [];
+  plain.onChange((settings, reason) => seen.push(reason));
+  plain.setHeadset(true);
+  assert.deepEqual(plain.shadows, HEADSET_SHADOWS.standalone);
+  assert.deepEqual(seen, ['headset']);
+  plain.setHeadset(true);
+  assert.deepEqual(seen, ['headset'], 'no change, no news');
+  dedicated.setMode('high'); dedicated.setHeadset(true);
+  assert.deepEqual(dedicated.shadows, HEADSET_SHADOWS.dedicated);
+  for (const level of QUALITY_LEVELS) {
+    for (const graphics of [graphicsAt(0), capableAt(0)]) {
+      graphics.setMode(level.id); graphics.setHeadset(true);
+      const { shadowMap, shadowDistance, shadowDetail } = graphics.settings;
+      assert.ok(shadowMap <= level.shadowMap || (level.id === 'high' && shadowMap <= DEDICATED_HIGH_SHADOWS.shadowMap), level.id);
+      assert.ok(shadowDistance <= level.shadowDistance && Number(shadowDetail) <= Number(level.shadowDetail), level.id);
+      graphics.setHeadset(false);
+    }
+  }
+  plain.setHeadset(false);
+  assert.deepEqual(plain.shadows, { shadowMap: 2048, shadowDistance: 100, shadowDetail: true }, 'back on the page');
 });

@@ -221,6 +221,66 @@ test('at the lowest detail the ring ahead streams in, is built ahead of time, an
   assert.equal(world.spare.size, 0);
 });
 
+test('at low shadow detail only buildings, trees, vehicles and tall posts cast, and nothing costs another draw', () => {
+  const scene = new THREE.Scene(), world = new CitydriverWorld(scene);
+  const small = /^citydriver-(residents|lantern|bin|bollard|railing|signal|signal-head|stop|yield|parking-sign|mooring-line|square-flowers-.*|structure-square-flowers-.*)$/;
+  // (what a box is drawn at: its instance's columns, give or take float rounding)
+  const casts = (matrix, give) => {
+    const e = matrix.elements, [x, y, z] = [0, 4, 8].map(o => Math.hypot(e[o], e[o + 1], e[o + 2]) + give);
+    return Math.min(x, y, z) >= .3 || Math.min(x, z) >= .6;
+  };
+  const meshes = () => [...world.chunks.values()].flatMap(chunk => chunk.group.children);
+  try {
+    const start = journeyStart();
+    world.update(start.s, start.u);
+    while (world.pending.length) world.update(start.s, start.u);
+    const matrix = new THREE.Matrix4();
+    let trimmed = 0, partial = 0;
+    for (const mesh of meshes()) {
+      const from = mesh.userData.shadowFrom;
+      if (small.test(mesh.name) && mesh.castShadow) assert.equal(from, 0, `${mesh.name} casts only at full detail`);
+      if (mesh.name === 'citydriver-structure-solid' && from !== undefined) {
+        // A building's boxes: what casts first, then its trim
+        trimmed++;
+        for (let i = 0; i < mesh.count; i++) {
+          mesh.getMatrixAt(i, matrix);
+          assert.ok(i < from ? casts(matrix, 1e-4) : !casts(matrix, -1e-4), `box ${i} of ${mesh.count}, casting ${from}`);
+        }
+      }
+      if (mesh.userData.batches && from > 0) partial++;
+      if (/bodies|tree|parked|shelter|lamp|signal-mast/.test(mesh.name)) assert.notEqual(from, 0, `${mesh.name} always casts`);
+    }
+    assert.ok(trimmed > 3, `${trimmed} blocks' boxes put their trim last`);
+    const calls = meshes().filter(mesh => mesh.castShadow).length;
+    world.setShadowDetail(false);
+    for (const mesh of meshes()) {
+      const from = mesh.userData.shadowFrom;
+      if (from === 0) assert.equal(mesh.castShadow, false, mesh.name);
+      if (!(from > 0)) continue;
+      // The shadow pass draws only the front of it, and the rest comes back
+      const range = mesh.geometry.drawRange, drawn = mesh.isInstancedMesh ? mesh.count : range.count;
+      mesh.onBeforeShadow();
+      assert.equal(mesh.isInstancedMesh ? mesh.count : range.count, from, mesh.name);
+      mesh.onAfterShadow();
+      assert.equal(mesh.isInstancedMesh ? mesh.count : range.count, drawn, mesh.name);
+    }
+    assert.ok(meshes().filter(mesh => mesh.castShadow).length < calls, 'fewer shadow draws');
+    // Chunks that stream in later take the detail as it is
+    const away = CITY.lots.map(lot => ({ s: lot[0].y, u: lot[0].x })).sort((a, b) => Math.abs(Math.hypot(a.s - start.s, a.u - start.u) - 750) - Math.abs(Math.hypot(b.s - start.s, b.u - start.u) - 750))[0];
+    world.update(away.s, away.u);
+    while (world.pending.length) world.update(away.s, away.u);
+    for (const mesh of meshes()) if (mesh.userData.shadowFrom === 0) assert.equal(mesh.castShadow, false, `new ${mesh.name}`);
+    world.setShadowDetail(true);
+    for (const mesh of meshes()) {
+      if (mesh.userData.shadowFrom === 0) assert.equal(mesh.castShadow, true, mesh.name);
+      if (!(mesh.userData.shadowFrom > 0)) continue;
+      const drawn = mesh.isInstancedMesh ? mesh.count : mesh.geometry.drawRange.count;
+      mesh.onBeforeShadow(); assert.equal(mesh.isInstancedMesh ? mesh.count : mesh.geometry.drawRange.count, drawn, 'full detail draws it all');
+      mesh.onAfterShadow();
+    }
+  } finally { world.dispose(); }
+});
+
 test('whole chunks are culled only when neither the camera nor the sun could draw any of their meshes', () => {
   const scene = new THREE.Scene(), world = new CitydriverWorld(scene);
   try {

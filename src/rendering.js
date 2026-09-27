@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { fitSunShadow, stabilizeShadowFiltering } from './shadows.js';
+import { fitSunShadow, fitSunShadowAround, stabilizeShadowFiltering } from './shadows.js';
 import { ThirdPersonCamera } from './third-person-camera.js';
 import { FirstPersonCamera } from './first-person-camera.js';
 import { AmbientOcclusion } from './ambient-occlusion.js';
 import { CarSilhouette } from './car-silhouette.js';
 import { SkyClouds } from './sky-clouds.js';
-import { Graphics, drawingPixelRatio } from './graphics.js';
+import { Graphics, drawingPixelRatio, gpuName } from './graphics.js';
 import { XRCameraRig } from './xr-camera.js';
 import { sampleCityWeather } from './world/city-weather.js';
 import { CITY_CELL } from './world/city.js';
@@ -37,6 +37,8 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   // level this page starts on decides it. The stencil lets demolition's red
   // residents show through props but not buildings (see createWalkerAlert).
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: graphics.antialias, stencil: true, powerPreference: 'high-performance' });
+  // Whether soft shading is on by default depends on the card drawing the game.
+  graphics.setGpu(gpuName(renderer.getContext()));
   let canvasWidth, canvasHeight, pixelRatio;
   // The canvas fills the page's own box (#app, fixed to the window), the same
   // box the HUD is laid out in, so the scene and the panels always agree. The
@@ -68,8 +70,9 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   const drivingFog = new THREE.Fog('#c2e2db', 460, 860);
   const sky = new THREE.HemisphereLight('#e4f2f5', '#617149', 1.45); scene.add(sky);
   const sun = new THREE.DirectionalLight('#fff1db', 2.5); sun.castShadow = true;
-  // Small offsets suppress self-shadow acne without lifting tyre shadows off the road.
-  sun.shadow.camera.near = 1; sun.shadow.camera.far = 650; sun.shadow.normalBias = .12; sun.shadow.bias = -.00005; sun.shadow.radius = 2;
+  // (each fit sets the shadow camera's extent and depth, and the biases that
+  // go with its texels: see shadows.js)
+  sun.shadow.camera.near = 1; sun.shadow.camera.far = 650;
   scene.add(sun); scene.add(sun.target);
   // Whatever can leave out whole groups of meshes (the city's chunks) does so
   // here, inside every render of the scene: after its matrices are updated and
@@ -96,9 +99,11 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   const ambientOcclusion = new AmbientOcclusion(renderer, scene, camera, {
     onReady: () => { if (!document.hidden && !renderer.xr.isPresenting) render(); },
   });
-  // Resolution, sun-shadow detail and the AO budget follow the quality level;
-  // whether AO is on at all is the player's own choice.
-  // A new shadow map size only takes effect once the old texture is released.
+  // Resolution, the sun shadow's size and reach, and the AO budget follow the
+  // quality level; whether AO is on at all is the player's choice, else the
+  // device's default. A new shadow map size only takes effect once the old
+  // texture is released.
+  let shadowDistance;
   function applyQuality(settings) {
     ambientOcclusion.enabled = settings.ambientOcclusion;
     ambientOcclusion.setQuality(settings.aoQuality);
@@ -106,11 +111,14 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
       sun.shadow.mapSize.set(settings.shadowMap, settings.shadowMap);
       sun.shadow.map?.dispose(); sun.shadow.map = null;
     }
+    shadowDistance = settings.shadowDistance;
     resizeCanvas();
   }
+  // (the fit sets the shadow's biases too: see shadows.js)
+  function fitShadow(lens, origin) { fitSunShadow(lens, sun, 0, origin, shadowDistance); }
   applyQuality(graphics.settings);
   graphics.onChange(applyQuality);
-  const target = new THREE.Vector3();
+  const target = new THREE.Vector3(), head = new THREE.Vector3();
   const cameraOffset = new THREE.Vector3(-220, 245, 260);
   const touchScreen = window.matchMedia('(any-pointer: coarse)');
   const sunOffset = new THREE.Vector3(-110, 240, 100);
@@ -150,7 +158,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
     thirdPerson.resize(aspect);
     firstPerson.resize(aspect);
     updateFog();
-    if (initialized) fitSunShadow(activeCamera(), sun, 0, previousOrigin);
+    if (initialized) fitShadow(activeCamera(), previousOrigin);
   }
   function update(car, dt, origin) {
     followedCar = car;
@@ -169,12 +177,14 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
     shakeTime += dt;
     if ((views[view].thirdPerson || views[view].firstPerson) && !renderer.xr.isPresenting && !reducedMotion) shakeCamera(activeCamera(), car.userData.trauma ?? 0, shakeTime, views[view].firstPerson ? .6 : 1);
     sun.position.copy(target).add(sunOffset); sun.target.position.copy(target);
-    fitSunShadow(activeCamera(), sun, 0, origin);
+    fitShadow(activeCamera(), origin);
   }
   // Zoom only changes the projection; resizing the canvas every zoom frame reallocates its buffers.
   // The box changes without a window resize too (entering fullscreen, the
   // toolbars settling after a turn), so it is watched itself.
   const onResize = () => { graphics.suspend(); resizeCanvas(); resize(); };
+  // (a new reach shows at once, paused or not)
+  graphics.onChange(() => { if (initialized) fitShadow(activeCamera(), previousOrigin); });
   window.addEventListener('resize', onResize); globalThis.ResizeObserver && new ResizeObserver(onResize).observe(canvas); resize();
   // Called when starting or resetting the city.
   function setJourney() {
@@ -203,7 +213,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
     sunOffset.lerp(weatherSun, blend);
     if (dt <= 0 && initialized) {
       sun.position.copy(target).add(sunOffset); sun.target.position.copy(target);
-      fitSunShadow(activeCamera(), sun, 0, previousOrigin);
+      fitShadow(activeCamera(), previousOrigin);
     }
     renderer.toneMappingExposure += (state.exposure + state.flash * .12 - renderer.toneMappingExposure) * blend;
     updateFog();
@@ -229,6 +239,8 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
       renderer.xr.updateCamera(vrCamera.camera);
       beforeXRRender?.();
       if (!renderer.xr.isPresenting) { draw(activeCamera()); return; }
+      // The head can turn anywhere between frames: its shadows reach all round it.
+      fitSunShadowAround(head.setFromMatrixPosition(vrCamera.camera.matrixWorld), sun, shadowDistance, previousOrigin);
       // The AO compositor is a monoscopic screen pass. Render the scene
       // directly so Three.js draws both headset eyes with their own lenses.
       draw(vrCamera.camera, true);
@@ -257,8 +269,8 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   }
   function setView(index) { view = index; updateFog(); thirdPerson.snap(); firstPerson.snap(); return views[view].label; }
   let desktopView;
-  function enterVR() { desktopView = view; setView(views.findIndex(view => view.thirdPerson)); }
-  function exitVR() { if (desktopView !== undefined) setView(desktopView); desktopView = undefined; }
+  function enterVR() { desktopView = view; setView(views.findIndex(view => view.thirdPerson)); graphics.setHeadset(true); }
+  function exitVR() { if (desktopView !== undefined) setView(desktopView); desktopView = undefined; graphics.setHeadset(false); }
   function addCuller(cull) { cullers.add(cull); return () => cullers.delete(cull); }
   // What the chase camera cannot see through (see ThirdPersonCamera.sight),
   // and the ground it keeps above
