@@ -23,9 +23,10 @@ const LOOSE = 2.5, LOOSE_SPIN = .6, STRANDED = 3, WAIT = 4, OUT_OF_SIGHT = 120;
 // A shaken driver lifts off and rolls to a stop before driving on, for this
 // many seconds per m/s the blow changed the car's speed, and at most MOST.
 const DAZE = .1, DAZE_MOST = 1.6;
-// Parked cars knocked loose at once, of each model, and how far off the
+// Stand-ins for parked cars knocked loose, of each model: made at the start,
+// and at most (more are made as a rampage needs them); and how far off the
 // player must be before one is put back in its bay
-const PARKED_POOL = 4, PARKED_RETURN = 150;
+const PARKED_POOL = 4, PARKED_MOST = 16, PARKED_RETURN = 150;
 const wrap = angle => Math.atan2(Math.sin(angle), Math.cos(angle));
 
 // A bounded fleet driving the generated streets: each car follows a nav
@@ -47,14 +48,18 @@ export class CityTraffic {
       return { ...model, index, generation: 0, position: new THREE.Vector3(), previousPosition: new THREE.Vector3(), quaternion: new THREE.Quaternion(), previousQuaternion: new THREE.Quaternion() };
     });
     // Stand-ins for parked cars knocked loose (see wake)
-    this.woken = TRAFFIC_MODELS.flatMap((spec, model) => Array.from({ length: PARKED_POOL }, (_, k) => {
-      const made = this.models.create(model, TRAFFIC_COLORS[0]);
-      made.car.visible = false; this.group.add(made.car);
-      return { ...made, index: 100 + model * PARKED_POOL + k, parked: null, loose: null, rock: null, s: 0, u: 0, heading: 0, position: new THREE.Vector3(), previousPosition: new THREE.Vector3(), quaternion: new THREE.Quaternion(), previousQuaternion: new THREE.Quaternion() };
-    }));
+    this.woken = []; this.standInLimit = PARKED_MOST;
+    TRAFFIC_MODELS.forEach((spec, model) => { for (let k = 0; k < PARKED_POOL; k++) this.addStandIn(model); });
     // Street furniture a loose car can knock over, when there is any (see LooseProps)
     this.props = null;
     this.reset(route, s, journey, u);
+  }
+  addStandIn(model) {
+    const made = this.models.create(model, TRAFFIC_COLORS[0]);
+    made.car.visible = false; this.group.add(made.car);
+    const car = { ...made, index: 100 + this.woken.length, parked: null, loose: null, rock: null, s: 0, u: 0, heading: 0, position: new THREE.Vector3(), previousPosition: new THREE.Vector3(), quaternion: new THREE.Quaternion(), previousQuaternion: new THREE.Quaternion() };
+    this.woken.push(car);
+    return car;
   }
   reset(route, s, journey = 'city', u = 0) {
     this.route = route; this.journey = journey; this.time = 0; this.lastS = s; this.lastU = u;
@@ -265,13 +270,15 @@ export class CityTraffic {
     return true;
   }
   // A free stand-in of the model or, with all of them out (a row of cars
-  // knocked into each other uses them up fast), the one at rest that will be
-  // least missed back in its bay: one that has settled where it was parked,
-  // else the furthest from the player. One still moving is never taken.
+  // knocked into each other uses them up fast), one that has settled back
+  // where it was parked, else a new one while there are under standInLimit,
+  // else the one at rest furthest from the player. One still moving is never taken.
   standIn(model, except) {
-    let best = null, score = -Infinity;
+    let best = null, score = -Infinity, count = 0;
     for (const car of this.woken) {
-      if (car.spec.name !== model || car === except) continue;
+      if (car.spec.name !== model) continue;
+      count++;
+      if (car === except) continue;
       if (!car.parked) return car;
       const loose = car.loose;
       if (!loose || car.rock || Math.hypot(loose.vx, loose.vz) > .05 || Math.abs(loose.spin) > .05) continue;
@@ -279,6 +286,7 @@ export class CityTraffic {
       const value = settled ? Infinity : Math.hypot(car.s - this.lastS, car.u - this.lastU);
       if (value > score) { best = car; score = value; }
     }
+    if (score < Infinity && count < this.standInLimit) return this.addStandIn(TRAFFIC_MODELS.findIndex(spec => spec.name === model));
     return best;
   }
   // Put back in its bay, out of sight
