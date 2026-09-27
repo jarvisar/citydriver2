@@ -102,6 +102,29 @@ test('frontage lots tile a block exactly, square to the street, and wrap its cor
   assert.equal(frontageLots([v(0, 0), v(100, 0), v(100, 12), v(0, 12)], { depth: 20 }), null);
 });
 
+test('no lot fans to a point: a narrow block end has a lot for each corner, and a thin end is cut across', () => {
+  // (the interior angle at each corner of an anticlockwise polygon)
+  const corners = polygon => polygon.map((p, i) => {
+    const a = polygon[(i - 1 + polygon.length) % polygon.length], b = polygon[(i + 1) % polygon.length];
+    return Math.PI - Math.atan2((p.x - a.x) * (b.y - p.y) - (p.y - a.y) * (b.x - p.x), (p.x - a.x) * (b.x - p.x) + (p.y - a.y) * (b.y - p.y));
+  });
+  const blocks = {
+    // its yard a sliver, so the stepped outline stops short of its ends
+    narrow: [v(0, 0), v(100, 0), v(100, 44), v(0, 44)],
+    // narrower than two lots at its west end
+    tapering: [v(0, 0), v(200, 0), v(200, 80), v(0, 30)],
+    sharp: chamferAcute([v(0, 0), v(160, 0), v(60, 90)]),
+  };
+  for (const [name, block] of Object.entries(blocks)) for (const seed of [1, 2, 3]) {
+    const result = frontageLots(block, { depth: 20, frontage: [12, 18], corner: [8, 12] }, mulberry32(seed));
+    assert.ok(result, `${name} takes a strip of lots`);
+    const total = result.lots.reduce((sum, lot) => sum + lot.area, 0) + calcPolygonArea(result.yard);
+    assert.ok(Math.abs(total - calcPolygonArea(block)) < 1, `${name} tiles exactly`);
+    for (const lot of result.lots) assert.ok(Math.min(...corners(lot.polygon)) > 50 * Math.PI / 180, `${name}: no cake slices`);
+    if (name !== 'narrow') assert.ok(result.lots.some(lot => !lot.edges.includes('rear') && lot.edges.filter(kind => kind === 'street').length >= 2), `${name}: lots through its thin end`);
+  }
+});
+
 test('a sharp block corner is cut off as a small plaza', () => {
   const wedge = [v(0, 0), v(160, 0), v(0, 30)];
   const cut = chamferAcute(wedge);

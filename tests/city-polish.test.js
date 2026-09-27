@@ -7,7 +7,7 @@ import { Surface } from '../src/world/surface.js';
 import { PAVEMENT_LEVEL } from '../src/world/city-route.js';
 import { CITY } from '../src/world/city.js';
 import { cityMedians } from '../src/world/city-medians.js';
-import { calcPolygonArea, insidePolygon } from '../src/mapgen/polygon-util.js';
+import { calcPolygonArea, insidePolygon, distanceToPolyline } from '../src/mapgen/polygon-util.js';
 import { intersection, region } from '../src/mapgen/booleans.js';
 import { buildLandmark } from '../src/world/city-landmarks.js';
 import { cityPlaces } from '../src/city-exploration.js';
@@ -309,14 +309,15 @@ test('every enclosed venue has a doorway and vehicle bays open onto a paved apro
       item(key, geometry, material, p, scale, colour) { if (key === 'distant-glass') boxes.push({ x: p[0], y: p[1], s: -p[2], w: scale[0], h: scale[1], colour, kind: 'glass' }); },
       tree() {}, post() {}, signFace() {}, standingSign() {}, solid() {}, rigid(x, s, fn) { fn(); } };
     buildLandmark(c, { polygon: place.polygon, seed: 123 }, place);
-    const site = place.footprint, D = site.depth;
+    const site = place.footprint, D = site.depth, edge = [...place.polygon, place.polygon[0]];
     // Follow the actual approach to the edge of an irregular site. A fitted
     // building can stand much farther from that edge than its nominal setback.
     for (const side of [-1, 0, 1]) for (let d = 1; d < 200; d += .5) {
       const along = side * site.width * (['depot', 'firehouse'].includes(place.type) ? .4 : .2);
       const into = -D / 2 - d;
       const p = { x: site.centre.x + site.tx * along + site.nx * into, y: site.centre.y + site.ty * along + site.ny * into };
-      if (!insidePolygon(p, place.polygon)) break;
+      // (the paving is clipped to the lot to the millimetre)
+      if (!insidePolygon(p, place.polygon) || distanceToPolyline(p, edge) < .01) break;
       assert.ok(paving.some(ring => insidePolygon(p, ring)), `${place.name}: the approach stops ${d.toFixed(1)} m ahead of the building, before reaching the pavement`);
     }
     const front = place.type === 'sports' ? D / 2 - Math.max(7, D * .32) : -D / 2 + (place.type === 'observatory' ? D * .1 : place.type === 'garden' ? D * .15 : 0);

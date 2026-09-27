@@ -3,10 +3,10 @@
 // draw it (the build itself allows none). Outside a page, the tests and
 // scripts, the stages simply run on.
 export const LOADING_STAGES = {
-  coast: 'Charting the coast…', streets: 'Tracing the streets…', junctions: 'Joining up the junctions…',
-  waterfront: 'Shaping the waterfront…', pavements: 'Laying out lots and pavements…',
-  bridges: 'Building the bridges…', furniture: 'Furnishing the streets…', buildings: 'Raising the buildings…',
-  skyline: 'Filling in the skyline…', graphics: 'Warming up the graphics…',
+  coast: 'Generating coastline…', streets: 'Generating streets…', junctions: 'Generating junctions…',
+  waterfront: 'Generating waterfront…', pavements: 'Generating lots…',
+  bridges: 'Generating bridges…', furniture: 'Placing street props…', buildings: 'Generating buildings…',
+  skyline: 'Loading skyline…', graphics: 'Compiling shaders…',
 };
 
 export function loadingStage(stage) {
