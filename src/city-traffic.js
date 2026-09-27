@@ -25,7 +25,7 @@ const LOOSE = 2.5, LOOSE_SPIN = .6, STRANDED = 3, WAIT = 4, OUT_OF_SIGHT = 120;
 const DAZE = .1, DAZE_MOST = 1.6;
 // Parked cars knocked loose at once, of each model, and how far off the
 // player must be before one is put back in its bay
-const PARKED_POOL = 2, PARKED_RETURN = 150;
+const PARKED_POOL = 4, PARKED_RETURN = 150;
 const wrap = angle => Math.atan2(Math.sin(angle), Math.cos(angle));
 
 // A bounded fleet driving the generated streets: each car follows a nav
@@ -176,7 +176,7 @@ export class CityTraffic {
   hitScenery(car, chunks) {
     const halfWidth = car.spec.width / 2, halfLength = car.spec.length / 2;
     sceneryContacts(() => ({ x: car.u, z: -car.s, heading: car.heading, halfWidth, halfLength }), chunks.values(), (contact, solid) => {
-      if (solid.parked && this.wake(solid)) return;
+      if (solid.parked && this.wake(solid, car)) return;
       // (and furniture it slides into flies, taking a little of its speed: see LooseProps)
       const knocked = solid.prop && this.props?.knock(solid, contact, { ...this.motion(car), y: car.position.y, height: 1.5 });
       if (knocked) { this.strike(car, knocked.x, knocked.z, knocked.spin); return; }
@@ -248,20 +248,38 @@ export class CityTraffic {
   // A parked car the player or a loose car runs into is knocked loose: one
   // of a few stand-ins takes its place, handbrake on, and its bay stands
   // empty until the player has driven well away (see release)
-  wake(collider) {
+  wake(collider, except = null) {
     const info = collider.parked;
     if (!this.enabled || !info?.ready) return false;
-    const car = this.woken.find(c => !c.parked && c.spec.name === info.model);
+    const car = this.standIn(info.model, except);
     if (!car) return false;
+    this.release(car);
     // Where it stands, and which way along its length its nose points
     const [a, b, c] = collider.corners, long = Math.hypot(b.x - a.x, b.z - a.z) > Math.hypot(c.x - b.x, c.z - b.z) ? [a, b] : [b, c];
     let fu = long[1].x - long[0].x, fs = -(long[1].z - long[0].z);
     if (fu * info.nose.u + fs * info.nose.s < 0) { fu = -fu; fs = -fs; }
-    Object.assign(car, { parked: collider, s: -collider.z, u: collider.x, heading: Math.atan2(fu, fs), loose: { vx: 0, vz: 0, spin: 0 }, rock: null, dazed: 0, moved: false });
+    Object.assign(car, { parked: collider, s: -collider.z, u: collider.x, heading: Math.atan2(fu, fs), bay: Math.atan2(fu, fs), loose: { vx: 0, vz: 0, spin: 0 }, rock: null, dazed: 0, moved: false });
     car.paint.color.set(info.colour); car.car.visible = true;
     collider.woken = true; info.hide(true);
     this.pose(car); car.previousPosition.copy(car.position); car.previousQuaternion.copy(car.quaternion);
     return true;
+  }
+  // A free stand-in of the model or, with all of them out (a row of cars
+  // knocked into each other uses them up fast), the one at rest that will be
+  // least missed back in its bay: one that has settled where it was parked,
+  // else the furthest from the player. One still moving is never taken.
+  standIn(model, except) {
+    let best = null, score = -Infinity;
+    for (const car of this.woken) {
+      if (car.spec.name !== model || car === except) continue;
+      if (!car.parked) return car;
+      const loose = car.loose;
+      if (!loose || car.rock || Math.hypot(loose.vx, loose.vz) > .05 || Math.abs(loose.spin) > .05) continue;
+      const settled = Math.hypot(car.u - car.parked.x, car.s + car.parked.z) < .3 && Math.abs(wrap(car.heading - car.bay)) < .05;
+      const value = settled ? Infinity : Math.hypot(car.s - this.lastS, car.u - this.lastU);
+      if (value > score) { best = car; score = value; }
+    }
+    return best;
   }
   // Put back in its bay, out of sight
   release(car) {
