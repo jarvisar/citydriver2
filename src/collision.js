@@ -115,6 +115,66 @@ export function sceneryContacts(box, chunks, visit) {
     }
   }
 }
+// How far the chase camera keeps off a building's footprint: shop awnings and
+// balconies stand up to about 2 m out from its walls. With the car itself
+// nearer a wall than that, it keeps at least CLOSE off that one.
+const CLEAR = 2.2, CLOSE = .5;
+// How far along the chase camera's line of sight, from `from` over the car to
+// `to` where the camera would be, it first comes within CLEAR of a building
+// below the building's roof: 0 to 1, and 1 if it never does. Only solids with
+// a `top` (buildings) count, so the camera sees over walls and hedges and
+// through trees and railings. Points are in the scene, which lies `origin`
+// along z from the colliders.
+export function sightLine(chunks, from, to, origin = 0) {
+  const x = from.x, z = from.z - origin, dx = to.x - from.x, dz = to.z - from.z;
+  const minX = Math.min(x, x + dx) - CLEAR, maxX = Math.max(x, x + dx) + CLEAR, minZ = Math.min(z, z + dz) - CLEAR, maxZ = Math.max(z, z + dz) + CLEAR;
+  let open = 1;
+  for (const chunk of chunks) {
+    // (a chunk still being built has no bounds, nor its colliders' corners)
+    const bounds = chunk?.collisionBounds;
+    if (!bounds || maxX < bounds.minX || minX > bounds.maxX || maxZ < bounds.minZ || minZ > bounds.maxZ) continue;
+    for (const solid of chunk.features.colliders) {
+      if (solid.top === undefined || solid.x - solid.reach > maxX || solid.x + solid.reach < minX || solid.z - solid.reach > maxZ || solid.z + solid.reach < minZ) continue;
+      let crossing = lineThrough(solid, x, z, dx, dz, CLEAR);
+      if (crossing?.[0] < 0) crossing = lineThrough(solid, x, z, dx, dz, CLOSE);
+      // (a line that starts inside even that, with the car in the wall, has nowhere better to be)
+      if (!crossing || crossing[0] < 0 || crossing[0] >= open) continue;
+      // Rising or falling, the line is lowest where it enters or leaves
+      const enters = from.y + crossing[0] * (to.y - from.y), leaves = from.y + Math.min(crossing[1], 1) * (to.y - from.y);
+      if (Math.min(enters, leaves) < solid.top + CLOSE) open = crossing[0];
+    }
+  }
+  return open;
+}
+// Where the line from (x, z) along (dx, dz) enters and leaves a convex outline
+// grown by `grow` all round, as fractions along it, or null if it misses. Its
+// corners are bevelled, so a sharp one grows no long spike.
+function lineThrough(solid, x, z, dx, dz, grow) {
+  const corners = solid.corners, edges = [];
+  let enter = -Infinity, leave = Infinity;
+  // (keeps what of the line lies within `grow` of the inner side of a line through a, facing n)
+  const cut = (a, nx, nz) => {
+    const out = nx * (x - a.x) + nz * (z - a.z) - grow, rate = nx * dx + nz * dz;
+    if (Math.abs(rate) < 1e-12) return out <= 0;
+    if (rate < 0) enter = Math.max(enter, -out / rate); else leave = Math.min(leave, -out / rate);
+    return enter <= leave;
+  };
+  for (let i = 0; i < corners.length; i++) {
+    const a = corners[i], b = corners[(i + 1) % corners.length], length = Math.hypot(b.x - a.x, b.z - a.z);
+    if (length < 1e-8) continue;
+    // (the edge's normal, turned away from the middle)
+    let nx = (b.z - a.z) / length, nz = -(b.x - a.x) / length;
+    if (nx * (solid.x - a.x) + nz * (solid.z - a.z) > 0) { nx = -nx; nz = -nz; }
+    if (!cut(a, nx, nz)) return null;
+    edges.push([a, nx, nz]);
+  }
+  // (each corner cut square to halfway between its two edges)
+  for (let i = 0; i < edges.length; i++) {
+    const [a, nx, nz] = edges[i], [, px, pz] = edges.at(i - 1), bx = nx + px, bz = nz + pz, length = Math.hypot(bx, bz);
+    if (length > 1e-6 && !cut(a, bx / length, bz / length)) return null;
+  }
+  return leave < 0 ? null : [enter, leave];
+}
 // The player's car against the chunks around it. A parked car or a piece of
 // street furniture it touches may be knocked loose (`wake(solid, contact)`,
 // see CityTraffic.wake and LooseProps.hit), and then it is no longer a wall.

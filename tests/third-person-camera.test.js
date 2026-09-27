@@ -159,3 +159,37 @@ test('perspective shadows cover nearby receivers without changing the camera pro
     }
   }
 });
+
+test('a building in the way brings the chase camera in along its line to the car at once, and lets it out gently', () => {
+  const car = new THREE.Object3D(), rig = new ThirdPersonCamera(), free = new ThirdPersonCamera();
+  car.rotation.y = -.7;
+  let open = .4;
+  rig.sight = (from, to) => {
+    assert.ok(Math.hypot(from.x - car.position.x, from.z - car.position.z) < 1e-9 && from.y > car.position.y + 1, 'the line starts over the car');
+    assert.ok(to.distanceTo(free.camera.position) < 1e-9, 'and ends where the camera would stand');
+    return open;
+  };
+  free.update(car, 0); rig.update(car, 0);
+  const along = t => rig.pivot.clone().lerp(free.camera.position, t);
+  assert.ok(rig.camera.position.distanceTo(along(.4)) < 1e-9);
+  // The view clears: out over a second or two, a little at a time
+  open = 1;
+  let previous = .4;
+  for (let i = 0; i < 60; i++) {
+    free.update(car, 1 / 60); rig.update(car, 1 / 60);
+    assert.ok(rig.reach > previous && rig.reach - previous < .04);
+    previous = rig.reach;
+  }
+  assert.ok(rig.reach > .9 && rig.reach < 1);
+  // Something new in the way pulls it straight back in
+  open = .3; free.update(car, 1 / 60); rig.update(car, 1 / 60);
+  assert.ok(rig.camera.position.distanceTo(along(.3)) < 1e-9);
+  // Once clear it ends exactly where it stands without the check
+  open = 1;
+  for (let i = 0; i < 300; i++) { free.update(car, 1 / 60); rig.update(car, 1 / 60); }
+  assert.equal(rig.reach, 1);
+  assert.ok(rig.camera.position.distanceTo(free.camera.position) < 1e-9);
+  // A snap (a reset, a new view) goes straight to wherever is clear
+  open = .5; rig.update(car, 1 / 60); open = 1; rig.snap(); rig.update(car, 0);
+  assert.equal(rig.reach, 1);
+});

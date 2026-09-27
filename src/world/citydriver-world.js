@@ -334,8 +334,10 @@ export class CityChunk {
     finally { this.buildingStructure = previous; }
   }
   polygon(points, y, height, color, kind = 'solid') { addSurfacePolygon(this, points, y, height, color, kind); }
-  polygonSolid(points) {
-    if (!this.distant) this.features.colliders.push({ logicalPolygon: points.map(([x, s]) => [this.east + x, this.start + s]) });
+  // A building's footprint; `top` (its roof's height) makes it something the
+  // chase camera cannot see through (see sightLine)
+  polygonSolid(points, top) {
+    if (!this.distant) this.features.colliders.push({ logicalPolygon: points.map(([x, s]) => [this.east + x, this.start + s]), top });
   }
   box(x, y, s, width, height, depth, color, kind = 'solid', yaw = 0, roll = 0) {
     return this.item(kind, boxGeometry, this.materials[kind], [x, y, -s], [width, height, depth], color, yaw, roll);

@@ -1121,7 +1121,7 @@ function buildBuilding(c, b) {
   const base = b.type === 'warehouse' ? 4.8 : b.domestic ? 3.6 : 5.4, height = base + b.floors * 3.6, lower = b.setbackFloors, lowerTop = G + base + lower * 3.6;
   const centre = averagePoint(ring);
   c.features.buildings.push({ x: c.east + centre.x, s: c.start + centre.y, area: b.area, height, type: b.type, floors: b.floors, roofType: b.roofType, wall: b.wall });
-  c.polygonSolid(convexHull(ring).map(p => [p.x, p.y]));
+  c.polygonSolid(convexHull(ring).map(p => [p.x, p.y]), G + height);
   if (b.lawn) {
     const lot = b.lotLocal.map(p => [p.x, p.y]);
     grassArea(c, lot, LAWN, G + .05);

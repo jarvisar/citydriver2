@@ -2,6 +2,9 @@ import * as THREE from 'three';
 
 // How far the chase lens opens between a standstill and full speed.
 const RUSH_FOV = 1.09;
+// A building in the way pulls the camera in toward this height over the car
+// (a tall machine's lift on top), and it eases back out at this rate.
+const PIVOT = 1.8, OPEN_RATE = 2.5;
 
 export class ThirdPersonCamera {
   constructor() {
@@ -15,6 +18,11 @@ export class ThirdPersonCamera {
     this.target = new THREE.Vector3();
     this.baseFov = 45;
     this.rush = 0;
+    // `sight(from, to)` answers how far from the car toward the camera the view
+    // is clear (see sightLine); `reach` is how far out the camera stands.
+    this.sight = null;
+    this.reach = null;
+    this.pivot = new THREE.Vector3();
   }
   resize(aspect) {
     this.camera.aspect = aspect;
@@ -27,7 +35,7 @@ export class ThirdPersonCamera {
     this.camera.fov = this.baseFov * (1 + (RUSH_FOV - 1) * this.rush);
     this.camera.updateProjectionMatrix();
   }
-  snap() { this.initialized = false; this.rush = 0; }
+  snap() { this.initialized = false; this.rush = 0; this.reach = null; }
   update(car, dt) {
     // Past two fifths of the car's top speed the lens opens up and the chase
     // seat slides back, so a boulevard at full throttle feels quick and a
@@ -69,6 +77,14 @@ export class ThirdPersonCamera {
     // A tall machine lifts the camera with it, so the road stays in view over its roof.
     const lift = car.userData.chaseLift ?? 0;
     this.camera.position.y = this.height + 4.5 + lift - Math.sin(this.pitch) * distance;
+    // A building between the car and the camera brings it in along that line,
+    // at once so no frame looks out from inside a wall, then lets it back out
+    // gently once the view clears, as most driving games' chase cameras do.
+    this.pivot.set(car.position.x, this.height + PIVOT + lift, car.position.z);
+    const open = this.sight?.(this.pivot, this.camera.position) ?? 1;
+    const eased = this.reach === null || open < this.reach ? open : THREE.MathUtils.damp(this.reach, open, OPEN_RATE, dt);
+    this.reach = open - eased < 1e-3 ? open : eased;
+    if (this.reach < 1) this.camera.position.sub(this.pivot).multiplyScalar(this.reach).add(this.pivot);
     this.target.copy(car.position).addScaledVector(this.forward, 7);
     this.target.y = this.height + 2.2 + lift * .35 + Math.sin(this.pitch) * 7;
     this.camera.lookAt(this.target);

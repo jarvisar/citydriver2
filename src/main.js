@@ -36,7 +36,7 @@ import { setResidentWindow } from './world/resident.js';
 import { DrivingController } from './vehicle.js';
 import { CityTraffic as Traffic } from './city-traffic.js';
 import { TRAFFIC_CRUISE_SPEED } from './traffic.js';
-import { collideScenery } from './collision.js';
+import { collideScenery, sightLine } from './collision.js';
 import { PedestrianContacts } from './world/pedestrian-reactions.js';
 import { CityAutodrive as Autodrive } from './city-autodrive.js';
 import { Input } from './input.js';
@@ -127,6 +127,8 @@ async function boot() {
     await loadingStage('furniture');
     const world = new JOURNEYS[journey].World(scene);
     rendering.addCuller((camera, shadow) => world.cull(camera, shadow));
+    // The chase camera stays out of the buildings
+    rendering.setSightLine((from, to) => sightLine(world.chunks.values(), from, to, world.origin));
     const weather = new CityWeather(scene);
     try { weather.setMode(localStorage.getItem('citydriver-weather') ?? 'auto', { immediate: true }); } catch { /* Storage is optional. */ }
     let changingJourney = true, journeyWasPaused = false;

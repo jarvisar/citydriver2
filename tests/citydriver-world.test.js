@@ -8,10 +8,11 @@ import { cityCell, CITY, CITY_CELL } from '../src/world/city.js';
 import { journeyStart, roadAt } from '../src/world/city-route.js';
 import { setResidentWindow } from '../src/world/resident.js';
 import { insidePolygon, distanceToPolyline } from '../src/mapgen/polygon-util.js';
-import { collideScenery } from '../src/collision.js';
+import { collideScenery, sightLine } from '../src/collision.js';
 import { CityTraffic } from '../src/city-traffic.js';
 import { DrivingController } from '../src/vehicle.js';
-import { citydriverRoute } from '../src/world/city-route.js';
+import { citydriverRoute, nearestLanePose, PAVEMENT_LEVEL } from '../src/world/city-route.js';
+import { ThirdPersonCamera } from '../src/third-person-camera.js';
 
 test('the world streams detailed chunks around the car and keeps the skyline everywhere else', () => {
   const scene = new THREE.Scene(), world = new CitydriverWorld(scene);
@@ -286,4 +287,34 @@ test('a parked car still comes loose with every stand-in of its model out: more 
     for (const car of traffic.woken) if (car.parked) car.loose.vx = 3;
     assert.equal(traffic.wake(same.find(c => !c.woken)), false);
   } finally { traffic.dispose(); world.dispose(); }
+});
+
+test('the chase camera stays out of the buildings whichever way the car faces', () => {
+  const scene = new THREE.Scene(), world = new CitydriverWorld(scene);
+  try {
+    const start = journeyStart();
+    world.update(start.s, start.u); while (world.pending.length) world.update(start.s, start.u);
+    const buildings = [...world.chunks.values()].flatMap(c => c.features.colliders.filter(s => s.top !== undefined));
+    assert.ok(buildings.length > 100 && buildings.every(b => b.corners && b.top > PAVEMENT_LEVEL + 3), 'every building has its roof height');
+    const outline = b => b.corners.map(p => ({ x: p.x, y: p.z }));
+    const sight = (from, to) => sightLine(world.chunks.values(), from, to, world.origin);
+    let poses = 0, pulled = 0;
+    for (let i = 0; i < 48; i++) {
+      const lane = nearestLanePose(start.s + (i % 8 - 3.5) * 45, start.u + (Math.floor(i / 8) - 2.5) * 45);
+      if (!lane.road) continue;
+      const driven = new DrivingController(citydriverRoute, lane, 'taxi');
+      driven.render(0, world.origin);
+      const car = new THREE.Object3D(); car.position.copy(driven.car.position); driven.disposeModel?.();
+      for (let h = 0; h < 8; h++) {
+        car.rotation.y = -(lane.heading + h * Math.PI / 4);
+        const rig = new ThirdPersonCamera(); rig.sight = sight; rig.update(car, 0);
+        const p = { x: rig.camera.position.x, y: rig.camera.position.z - world.origin };
+        for (const b of buildings) if (rig.camera.position.y < b.top) {
+          assert.ok(!insidePolygon(p, outline(b)) && distanceToPolyline(p, [...outline(b), outline(b)[0]]) > .49, `camera at ${p.x.toFixed(1)}, ${p.y.toFixed(1)} against a building`);
+        }
+        poses++; if (rig.reach < 1) pulled++;
+      }
+    }
+    assert.ok(poses > 200 && pulled > poses / 10, `${pulled} of ${poses} views pulled in`);
+  } finally { world.dispose(); }
 });

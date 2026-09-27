@@ -85,7 +85,7 @@ export function buildLandmark(c, lot, place) {
   const sign = discoverySignFor(place.type, place.variant);
   // The building's record, collision and the venue's name across its front
   const record = height => c.features.buildings.push({ x: c.east + cx, s: c.start + cs, area: W * D, height, type: `landmark-${place.type}`, floors: Math.round(height / 3.6), roofType: 'flat', wall });
-  const solidBody = ring => c.polygonSolid(convexHull(ring).map(p => [p.x, p.y]));
+  const solidBody = (ring, top) => c.polygonSolid(convexHull(ring).map(p => [p.x, p.y]), top);
   // The name board, as big as fits between `bottom` and `top` and no wider
   // than `widthMax` (or than `fits` allows, for one on a gable), its board
   // mounted a hand's width proud of the wall at `wall`. The patch of wall
@@ -538,6 +538,6 @@ export function buildLandmark(c, lot, place) {
   }
   drawWindows();
   record(top - G);
-  solidBody(localRing(W, D));
+  solidBody(localRing(W, D), top);
   return true;
 }

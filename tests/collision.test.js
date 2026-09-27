@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { collideScenery, postContact } from '../src/collision.js';
+import { collideScenery, postContact, sightLine } from '../src/collision.js';
 import { trafficContact } from '../src/traffic.js';
 import { DrivingController } from '../src/vehicle.js';
 import { CHUNK_LENGTH } from '../src/world/route.js';
@@ -208,4 +208,27 @@ test('the body rocks after a blow, nose down into one from ahead, and settles', 
     assert.deepEqual(car.jolt, { pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 });
     assert.equal(car.trauma, 0);
   } finally { car.disposeModel(); }
+});
+
+// A chunk holding one building, 10 m square and 10 m tall, 15 m off along -z
+function block(extra = {}) {
+  const building = { corners: [{ x: -5, z: -25 }, { x: 5, z: -25 }, { x: 5, z: -15 }, { x: -5, z: -15 }], x: 0, z: -20, reach: Math.hypot(5, 5), top: 10, ...extra };
+  return { collisionBounds: { minX: -5, maxX: 5, minZ: -25, maxZ: -15 }, features: { colliders: [building] } };
+}
+test('the chase camera sees up to 2.2 m short of a building below its roof, and over or past anything else', () => {
+  const from = { x: 0, y: 2, z: 0 }, to = { x: 0, y: 5, z: -30 };
+  assert.ok(Math.abs(sightLine([block()], from, to) - 12.8 / 30) < 1e-9, 'awnings and balconies stand out from the wall');
+  assert.equal(sightLine([block({ top: 1 })], from, to), 1, 'over the roof');
+  assert.equal(sightLine([block({ top: undefined })], from, to), 1, 'walls, hedges and trees do not count');
+  assert.equal(sightLine([{ ...block(), collisionBounds: undefined }], from, to), 1, 'a chunk still being built');
+  assert.equal(sightLine([block()], { x: 8, y: 2, z: 0 }, { x: 8, y: 5, z: -30 }), 1, 'a line that passes it by');
+  // The scene lies `origin` along z from the colliders
+  assert.ok(Math.abs(sightLine([block()], { ...from, z: 500 }, { ...to, z: 470 }, 500) - 12.8 / 30) < 1e-9);
+  // A car nearer the wall than that still keeps the camera half a metre off it
+  assert.ok(Math.abs(sightLine([block()], { x: 0, y: 2, z: -13.5 }, { x: 0, y: 5, z: -30 }) - 1 / 16.5) < 1e-9);
+  // A sharp corner is bevelled, not grown into a spike far past its tip
+  const wedge = { corners: [{ x: 0, z: -10 }, { x: 5, z: -40 }, { x: -5, z: -40 }], x: 0, z: -30, reach: 21, top: 10 };
+  const chunk = { collisionBounds: { minX: -5, maxX: 5, minZ: -40, maxZ: -10 }, features: { colliders: [wedge] } };
+  assert.equal(sightLine([chunk], { x: -10, y: 2, z: -7.5 }, { x: 10, y: 5, z: -7.5 }), 1);
+  assert.ok(sightLine([chunk], { x: -10, y: 2, z: -12 }, { x: 10, y: 5, z: -12 }) < 1);
 });

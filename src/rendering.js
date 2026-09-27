@@ -251,5 +251,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   function enterVR() { desktopView = view; setView(views.findIndex(view => view.thirdPerson)); }
   function exitVR() { if (desktopView !== undefined) setView(desktopView); desktopView = undefined; }
   function addCuller(cull) { cullers.add(cull); return () => cullers.delete(cull); }
-  return { renderer, scene, graphics, ambientOcclusion, vrCamera, render, precompile, addCuller, enterVR, exitVR, setView, toggleAO() { return graphics.toggleAmbientOcclusion(); }, get camera() { return activeCamera(); }, update, resize, recordFrame, setJourney, setWeather, get viewLabel() { return views[view].label; }, toggleView() { return setView((view + 1) % views.length); }, snap() { initialized = false; thirdPerson.snap(); firstPerson.snap(); } };
+  // What the chase camera cannot see through (see ThirdPersonCamera.sight)
+  function setSightLine(sight) { thirdPerson.sight = sight; }
+  return { renderer, scene, graphics, ambientOcclusion, vrCamera, render, precompile, addCuller, setSightLine, enterVR, exitVR, setView, toggleAO() { return graphics.toggleAmbientOcclusion(); }, get camera() { return activeCamera(); }, update, resize, recordFrame, setJourney, setWeather, get viewLabel() { return views[view].label; }, toggleView() { return setView((view + 1) % views.length); }, snap() { initialized = false; thirdPerson.snap(); firstPerson.snap(); } };
 }
