@@ -251,7 +251,11 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   function enterVR() { desktopView = view; setView(views.findIndex(view => view.thirdPerson)); }
   function exitVR() { if (desktopView !== undefined) setView(desktopView); desktopView = undefined; }
   function addCuller(cull) { cullers.add(cull); return () => cullers.delete(cull); }
-  // What the chase camera cannot see through (see ThirdPersonCamera.sight)
+  // What the chase camera cannot see through (see ThirdPersonCamera.sight),
+  // and the ground it keeps above
   function setSightLine(sight) { thirdPerson.sight = sight; }
-  return { renderer, scene, graphics, ambientOcclusion, vrCamera, render, precompile, addCuller, setSightLine, enterVR, exitVR, setView, toggleAO() { return graphics.toggleAmbientOcclusion(); }, get camera() { return activeCamera(); }, update, resize, recordFrame, setJourney, setWeather, get viewLabel() { return views[view].label; }, toggleView() { return setView((view + 1) % views.length); }, snap() { initialized = false; thirdPerson.snap(); firstPerson.snap(); } };
+  function setGround(ground) { thirdPerson.ground = ground; }
+  // The mouse turns the chase camera round the car, and the wheel brings it in or out (see MouseLook)
+  const look = (yaw, pitch) => thirdPerson.look(yaw, pitch), zoom = factor => thirdPerson.zoomBy(factor);
+  return { renderer, scene, graphics, ambientOcclusion, vrCamera, render, precompile, addCuller, setSightLine, setGround, look, zoom, enterVR, exitVR, setView, toggleAO() { return graphics.toggleAmbientOcclusion(); }, get camera() { return activeCamera(); }, update, resize, recordFrame, setJourney, setWeather, get viewLabel() { return views[view].label; }, get chaseView() { return Boolean(views[view].thirdPerson); }, toggleView() { return setView((view + 1) % views.length); }, snap() { initialized = false; thirdPerson.snap(); firstPerson.snap(); } };
 }

@@ -31,13 +31,16 @@ export class XRInput {
     if (lost && !paused && !blocked) this.onAction('pause');
     const left = controllers.find(source => source.handedness === 'left')?.gamepad;
     const right = controllers.find(source => source.handedness === 'right')?.gamepad;
-    const steer = deadzone(left?.axes[2] ?? right?.axes[2]);
+    const steer = deadzone(left?.axes[2] ?? right?.axes[2]), rise = left && right ? -deadzone(right.axes[3]) : 0;
     const state = {
       forward: deadzone(button(right, 0), .08),
       brake: deadzone(button(left, 0), .08),
       left: Math.max(0, -steer), right: Math.max(0, steer),
       handbrake: button(left, 1) > .5,
       boost: button(right, 1) > .5,
+      // The helicopter climbs and descends on the right stick, or the right and left grips
+      climb: Math.max(rise, button(right, 1) > .5 ? 1 : 0, 0),
+      descend: Math.max(-rise, button(left, 1) > .5 ? 1 : 0, 0),
     };
     const buttons = {
       view: button(right, 4) > .5, pause: button(right, 5) > .5 || button(left, 5) > .5 || button(left, 3) > .5,

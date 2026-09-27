@@ -14,7 +14,7 @@ import { setupTaxiFleet } from './taxi-fleet-view.js';
 import { createRendering } from './rendering.js';
 import { Graphics } from './graphics.js';
 import { JOURNEYS } from './journeys.js';
-import { CARS, CAR_IDS, DEFAULT_CAR, ROUTE_PAINT, carEntry, carMeters } from './cars.js';
+import { CARS, GARAGE_IDS, DEFAULT_CAR, ROUTE_PAINT, carEntry, carMeters } from './cars.js';
 import { carArt } from './car-art.js';
 import { PAINTS, DEFAULT_PAINT, DEFAULT_PAINT_NAME, paintName, readPaint } from './car-paint.js';
 import { SEED } from './world/route.js';
@@ -22,7 +22,7 @@ import { resolveWorldSeed } from './world/generation.js';
 import { CityWeather } from './world/city-weather.js';
 import { NightLighting } from './night-lighting.js';
 import { LooseProps } from './loose-props.js';
-import { cityDistrict, citySoundscape, nearestLanePose, journeyStart, lanePose, roadAt, surfaceAt, waterAt } from './world/city-route.js';
+import { cityDistrict, citySoundscape, cityHeight, nearestLanePose, journeyStart, lanePose, roadAt, surfaceAt, waterAt } from './world/city-route.js';
 import { CITY } from './world/city.js';
 import { loadingStage } from './loading-status.js';
 import { navGraph } from './world/nav-graph.js';
@@ -41,6 +41,7 @@ import { PedestrianContacts } from './world/pedestrian-reactions.js';
 import { CityAutodrive as Autodrive } from './city-autodrive.js';
 import { Input } from './input.js';
 import { touchDrivingInput, thirdPersonDrivingInput } from './touch-stick.js';
+import { MouseLook } from './mouse-look.js';
 import { DriveAudio } from './audio.js';
 import { setupAudioMixer } from './audio/mixer.js';
 import { FrameClock } from './timing.js';
@@ -50,8 +51,13 @@ import { VRStatus } from './vr-status.js';
 import { setupPwaFullscreen } from './pwa-fullscreen.js';
 import { moveMenuFocus, confirmMenuFocus, scrollMenu } from './menu-focus.js';
 
+// Auto-fullscreen, the pause screen's switch: on unless the player turns it
+// off, and remembered. The drive goes fullscreen as it starts and resumes.
+const autoFullscreenKey = 'citydriver-auto-fullscreen';
+let autoFullscreen = true;
+try { autoFullscreen = localStorage.getItem(autoFullscreenKey) !== 'off'; } catch { /* Storage is optional. */ }
 setupControlHelp();
-setupPwaFullscreen();
+setupPwaFullscreen(() => autoFullscreen);
 
 const $ = selector => document.querySelector(selector);
 const MENU_MOVES = ['menuNext', 'menuPrevious', 'menuUp', 'menuDown'];
@@ -127,13 +133,16 @@ async function boot() {
     await loadingStage('furniture');
     const world = new JOURNEYS[journey].World(scene);
     rendering.addCuller((camera, shadow) => world.cull(camera, shadow));
-    // The chase camera stays out of the buildings
+    // The chase camera stays out of the buildings and above the ground
     rendering.setSightLine((from, to) => sightLine(world.chunks.values(), from, to, world.origin));
+    rendering.setGround((x, z) => cityHeight(world.origin - z, x));
     const weather = new CityWeather(scene);
     try { weather.setMode(localStorage.getItem('citydriver-weather') ?? 'auto', { immediate: true }); } catch { /* Storage is optional. */ }
     let changingJourney = true, journeyWasPaused = false;
     // The menu cruises in a cab; starting either mode applies its own saved car.
     const vehicle = new DrivingController(JOURNEYS[journey].route, journeyStart(), 'taxi'); const audio = new DriveAudio();
+    // (the roofs the helicopter can set down on)
+    vehicle.scenery = world.chunks;
     const refreshAudioMixer = setupAudioMixer(audio);
     const showSound = enabled => {
       $('#sound').setAttribute('aria-pressed', String(enabled));
@@ -175,7 +184,7 @@ async function boot() {
       weather.update(time, vehicle, world.origin); rendering.setWeather(weather.state, dt);
       world.setWetness(weather.state.wetness); world.setWindowGlow(weather.state.windowGlow); vehicle.setLights(weather.state.lightLevel); traffic.models.setLights(weather.state.lightLevel);
     }
-    const haltCar = () => { vehicle.speed = 0; vehicle.knock.x = vehicle.knock.z = vehicle.knock.spin = 0; vehicle.update(0, {}); };
+    const haltCar = () => { vehicle.speed = 0; vehicle.knock.x = vehicle.knock.z = vehicle.knock.spin = 0; vehicle.pilot?.stop(); vehicle.update(0, {}); };
     const drawScene = rendering.render;
     rendering.render = (...args) => {
       nightLighting.update(world, vehicle, traffic, weather.state.lightLevel);
@@ -308,7 +317,7 @@ async function boot() {
     function recoverCar(penalty = false) {
       const pose = nearestLanePose(vehicle.s, vehicle.u, vehicle.heading);
       vehicle.s = pose.s; vehicle.u = pose.u; vehicle.heading = pose.heading;
-      haltCar();
+      vehicle.pilot?.land(); haltCar();
       if (penalty) { taxi.timeLeft = Math.max(0, taxi.timeLeft - 5); toast('Reset −5s'); }
       taxi.hold = 0;
       world.update(vehicle.s, vehicle.u); vehicle.render(0, world.origin); rendering.snap(); needsRender = true;
@@ -326,7 +335,7 @@ async function boot() {
     function beginFree({ preserveInput = false } = {}) {
       if (changingJourney) return;
       const wasTaxi = taxi.status !== 'idle'; taxi.stop(); started = true; gameMode = 'free';
-      autodrive.reset(); vehicle.arcade = false; vehicle.setCar(carId, { paint }); vehicle.speed = 0; vehicle.update(0, {});
+      autodrive.reset(); vehicle.arcade = false; vehicle.setCar(carId, { paint }); vehicle.speed = 0; vehicle.pilot?.stop(); vehicle.update(0, {});
       if (wasTaxi && freeTraffic !== undefined) traffic.setEnabled(freeTraffic, vehicle);
       $('#traffic').setAttribute('aria-pressed', String(traffic.enabled)); $('#autodrive').setAttribute('aria-pressed', 'false');
       $('#taxi-results').hidden = true; $('#welcome').classList.add('hidden');
@@ -342,6 +351,10 @@ async function boot() {
     function setPaused(value, { preserveInput = false } = {}) {
       paused = value; if (!preserveInput) input.clear(); frameClock.suspend();
       if (!paused && autodrive.enabled) start();
+      // Auto-fullscreen: a drive starting or resuming goes fullscreen. A
+      // browser grants that only inside a click or key, so a controller's A
+      // may not manage it; that is left quiet.
+      if (!paused && started && autoFullscreen && !vr?.active) void setFullscreen(true, { quiet: true });
       if (paused) { clearTimeout(toastTimer); $('#toast').classList.remove('show'); }
       // (the title screen is silent: sound begins with the drive)
       audio.setPaused(paused || !started);
@@ -360,7 +373,7 @@ async function boot() {
     }
     function buildCarCards() {
       const current = '<span class="chooser-current">CURRENT CAR</span>';
-      $('.car-options').innerHTML = CAR_IDS.map(id => {
+      $('.car-options').innerHTML = GARAGE_IDS.map(id => {
         const entry = CARS[id];
         // The plain row stands for whichever car the road brings: no portrait
         // and no meters, so it sits above the fleet as a single line.
@@ -419,7 +432,21 @@ async function boot() {
       paintCards(); updatePaintUi();
       vehicle.render(0, world.origin); rendering.update(vehicle.car, 0, world.origin); needsRender = true;
     }
+    // Free drive's two buttons climb and descend in the helicopter (Space and
+    // Shift do, see Input), and are named for it
+    const flightButtons = [['handbrake', 'Climb', 'Drift', 'Tap + steer'], ['boost', 'Descend', 'Boost', null]];
+    function updateFlightUi() {
+      const flying = Boolean(vehicle.pilot) && started && gameMode === 'free';
+      if (document.body.dataset.flying === String(flying)) return;
+      document.body.dataset.flying = String(flying); updateViewUi();
+      for (const [key, climbing, driving, hint] of flightButtons) {
+        const button = $(`[data-drive-button="${key}"]`);
+        button.querySelector('span').textContent = flying ? climbing : driving;
+        if (hint) button.querySelector('small').textContent = flying ? 'Hold' : hint;
+      }
+    }
     function updateCarUi() {
+      updateFlightUi();
       for (const button of carDialog.querySelectorAll('[data-car]')) button.setAttribute('aria-current', String(button.dataset.car === carId));
       $('#current-car').textContent = started && gameMode === 'taxi' ? carEntry(vehicle.carId).name : carEntry(carId).name;
       $('#change-car').setAttribute('aria-label', started && gameMode === 'taxi' ? 'Garage: free drive only' : `Garage: ${carEntry(carId).name}`);
@@ -435,7 +462,10 @@ async function boot() {
       autodrive.reset();
       rendering.update(vehicle.car, 0, world.origin);
       updateCarUi(); updateHud(); needsRender = true;
-      toast(`${carEntry(id).name} selected`);
+      // (how to fly, on whatever the player is holding)
+      const flight = !CARS[id].flies ? '' : vr?.active ? ' · Right stick: climb / descend' : document.body.dataset.controller === 'true' ? ' · Right stick or RB / LB: climb / descend'
+        : matchMedia('(pointer: coarse)').matches ? ' · Hold Climb or Descend' : ' · Space / Shift: climb / descend';
+      toast(`${carEntry(id).name} selected${flight}`);
     }
     function openCars() {
       if (started && gameMode === 'taxi') { openFleet(); return; }
@@ -456,7 +486,7 @@ async function boot() {
         fpsCounter.textContent = 'FPS: …'; fpsStart = null; fpsFrames = 0;
         return;
       }
-      if (name === 'fullscreen') { await toggleFullscreen(); return; }
+      if (name === 'fullscreen') { await setFullscreen(!fullscreenActive()); return; }
       if (changingJourney) return;
       const chooser = openChooser();
       if (chooser) {
@@ -490,6 +520,7 @@ async function boot() {
       if (name === 'car') { openCars(); return; }
       if (name === 'autodrive') {
         if (started && gameMode === 'taxi') { toast('Autodrive: free drive only'); return; }
+        if (!autodrive.enabled && vehicle.pilot) { toast('Autodrive: cars only'); return; }
         if (!autodrive.enabled && !autodrive.canStart(vehicle)) { toast('Autodrive requires a street'); return; }
         const enabled = autodrive.toggle();
         revealTouchControls();
@@ -600,39 +631,52 @@ async function boot() {
     if (headsetBrowser() && !window.isSecureContext) { $('#vr-error').textContent = 'VR needs a secure page. Open Citydriver over HTTPS to play in your headset.'; $('#vr-error').hidden = false; }
     $('#change-car').addEventListener('click', openCars);
     $('#close-cars').addEventListener('click', () => carDialog.close());
-    let fullscreenPending = false;
+    let fullscreenPending = false, leavingFullscreen = false;
     const desktop = window.citydriverDesktop;
     let desktopFullscreen = false;
     const fullscreenDisplay = window.matchMedia('(display-mode: fullscreen)');
-    function updateFullscreenUi() {
-      const active = desktop ? desktopFullscreen : Boolean(document.fullscreenElement || document.webkitFullscreenElement || fullscreenDisplay.matches);
-      $('#fullscreen').setAttribute('aria-pressed', String(active));
-      $('#fullscreen').setAttribute('aria-label', active ? 'Exit fullscreen' : 'Enter fullscreen');
-      $('#fullscreen').title = `${active ? 'Exit' : 'Enter'} fullscreen (F / D-pad Down)`;
-    }
-    async function toggleFullscreen() {
-      if (fullscreenPending) return;
+    const fullscreenActive = () => desktop ? desktopFullscreen : Boolean(document.fullscreenElement || document.webkitFullscreenElement || fullscreenDisplay.matches);
+    // Enters or leaves fullscreen (`quiet`: a page that cannot says nothing)
+    async function setFullscreen(on, { quiet = false } = {}) {
+      const element = document.fullscreenElement || document.webkitFullscreenElement;
+      if (fullscreenPending || (desktop ? on === desktopFullscreen : on ? fullscreenActive() : !element)) return;
       fullscreenPending = true;
       try {
         if (desktop) {
           desktopFullscreen = await desktop.toggleFullscreen();
-        } else if (document.fullscreenElement || document.webkitFullscreenElement) {
+        } else if (!on) {
+          leavingFullscreen = true;
           await (document.exitFullscreen ?? document.webkitExitFullscreen).call(document);
         } else {
           const request = document.documentElement.requestFullscreen ?? document.documentElement.webkitRequestFullscreen;
-          if (!request) { toast('Fullscreen unavailable'); return; }
+          if (!request) { if (!quiet) toast('Fullscreen unavailable'); return; }
           await request.call(document.documentElement);
         }
       } catch {
-        toast('Press F for fullscreen');
-      } finally { fullscreenPending = false; updateFullscreenUi(); }
+        leavingFullscreen = false;
+        if (!quiet) toast('Press F for fullscreen');
+      } finally { fullscreenPending = false; }
     }
-    document.addEventListener('fullscreenchange', updateFullscreenUi);
-    document.addEventListener('webkitfullscreenchange', updateFullscreenUi);
-    fullscreenDisplay.addEventListener('change', updateFullscreenUi);
+    // A browser's fullscreen swallows Escape to leave, so leaving it mid-drive
+    // other than by F or the switch pauses, as Escape would
+    document.addEventListener('onfullscreenchange' in document ? 'fullscreenchange' : 'webkitfullscreenchange', () => {
+      if (fullscreenActive()) return;
+      if (!leavingFullscreen && started && !paused && !vr.active) setPaused(true);
+      leavingFullscreen = false;
+    });
+    // Switched on, auto-fullscreen goes fullscreen at once; switched off, it leaves
+    function toggleAutoFullscreen() {
+      autoFullscreen = !autoFullscreen;
+      try { localStorage.setItem(autoFullscreenKey, autoFullscreen ? 'on' : 'off'); } catch { /* Keep it for this visit. */ }
+      $('#auto-fullscreen').setAttribute('aria-pressed', String(autoFullscreen));
+      toast(`Auto-fullscreen ${autoFullscreen ? 'on' : 'off'}`);
+      void setFullscreen(autoFullscreen, { quiet: true });
+    }
+    $('#auto-fullscreen').setAttribute('aria-pressed', String(autoFullscreen));
+    $('#auto-fullscreen').addEventListener('click', toggleAutoFullscreen);
     if (desktop) {
-      desktop.onFullscreenChange(active => { desktopFullscreen = active; updateFullscreenUi(); });
-      desktop.getFullscreen().then(active => { desktopFullscreen = active; updateFullscreenUi(); });
+      desktop.onFullscreenChange(active => { desktopFullscreen = active; });
+      desktop.getFullscreen().then(active => { desktopFullscreen = active; });
       desktop.onEscape(() => {
         const chooser = openChooser();
         if (chooser) chooser.close(); else action('pause');
@@ -655,10 +699,13 @@ async function boot() {
       desktop.onUpdate(showUpdate);
       desktop.getUpdate().then(showUpdate);
     }
-    updateFullscreenUi();
+    // Driving in the chase view, the wheel brings the camera in or out, and
+    // in fullscreen the mouse looks round the car
+    const chasing = () => started && !paused && !changingJourney && !vr.active && rendering.chaseView;
+    const mouseLook = new MouseLook($('#scene'), { lockable: () => chasing() && fullscreenActive(), zoomable: chasing, look: rendering.look, zoom: rendering.zoom });
     // A touch acts on pointerup: a secondary finger may not synthesize a
     // click while the stick is held.
-    for (const name of ['fullscreen', 'pause', 'view']) {
+    for (const name of ['pause', 'view']) {
       $(`#${name}`).addEventListener('click', event => { if (event.pointerType !== 'touch') action(name); });
       $(`#${name}`).addEventListener('pointerup', event => {
         if (event.pointerType === 'touch') { event.preventDefault(); action(name); }
@@ -760,9 +807,9 @@ async function boot() {
     function updateViewUi() {
       $('#view').title = `${rendering.viewLabel} · Change camera (V)`;
       $('#view').setAttribute('aria-label', `${rendering.viewLabel}. Change camera`);
-      const thirdPerson = rendering.camera.isPerspectiveCamera;
-      $('.stick-help-copy').firstChild.textContent = thirdPerson ? 'Touch anywhere · ↑ Drive · ↔ Steer' : 'Drag anywhere to drive';
-      $('.stick-help-line').textContent = thirdPerson ? '↓ Brake · Release to stop' : 'Release to stop';
+      const thirdPerson = rendering.camera.isPerspectiveCamera, flying = document.body.dataset.flying === 'true';
+      $('.stick-help-copy').firstChild.textContent = thirdPerson ? `Touch anywhere · ↑ ${flying ? 'Fly' : 'Drive'} · ↔ ${flying ? 'Turn' : 'Steer'}` : `Drag anywhere to ${flying ? 'fly' : 'drive'}`;
+      $('.stick-help-line').textContent = flying ? thirdPerson ? '↓ Back · Release to hover' : 'Release to hover' : thirdPerson ? '↓ Brake · Release to stop' : 'Release to stop';
       $('#touch-stick').setAttribute('aria-label', thirdPerson ? 'Virtual joystick: up to accelerate, left and right to steer, down to brake or reverse, release to stop' : 'Virtual joystick');
     }
     // The headset's menus: the page's own choices, drawn by VRStatus.
@@ -824,7 +871,8 @@ async function boot() {
     function vrHudModel() {
       if (!vr.active || !started || paused || changingJourney) return null;
       const read = id => document.getElementById(id).textContent;
-      const hint = vrHintTime < 10 ? 'Right trigger: gas · Left trigger: brake · Left stick: steer · Grips: drift, boost · B: pause' : '';
+      const hint = vrHintTime >= 10 ? '' : vehicle.pilot ? 'Triggers: forward, back · Left stick: turn · Right stick or grips: up, down · B: pause'
+        : 'Right trigger: gas · Left trigger: brake · Left stick: steer · Grips: drift, boost · B: pause';
       if (!taxi.running) return { heading: read('city-heading'), place: read('city-location'), weather: read('weather-label'), hint };
       const pickup = taxi.status === 'pickup', timer = $('#taxi-timer');
       return { taxi: true, clock: read('taxi-clock'), urgent: $('#taxi-clock').dataset.urgent === 'true', cash: read('taxi-cash'), fares: read('taxi-fares'),
@@ -836,6 +884,8 @@ async function boot() {
         timer: timer.hidden ? null : { text: read('taxi-timer'), tone: timer.dataset.rating, fraction: Math.round(parseFloat($('#taxi-timer-fill').style.width)) / 100 || 0 }, hint };
     }
     const simulate = dt => {
+      // (the autodrive drives cars, and the helicopter is not one)
+      if (autodrive.enabled && vehicle.pilot) action('autodrive');
       let state = started ? input.state : {};
       if (autodrive.enabled && (state.forward || state.brake || state.left || state.right || state.handbrake || state.touchStick)) action('autodrive');
       // Cruise behind the welcome menu without toggling the player's setting
@@ -886,12 +936,13 @@ async function boot() {
         const menu = input.gamepad.scroll && (openChooser() ?? openPauseMenu() ?? openWelcomeMenu());
         if (menu) scrollMenu(menu, input.gamepad.scroll * 18);
       }
+      mouseLook.update();
       const running = !paused && !hidden();
       frameClock.tick(timestamp, running, simulate);
       const dt = frameClock.dt;
       if (running) {
         time += dt;
-        if (vr.active && started && Math.abs(vehicle.speed) > 2) vrHintTime += dt;
+        if (vr.active && started && (Math.abs(vehicle.speed) > 2 || vehicle.airborne)) vrHintTime += dt;
         world.update(vehicle.s, vehicle.u, { budgetMs: 3 }); vehicle.render(frameClock.alpha, world.origin);
         traffic.render(frameClock.alpha, world.origin); props.render(frameClock.alpha, world.origin);
         pedestrianContacts.update(vehicle, traffic, time, props);
@@ -899,7 +950,8 @@ async function boot() {
         taxiView.render(taxi, vehicle, world.origin, time, pedestrianContacts);
         applyWeather(dt);
       }
-      comfort.update(rendering.camera, vehicle.speed, running ? dt : 0, vr.active && running && started);
+      // (a helicopter's climbs and dives count as surges too)
+      comfort.update(rendering.camera, vehicle.pilot ? Math.hypot(vehicle.speed, vehicle.pilot.vy) : vehicle.speed, running ? dt : 0, vr.active && running && started);
       soundScene.interior = rendering.viewLabel === 'First-person view';
       soundScene.lightning = weather.flash; soundScene.rain = weather.state.rain; soundScene.wetness = weather.state.wetness;
       soundScene.snow = weather.state.snow; soundScene.night = weather.state.stars;

@@ -81,6 +81,8 @@ body[data-controller=true] .taxi-dash { bottom: var(--ui-bottom); left: 50%; tra
 #taxi-boost-fill { display: block; height: 100%; background: #172229; }
 #taxi-buttons[data-boosting=true] [data-drive-button=boost] { background: #fff0a1; box-shadow: inset 0 0 0 2px #fff8e7; }
 #taxi-buttons[data-drifting=true] [data-drive-button=handbrake] { background: #405760; box-shadow: inset 0 0 0 2px #fff8e7; }
+/* In the helicopter they climb and descend, longer names set a little smaller */
+body[data-flying=true] #taxi-buttons span { font-size: 13px; }
 
 body[data-mode=taxi] :is(.city-hud, .notebook-panel, .controls) { display: none; }
 body[data-mode=taxi] .topbar { justify-content: flex-end; }

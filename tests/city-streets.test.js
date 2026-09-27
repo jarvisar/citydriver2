@@ -266,7 +266,7 @@ test('a block with no lot is a planted island: a lawn inside its kerb, with only
   }
 });
 
-test('the parks, squares and islands have a fringe of grass round their lawns, off the walks', () => {
+test('the parks, squares and islands have longer grass round and over their lawns, off the walks', () => {
   const lawns = [...cityParks().flatMap(e => e.paved ? e.panels.map(panel => panel.outer) : [e.park.lawn]), ...cityIslands().map(island => island.lawn)];
   const grass = furniture.filter(piece => piece.kind === 'grass');
   for (const piece of grass) {

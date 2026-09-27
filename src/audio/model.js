@@ -30,6 +30,7 @@ export class DriveSoundModel {
   }
   update(telemetry = {}, delta = 1 / 60) {
     const dt = clamp(finite(delta), 0, .1);
+    if (this.profile.rotor) return this.rotor(telemetry, dt);
     const { idle, redline } = this.profile, ratios = this.ratios, last = ratios.length - 1;
     const signedSpeed = clamp(finite(telemetry.speed), -120, 120);
     const speed = Math.abs(signedSpeed), reverse = signedSpeed < -.3;
@@ -70,6 +71,21 @@ export class DriveSoundModel {
       windLevel: Math.pow(motion, 1.7) * .12,
       reverseLevel: reverse ? Math.min(1, speed / 5) * .035 : 0,
       reverseFrequency: 260 + speed * 65,
+    };
+  }
+  // The helicopter: the turbine's revs follow the rotor spooling up
+  // (`telemetry.rotor`, 0 to 1), not the speed, and the blades beat at
+  // `chop` times a second through the rough layer. No tyres on the road.
+  rotor(telemetry, dt) {
+    const { idle, redline, rotor } = this.profile, spool = clamp(finite(telemetry.rotor), 0, 1);
+    this.rpm = damp(this.rpm, idle + (redline - idle) * spool, dt, .2);
+    this.load = damp(this.load, clamp(finite(telemetry.throttle), 0, 1) * spool, dt, .2);
+    const motion = clamp(Math.abs(finite(telemetry.speed)) / 28, 0, 1);
+    return {
+      rpm: this.rpm, load: this.load, gear: 1, motion, boost: 0, shiftSerial: this.shiftSerial, liftSerial: this.liftSerial, clutch: 1,
+      engineLevel: (.065 + this.load * .045) * (.5 + .5 * spool), engineCutoff: 600 + this.load * 700 + motion * 300,
+      roadLevel: 0, roughLevel: .1 + spool * spool * (.52 + this.load * .18), chop: rotor * (.6 + .4 * spool),
+      windLevel: Math.pow(motion, 1.7) * .12, reverseLevel: 0, reverseFrequency: 260,
     };
   }
 }

@@ -11,7 +11,7 @@ npm run electron:dev
 
 Use `npm run electron:start` to build and run the production version.
 
-The app starts in fullscreen. Press F, F11 or Alt+Enter to toggle it. Escape pauses.
+The app starts in fullscreen. Press F, F11 or Alt+Enter to toggle it. Escape pauses. While Auto-fullscreen is on in the pause menu, the game also goes back to fullscreen whenever a drive starts or resumes.
 
 Launch flags: `--windowed`, `--fullscreen`, `--seed=4817`, `--devtools`, `--software-gl` and `--dev-url=http://127.0.0.1:5173`.
 

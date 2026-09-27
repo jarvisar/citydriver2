@@ -175,14 +175,34 @@ function lineThrough(solid, x, z, dx, dz, grow) {
   }
   return leave < 0 ? null : [enter, leave];
 }
+// The highest roof under any of `points` ({ x, z }, as the colliders lie) no
+// higher than `below`, or -Infinity: what the helicopter can set down on. A
+// pitched roof counts to its ridge.
+export function roofUnder(chunks, points, below) {
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity, best = -Infinity;
+  for (const p of points) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z); }
+  for (const chunk of chunks) {
+    const bounds = chunk?.collisionBounds;
+    if (!bounds || maxX < bounds.minX || minX > bounds.maxX || maxZ < bounds.minZ || minZ > bounds.maxZ) continue;
+    for (const solid of chunk.features.colliders) {
+      if (solid.top === undefined || solid.x - solid.reach > maxX || solid.x + solid.reach < minX || solid.z - solid.reach > maxZ || solid.z + solid.reach < minZ) continue;
+      const top = solid.ridge ?? solid.top;
+      if (top > best && top <= below && points.some(p => insideConvex(p, solid.corners))) best = top;
+    }
+  }
+  return best;
+}
 // The player's car against the chunks around it. A parked car or a piece of
 // street furniture it touches may be knocked loose (`wake(solid, contact)`,
 // see CityTraffic.wake and LooseProps.hit), and then it is no longer a wall.
+// Whatever the player's machine clears (`passes`: the helicopter, over it)
+// is left alone.
 export function collideScenery(player, chunks, dt, wake = null) {
   const halfWidth = player.spec.width / 2, halfLength = player.spec.length / 2, center = Math.floor(player.s / CHUNK_LENGTH);
   const nearby = player.route.grid ? chunks.values() : [chunks.get(center - 1), chunks.get(center), chunks.get(center + 1)];
   const box = () => ({ x: player.groundedPosition.x, z: player.groundedPosition.z, heading: player.heading, halfWidth, halfLength });
   sceneryContacts(box, nearby, (contact, solid) => {
+    if (player.passes?.(solid)) return;
     if ((solid.parked || solid.prop) && wake?.(solid, contact)) return;
     player.resolveSceneryCollision(contact.x, contact.z, contact.depth, dt, contact.point);
   });

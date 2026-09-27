@@ -25,7 +25,7 @@ This is the sequel to [Citydriver](https://github.com/jarvisar/citydriver). The 
 
 Start a **Taxi run** to pick up passengers and earn money. Stop in a pickup ring, follow the arrow, then stop in the yellow drop-off ring before the fare clock runs out. Earnings can be spent on faster cabs in the taxi fleet. See [progression and balance](docs/taxi-progression.md) and [taxi fleet](docs/taxi-fleet.md) for more details.
 
-**Free drive** has no timer. All three taxis are available in the garage, and weather settings and city discoveries are in the pause menu. Press forward on the main menu to enter free drive, or press R to generate a new city.
+**Free drive** has no timer. All three taxis are available in the garage, and weather settings and city discoveries are in the pause menu. The garage also has a helicopter that can fly over the city and land on roofs. Press forward on the main menu to enter free drive, or press R to generate a new city.
 
 Every visit generates a new city. Add `?seed=4817` to the URL to load the same city again.
 
@@ -38,18 +38,22 @@ Every visit generates a new city. Add `?seed=4817` to the URL to load the same c
 | Steer | A D / Left Right | Left stick |
 | Boost | Shift | RB / R1 |
 | Drift / handbrake | Space | LB / L1 |
+| Climb / descend (helicopter) | Space / Shift, or E / Q | Right stick, or RB / R1 and LB / L1 |
 | Camera | V | X / Square |
 | Pause | P / Escape | Start / Menu |
 | Reset | R | Y / Triangle |
 | Garage / Taxi fleet | C / G | L3 |
 | Autodrive (free drive) | H | D-pad Up |
 | Fullscreen | F | D-pad Down (while driving) |
+| Auto-fullscreen (on unless switched off) | Pause menu | Pause menu |
+| Look around the car (chase view, fullscreen) | Mouse | |
+| Camera distance (chase view) | Mouse wheel | |
 | Sound | Pause menu | Pause menu |
 | City map | M, or City map on the street map | View / Share |
 | Street map (show / hide) | Its arrow button | |
 | Menus | Tab, Enter | D-pad or left stick to choose, A / Cross to select, B / Circle to go back |
 
-On touch screens, use the stick to drive, hold Boost, and tap Drift while steering in chase view. Release the stick to stop.
+On touch screens, use the stick to drive, hold Boost, and tap Drift while steering in chase view. Release the stick to stop. In the helicopter, hold Climb or Descend.
 
 ### VR
 
@@ -62,6 +66,7 @@ In a headset's browser, such as the Meta Quest Browser, select **Enter VR** on t
 | Steer | Left thumbstick |
 | Boost | Right grip |
 | Drift / handbrake | Left grip |
+| Climb / descend (helicopter) | Right thumbstick, or right and left grip |
 | Camera | A |
 | Pause | B, Y or left thumbstick click |
 | Reset car | X |

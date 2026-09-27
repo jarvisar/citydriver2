@@ -156,20 +156,46 @@ function crossesBox(ax, az, bx, bz, width, length) {
 // A matrix facing world direction (dx, dz): people's faces look down their -z
 const facing = (dx, dz, out) => out.setFromAxisAngle(UP, Math.atan2(-dx, -dz));
 
+// Loose furniture knocks people over too, and so does anyone already sent
+// flying: a piece whose fastest point moves faster than FLUNG (m/s), with
+// enough behind it (tonnes times m/s: a bin at 2 m/s, a cafe chair only
+// at 5), met by any of its points within STANDING (m) of their feet
+const FLUNG = 2, HEFT = .05, STANDING = 1.8;
+const pieceAt = new THREE.Vector3();
+
 // One reusable set of car footprints per rendered frame. Broad bounds reject
 // almost every pedestrian before the swept rectangle test; there are no
 // raycasts, per-person scene objects, or allocations in the contact loop.
+// Loose pieces in flight are kept as their points in the world, likewise
+// reused: nothing is flying most of the time.
 export class PedestrianContacts {
-  constructor() { this.history = new WeakMap(); this.cars = []; this.count = 0; this.props = null; this.player = null; this.traffic = null; }
+  constructor() { this.history = new WeakMap(); this.cars = []; this.count = 0; this.pieces = []; this.flying = 0; this.props = null; this.player = null; this.traffic = null; }
   // `props` (LooseProps) takes those knocked flying; without it, nobody is
   update(player, traffic, time, props = null) {
-    this.count = 0; this.player = player; this.traffic = traffic; this.props = props;
+    this.count = 0; this.flying = 0; this.player = player; this.traffic = traffic; this.props = props;
     this.add(player, time);
     if (traffic?.enabled) {
       for (const car of traffic.vehicles) this.add(car, time);
       // (and parked cars knocked loose, while they are out of their bays)
       for (const car of traffic.woken ?? []) if (car.parked) this.add(car, time);
     }
+    for (const body of props?.bodies ?? []) if (!body.asleep && !body.sunk && !body.removed) this.addPiece(body);
+  }
+  // A loose piece, if it is moving fast enough to knock someone over
+  addPiece(body) {
+    const { p, v, w, q, shape } = body, fastest = Math.hypot(v.x, v.y, v.z) + Math.hypot(w.x, w.y, w.z) * shape.radius;
+    if (fastest < FLUNG || fastest * body.kind.mass < HEFT) return;
+    const piece = this.pieces[this.flying] ?? (this.pieces[this.flying] = { body: null, points: new Float32Array(shape.points.length), count: 0, hit: -1 });
+    if (piece.points.length < shape.points.length) piece.points = new Float32Array(shape.points.length);
+    const points = piece.points, from = shape.points;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (let i = 0; i < from.length; i += 3) {
+      pieceAt.set(from[i], from[i + 1], from[i + 2]).applyQuaternion(q).add(p);
+      points[i] = pieceAt.x; points[i + 1] = pieceAt.y; points[i + 2] = pieceAt.z;
+      minX = Math.min(minX, pieceAt.x); maxX = Math.max(maxX, pieceAt.x); minY = Math.min(minY, pieceAt.y); maxY = Math.max(maxY, pieceAt.y); minZ = Math.min(minZ, pieceAt.z); maxZ = Math.max(maxZ, pieceAt.z);
+    }
+    Object.assign(piece, { body, count: from.length, minX, maxX, minY, maxY, minZ, maxZ });
+    this.flying++;
   }
   add(car, time) {
     const p = car?.groundedPosition ?? car?.position;
@@ -210,6 +236,15 @@ export class PedestrianContacts {
         dx * car.cos + dz * car.sin, dx * car.sin - dz * car.cos, car.width + radius, car.length + radius)) continue;
       touching = true; if (car.moving) moving ??= car;
     }
+    // (and loose pieces, by whichever of their points reaches them)
+    for (let i = 0; i < this.flying && !moving; i++) {
+      const piece = this.pieces[i], points = piece.points, reach = radius + .1;
+      if (piece.body === person.body || x < piece.minX - reach || x > piece.maxX + reach || z < piece.minZ - reach || z > piece.maxZ + reach || y > piece.maxY || y + STANDING < piece.minY) continue;
+      for (let k = 0; k < piece.count; k += 3) {
+        if (points[k + 1] < y || points[k + 1] > y + STANDING || (points[k] - x) ** 2 + (points[k + 2] - z) ** 2 > reach * reach) continue;
+        touching = true; moving = piece; piece.hit = k; break;
+      }
+    }
     const start = moving && !person.carTouching ? moving : null;
     person.carTouching = touching;
     return start;
@@ -238,11 +273,14 @@ export class PedestrianContacts {
     const at = position.setFromMatrixPosition(matrix).applyMatrix4(frame), car = this.props && this.hit(person, at.x, at.y, at.z, radius);
     if (!car) return away;
     world.multiplyMatrices(frame, matrix);
-    // Knocked flying: whatever they were doing, a body takes their place
-    const player = car.car === this.player, motion = player ? this.props.carOf(this.player) : this.traffic.motion(car.car);
-    if (!player) { motion.y = car.y; motion.height = 1.5; }
+    // Knocked flying: whatever they were doing, a body takes their place.
+    // A loose piece that hit them gives up its share of the blow.
+    const piece = car.body, player = !piece && car.car === this.player;
+    const motion = piece ? this.props.motionOf(piece, car.points[car.hit], car.points[car.hit + 1], car.points[car.hit + 2]) : player ? this.props.carOf(this.player) : this.traffic.motion(car.car);
+    if (!player && !piece) { motion.y = car.y; motion.height = 1.5; }
     const { body, blow } = this.props.person(cityWalker, world, motion);
     if (player && blow) this.player.strike(blow.x, blow.z, blow.spin, Math.hypot(blow.x, blow.z));
+    if (piece && blow) { piece.v.x += blow.x; piece.v.z += blow.z; }
     person.body = body; person.rise = person.back = null;
     return true;
   }

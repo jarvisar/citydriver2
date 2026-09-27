@@ -109,7 +109,7 @@ body[data-controller=true] #app #city-map-open::before { content: 'VIEW'; margin
 }
 #app :is(.panel-button, .panel-toggle, .graphics-levels button, .pwa-install-button):hover { background: var(--city-hover); }
 #app .panel-button:disabled { background: var(--city-recessed); color: var(--city-muted); opacity: .65; }
-#app .pause-panel > .panel-button + .panel-button { margin-top: 6px; }
+#app .pause-panel > :is(.panel-button, .weather-setting) + :is(.panel-button, .weather-setting) { margin-top: 6px; }
 #app :is(.panel-button-value, .graphics-toggle small, .audio-mixer-toggle small, .graphics-status, .weather-note,
   .audio-description, .audio-channel output, .pixel-density-control output, .paint-current, .paint-note,
   .car-meter, .controller-hint) {

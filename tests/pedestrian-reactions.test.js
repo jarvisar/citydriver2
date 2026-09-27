@@ -298,3 +298,46 @@ test('in the city, a pair knocked apart gets back together and walks on', () => 
   } finally { props.dispose(); world.dispose(); }
 });
 const onLoopOf = (walker, time) => { const p = walker.loop.perimeter; return (((walker.phase + walkedAt(walker, time) * walker.direction) % p) + p) % p; };
+
+test('loose furniture flung at someone knocks them over, and so does someone already sent flying', async () => {
+  const { cityAssets } = await import('../src/world/city-assets.js');
+  const start = journeyStart(), road = roadAt(start.s, start.u, 40), heading = Math.atan2(road.tx, road.ty);
+  const x = road.x + road.tx * 20, z = -(road.y + road.ty * 20), across = { x: Math.cos(heading), z: Math.sin(heading) };
+  const at = (dx, dz) => new THREE.Matrix4().makeTranslation(x + dx, ROAD_LEVEL, z + dz);
+  // A bin thrown at a standing person from 6 m off, `height` metres up, at 10 m/s
+  const throwAt = (height, speed = 10, person = {}) => {
+    const props = new LooseProps(new THREE.Scene(), new THREE.MeshBasicMaterial()), contacts = new PedestrianContacts();
+    const bystander = driven(x + across.x * 40, z + across.z * 40, heading, 0), matrix = new THREE.Matrix4(), frame = new THREE.Matrix4();
+    const bin = props.add({ kind: 'bin', geometry: cityAssets.bin }, at(-across.x * 6, -across.z * 6).multiply(new THREE.Matrix4().makeTranslation(0, height, 0)));
+    bin.v.set(across.x * speed, height > 1 ? 4 : 0, across.z * speed); props.wake(bin);
+    let knocked = null;
+    for (let i = 0; i < 120 * 1.5; i++) {
+      const time = i / 120;
+      props.update(1 / 120, bystander); props.render(1, 0);
+      contacts.update(bystander, null, time, props);
+      contacts.person(person, matrix.copy(at(0, 0)), frame, .3, time);
+      if (person.body && knocked === null) knocked = Math.hypot(bin.v.x, bin.v.z);
+    }
+    return { knocked, bin, person };
+  };
+  const low = throwAt(.3);
+  assert.ok(low.person.body, 'a bin at knee height knocks them over');
+  assert.ok(low.knocked < 10, `and gives up some of its way (${low.knocked?.toFixed(1)} m/s)`);
+  // (thrown up from 3.5 m, it is still over 3 m up as it passes)
+  const over = throwAt(3.5);
+  assert.equal(over.person.body, undefined, 'one over their head does not');
+  const slow = throwAt(.3, 1.2);
+  assert.equal(slow.person.body, undefined, 'nor one rolling to a stop at their feet');
+  // Someone sent flying at another person knocks them over too
+  const { cityWalker } = await import('../src/world/city-walkers.js');
+  const props = new LooseProps(new THREE.Scene(), new THREE.MeshBasicMaterial()), contacts = new PedestrianContacts();
+  const bystander = driven(x + across.x * 40, z + across.z * 40, heading, 0), other = {}, matrix = new THREE.Matrix4();
+  const flying = props.add({ kind: 'person', geometry: cityWalker, person: true }, at(-across.x * 4, -across.z * 4).multiply(new THREE.Matrix4().makeTranslation(0, .4, 0)));
+  flying.v.set(across.x * 7, 1, across.z * 7); props.wake(flying);
+  for (let i = 0; i < 120 && !other.body; i++) {
+    props.update(1 / 120, bystander); props.render(1, 0);
+    contacts.update(bystander, null, i / 120, props);
+    contacts.person(other, matrix.copy(at(0, 0)), new THREE.Matrix4(), .3, i / 120);
+  }
+  assert.ok(other.body, 'they go over too');
+});

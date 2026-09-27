@@ -335,9 +335,13 @@ export class CityChunk {
   }
   polygon(points, y, height, color, kind = 'solid') { addSurfacePolygon(this, points, y, height, color, kind); }
   // A building's footprint; `top` (its roof's height) makes it something the
-  // chase camera cannot see through (see sightLine)
+  // chase camera cannot see through (see sightLine). A pitched roof sets
+  // `ridge` on what this returns, which the helicopter lands on.
   polygonSolid(points, top) {
-    if (!this.distant) this.features.colliders.push({ logicalPolygon: points.map(([x, s]) => [this.east + x, this.start + s]), top });
+    if (this.distant) return null;
+    const solid = { logicalPolygon: points.map(([x, s]) => [this.east + x, this.start + s]), top };
+    this.features.colliders.push(solid);
+    return solid;
   }
   box(x, y, s, width, height, depth, color, kind = 'solid', yaw = 0, roll = 0) {
     return this.item(kind, boxGeometry, this.materials[kind], [x, y, -s], [width, height, depth], color, yaw, roll);

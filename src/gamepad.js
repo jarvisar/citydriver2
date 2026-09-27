@@ -47,7 +47,7 @@ export class GamepadInput {
     buttons[19] = (pad.axes[1] ?? 0) < -.5;
     buttons[20] = (pad.axes[1] ?? 0) > .5;
     const pressed = index => buttons[index] && !this.previousButtons[index];
-    const steer = deadzone(pad.axes[0]);
+    const steer = deadzone(pad.axes[0]), rise = -deadzone(pad.axes[3], .2);
     const state = {
       forward: Math.max(deadzone(buttonValue(pad, 7), .08), buttonValue(pad, 0)),
       brake: Math.max(deadzone(buttonValue(pad, 6), .08), buttonValue(pad, 1)),
@@ -56,6 +56,9 @@ export class GamepadInput {
       boost: buttonValue(pad, 5),
       // L1 / LB drifts
       handbrake: buttonValue(pad, 4),
+      // The helicopter climbs and descends on the right stick, or R1 / RB and L1 / LB
+      climb: Math.max(rise, buttonValue(pad, 5), 0),
+      descend: Math.max(-rise, buttonValue(pad, 4), 0),
     };
     const active = Object.values(state).some(Boolean) || buttons.some(Boolean);
     if (blocked || this.requireNeutral) {

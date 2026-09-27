@@ -1,0 +1,368 @@
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { stableShadowDepth } from './world/shadow-depth.js';
+import { clamp } from './world/route.js';
+import { collisionImpulse, leadingPoint, rock, rockFrom, SCENERY_SURFACE } from './impact.js';
+import { roofUnder } from './collision.js';
+import { propTop } from './loose-props.js';
+
+// The garage's one machine that leaves the road: a small bubble-canopy
+// helicopter, flown on the driving controls plus climb and descend. It is an
+// arcade toy, not a flight model: it holds its height hands off, turns on the
+// spot, banks and dips for show, and sets down on streets and flat roofs.
+//
+// The footprint (width, length) is the fuselage and tail boom, which is what
+// bumps into buildings and traffic; the rotor passes over them. `rotor` is
+// the main rotor's radius. Like the specials' shapes, `eye` seats the
+// first-person camera and `chaseLift` raises the chase camera over the rotor.
+export const HELICOPTER_SHAPE = { name: 'helicopter', width: 2.3, length: 7.3, eye: [.3, 1.72, -2.5], chaseLift: 1.4, rotor: 4.2 };
+
+// The mast, which the body tilts and banks about: in car space, nose to -z.
+const MAST = new THREE.Vector3(0, 1.6, -1.35);
+// (the bubble is lighter than a car's glass: that much of it read as a black ball)
+const DARK = '#2b3434', CHROME = '#bfc4b9', GLASS = '#4d737c', ENGINE = '#59625f', CREAM = '#ece4cf';
+
+// Faceted parts in the road cars' manner, merged by material. Paint takes the
+// garage colour; `details` carry their own. Everything is placed in car space
+// and moved to hang from the mast.
+function partsKit() {
+  const parts = { paint: [], details: [], beacon: [], rotor: [], tail: [] };
+  const add = (geometry, category, color) => {
+    geometry.deleteAttribute('uv');
+    if (color) {
+      const tint = new THREE.Color(color), colors = [];
+      for (let i = 0; i < geometry.attributes.position.count; i++) colors.push(tint.r, tint.g, tint.b);
+      geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    }
+    parts[category].push(geometry);
+  };
+  const place = (geometry, [x, y, z], category, color) => { geometry.translate(x - MAST.x, y - MAST.y, z - MAST.z); add(geometry, category, color); };
+  return {
+    parts, add,
+    box(size, location, category = 'paint', color, tilt = 0) {
+      const geometry = new THREE.BoxGeometry(...size);
+      if (tilt) geometry.rotateX(tilt);
+      place(geometry, location, category, color);
+    },
+    // A box with its `at` end (-1 nose, 1 tail) drawn in and lifted
+    tapered(size, location, { at, x = 1, y = 1, lift = 0 }, category = 'paint', color) {
+      const geometry = new THREE.BoxGeometry(...size), position = geometry.attributes.position;
+      for (let i = 0; i < position.count; i++) if (Math.sign(position.getZ(i)) === at) {
+        position.setX(i, position.getX(i) * x); position.setY(i, position.getY(i) * y + lift);
+      }
+      geometry.computeVertexNormals(); place(geometry, location, category, color);
+    },
+    // A tube from one point to another, thinner at the far end if asked
+    rod(from, to, radius, category, color, end = radius) {
+      const a = new THREE.Vector3(...from), b = new THREE.Vector3(...to), along = b.clone().sub(a);
+      const geometry = new THREE.CylinderGeometry(end, radius, along.length(), 8);
+      geometry.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), along.normalize()));
+      place(geometry, a.add(b).multiplyScalar(.5).toArray(), category, color);
+    },
+    bubble(radii, location) {
+      const geometry = new THREE.SphereGeometry(1, 12, 8);
+      geometry.scale(...radii); place(geometry, location, 'details', GLASS);
+    },
+  };
+}
+
+function build({ box, tapered, rod, bubble }) {
+  // Skids on splayed struts, turned up at the front
+  for (const side of [-1, 1]) {
+    rod([side * 1.05, .055, .55], [side * 1.05, .055, -2.85], .055, 'details', DARK);
+    rod([side * 1.05, .055, -2.85], [side * 1.05, .3, -3.2], .055, 'details', DARK);
+    rod([side * 1.05, .06, -2.3], [side * .55, .82, -2.15], .045, 'details', DARK);
+    rod([side * 1.05, .06, -.2], [side * .55, .82, -.4], .045, 'details', DARK);
+  }
+  // The cabin: a painted tub under a glass bubble, a cream band round its sill
+  tapered([1.5, .6, 2.6], [0, .98, -1.95], { at: -1, x: .7, y: .8, lift: .05 });
+  tapered([1.53, .1, 2.5], [0, 1.24, -1.95], { at: -1, x: .7 }, 'details', CREAM);
+  bubble([.9, .82, 1.15], [0, 1.6, -2.35]);
+  // Engine and gearbox behind it, under a cowl, with the exhaust and the mast
+  tapered([1.3, 1.05, 1.9], [0, 1.62, -.55], { at: 1, x: .55, y: .6, lift: .15 });
+  box([.9, .3, 1.2], [0, 2.25, -1.05]);
+  box([.6, .34, .5], [0, 1.95, .4], 'details', ENGINE);
+  rod([0, 2.05, .6], [0, 2.1, .95], .1, 'details', DARK);
+  rod([0, 2.3, -1.35], [0, 2.74, -1.35], .07, 'details', DARK);
+  box([.34, .14, .34], [0, 2.76, -1.35], 'details', CHROME);
+  // The tail: a tapering boom, tailplane, fin and a skid to guard the rotor
+  rod([0, 1.62, .15], [0, 1.86, 3.55], .26, 'paint', null, .1);
+  box([1.3, .05, .38], [0, 1.78, 2.95]);
+  for (const side of [-1, 1]) box([.05, .22, .3], [side * .66, 1.78, 2.98], 'details', CREAM);
+  box([.07, 1.15, .6], [0, 2.3, 3.45], 'paint', null, .35);
+  box([.06, .5, .34], [0, 1.52, 3.5], 'paint', null, -.3);
+  box([.2, .14, .14], [.1, 2.05, 3.5], 'details', DARK);
+  // Anti-collision beacons, on the fin and under the belly
+  box([.12, .1, .16], [0, 2.9, 3.62], 'beacon');
+  box([.14, .08, .16], [0, .64, -1.6], 'beacon');
+  // The rotors, which turn: two main blades through the hub and the tail pair
+  box([8.4, .045, .26], [0, 2.84, -1.35], 'rotor', DARK);
+  box([.36, .07, .36], [0, 2.84, -1.35], 'rotor', CHROME);
+  box([.035, 1.28, .11], [.22, 2.05, 3.5], 'tail', DARK);
+}
+
+export function createHelicopter(entry) {
+  const kit = partsKit();
+  build(kit);
+  const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: .74, flatShading: true, ...extra });
+  const paint = mat(entry.paint), trim = mat('#ffffff', { vertexColors: true });
+  const beacon = mat('#8e2a22', { emissive: '#e8261a', emissiveIntensity: .35 });
+  // A faint disc where the blades blur, only while the rotor is up to speed
+  const discMaterial = new THREE.MeshBasicMaterial({ color: '#1f2a2c', transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
+  const shells = Object.fromEntries(Object.entries(kit.parts).map(([key, geometries]) => [key, mergeGeometries(geometries)]));
+  for (const geometries of Object.values(kit.parts)) for (const geometry of geometries) geometry.dispose();
+
+  const car = new THREE.Group(); car.name = 'car-helicopter';
+  const body = new THREE.Group(); body.position.copy(MAST); car.add(body);
+  const mesh = (geometry, material, parent = body) => {
+    const part = new THREE.Mesh(geometry, material);
+    part.castShadow = true; part.receiveShadow = true; parent.add(part); return part;
+  };
+  mesh(shells.paint, paint); mesh(shells.details, trim); mesh(shells.beacon, beacon);
+  // The rotors turn about their own hubs, so each is re-centred on its pivot
+  const rotor = new THREE.Group(), tail = new THREE.Group();
+  rotor.position.set(0, 2.84 - MAST.y, 0); tail.position.set(.22, 2.05 - MAST.y, 3.5 - MAST.z);
+  shells.rotor.translate(0, -rotor.position.y, 0); shells.tail.translate(-tail.position.x, -tail.position.y, -tail.position.z);
+  mesh(shells.rotor, trim, rotor); mesh(shells.tail, trim, tail); body.add(rotor, tail);
+  const discGeometry = new THREE.CircleGeometry(HELICOPTER_SHAPE.rotor, 28).rotateX(-Math.PI / 2);
+  const disc = new THREE.Mesh(discGeometry, discMaterial); disc.position.copy(rotor.position); disc.visible = false; body.add(disc);
+  car.traverse(stableShadowDepth);
+  return {
+    car, body, wheels: [],
+    nightLights: [{ material: beacon, day: .35, night: 2.6 }],
+    rotors: { rotor, tail, disc },
+    applyTrim() {},
+    paintCar(color) { paint.color.set(color || entry.paint); },
+    disposeModel() {
+      for (const geometry of [...Object.values(shells), discGeometry]) geometry.dispose();
+      for (const material of [paint, trim, beacon, discMaterial]) material.dispose();
+    },
+  };
+}
+
+// How it flies. Speeds in m/s, rates in 1/s, heights in metres.
+//   CLIMB, SINK      vertical speed with climb or descend held
+//   LIFT, LOW        a pedal on the ground lifts it at LIFT to LOW, so W takes off
+//   FLARE            descending, it slows to FLARE m/s per metre left, so it sets down gently
+//   YAW, YAW_FAST    turn rate at a hover and at full speed
+//   SIDE             how fast a sideways slide is taken back into the travel
+//   HOVER            how fast it slows with neither pedal held
+//   BACKWARD         the speed it backs up at
+//   SKIDS            friction on the ground
+//   STEP             the highest a roof or kerb can be above the skids to be set down on;
+//                    anything higher is a wall
+//   AIRBORNE         above the street by this much it clears traffic, people, walls and
+//                    railings; furniture it clears only over its top
+//   WATER            the least it hovers over water
+//   CEILING          its highest, over the road
+//   IDLE             the rotor's share of full speed while it sits on the ground
+const CLIMB = 8, SINK = 9, LIFT = 3, LOW = 1.2, FLARE = 2.2, VERTICAL = 3.5;
+const YAW = 1.9, YAW_FAST = 1.1, YAW_EASE = 5, SIDE = 1.6, HOVER = .45, BACKWARD = 12, SKIDS = 4;
+const STEP = .7, AIRBORNE = 2.5, WATER = 1.2, CEILING = 120, IDLE = .3, SPOOL = 1.5;
+// Where it stands: the skids' ends (across, along) from the middle of the footprint
+const FEET = [[0, 0], [-1.05, 2.85], [1.05, 2.85], [-1.05, -.55], [1.05, -.55]];
+// A touchdown faster than this (m/s) thumps; one faster than HARD shakes it
+const TOUCHDOWN = .6, HARD = 5;
+const TOUCH = 1;
+
+const wrap = angle => Math.atan2(Math.sin(angle), Math.cos(angle));
+
+// The pilot: DrivingController hands it the controls while the helicopter is
+// the chosen car (see vehicle.js). It keeps the controller's shared state
+// (s, u, heading, speed, groundedPosition, poses, telemetry) up to date, so
+// the traffic, the furniture, the maps and the cameras need not know it flies.
+// `groundedPosition` is where the skids are, however high.
+export class Helicopter {
+  constructor(vehicle, rotors) {
+    this.vehicle = vehicle; this.rotors = rotors;
+    this.vx = 0; this.vz = 0; this.vy = 0; this.y = NaN; this.below = NaN;
+    this.power = IDLE; this.angle = 0; this.tilt = 0; this.bank = 0; this.landed = true;
+    this.blocked = false; this.feet = FEET.map(() => ({ x: 0, z: 0 }));
+    // (the street right under it, and whether that is water, as `floor` last found them)
+    this.ground = NaN; this.water = false;
+  }
+  get velocity() { return { x: this.vx, z: this.vz }; }
+  // Stop dead where it is, holding its height
+  stop() { this.vx = this.vz = this.vy = 0; }
+  // Stop and set down on whatever is under it (a reset)
+  land() { this.stop(); this.y = NaN; }
+  // Taking over from a car: moving as it was, on the ground where it was
+  takeOver(heading, speed, y) {
+    const v = this.vehicle;
+    this.vx = Math.sin(heading) * speed; this.vz = -Math.cos(heading) * speed; this.y = this.below = y;
+    this.floor(v.s, v.u, heading, Infinity);
+  }
+  // What it would stand on at (s, u) facing `heading`, no higher than `below`:
+  // the street under each skid end, lifted clear of any water, or a roof
+  // there. `blocked` says whether the street under a skid is higher than
+  // that: it has run into a quay or a bridge's side from below, a wall.
+  floor(s, u, heading, below) {
+    const route = this.vehicle.route, cos = Math.cos(heading), sin = Math.sin(heading), feet = this.feet;
+    let floor = -Infinity, centre = 0;
+    this.blocked = false;
+    for (let i = 0; i < FEET.length; i++) {
+      const [across, along] = FEET[i], fs = s - across * sin + along * cos, fu = u + across * cos + along * sin;
+      const height = route.height(fs, fu), water = Boolean(route.water?.(fs, fu)), street = water ? height + WATER : height;
+      if (!i) { centre = street; this.ground = height; this.water = water; }
+      if (street > below) this.blocked = true; else floor = Math.max(floor, street);
+      const p = this.vehicle.route.position(fs, fu, 0); feet[i].x = p.x; feet[i].z = p.z;
+    }
+    const scenery = this.vehicle.scenery;
+    if (scenery) floor = Math.max(floor, roofUnder(scenery.values(), feet, below));
+    // (standing inside the ground, as only a teleport leaves it, it comes up)
+    return floor === -Infinity ? centre : floor;
+  }
+  // Whether it clears a standing thing (see collideScenery): over a
+  // building's roof or the top of a piece of furniture (a tree it breaks,
+  // like the truck, however high in the crown it meets it), or, for
+  // anything else, high enough over the street
+  passes(solid) {
+    if (solid.top !== undefined) return this.y >= (solid.ridge ?? solid.top) - STEP;
+    if (solid.prop) return this.y >= propTop(solid);
+    return this.vehicle.airborne;
+  }
+  update(dt, input) {
+    const v = this.vehicle, stats = v.stats, telemetry = v.audioTelemetry;
+    v.copyPose(v.previousPose, v.currentPose);
+    let forward = clamp(Number(input.forward) || 0, 0, 1), back = clamp(Number(input.brake) || 0, 0, 1);
+    let steering = clamp((Number(input.right) || 0) - (Number(input.left) || 0), -1, 1);
+    const climb = clamp(Number(input.climb) || 0, 0, 1), descend = clamp(Number(input.descend) || 0, 0, 1);
+    // An overhead view's stick points where to go: turn that way, and go once facing it
+    const touch = input.touchDrive;
+    if (touch) {
+      const off = touch.amount ? wrap(touch.heading - v.heading) : 0;
+      steering = clamp(off * 2.5, -1, 1); forward = touch.amount * clamp(1 - Math.abs(off) / 1.2, 0, 1); back = 0;
+    }
+    if (!Number.isFinite(this.y)) this.y = this.below = this.floor(v.s, v.u, v.heading, Infinity);
+    const active = forward || back || climb || descend || steering;
+    // The rotor idles on the ground and spools up for flight; lift waits on it
+    this.power = dt ? THREE.MathUtils.damp(this.power, this.landed && !active ? IDLE : 1, SPOOL, dt) : this.power;
+    const spooled = clamp((this.power - IDLE) / (1 - IDLE), 0, 1);
+    // Turning: brisk at a hover, wider at speed, and eased in and out
+    const top = stats.topSpeed, speed = Math.hypot(this.vx, this.vz), share = clamp(speed / top, 0, 1);
+    const yaw = steering * (YAW + (YAW_FAST - YAW) * share) * (.4 + .6 * spooled), headingBefore = v.heading;
+    v.yawRate = dt ? THREE.MathUtils.damp(v.yawRate, yaw, YAW_EASE, dt) : v.yawRate;
+    v.heading += (v.yawRate + v.knock.spin) * dt;
+    v.knock.spin *= Math.exp(-dt * 4);
+    // Along and across the way it faces
+    const fx = Math.sin(v.heading), fz = -Math.cos(v.heading), rx = Math.cos(v.heading), rz = Math.sin(v.heading);
+    let along = this.vx * fx + this.vz * fz, across = this.vx * rx + this.vz * rz;
+    const push = forward * stats.acceleration - back * (along > .5 ? stats.braking : stats.acceleration * .6);
+    along += push * dt;
+    // The air holds it to its top speed, and with neither pedal it slows to a hover
+    along -= Math.sign(along) * stats.acceleration * (along / top) ** 2 * dt;
+    if (!forward && !back) along *= Math.exp(-HOVER * dt);
+    along = clamp(along, -BACKWARD, top);
+    // A slide sideways is carried round into the travel, as a banked turn does
+    const slid = across;
+    across *= Math.exp(-SIDE * dt);
+    if (Math.abs(along) > 2) along = Math.sign(along) * Math.sqrt(along * along + .8 * (slid * slid - across * across));
+    if (this.landed) { const grip = Math.exp(-SKIDS * dt); along *= grip; across *= grip; }
+    this.vx = along * fx + across * rx; this.vz = along * fz + across * rz;
+    // Up and down: held height hands off, a flare near the ground, a ceiling.
+    // (the height is over what it stood on at the end of the last step)
+    const height = this.y - this.below;
+    let lift = climb > descend ? climb * CLIMB : -descend * SINK;
+    if ((forward || back) && !descend && height < LOW) lift = Math.max(lift, LIFT);
+    if (lift > 0) lift *= spooled * clamp((CEILING - (this.y - this.ground)) / 12, 0, 1);
+    this.vy = dt ? THREE.MathUtils.damp(this.vy, lift, VERTICAL, dt) : this.vy;
+    this.vy = Math.max(this.vy, -(FLARE * Math.max(0, height) + .8));
+    this.y += this.vy * dt;
+    // Move, unless the ground ahead rises into it (a quay seen from the water,
+    // a bridge's side): then keep whichever half of the move stays clear, or
+    // failing that stay put, turned back if the turn is what met it
+    const fromS = v.s, fromU = v.u, limit = this.y + STEP;
+    v.shift(this.vx * dt, this.vz * dt);
+    let floor = this.floor(v.s, v.u, v.heading, limit);
+    if (this.blocked) {
+      const toS = v.s, toU = v.u;
+      v.u = fromU; floor = this.floor(v.s, v.u, v.heading, limit);
+      if (this.blocked) { v.s = fromS; v.u = toU; floor = this.floor(v.s, v.u, v.heading, limit); }
+      if (this.blocked) { v.u = fromU; floor = this.floor(v.s, v.u, v.heading, limit); }
+      if (this.blocked) { v.heading = headingBefore; v.yawRate = 0; floor = this.floor(v.s, v.u, v.heading, limit); }
+      this.vx *= .5; this.vz *= .5;
+    }
+    this.below = floor;
+    // Setting down: on the ground the skids hold it, and a hard landing thumps.
+    // Over the water it only hovers.
+    const wasLanded = this.landed, water = this.water;
+    if (this.y <= floor + .02 && this.vy <= 0 || this.y < floor) {
+      const touchdown = -this.vy;
+      this.y = floor; this.vy = Math.max(0, this.vy);
+      if (dt && !wasLanded && !water && touchdown > TOUCHDOWN) {
+        telemetry.bump = Math.min(.5, touchdown * .05); telemetry.bumpSerial++;
+        if (touchdown > HARD) this.strike(0, 0, 0, touchdown - HARD + TOUCH);
+        v.jolt.pitchRate -= touchdown * .03;
+      }
+    }
+    this.landed = this.y === floor && !water;
+    v.airborne = this.y - this.ground > AIRBORNE;
+    v.distance += Math.hypot(v.s - fromS, v.u - fromU);
+    rock(v.jolt, dt);
+    // For show: the nose dips as it pulls ahead and lifts as it slows, and it
+    // banks into turns. Sitting on its skids it stays level.
+    const after = this.vx * fx + this.vz * fz;
+    const surge = dt ? (Math.hypot(this.vx, this.vz) - speed) / dt * Math.sign(after) : 0;
+    const tilt = this.landed ? 0 : clamp(surge * .012 + after / top * .07, -.2, .24);
+    const bank = this.landed ? 0 : clamp(v.yawRate * (Math.max(0, after) * .011 + .08), -.4, .4);
+    if (dt) { this.tilt = THREE.MathUtils.damp(this.tilt, tilt, 4, dt); this.bank = THREE.MathUtils.damp(this.bank, bank, 4, dt); }
+    this.angle += this.power * 26 * dt;
+    // The controller's state, as the rest of the game reads it
+    v.speed = after; v.slideHeading = v.heading; v.steer = 0; v.slip = 0;
+    v.drifting = false; v.boosting = false; v.driftAmount = 0; v.weight = 0; v.load = 0;
+    v.bodyPitch = -this.tilt; v.bodyRoll = -this.bank; v.wheelSpin = this.angle;
+    v.pitch = 0; v.roll = 0;
+    // (the chase camera widens with speed, looks down the higher it flies, and
+    // swings back behind once it moves)
+    v.car.userData.speedRush = clamp((speed / top - .4) / .6, 0, 1); v.car.userData.speed = speed;
+    v.car.userData.chaseDip = clamp((this.y - this.ground - 6) / 40, 0, 1);
+    v.trauma = Math.max(0, v.trauma - dt * 1.4); v.car.userData.trauma = v.trauma;
+    telemetry.speed = speed; telemetry.throttle = Math.max(forward, back, climb, descend * .4, Math.abs(steering) * .3);
+    telemetry.brake = 0; telemetry.offRoad = 0; telemetry.steer = steering; telemetry.handbrake = 0; telemetry.boost = 0; telemetry.slip = 0;
+    telemetry.rotor = this.power;
+    telemetry.scrape *= Math.exp(-dt * 14);
+    if (dt === 0) telemetry.impact = 0;
+    this.pose(dt === 0);
+  }
+  // Where it stands now, for the controller's poses and the scene
+  pose(teleport = false) {
+    const v = this.vehicle, p = v.route.position(v.s, v.u, this.y);
+    v.groundedPosition.set(p.x, p.y, p.z); v.car.position.copy(v.groundedPosition);
+    v.car.rotation.set(0, -v.heading, 0, 'YXZ');
+    v.currentPose.position.copy(v.groundedPosition); v.currentPose.quaternion.copy(v.car.quaternion);
+    for (const key of ['bodyPitch', 'bodyRoll', 'wheelSpin', 'steer', 'slip']) v.currentPose[key] = v[key];
+    v.currentPose.bodyPitch += v.jolt.pitch; v.currentPose.bodyRoll += v.jolt.roll;
+    if (teleport) v.copyPose(v.previousPose, v.currentPose);
+    v.render(0);
+  }
+  // Turning the rotors (from DrivingController.render, with the interpolated angle)
+  animate(angle) {
+    const { rotor, tail, disc } = this.rotors;
+    rotor.rotation.y = angle; tail.rotation.x = angle * 2.3;
+    const blur = Math.max(0, this.power - .55) / .45;
+    disc.visible = blur > 0; disc.material.opacity = blur * .14;
+  }
+  // A blow, as DrivingController.strike takes one: a change of velocity, of
+  // turn, how hard they met and how fast they slid past
+  strike(dvx, dvz, spin, impact, scrape = 0) {
+    const v = this.vehicle, telemetry = v.audioTelemetry;
+    if (impact > TOUCH) {
+      telemetry.impact = impact; telemetry.impactSerial++;
+      v.trauma = Math.min(1, v.trauma + (impact - TOUCH) / 28);
+    }
+    telemetry.scrape = Math.max(telemetry.scrape, scrape);
+    this.vx += dvx; this.vz += dvz;
+    v.knock.spin = clamp(v.knock.spin + spin, -3, 3);
+    const cos = Math.cos(v.heading), sin = Math.sin(v.heading);
+    rockFrom(v.jolt, dvx * sin - dvz * cos, dvx * cos + dvz * sin);
+  }
+  // A building's wall, a tree or a post: it bounces off, as a car does
+  resolveSceneryCollision(nx, nz, depth, point = null) {
+    const v = this.vehicle, car = v.motion(), normal = { x: nx, z: nz };
+    point ??= leadingPoint(car, normal);
+    const blow = collisionImpulse(car, { x: point.x, z: point.z, vx: 0, vz: 0, mass: Infinity }, normal, point, SCENERY_SURFACE);
+    if (blow) this.strike(blow.a.x, blow.a.z, blow.a.spin, blow.closing, blow.slide);
+    v.shift(nx * (depth + .005), nz * (depth + .005));
+    this.pose();
+  }
+}

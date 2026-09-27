@@ -1,6 +1,7 @@
 import { TRAFFIC_MODELS, SPORTS_MODEL } from './traffic-models.js';
 import { FORMULA_SHAPE } from './formula-model.js';
 import { SPECIAL_SHAPES } from './special-models.js';
+import { HELICOPTER_SHAPE } from './helicopter.js';
 
 // The player's original car. Its collision box is the footprint the game has
 // always used; the extra fields only describe it for the chooser's artwork.
@@ -128,9 +129,20 @@ export const CARS = {
     // 100 m/s ceiling; air drag balances full throttle near 79 m/s (177 mph).
     stats: { topSpeed: 100, acceleration: 60, braking: 30, grip: 2.25, offRoad: 20, turnRadius: 3.6 },
   },
+  // Not a car at all: it flies (see helicopter.js), so the road never slows
+  // it. Its stats set its top speed, its pull and how hard it can stop. Like
+  // the truck it smashes through trees and bus shelters, and it weighs in
+  // heavy enough to keep going: a tree takes about a tenth of its speed.
+  helicopter: {
+    name: 'Helicopter', mass: 4, kind: 'helicopter', flies: true, paint: '#c9362f', shape: HELICOPTER_SHAPE, breaks: ['tree', 'shelter'],
+    stats: { topSpeed: 40, acceleration: 13, braking: 16, grip: 1.2, offRoad: 40 },
+  },
 };
 
-export const CAR_IDS = Object.keys(CARS);
+// The wheeled fleet, which the handling is built for, and the garage, which
+// has the helicopter too.
+export const CAR_IDS = Object.keys(CARS).filter(id => !CARS[id].flies);
+export const GARAGE_IDS = Object.keys(CARS);
 export const DEFAULT_CAR = 'auto';
 export const carEntry = id => CARS[id] ?? CARS[DEFAULT_CAR];
 
@@ -157,8 +169,10 @@ export function carStats(id) {
     cornering: 32 * grip,
     reverseSpeed: topSpeed * .25,
     launch: acceleration * 1.68,   // Pulling out of a reverse roll.
-    creep: braking * .325,         // Brake pedal used as reverse throttle.
-    handbrake: braking * 1.35,
+    // Brake pedal used as reverse throttle: pulls about as hard as the gas
+    // does from rest, so reverse engages at once and the top speed stays low.
+    creep: braking * .75,
+    handbrake: braking * 2.35,
     touchBraking: braking * 1.2,
     // Loose ground resists exactly hard enough that full throttle settles on
     // the off-road figure, so the number on the card falls out of the physics

@@ -27,7 +27,8 @@ function pen({ drop = 0, scale = SCALE, ground = GROUND } = {}) {
 
 export function carArt(id) {
   const entry = carEntry(id);
-  const parts = entry.kind === 'formula' ? formulaParts(entry) : entry.kind === 'special' ? SPECIAL_ART[entry.shape.name](entry.shape) : roadCarParts(entry);
+  const parts = entry.kind === 'formula' ? formulaParts(entry) : entry.kind === 'special' ? SPECIAL_ART[entry.shape.name](entry.shape)
+    : entry.kind === 'helicopter' ? helicopterParts(entry.shape) : roadCarParts(entry);
   return `<svg class="chooser-art car-art" viewBox="0 0 280 142" aria-hidden="true">${parts.join('')}</svg>`;
 }
 
@@ -281,4 +282,38 @@ function accessories(entry, draw) {
     ];
     default: return [];
   }
+}
+
+// The helicopter, from helicopter.js's measurements: a glass bubble on a
+// painted tub, the cowl, the tapering boom, and the rotors seen edge on.
+function helicopterParts(shape) {
+  const draw = pen({ scale: 24, ground: 124 }), { px, py, size, slab, shape2d, disc, shadow } = draw;
+  const hub = -1.35, rotor = shape.rotor;
+  return [
+    shadow(3.2),
+    slab(hub - rotor, hub + rotor, 2.82, 2.87, CARBON, 1),
+    slab(hub - .07, hub + .07, 2.3, 2.84, CARBON, 0), slab(hub - .17, hub + .17, 2.7, 2.84, HUB, 1),
+    // Tail: boom, tailplane, fin and the tail rotor's blur
+    shape2d([[.15, 1.36], [.15, 1.88], [3.55, 1.96], [3.55, 1.76]], PAINT),
+    shape2d([[3.15, 1.8], [3.5, 2.9], [3.75, 2.9], [3.7, 1.8]], PAINT),
+    shape2d([[3.35, 1.75], [3.45, 1.27], [3.62, 1.3], [3.6, 1.8]], PAINT),
+    slab(2.76, 3.14, 1.75, 1.81, PAINT, 0), slab(2.83, 3.13, 1.67, 1.89, TRIM, 1),
+    disc(3.5, 2.05, .64, '#2b343440'), slab(3.46, 3.54, 1.41, 2.69, CARBON, 1),
+    slab(3.55, 3.7, 2.85, 2.95, '#c4483a', 1),
+    // Engine and gearbox under the cowl, and the exhaust
+    shape2d([[-1.5, 1.095], [-1.5, 2.145], [.4, 2.085], [.4, 1.455]], PAINT),
+    slab(-1.65, -.45, 2.1, 2.4, PAINT, 3),
+    slab(.15, .65, 1.78, 2.12, '#59625f', 2), slab(.6, .95, 1.97, 2.18, CARBON, 2),
+    // The cabin: bubble first, so the tub and its band cover its lower half
+    `<ellipse cx="${px(-2.35)}" cy="${py(1.6)}" rx="${size(1.15)}" ry="${size(.82)}" fill="#4d737c"/>`,
+    `<ellipse cx="${px(-2.6)}" cy="${py(1.95)}" rx="${size(.42)}" ry="${size(.22)}" fill="#ffffff2e"/>`,
+    shape2d([[-3.25, .79], [-3.25, 1.27], [-.65, 1.28], [-.65, .68]], PAINT),
+    slab(-3.2, -.7, 1.19, 1.29, TRIM, 1),
+    slab(-1.68, -1.52, .6, .68, '#c4483a', 1),
+    // Skids on their struts, turned up at the nose
+    shape2d([[-2.35, .08], [-2.25, .08], [-2.1, .82], [-2.2, .82]], CARBON),
+    shape2d([[-.25, .08], [-.15, .08], [-.35, .82], [-.45, .82]], CARBON),
+    slab(-2.85, .55, 0, .11, CARBON, 3),
+    shape2d([[-2.8, 0], [-2.85, .11], [-3.2, .36], [-3.26, .27]], CARBON),
+  ];
 }

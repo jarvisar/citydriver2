@@ -27,6 +27,9 @@ export const ENGINES = {
   hotrod: voice({ idle: 760, redline: 6200, cylinders: 8, gears: 4, body: 1.6, rasp: 1.4, intake: 1.7, pops: 1, harmonics: [1, .75, .3, .34, .16, .12, .07, .04], open: true }),
   rig: voice({ idle: 600, redline: 2300, cylinders: 6, gears: 8, body: 2, rasp: .9, intake: .25, harmonics: [1, .8, .35, .3, .1, .05] }),
   micro: voice({ idle: 1100, redline: 6000, gears: 4, body: .45, rasp: 1.1, intake: .7, harmonics: [1, .3, .5, .12, .2, .05] }),
+  // No gears: a turbine that spools with the rotor, under the blades' beat,
+  // `rotor` times a second at full speed (see DriveSoundModel)
+  helicopter: voice({ idle: 1200, redline: 2800, cylinders: 6, gears: 1, body: .55, rasp: .3, intake: .5, harmonics: [1, .3, .45, .12, .2, .06], rotor: 17 }),
 };
 const ALIASES = { auto: 'city', taxiGT: 'sports', taxiFormula: 'formula' };
 export const engineFor = car => ENGINES[ALIASES[car] ?? car] ?? ENGINES.city;

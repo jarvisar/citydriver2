@@ -7,6 +7,7 @@ import { CARS, DEFAULT_CAR, DRAG, ROUTE_PAINT, carEntry, carStats } from './cars
 import { createShapeCar } from './car-models.js';
 import { createFormulaCar } from './formula-model.js';
 import { createSpecialCar } from './special-models.js';
+import { createHelicopter, Helicopter } from './helicopter.js';
 import { collisionImpulse, footprintMass, heft, leadingPoint, rock, rockFrom, SCENERY_SURFACE } from './impact.js';
 import { steerCurve, steeringResponse, driftDirection, turnRate, corneringLoad, travelHeading } from './handling.js';
 
@@ -139,6 +140,7 @@ export function createCar(id = DEFAULT_CAR) {
   const entry = carEntry(id);
   if (entry.kind === 'formula') return createFormulaCar(entry);
   if (entry.kind === 'special') return createSpecialCar(entry);
+  if (entry.kind === 'helicopter') return createHelicopter(entry);
   return entry.kind === 'classic' ? createClassicCar(entry) : createShapeCar(entry);
 }
 
@@ -175,6 +177,10 @@ export class DrivingController {
     this.freeDriving = false;
     this.rainbow = false; this.rainbowHue = 0; this.rainbowColor = new THREE.Color();
     this.night = false; this.journeyId = 'coast';
+    // The helicopter's pilot flies it instead while it is the chosen car (see
+    // helicopter.js); `airborne` is true once it is up above the traffic, and
+    // `scenery` (the world's chunks) holds the roofs it can set down on.
+    this.pilot = null; this.airborne = false; this.scenery = null;
     this.setCar(carId, { rebuild: false, paint });
     this.s = state.s ?? 24; this.u = state.u ?? 2.4; this.speed = 0; this.steer = 0; this.heading = state.heading ?? route.frame(this.s).angle;
     this.distance = state.distance ?? 0; this.pitch = 0; this.roll = 0; this.previousSpeed = 0; this.groundedPosition = new THREE.Vector3();
@@ -196,12 +202,14 @@ export class DrivingController {
   // Paint belongs to the car being fitted, so it is passed in rather than kept.
   setCar(id, { rebuild = true, paint = null } = {}) {
     const carId = CARS[id] ? id : DEFAULT_CAR;
-    const previous = this.car, parent = previous?.parent ?? null;
+    const previous = this.car, parent = previous?.parent ?? null, flew = Boolean(this.pilot);
     this.disposeModel?.();
     previous?.removeFromParent();
     this.carId = carId;
-    Object.assign(this, createCar(carId));
+    const { rotors, ...model } = createCar(carId);
+    Object.assign(this, model);
     const entry = carEntry(carId);
+    this.pilot = rotors ? new Helicopter(this, rotors) : null; this.airborne = false;
     const { width, length, cabin, cabinZ, cabinY = 1.22, drop = 0, eye, chaseLift = 0 } = entry.shape;
     // Center the view just in front of the windshield for every body shape.
     // Traffic-shaped cabins slope back by .24 m at the top of the glass, and a
@@ -218,7 +226,10 @@ export class DrivingController {
     if (!rebuild) return;
     this.speed = clamp(this.speed, -this.stats.reverseSpeed, this.stats.topSpeed);
     this.wheelSpin = 0;
-    this.update(0, {});
+    // Into the helicopter it carries on as the car was going; out of it, a
+    // car starts at rest in the nearest lane, wherever the helicopter was.
+    this.pilot?.takeOver(this.heading, this.speed, this.groundedPosition.y);
+    if (flew && !this.pilot) this.reset(); else this.update(0, {});
   }
   // A garage colour, or null for the finish the car left the factory in.
   setPaint(color) { this.paintColor = color ?? null; this.updatePaint(); }
@@ -231,6 +242,7 @@ export class DrivingController {
     } else this.paintCar(this.paintColor);
   }
   reset() {
+    this.pilot?.land();
     this.speed = 0; this.steer = 0; this.weight = 0; this.load = 0; this.driftArmed = 0; this.knock.x = this.knock.z = this.knock.spin = 0;
     Object.assign(this.jolt, { pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 }); this.yawRate = 0; this.trauma = 0; this.pushing = 0; this.audioTelemetry.scrape = 0;
     // A generated street network has no lane at u = 2.4: settle into the nearest lane instead.
@@ -263,7 +275,7 @@ export class DrivingController {
     for (const key of ['bodyPitch', 'bodyRoll', 'wheelSpin', 'steer', 'slip']) target[key] = source[key];
   }
   // Which way the car is really going: its own drive, and any knock on top.
-  get velocity() { const heading = this.slideHeading ?? this.heading; return { x: Math.sin(heading) * this.speed + this.knock.x, z: -Math.cos(heading) * this.speed + this.knock.z }; }
+  get velocity() { if (this.pilot) return this.pilot.velocity; const heading = this.slideHeading ?? this.heading; return { x: Math.sin(heading) * this.speed + this.knock.x, z: -Math.cos(heading) * this.speed + this.knock.z }; }
   // A move in world metres, in the road's terms, as a step of driving is.
   shift(dx, dz) {
     const frame = this.route.frame(this.s);
@@ -285,6 +297,7 @@ export class DrivingController {
   // direction, and the rest is a slide and a turn that carryKnock wears off.
   // The body rocks with it (see rock in impact.js).
   strike(dvx, dvz, spin, impact, scrape = 0) {
+    if (this.pilot) { this.pilot.strike(dvx, dvz, spin, impact, scrape); return; }
     if (impact > TOUCH) {
       this.audioTelemetry.impact = impact; this.audioTelemetry.impactSerial++;
       this.trauma = Math.min(1, this.trauma + (impact - TOUCH) / 28);
@@ -301,6 +314,7 @@ export class DrivingController {
   // Where the car stands now, after a collision has moved it: the one step
   // that is not smooth motion.
   placeAfterCollision() {
+    if (this.pilot) { this.pilot.pose(); return; }
     const p = this.route.position(this.s, this.u);
     this.groundedPosition.set(p.x, p.y, p.z);
     this.currentPose.position.copy(this.groundedPosition);
@@ -329,6 +343,7 @@ export class DrivingController {
   // round; a glancing blow turns the nose back along the wall, so the car
   // slides off it instead of grinding to a halt against it.
   resolveSceneryCollision(nx, nz, depth, dt, point = null) {
+    if (this.pilot) { this.pilot.resolveSceneryCollision(nx, nz, depth, point); return; }
     const car = this.motion(), normal = { x: nx, z: nz };
     point ??= leadingPoint(car, normal);
     const blow = collisionImpulse(car, { x: point.x, z: point.z, vx: 0, vz: 0, mass: Infinity }, normal, point, SCENERY_SURFACE);
@@ -343,6 +358,9 @@ export class DrivingController {
     if (!this.freeDriving) this.u = clamp(this.u, ...this.route.bounds(this.s));
     this.placeAfterCollision();
   }
+  // Whether the player's machine clears a standing thing rather than hitting
+  // it (see collideScenery): only the helicopter, flying over it, ever does
+  passes(solid) { return Boolean(this.pilot?.passes(solid)); }
   // The ground under the car: its height, and its fall along and across the
   // road over about a wheelbase and a track. Free driving also asks whether
   // the car may stand here: not on water or a cliff face, nor with either of
@@ -376,9 +394,11 @@ export class DrivingController {
       if (w.front) w.pivot.rotation.y = -steer * .38;
       w.wheel.rotation.x = w.hub.rotation.x = spin * (w.spinRatio ?? 1);
     }
+    this.pilot?.animate(spin);
   }
   update(dt, input) {
     if (this.rainbow) this.updatePaint(dt);
+    if (this.pilot) { this.pilot.update(dt, input); return; }
     this.copyPose(this.previousPose, this.currentPose);
     const { frame: roadFrame, position: positionAt } = this.route;
     const stats = this.stats;
@@ -528,8 +548,10 @@ export class DrivingController {
     this.wheelSpin -= step / .48;
     // The chase camera widens and drops back once the car is really moving.
     // Nothing below two fifths of its top speed, everything by the time the
-    // needle is against the stop.
+    // needle is against the stop. Once the car moves, a camera the mouse
+    // turned swings back behind it.
     this.car.userData.speedRush = clamp((Math.abs(this.speed) / stats.topSpeed - .4) / .6, 0, 1);
+    this.car.userData.speed = this.speed;
     // A crash shakes the view, and that fades within about a second.
     this.trauma = Math.max(0, this.trauma - dt * 1.4); this.car.userData.trauma = this.trauma;
     // Report actual driving effort for keyboard, analog triggers, and touch.

@@ -3,19 +3,26 @@ import { TouchStick } from './touch-stick.js';
 import { KonamiCode } from './konami-code.js';
 import { XRInput } from './xr-input.js';
 
+// What the touch buttons press, which the stick can be held with
+const BUTTONS = new Set(['boost', 'handbrake', 'climb', 'descend']);
+
 export class Input {
   constructor(onAction, onControllerConnection = () => {}, onKonami = () => {}) {
     this.keys = new Set(); this.onAction = onAction;
     this.xr = new XRInput(onAction); this.xrActive = false;
     this.konami = new KonamiCode();
     this.touchStick = new TouchStick(document.querySelector('#touch-stick'), () => onAction('drive'), document.querySelector('#scene'));
-    this.codes = { forward: ['KeyW', 'ArrowUp', 'Numpad8'], brake: ['KeyS', 'ArrowDown', 'Numpad2'], left: ['KeyA', 'ArrowLeft', 'Numpad4'], right: ['KeyD', 'ArrowRight', 'Numpad6'], handbrake: ['Space'], boost: ['ShiftLeft', 'ShiftRight'] };
+    // Climb and descend fly the helicopter, on the keys a car uses to drift
+    // and boost (and E / Q), which the helicopter has no use for
+    this.codes = { forward: ['KeyW', 'ArrowUp', 'Numpad8'], brake: ['KeyS', 'ArrowDown', 'Numpad2'], left: ['KeyA', 'ArrowLeft', 'Numpad4'], right: ['KeyD', 'ArrowRight', 'Numpad6'], handbrake: ['Space'], boost: ['ShiftLeft', 'ShiftRight'], climb: ['Space', 'KeyE'], descend: ['ShiftLeft', 'ShiftRight', 'KeyQ'] };
     this.touchButtons = {};
-    for (const action of ['boost', 'handbrake']) {
-      const button = document.querySelector(`[data-drive-button="${action}"]`);
+    // Each touch button presses what its key does: Space's drifts or climbs, Shift's boosts or descends
+    for (const [key, actions] of [['boost', ['boost', 'descend']], ['handbrake', ['handbrake', 'climb']]]) {
+      const button = document.querySelector(`[data-drive-button="${key}"]`);
       if (!button) continue;
-      button.addEventListener('pointerdown', event => { event.preventDefault(); button.setPointerCapture(event.pointerId); this.touchButtons[action] = true; });
-      for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(event, () => { this.touchButtons[action] = false; });
+      const hold = held => { for (const action of actions) this.touchButtons[action] = held; };
+      button.addEventListener('pointerdown', event => { event.preventDefault(); button.setPointerCapture(event.pointerId); hold(true); });
+      for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(event, () => hold(false));
     }
     // The driving simulation reads this up to twelve times per displayed frame, so
     // it fills one reused record rather than building a fresh object each step.
@@ -80,7 +87,7 @@ export class Input {
     for (const action of this.actions) {
       const value = this.xrActive ? this.xr.state[action] || false : this.codes[action].some(code => this.keys.has(code)) || this.gamepad.state[action] || this.touchButtons[action] || false;
       state[action] = value;
-      if (value && action !== 'boost' && action !== 'handbrake') held = true;
+      if (value && !BUTTONS.has(action)) held = true;
     }
     // Set iteration preserves press order. Overlapping A/D presses select the
     // newest direction immediately; releasing it restores the still-held key.

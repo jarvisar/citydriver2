@@ -813,7 +813,7 @@ export function cornice(bodies, ring, top, trim, roofColour, wall, parapet, cour
 
 // A hipped roof over a four-sided house: an overhanging eave, two hips at the
 // short ends, a ridge along the long axis and a chimney.
-function hipRoof(c, b, bodies, ring, top) {
+function hipRoof(c, b, bodies, ring, top, solid) {
   const trim = '#e6dcc4', colour = b.variation % 2 ? '#8a6555' : b.roof;
   const eave = offsetPolygon(ring, .5), quad = eave.length === 4 ? eave : ring;
   bodies.prism(quad, top - .3, top + .06, trim);
@@ -828,6 +828,7 @@ function hipRoof(c, b, bodies, ring, top) {
   const mid = i => ({ x: (quad[i].x + quad[(i + 1) % 4].x) / 2, y: (quad[i].y + quad[(i + 1) % 4].y) / 2 });
   const ridge = [s0, s1].map(i => { const m = mid(i); return { x: m.x + (centre.x - m.x) * k, y: m.y + (centre.y - m.y) * k }; });
   const y0 = top + .06, y1 = top + .06 + rise, l0 = (s0 + 1) % 4, l1 = (s1 + 1) % 4;
+  if (solid) solid.ridge = y1;
   bodies.slope(quad[s0], y0, quad[(s0 + 1) % 4], y0, ridge[0], y1, colour);
   bodies.slope(quad[s1], y0, quad[(s1 + 1) % 4], y0, ridge[1], y1, colour);
   bodies.slope(quad[l0], y0, quad[(l0 + 1) % 4], y0, ridge[1], y1, colour); bodies.slope(quad[l0], y0, ridge[1], y1, ridge[0], y1, colour);
@@ -939,7 +940,7 @@ function wallFace(bodies, points, inside, colour) {
 // and the one across from it, a ridge between them and a gable over each of
 // the other two walls. A terrace's chimneys stand on its gables, where its
 // party walls are; a shed's roof is low, with a vent along its ridge.
-function gableRoof(c, b, bodies, ring, top, random) {
+function gableRoof(c, b, bodies, ring, top, random, solid) {
   const shed = b.type === 'warehouse' || b.type === 'pavilion', trim = '#e2d6bd';
   const w = [0, 1, 2, 3].map(k => ring[(b.eaves + k) % 4]);
   // The eaves overhang their walls, and the verges the gables no further than
@@ -954,6 +955,7 @@ function gableRoof(c, b, bodies, ring, top, random) {
   const mid = (p, q) => ({ x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 });
   const span = (Math.hypot(e[2].x - e[1].x, e[2].y - e[1].y) + Math.hypot(e[0].x - e[3].x, e[0].y - e[3].y)) / 4;
   const pitch = shed ? .22 : .56 + (b.variation % 3) * .06, y0 = top + .06, y1 = y0 + Math.min(shed ? 3.4 : 5.4, span * Math.tan(pitch));
+  if (solid) solid.ridge = y1;
   const r0 = mid(e[3], e[0]), r1 = mid(e[1], e[2]);
   bodies.slope(e[0], y0, e[1], y0, r1, y1, b.roof); bodies.slope(e[0], y0, r1, y1, r0, y1, b.roof);
   bodies.slope(e[2], y0, e[3], y0, r0, y1, b.roof); bodies.slope(e[2], y0, r0, y1, r1, y1, b.roof);
@@ -1121,7 +1123,7 @@ function buildBuilding(c, b) {
   const base = b.type === 'warehouse' ? 4.8 : b.domestic ? 3.6 : 5.4, height = base + b.floors * 3.6, lower = b.setbackFloors, lowerTop = G + base + lower * 3.6;
   const centre = averagePoint(ring);
   c.features.buildings.push({ x: c.east + centre.x, s: c.start + centre.y, area: b.area, height, type: b.type, floors: b.floors, roofType: b.roofType, wall: b.wall });
-  c.polygonSolid(convexHull(ring).map(p => [p.x, p.y]), G + height);
+  const solid = c.polygonSolid(convexHull(ring).map(p => [p.x, p.y]), G + height);
   if (b.lawn) {
     const lot = b.lotLocal.map(p => [p.x, p.y]);
     grassArea(c, lot, LAWN, G + .05);
@@ -1199,8 +1201,8 @@ function buildBuilding(c, b) {
     if (b.windows[i]) edgeWindows(c, b, f, garden ? G : G + base, garden ? lower + 1 : lower, random);
   }
   if (b.lawn && !c.distant) frontGarden(c, b, ring, primary, random);
-  if (b.roofType === 'hip') { hipRoof(c, b, bodies, ring, lowerTop); return; }
-  if (b.roofType === 'gable') { gableRoof(c, b, bodies, ring, lowerTop, random); return; }
+  if (b.roofType === 'hip') { hipRoof(c, b, bodies, ring, lowerTop, solid); return; }
+  if (b.roofType === 'gable') { gableRoof(c, b, bodies, ring, lowerTop, random, solid); return; }
   const trim = b.type === 'office' ? '#b8cccd' : '#d6c9b1';
   const reach = k => b.party?.[k] && b.side < .32 ? b.side : .32;
   let { deck, holes } = cornice(bodies, ring, lowerTop, trim, b.roof, b.wall, b.type === 'deco' ? 1.2 : .65, courts, reach, b.lotLocal), top = lowerTop;

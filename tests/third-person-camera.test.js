@@ -196,3 +196,72 @@ test('a building in the way brings the chase camera in along its line to the car
   open = .5; rig.update(car, 1 / 60); open = 1; rig.snap(); rig.update(car, 0);
   assert.equal(rig.reach, 1);
 });
+
+// Where a point is on screen, leaving out its depth
+const onScreen = (point, camera) => { const p = point.clone().project(camera); return new THREE.Vector2(p.x, p.y); };
+
+test('the mouse turns the chase camera round the car, which keeps its place in the frame', () => {
+  const car = new THREE.Object3D(), rig = new ThirdPersonCamera(), free = new ThirdPersonCamera();
+  rig.resize(16 / 9); free.resize(16 / 9); rig.update(car, 0); free.update(car, 0);
+  const framed = onScreen(rig.pivot, rig.camera), height = rig.camera.position.y;
+  // A quarter turn to the right and a tilt up: the camera stands off the car's left, looking down on it
+  rig.look(Math.PI / 2, .5); rig.update(car, 1 / 60);
+  assert.ok(rig.camera.position.x < -10 && Math.abs(rig.camera.position.z) < 1e-9);
+  assert.ok(rig.camera.position.y > height + 5);
+  assert.ok(onScreen(rig.pivot, rig.camera).distanceTo(framed) < 1e-9, 'the point over its roof stays put');
+  // Tilts stop short of under the car and straight over it
+  rig.look(0, -5); assert.ok(rig.lookPitch > -.3);
+  rig.look(0, 10); assert.ok(rig.lookPitch < 1.1);
+  // Standing still, it stays where it was put
+  const turned = [rig.lookYaw, rig.lookPitch];
+  for (let i = 0; i < 300; i++) { rig.update(car, 1 / 60); free.update(car, 1 / 60); }
+  assert.deepEqual([rig.lookYaw, rig.lookPitch], turned);
+  // Moving, it waits for the mouse to rest, then swings back behind, the short way round
+  car.userData.speed = 10; rig.look(Math.PI * .6, 0);
+  for (let i = 0; i < 60; i++) { rig.update(car, 1 / 60); free.update(car, 1 / 60); }
+  assert.ok(Math.abs(rig.lookYaw + Math.PI * .9) < 1e-9, 'still turned a second after the mouse rests');
+  let previous = Math.abs(rig.lookYaw);
+  for (let i = 0; i < 300; i++) {
+    rig.update(car, 1 / 60); free.update(car, 1 / 60);
+    assert.ok(Math.abs(rig.lookYaw) <= previous); previous = Math.abs(rig.lookYaw);
+  }
+  assert.equal(rig.lookYaw, 0); assert.equal(rig.lookPitch, 0);
+  assert.equal(rig.camera.position.distanceTo(free.camera.position), 0, 'exactly where it stands untouched');
+  // A reset or a new view puts it straight back
+  rig.look(2, .4); rig.snap(); rig.update(car, 0);
+  assert.equal(rig.lookYaw, 0); assert.equal(rig.lookPitch, 0);
+});
+
+test('the wheel brings the chase camera nearer or farther within limits, and a reset keeps the distance', () => {
+  const car = new THREE.Object3D(), rig = new ThirdPersonCamera(), free = new ThirdPersonCamera();
+  rig.resize(16 / 9); rig.update(car, 0); free.update(car, 0);
+  const framed = onScreen(rig.pivot, rig.camera), out = free.camera.position.distanceTo(free.pivot);
+  rig.zoomBy(.5); rig.update(car, 1 / 60);
+  assert.ok(rig.zoom > .5 && rig.zoom < 1, 'it eases in');
+  for (let i = 0; i < 120; i++) rig.update(car, 1 / 60);
+  assert.equal(rig.zoom, .5);
+  assert.ok(Math.abs(rig.camera.position.distanceTo(rig.pivot) - out / 2) < 1e-9);
+  assert.ok(onScreen(rig.pivot, rig.camera).distanceTo(framed) < 1e-9);
+  rig.zoomBy(100); assert.equal(rig.zoomTarget, 2);
+  rig.zoomBy(1e-3); assert.equal(rig.zoomTarget, .45);
+  rig.snap(); rig.update(car, 0);
+  assert.equal(rig.zoom, .45);
+});
+
+test('turned down low or zoomed out, the chase camera stays over the ground under it', () => {
+  const car = new THREE.Object3D(), rig = new ThirdPersonCamera();
+  // A quay 3 m up off to the car's left
+  rig.ground = x => x < -6 ? 3 : 0;
+  rig.update(car, 0); rig.zoomBy(2);
+  for (const yaw of [0, Math.PI / 2, Math.PI]) {
+    rig.snap(); rig.look(yaw, -1);
+    for (let i = 0; i < 60; i++) {
+      rig.update(car, 1 / 60);
+      assert.ok(rig.camera.position.y >= rig.ground(rig.camera.position.x) + .6 - 1e-9);
+    }
+  }
+  // (and where the ground does not reach it, it is left alone)
+  rig.snap(); rig.update(car, 0);
+  const free = new ThirdPersonCamera(); free.zoomBy(2); free.update(car, 0);
+  assert.equal(rig.camera.position.distanceTo(free.camera.position), 0);
+});

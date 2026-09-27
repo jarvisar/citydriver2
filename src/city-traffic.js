@@ -296,8 +296,10 @@ export class CityTraffic {
     car.parked = null; car.loose = null; car.car.visible = false;
   }
   // The player against a car. They share the blow by weight and, once the car
-  // is free to move, are parted by weight too: a heavy car shoves a light one
+  // is free to move, are parted by weight too: a heavy car shoves a light one.
+  // A helicopter up above the traffic (`airborne`) is not in its way at all.
   collidePlayer(car, player) {
+    if (player.airborne) return;
     const p = player.groundedPosition;
     if (Math.abs(car.position.x - p.x) > 7 || Math.abs(car.position.z - p.z) > 7) return;
     const a = player.motion(), b = this.motion(car), contact = trafficContact(a, b);
@@ -391,7 +393,7 @@ export class CityTraffic {
     const count = this.vehicles.length, total = count + this.woken.length;
     for (let i = 0; i <= total; i++) {
       const other = i === total ? player : i < count ? this.vehicles[i] : this.woken[i - count];
-      if (other === car || (other !== player && !other.edge && !other.parked) || !Number.isFinite(other.heading)) continue;
+      if (other === car || (other !== player && !other.edge && !other.parked) || !Number.isFinite(other.heading) || other.airborne) continue;
       if (Math.abs(other.s - car.s) > reach + 6 || Math.abs(other.u - car.u) > reach + 6) continue;
       crossing ??= new Set([...(car.claim?.nodes ?? []), ...(car.leaving?.nodes ?? [])]);
       if (other !== player && other.edge && crossing.size && this.passes(car, other, crossing)) continue;
@@ -460,7 +462,7 @@ export class CityTraffic {
       if (!car.turn && car.edge.length - car.along < 70) this.choose(car);
       // (the plan beyond a short street is made first: the junctions ask for it)
       const after = this.afterSpeed(car);
-      let target = Math.min(car.cruiseSpeed, this.junctions.limit(car, this.vehicles, player, dt));
+      let target = Math.min(car.cruiseSpeed, this.junctions.limit(car, this.vehicles, player.airborne ? null : player, dt));
       if (car.turn) target = Math.min(target, approachSpeed(car.turn, car.turn.start - car.along));
       // and slow for the street's own bends before the turn
       if (!car.turn || car.along < car.turn.start) target = Math.min(target, bendSpeed(this.nav, car.edge, car.direction, car.along, car.lane));

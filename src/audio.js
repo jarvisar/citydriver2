@@ -181,8 +181,10 @@ export class DriveAudio {
     layer(g.reverse, state.reverseLevel); set(g.reverse.frequency, state.reverseFrequency);
     const wetness = clamp01(scene?.wetness ?? scene?.rain);
     layer(g.road, state.roadLevel * (1.4 + wetness * .3)); set(g.road.frequency, 480 + state.motion * (1000 + wetness * 2600), .25);
-    const roughness = state.roughLevel * 1.8;
-    layer(g.rough, roughness); set(g.roughPulse, roughness * .16); set(g.roughMod.frequency, 12 + state.motion * 31);
+    // (the same judder, low and deep, is a helicopter's blades beating)
+    const roughness = state.roughLevel * 1.8, chop = state.chop;
+    layer(g.rough, roughness); set(g.roughPulse, roughness * (chop ? .9 : .16)); set(g.roughMod.frequency, chop || 12 + state.motion * 31);
+    set(g.rough.frequency, chop ? 190 : 1000);
     // In first person the cabin muffles the world, unless the car has none
     const cabin = Boolean(scene?.interior && !profile.open);
     set(g.cabin.engine, cabin ? 2200 : 20000, .35); set(g.cabin.world, cabin ? 1600 : 20000, .35);

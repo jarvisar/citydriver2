@@ -11,6 +11,7 @@ The driving uses arcade grip handling with a powerslide for drifting. The handli
 - Above 7.5 m/s, tap Drift while steering to start a slide. Keep the throttle and steering held into the corner to keep sliding after letting go of the button. Holding Drift also works. Centre the steering, countersteer, lift off or brake to recover. Slides end below 6 m/s and can't start in reverse.
 - The slide angle is limited to 0.55 radians (about 32°). Sliding scrubs off some speed, and normal steering gets grip back quickly. Handbraking in a straight line stops the car and holds it, even with throttle or boost held.
 - The chase camera follows small turns quickly and swings round for U-turns. During a slide it looks partly along the direction of travel so the exit stays in view.
+- In fullscreen the mouse turns the chase camera around the car, and the mouse wheel moves it closer or further away. While the car is moving, the camera swings back behind it a moment after the mouse stops. It stays out of buildings and above the ground.
 - Collisions, tire sounds, skid marks and taxi drift tips all follow the actual slide.
 
 Keyboard, controller, VR and the chase-view touch stick all use the same steering. Touch boost reaches the same top speed as the keyboard, and letting go of the stick stops the cab even while Boost is held. The overhead view's touch controls stay relative to the screen.
@@ -34,6 +35,18 @@ Full-lock radius in metres on tarmac, from `node scripts/handling-sweep.mjs`:
 | Truck | 5.77 | 9.29 | 16.08 |
 
 A Formula at 50 m/s still needs about 35 m to turn, so slow down before sharp junctions. The game doesn't steer toward roads or brake for corners.
+
+## Helicopter
+
+The helicopter in the garage flies with the driving controls. Forward and brake fly it forward and back, steering turns it, and Climb and Descend move it up and down. It holds its height when nothing is pressed and slows to a hover on its own. Pressing forward on the ground lifts it off to a low hover.
+
+- It reaches 40 m/s (90 mph), climbs at 8 m/s and descends at 9 m/s. It turns at about 110° a second while hovering and banks into turns at speed.
+- It slows down as it gets close to the ground, so landings are gentle. It can land on streets and roofs. Over the water it hovers just above the surface.
+- It bumps into buildings below their roofs and flies over them above. It meets street furniture like a car does until it is above it. More than 2.5 m up, it passes over traffic and people.
+- It flies up to 120 m above the streets. The chase camera tilts down the higher it goes.
+- Autodrive only works in cars. Changing to a car in the air puts the car in the nearest lane.
+
+The flight code is in [src/helicopter.js](../src/helicopter.js).
 
 ## Input Timing
 

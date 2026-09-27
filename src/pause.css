@@ -1,5 +1,5 @@
 /* Pause layout only; colors and control finishes come from the existing UI.
-   The settings come in three groups (driving, the city, sound and display):
+   The settings come in three groups (driving, the city, display and sound):
    one column on a phone and side by side where the screen has room. The
    header is a bar pinned to the top, so Resume stays in reach however far
    the settings scroll. */

@@ -1437,9 +1437,10 @@ export function placeStreetFurniture(nav, bridges, add) {
   placeLawnFringe(inZone, free, pathClear, add);
 }
 
-// A fringe of longer grass on the public lawns, as the gardens have (see
+// Longer grass on the public lawns, as the gardens have a fringe (see
 // city-grass.js): along a park's lawn by the pavement and down both sides of
-// its walks, round a square's lawns and a planted island's edge. Placed last
+// its walks, round a square's lawns and a planted island's edge, and in
+// clumps over the open lawn. Placed last
 // and seeded by position, so nothing else moves, and it keeps nothing clear.
 function placeLawnFringe(inZone, free, pathClear, add) {
   const sow = (x, y, tx, ty, nx, ny, level, fits) => {
@@ -1459,6 +1460,22 @@ function placeLawnFringe(inZone, free, pathClear, add) {
     const ccw = signedArea(ring) > 0 ? ring : ring.slice().reverse();
     for (const p of alongPolyline([...ccw, ccw[0]], step, step / 2)) sow(p.x, p.y, p.tx, p.ty, -p.ty, p.tx, level, fits);
   };
+  // and over the open lawn in clumps, gathered in patches where a noise
+  // field is high and thin elsewhere (a clump may stand at a tree's foot)
+  const scatter = (polygon, level, fits, step = 6) => {
+    const b = polygonBounds(polygon);
+    for (let i = Math.floor(b.minX / step); i * step < b.maxX; i++) for (let j = Math.floor(b.minY / step); j * step < b.maxY; j++) {
+      const random = seededRandom(Math.imul(i, 73856093) ^ Math.imul(j, 19349663) ^ Math.imul(CITY.seed, 83492791) ^ 0x5f1d);
+      const x = (i + random()) * step, y = (j + random()) * step, g = CITY.field.noise2D(x / 45 + 5.3, y / 45 - 8.1);
+      if (random() > (g > .25 ? .7 : g > -.1 ? .3 : .08) || !fits(x, y)) continue;
+      const count = 1 + Math.floor(random() * 3);
+      for (let k = 0; k < count; k++) {
+        const angle = random() * Math.PI * 2, reach = k ? .7 + random() * .6 : 0, u = x + Math.cos(angle) * reach, s = y + Math.sin(angle) * reach;
+        if (!fits(u, s) || pathClear(u, s) < .7 || inZone(u, s, true) || !free(u, s, 1)) continue;
+        add({ kind: 'grass', u, s, level, colour: COLOURS.lawn, yaw: random() * Math.PI * 2, width: .6 + random() * .3, height: .35 + random() * .25, tint: .9 + random() * .35 });
+      }
+    }
+  };
   const within = (polygon, margin) => {
     const ring = [...polygon, polygon[0]];
     return (x, y) => insidePolygon({ x, y }, polygon) && distanceToPolyline({ x, y }, ring) > margin;
@@ -1468,11 +1485,14 @@ function placeLawnFringe(inZone, free, pathClear, add) {
     const park = entry.park;
     if (park.lawn.length < 3) continue;
     if (entry.paved) {
-      for (const panel of entry.panels) edge(panel.outer, PAVEMENT_LEVEL + .03, within(panel.outer, .4));
+      for (const panel of entry.panels) {
+        const onPanel = within(panel.outer, .4), fits = (x, y) => onPanel(x, y) && !panel.holes?.some(hole => insidePolygon({ x, y }, hole));
+        edge(panel.outer, PAVEMENT_LEVEL + .03, fits); scatter(panel.outer, PAVEMENT_LEVEL + .03, fits);
+      }
       continue;
     }
     const onLawn = within(park.lawn, .4), fits = (x, y) => onLawn(x, y) && parkClear(entry, x, y, .3);
-    edge(park.lawn, PAVEMENT_LEVEL + .02, fits);
+    edge(park.lawn, PAVEMENT_LEVEL + .02, fits); scatter(park.lawn, PAVEMENT_LEVEL + .02, fits);
     if (!park.square) lawns.push({ bounds: polygonBounds(park.lawn), fits });
     else for (const walk of entry.walks) for (const p of alongPolyline(walk, 4.5, 2.25)) for (const side of [-1, 1]) {
       const nx = -p.ty * side, ny = p.tx * side;
@@ -1495,6 +1515,7 @@ function placeLawnFringe(inZone, free, pathClear, add) {
   // (clear of an island's flower bed or sculpture, in its middle)
   for (const { lawn, deepest } of cityIslands()) {
     const onLawn = within(lawn, .4), bed = deepest?.distance >= 2 ? deepest.point : null;
-    edge(lawn, PAVEMENT_LEVEL + .02, (x, y) => onLawn(x, y) && !(bed && Math.hypot(x - bed.x, y - bed.y) < 4));
+    const fits = (x, y) => onLawn(x, y) && !(bed && Math.hypot(x - bed.x, y - bed.y) < 4);
+    edge(lawn, PAVEMENT_LEVEL + .02, fits); scatter(lawn, PAVEMENT_LEVEL + .02, fits);
   }
 }

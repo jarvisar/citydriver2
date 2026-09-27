@@ -93,6 +93,23 @@ const position = new THREE.Vector3(), rotation = new THREE.Quaternion(), scale =
 // about its centre of mass (the middle of that surface); and its turning
 // inertia per tonne, as a box its size.
 const shapes = new WeakMap();
+// How high a piece of standing furniture reaches (the world height of its
+// top: a tree's crown, a lamp's head), worked out once, for the helicopter
+// to fly over it or into it
+const topBox = new THREE.Box3(), topFrame = new THREE.Matrix4(), topBase = new THREE.Matrix4();
+export function propTop(collider) {
+  const prop = collider.prop;
+  if (prop.top === undefined) {
+    prop.matrix(topBase); prop.top = -Infinity;
+    for (const piece of prop.pieces) {
+      const geometry = piece.geometry;
+      if (!geometry.boundingBox) geometry.computeBoundingBox();
+      topFrame.copy(topBase); if (piece.at) topFrame.multiply(piece.at);
+      prop.top = Math.max(prop.top, topBox.copy(geometry.boundingBox).applyMatrix4(topFrame).max.y);
+    }
+  }
+  return prop.top;
+}
 function shapeOf(geometry) {
   if (shapes.has(geometry)) return shapes.get(geometry);
   const position = geometry.attributes.position, index = geometry.index?.array, count = index ? index.length : position.count;
@@ -360,6 +377,14 @@ export class LooseProps {
     const blow = this.knock(collider, contact, this.carOf(player));
     if (blow) player.strike(blow.x, blow.z, blow.spin, Math.hypot(blow.x, blow.z) * FELT);
     return Boolean(blow);
+  }
+  // A loose piece as a car, where its point (x, y, z) meets someone (see
+  // PedestrianContacts): headed the way that point is going, as fast, and
+  // as heavy as the piece
+  motionOf(body, x, y, z) {
+    r.set(x - body.p.x, y - body.p.y, z - body.p.z);
+    velocityAt(body, r, pv);
+    return { x, z, y: y - BUMPER, heading: Math.atan2(pv.x, -pv.z), halfWidth: .3, halfLength: .3, vx: pv.x, vz: pv.z, spin: 0, mass: body.kind.mass };
   }
   carOf(player) {
     const car = player.motion();
