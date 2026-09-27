@@ -44,8 +44,8 @@ const KINDS = {
 // A little heavier than real, so flung furniture does not hang in the air
 const GRAVITY = 13;
 // Loose pieces go back where they stood once the player is this far off, as
-// the parked cars do (see CityTraffic); and no more than this many are loose
-// at once, the furthest going back first
+// the parked cars do (see CityTraffic), and no car stands there; and no more
+// than this many are loose at once, the furthest going back first
 const RETURN = 150, MOST = 80;
 // A pedestrian's body nobody has drawn for this long (their fare taken, or
 // their block streamed out) is put away, so nothing unseen lies in the road
@@ -68,8 +68,10 @@ const FELT = 1.5;
 // its foot would leave the ground (its weight has to hold the foot down, so a
 // tall lamp post falls slower than a short sign); its foot slides on at this
 // share of the blow (up to 2.5 m/s), and it leans this much away from the
-// car's path, its foot kicked this far clear of the car's side (m).
-const TOPPLE = .1, TOPPLE_LEAST = .9, SLIDE = .1, OUTWARD = .6, KICKED = .3;
+// car's path. Until it is down (tilted this far, rad), a car that meets it
+// sweeps it out through the side it stands on (see contact), up to SWEPT
+// times the car's speed, rather than carrying it off down the street.
+const TOPPLE = .1, TOPPLE_LEAST = .9, SLIDE = .1, OUTWARD = .6, DOWN = Math.PI / 3, SWEPT = 2;
 // A piece flung off a bumper is swept this much aside, and pops up at most this fast (m/s)
 const ASIDE = .5, POP = 3.5;
 // The air slows a flying piece this much a second, and each hard landing
@@ -101,6 +103,20 @@ const PIN = .1, BEHIND = .8, PUSHED = 3;
 // first, up to this many a step (a post fallen across a roof, or a tree's
 // crown against a wall, has several points in it)
 const PASSES = 3;
+// A car's body stands this high off the road (m): what lies lower, a fallen
+// post, a sign, passes under it, and is driven over rather than shoved on;
+// and its roof and bonnet fall away this much (m) to its sides, so what
+// lands on them slides off rather than riding along
+const CLEARANCE = .2, CROWN = .2;
+// A piece a car pushes, or pushes through other pieces, that a wall or a
+// parked car puts straight back (within 60° of the way the car pushes it)
+// this many steps running is jammed (see squeeze); only by a car that
+// outweighs it this many times over
+const SQUEEZED = 2, JAMS = 2;
+// Standing furniture gives way to a car at its `firm` speed, or slower to a
+// heavier car: at the same push (speed times heft) as a car this heavy
+// (the taxi's heft), so a truck crawling along a pavement snaps the lamps
+const FIRM_HEFT = 2;
 
 const UP = new THREE.Vector3(0, 1, 0), ONE = new THREE.Vector3(1, 1, 1);
 const r = new THREE.Vector3(), pv = new THREE.Vector3(), rel = new THREE.Vector3(), n = new THREE.Vector3(), slip = new THREE.Vector3();
@@ -313,6 +329,57 @@ function impulse(body, at, blow) {
   body.w.add(turnBy(body, t1.crossVectors(at, blow), t1)).clampLength(0, SPIN_MOST);
 }
 const velocityAt = (body, at, out) => out.crossVectors(body.w, at).add(body.v);
+// How deep a point (x, y, z) is inside a car's body (0 or less outside it):
+// its footprint, from CLEARANCE over the road (or its `floor`) up to its
+// height there along its length (its `profile`, see carProfile, else its
+// `height` all along), less its CROWN toward its sides. `exit` is the way
+// out: through the nearest side, the nearest end at that height (over the
+// bonnet, a piece leaves forward past the windscreen's foot, not the
+// bumper), or up through the top, leaning out the way the crown falls.
+// With `side` (1 or -1), the way out is only through that side (see falling).
+const exit = { x: 0, z: 0, roof: false };
+function inBody(car, x, y, z, side = 0) {
+  const up = y - car.y;
+  if (up < (car.floor ?? CLEARANCE)) return 0;
+  const cos = Math.cos(car.heading), sin = Math.sin(car.heading), dx = x - car.x, dz = z - car.z;
+  const across = dx * cos + dz * sin, along = dx * sin - dz * cos, beside = car.halfWidth - Math.abs(across);
+  if (beside <= 0 || Math.abs(along) >= car.halfLength) return 0;
+  // (as high over the crown's fall at this point)
+  const profile = car.profile, over = up + CROWN * Math.abs(across) / car.halfWidth;
+  let top, ahead, behind;
+  if (profile) {
+    const heights = profile.heights, n = heights.length, slice = profile.slice, tail = -profile.length / 2;
+    const k = Math.min(n - 1, Math.max(0, Math.floor((along - tail) / slice)));
+    top = heights[k] - over;
+    if (top <= 0) return 0;
+    let f = k + 1, b = k - 1;
+    while (f < n && heights[f] > over) f++;
+    while (b >= 0 && heights[b] > over) b--;
+    ahead = Math.min(car.halfLength, tail + f * slice) - along; behind = along - Math.max(-car.halfLength, tail + (b + 1) * slice);
+  } else {
+    top = car.height - over;
+    if (top <= 0) return 0;
+    ahead = car.halfLength - along; behind = car.halfLength + along;
+  }
+  if (side) { exit.roof = false; exit.x = side * cos; exit.z = side * sin; return car.halfWidth - across * side; }
+  const d = Math.min(beside, ahead, behind, top);
+  exit.roof = d === top;
+  // (up through the top, leaning out as the crown falls there)
+  if (exit.roof) { const slope = Math.sign(across) * CROWN / car.halfWidth; exit.x = slope * cos; exit.z = slope * sin; }
+  else if (d === beside) { const s = Math.sign(across) || 1; exit.x = s * cos; exit.z = s * sin; }
+  else { const s = ahead <= behind ? 1 : -1; exit.x = s * sin; exit.z = -s * cos; }
+  return d;
+}
+// How deep a loose piece is in a car's body, as contact finds it (see inBody)
+export function pieceInCar(body, car) {
+  const points = body.shape.points;
+  let deepest = 0;
+  for (let i = 0; i < points.length; i += 3) {
+    t1.set(points[i], points[i + 1], points[i + 2]).applyQuaternion(body.q);
+    deepest = Math.max(deepest, inBody(car, body.p.x + t1.x, body.p.y + t1.y, body.p.z + t1.z));
+  }
+  return deepest;
+}
 // How far two pieces overlap: the deepest point of either inside a part of
 // the other (m), or 0
 export function overlap(a, b) {
@@ -449,7 +516,7 @@ export class LooseProps {
     if (!prop?.ready || collider.woken) return null;
     const closing = -(car.vx * contact.x + car.vz * contact.z), piece = prop.pieces[0].kind, type = KINDS[piece];
     if (type.only && !this.breaks.includes(piece)) return null;
-    if (closing < Math.max(.2, type.only ? 0 : type.firm)) return null;
+    if (closing < Math.max(.2, type.only ? 0 : type.firm * Math.min(1, FIRM_HEFT / car.mass))) return null;
     const point = contact.point ?? { x: collider.x, z: collider.z }, bodies = this.loosen(collider);
     const hit = bodies.reduce((a, b) => Math.hypot(a.p.x - point.x, a.p.z - point.z) <= Math.hypot(b.p.x - point.x, b.p.z - point.z) ? a : b), kind = hit.kind;
     const blow = kind.topples ? this.topple(hit, car, contact, point) : this.fling(hit, car, contact, point);
@@ -519,13 +586,14 @@ export class LooseProps {
     velocityAt(body, r, pv);
     return { x, z, y: y - BUMPER, heading: Math.atan2(pv.x, -pv.z), halfWidth: .3, halfLength: .3, vx: pv.x, vz: pv.z, spin: 0, mass: body.kind.mass };
   }
-  // The player as a body a loose piece meets: their car's footprint up to
-  // its roof, or, on foot, a round one (see Walker) from just over their
-  // feet (what is under those they have hopped over) to their head
+  // The player as a body a loose piece meets: their car's body (see
+  // inBody), or, on foot, a round one (see Walker) from just over their feet
+  // (what is under those they have hopped over) to their head
   carOf(player) {
     const car = player.motion();
     car.y = player.groundedPosition.y; car.height = player.walker ? TALL : player.spec.height ?? ROOF;
-    if (player.walker) { car.radius = player.spec.radius; car.floor = FEET; }
+    if (player.walker) { car.radius = player.spec.radius; car.floor = FEET; } else car.profile = player.spec.profile;
+    car.owner = player;
     this.breaks = player.spec.breaks ?? [];
     return car;
   }
@@ -601,18 +669,13 @@ export class LooseProps {
     if (!blow) return null;
     const given = Math.hypot(blow.b.x, blow.b.z) || 1, ax = Math.cos(car.heading), az = Math.sin(car.heading);
     const side = Math.sign((body.p.x - car.x) * ax + (body.p.z - car.z) * az) || Math.sign(body.jitter) || 1;
-    // The bumper kicks its foot out of the car's way, to the side it stood
-    // on, just clear of it: the car runs on past it as it falls, not through
-    // it. (Not into whatever stands there, a parked car or a wall: then it
-    // falls where it stood.)
-    foot.copy(body.shape.com).applyQuaternion(body.q);
-    const clear = car.halfWidth + KICKED - Math.abs((body.p.x - foot.x - car.x) * ax + (body.p.z - foot.z - car.z) * az);
-    if (clear > 0 && !this.standing(body.p.x - foot.x + ax * side * clear, body.p.z - foot.z + az * side * clear)) { body.p.x += ax * side * clear; body.p.z += az * side * clear; }
     let dx = blow.b.x / given + ax * side * OUTWARD, dz = blow.b.z / given + az * side * OUTWARD;
     const length = Math.hypot(dx, dz), slide = Math.min(2.5, given * SLIDE); dx /= length; dz /= length;
     const turn = Math.min(.9 * Math.sqrt(GRAVITY / body.shape.com.y), Math.max(TOPPLE_LEAST, given * TOPPLE));
     body.w.set(dz * turn, body.jitter * .6, -dx * turn);
+    foot.copy(body.shape.com).applyQuaternion(body.q);
     body.v.crossVectors(body.w, foot).add(t2.set(dx * slide, .5, dz * slide));
+    body.falling = true;
     this.wake(body);
     return { x: blow.a.x, z: blow.a.z, spin: blow.a.spin, closing: blow.closing };
   }
@@ -645,37 +708,41 @@ export class LooseProps {
     return { x: ix / car.mass, z: iz / car.mass, spin: (cx * iz - cz * ix) / inertia, closing: -closing };
   }
   // Anything that moves against a loose piece (`car` as motion() gives one,
-  // with its ground height `y` and `height`): a car's footprint up to its
-  // roof, or, with a `radius`, someone on foot from their `floor` up. The
-  // deepest of the piece's points inside it is put out through the nearest
-  // side (round someone on foot, straight out from them), or the roof for a
-  // piece coming down on a car, and takes the blow there. The way out is
+  // with its ground height `y`, its `height` and its `profile` along its
+  // length, see carProfile), or, with a `radius`, someone on foot from their
+  // `floor` up. The deepest of the piece's points inside it is put out
+  // (see inBody: through the nearest side, end or top; round someone on
+  // foot, straight out from them), and takes the blow there. The way out is
   // shared by weight, as two cars part (see CityTraffic.collidePlayer):
-  // `fixed`, a car on its rails, gives no way, nor does a car's roof, and
-  // some pieces give none (see firm: a car on its rails is stopped by one). Returns what the mover takes back, and
-  // its share of the way out (px, pz), or null.
+  // `fixed`, a car on its rails, gives no way, nor does a car's roof.
+  // Someone on foot is stopped outright by some pieces (see firm); a car
+  // never is: a piece it jams against something that will not give is
+  // crushed (see squeeze), or someone lying there let under it (`under`, the
+  // car's `owner`). Returns what the mover takes back, and its share of the
+  // way out (px, pz), or null.
   contact(body, car) {
     const round = car.radius !== undefined, reach = (round ? car.radius : Math.hypot(car.halfWidth, car.halfLength)) + body.shape.radius;
-    if (Math.abs(body.p.x - car.x) > reach || Math.abs(body.p.z - car.z) > reach || body.p.y - body.shape.radius > car.y + car.height) return null;
-    const cos = Math.cos(car.heading), sin = Math.sin(car.heading), points = body.shape.points, floor = car.y + (car.floor ?? -.3);
+    // (a post still falling goes out through the side of the car it stands on: see falling)
+    const aside = body.falling && !round ? Math.sign((body.p.x - car.x) * Math.cos(car.heading) + (body.p.z - car.z) * Math.sin(car.heading)) || Math.sign(body.jitter) || 1 : 0;
+    if (Math.abs(body.p.x - car.x) > reach || Math.abs(body.p.z - car.z) > reach || body.p.y - body.shape.radius > car.y + car.height) {
+      if (body.under === car.owner) body.under = null;
+      return null;
+    }
+    const points = body.shape.points;
     let depth = 0, best = -1, nx = 0, nz = 0, roof = false;
     for (let i = 0; i < points.length; i += 3) {
       r.set(points[i], points[i + 1], points[i + 2]).applyQuaternion(body.q);
-      const y = body.p.y + r.y, top = car.y + car.height - y;
-      if (y < floor || top < 0) continue;
-      const dx = body.p.x + r.x - car.x, dz = body.p.z + r.z - car.z;
+      const x = body.p.x + r.x, y = body.p.y + r.y, z = body.p.z + r.z;
       if (round) {
-        const distance = Math.hypot(dx, dz), d = car.radius - distance;
+        if (y < car.y + car.floor || y > car.y + car.height) continue;
+        const dx = x - car.x, dz = z - car.z, distance = Math.hypot(dx, dz), d = car.radius - distance;
         if (d <= depth) continue;
         depth = d; best = i; nx = distance > 1e-6 ? dx / distance : 1; nz = distance > 1e-6 ? dz / distance : 0;
         continue;
       }
-      const across = dx * cos + dz * sin, along = dx * sin - dz * cos;
-      const side = car.halfWidth - Math.abs(across), end = car.halfLength - Math.abs(along), d = Math.min(side, end, top);
+      const d = inBody(car, x, y, z, aside);
       if (d <= depth) continue;
-      depth = d; best = i; roof = top === d;
-      if (side < end) { nx = (Math.sign(across) || 1) * cos; nz = (Math.sign(across) || 1) * sin; }
-      else { nx = (Math.sign(along) || 1) * sin; nz = -(Math.sign(along) || 1) * cos; }
+      depth = d; best = i; nx = exit.x; nz = exit.z; roof = exit.roof;
     }
     if (best >= 0) r.set(points[best], points[best + 1], points[best + 2]).applyQuaternion(body.q);
     // Someone on foot is narrower than the gaps between a long piece's
@@ -703,19 +770,28 @@ export class LooseProps {
         }
       }
     }
-    if (best < 0) return null;
-    // A piece that gives no way at all: to someone on foot, anything
-    // heavier than they are (they shove a bin or a chair aside, but lean on
-    // a fallen post in vain) and anyone lying there (they step round them);
-    // to anything pushing it, one pinned against a wall the way it would go
-    // (hit hard, it takes the blow as ever). The mover takes the whole way
-    // out, and meets it as it would the wall.
-    const firm = !roof && ((round && (body.piece.person || body.kind.mass > car.mass)) || this.pinned(body, r, nx, nz, car));
+    if (best < 0 || body.under === car.owner) {
+      if (best < 0 && body.under === car.owner) body.under = null;
+      return null;
+    }
+    // To someone on foot a piece gives no way at all if it outweighs them
+    // (they shove a bin or a chair aside, but lean on a fallen post in vain),
+    // or it is someone lying there (they step round them), or it is pinned
+    // against a wall the way they push it: they meet it as they would the wall
+    const firm = round && (body.piece.person || body.kind.mass > car.mass || this.pinned(body, r, nx, nz, car));
     const share = roof ? 1 : firm ? 0 : car.fixed ? 1 : car.mass / (car.mass + body.kind.mass);
-    const away = depth + .01, px = -nx * away * (1 - share), pz = -nz * away * (1 - share);
-    if (roof) body.p.y += away;
+    let away = depth + .01;
+    if (aside) {
+      // (swept aside no faster than SWEPT times the car's speed, over the step's passes)
+      if (body.sweptAt !== this.steps) { body.sweptAt = this.steps; body.swept = 0; }
+      away = Math.min(away, Math.max(0, (Math.hypot(car.vx, car.vz) * SWEPT + 1) * this.dt - body.swept));
+      body.swept += away;
+    }
+    const px = -nx * away * (1 - share), pz = -nz * away * (1 - share);
+    if (roof) { body.p.y += away; body.riding = this.steps; }
     else { body.p.x += nx * away * share; body.p.z += nz * away * share; }
     body.pool.dirty = true;
+    if (!round && !roof) this.press(body, car, nx, nz);
     if (firm) {
       const at = { x: body.p.x + r.x, z: body.p.z + r.z }, wall = collisionImpulse(car, { ...at, vx: 0, vz: 0, mass: Infinity }, { x: -nx, z: -nz }, at, PROP_SURFACE);
       return { x: wall?.a.x ?? 0, z: wall?.a.z ?? 0, spin: wall?.a.spin ?? 0, closing: wall?.closing ?? 0, px, pz };
@@ -723,15 +799,46 @@ export class LooseProps {
     // A person met by the nose or tail is swept aside off it, as when first
     // hit, rather than pushed on ahead of the car (anything else is pushed
     // straight out: swept off at a slant, furniture looked thrown aside)
-    if (body.kind === KINDS.person && !roof && Math.abs(nx * sin - nz * cos) > .9) {
-      const side = Math.sign((body.p.x - car.x) * cos + (body.p.z - car.z) * sin) || Math.sign(body.jitter) || 1;
-      nx += cos * side * ASIDE * 2; nz += sin * side * ASIDE * 2;
-      const length = Math.hypot(nx, nz); nx /= length; nz /= length;
+    if (body.kind === KINDS.person && !roof && !round) {
+      const cos = Math.cos(car.heading), sin = Math.sin(car.heading);
+      if (Math.abs(nx * sin - nz * cos) > .9) {
+        const side = Math.sign((body.p.x - car.x) * cos + (body.p.z - car.z) * sin) || Math.sign(body.jitter) || 1;
+        nx += cos * side * ASIDE * 2; nz += sin * side * ASIDE * 2;
+        const length = Math.hypot(nx, nz); nx /= length; nz /= length;
+      }
     }
-    const blow = roof ? this.blow(body, car, r, 0, 0, 1, SLICK) : this.blow(body, car, r, nx, nz, .3);
+    const blow = roof ? this.blow(body, car, r, nx, nz, 1, SLICK) : this.blow(body, car, r, nx, nz, .3);
     if (!blow) return share < 1 ? { x: 0, z: 0, spin: 0, closing: 0, px, pz } : null;
     blow.px = px; blow.pz = pz;
     return blow;
+  }
+  // A piece `car` pushes along (nx, nz) this step, itself or through another
+  // (see meet), for a wall to find it jammed (see wall)
+  press(body, car, nx, nz) {
+    if (car.mass < body.kind.mass * JAMS) return;
+    body.pressed = car; body.pressedAt = this.steps;
+    (body.push ??= { x: 0, z: 0 }).x = nx; body.push.z = nz;
+  }
+  // A piece jammed between a car and a wall a few steps running is crushed
+  // (see crush), rather than holding the car up as the wall would. (A wall
+  // pushes back whatever is pushed into it, but only a car keeps on pushing.)
+  squeeze() {
+    for (const body of this.bodies) {
+      if (body.jammed !== this.steps || body.sunk) body.squeezed = 0;
+      else if (++body.squeezed >= SQUEEZED) this.crush(body);
+    }
+  }
+  // Jammed, a piece of furniture is crushed, as an arcade game's debris is:
+  // it bursts into bits and is gone until it goes back (see restore). Someone
+  // knocked down is let under the car instead (see contact), until it has
+  // gone over them.
+  crush(body) {
+    const car = body.pressed;
+    body.squeezed = 0;
+    if (body.piece.person) { body.under = car.owner; return; }
+    this.bits.burst(body.kind.bits ?? 'litter', body.p.x, body.p.y, body.p.z, car.vx * .5, car.vz * .5);
+    this.sound(body.kind.sound, Math.max(4, Math.hypot(car.vx, car.vz)), body.p.x, body.p.z);
+    body.sunk = true; body.pool.dirty = true;
   }
   // Whether a piece has a wall hard behind it the way (nx, nz) a push at
   // `at` (a point of it, from its centre) would move it, near enough square
@@ -760,15 +867,6 @@ export class LooseProps {
     }
     return false;
   }
-  // Whether anything stands at (x, z), in the chunks the last step had
-  standing(x, z) {
-    for (const chunk of this.chunks?.values() ?? []) {
-      const bounds = chunk.collisionBounds;
-      if (!bounds || x < bounds.minX - 10 || x > bounds.maxX + 10 || z < bounds.minZ - 10 || z > bounds.maxZ + 10) continue;
-      for (const solid of chunk.features.colliders) if (!solid.woken && Math.abs(solid.x - x) < solid.reach + KICKED && Math.abs(solid.z - z) < solid.reach + KICKED && inside(solid, x, z)) return true;
-    }
-    return false;
-  }
   // Woken, a piece wakes whatever lay still against it, so nothing is left
   // lying on air when what it lay on is knocked away
   wake(body) {
@@ -777,7 +875,7 @@ export class LooseProps {
     if (was) for (const other of this.bodies) if (other.asleep && !other.sunk && other.p.distanceToSquared(body.p) < (other.shape.radius + body.shape.radius) ** 2) this.wake(other);
   }
   sleep(body) {
-    body.asleep = true; body.v.set(0, 0, 0); body.w.set(0, 0, 0);
+    body.asleep = true; body.falling = false; body.v.set(0, 0, 0); body.w.set(0, 0, 0);
     body.last.p.copy(body.p); body.last.q.copy(body.q); body.pool.dirty = true;
   }
   // One step of a piece on its own: it falls, turns, lands on its points and
@@ -797,6 +895,8 @@ export class LooseProps {
     }
     this.land(body);
     if (chunks) this.walls(body, chunks);
+    // (a post is down once it leans far enough over: see contact)
+    if (body.falling && t1.set(0, 1, 0).applyQuaternion(q).y < Math.cos(DOWN)) body.falling = false;
     // The air wears it down, and on the ground its turn, and its roll (a bin
     // on its side would otherwise roll on down the street). Lying on another
     // piece is lying on the ground (see meet).
@@ -814,10 +914,11 @@ export class LooseProps {
     // (on another piece, it has only just fallen a step's worth onto it again)
     const slow = resting && v.lengthSq() < .25 && w.lengthSq() < .5;
     if (slow && (v.y > -.02 || !body.grounded)) { const hold = Math.exp(-dt * 6); v.multiplyScalar(hold); w.multiplyScalar(hold); }
-    const rest = body.rest;
-    if (slow && rest.p.distanceToSquared(p) < .03 ** 2 && rest.q.angleTo(q) < .03) body.still += dt;
+    // (never asleep on a car's roof: asleep, it would hang there when the car drove off)
+    const riding = body.riding >= this.steps - 1, rest = body.rest;
+    if (slow && !riding && rest.p.distanceToSquared(p) < .03 ** 2 && rest.q.angleTo(q) < .03) body.still += dt;
     else { rest.p.copy(p); rest.q.copy(q); body.still = 0; }
-    if (body.still > .4 || body.awake > 12) this.sleep(body);
+    if (body.still > .4 || (body.awake > 12 && !riding)) this.sleep(body);
   }
   // Each point that has gone into the ground is lifted out of it and takes a
   // blow there: a bounce, and friction against its slide
@@ -906,8 +1007,10 @@ export class LooseProps {
     // half in it
     if (met.parked && body.kind.mass >= HEAVY && this.traffic?.enabled && velocityAt(body, r, pv).length() > KNOCKS && this.traffic.wake(met)) return true;
     p.x += nx * depth; p.z += nz * depth;
-    // (the way the scenery put it out, and when, for a car pushing it: see pinned)
+    // (the way the scenery put it out, and when, for someone on foot pushing it: see pinned)
     if (!met.parked) { (body.wall ??= { x: 0, z: 0 }).x = nx; body.wall.z = nz; body.walled = this.steps; }
+    // (put straight back at a car still pushing it: jammed, see squeeze)
+    if (body.pressedAt >= this.steps - 1 && nx * body.push.x + nz * body.push.z < -.5) body.jammed = this.steps;
     velocityAt(body, r, pv);
     const into = pv.x * nx + pv.z * nz;
     if (into >= 0) return true;
@@ -965,6 +1068,13 @@ export class LooseProps {
     if (innerFree && inner.asleep) this.wake(inner);
     if (outerFree && outer.asleep) this.wake(outer);
     if (closing >= 0) return;
+    // (what a car pushes into another piece pushes that on in turn: a step
+    // later down a chain whose far end meets first here)
+    const flat = Math.hypot(n.x, n.z);
+    if (flat > .5) {
+      if (outer.pressedAt >= this.steps - 1 && inner.pressedAt !== this.steps) this.press(inner, outer.pressed, n.x / flat, n.z / flat);
+      else if (inner.pressedAt >= this.steps - 1 && outer.pressedAt !== this.steps) this.press(outer, inner.pressed, -n.x / flat, -n.z / flat);
+    }
     const give2 = (dir, i, o) => (innerFree ? give(inner, i, dir) : 0) + (outerFree ? give(outer, o, dir) : 0);
     const bounce = -closing > REST ? (inner.kind.bounce + outer.kind.bounce) / 2 : 0;
     J.copy(n).multiplyScalar(-(1 + bounce) * closing / give2(n, ri, ro));
@@ -1002,11 +1112,11 @@ export class LooseProps {
   // kicks light pieces aside and is stopped by heavy ones (see contact).
   update(dt, player, traffic = null, chunks = null) {
     const at = player.groundedPosition;
-    this.steps = (this.steps ?? 0) + 1; this.chunks = chunks; this.traffic = traffic;
+    this.steps = (this.steps ?? 0) + 1; this.traffic = traffic; this.dt = dt;
     this.breaks = player.spec?.breaks ?? [];
     for (let i = this.loose.length - 1; i >= 0; i--) {
       const collider = this.loose[i];
-      if (Math.hypot(collider.x - at.x, collider.z - at.z) > RETURN) this.restore(collider);
+      if (Math.hypot(collider.x - at.x, collider.z - at.z) > RETURN && !(traffic?.enabled && traffic.standsIn(collider))) this.restore(collider);
     }
     // A pedestrian lies still a while before getting up (see PedestrianContacts)
     for (let i = this.people.length - 1; i >= 0; i--) {
@@ -1033,14 +1143,15 @@ export class LooseProps {
         for (let pass = 0; car && pass < PASSES; pass++) {
           const blow = this.contact(body, car);
           if (!blow) break;
-          player.resolveTrafficCollision(blow.px, blow.pz, blow.x, blow.z, blow.spin, player.walker ? blow.closing : Math.hypot(blow.x, blow.z) * FELT);
+          // (a piece is no car to push: the engine is not held to its tyres' grip, see Vehicle.pushing)
+          player.resolveTrafficCollision(blow.px, blow.pz, blow.x, blow.z, blow.spin, player.walker ? blow.closing : Math.hypot(blow.x, blow.z) * FELT, 0, false);
           car = player.walker?.down ? null : this.carOf(player);
         }
         for (const other of cars) {
           if (!other.car.visible || Math.abs(other.position.x - body.p.x) > 8 || Math.abs(other.position.z - body.p.z) > 8) continue;
           for (let pass = 0; pass < PASSES; pass++) {
-            const motion = traffic.motion(other);
-            motion.y = other.position.y; motion.height = other.height ?? other.spec.height ?? ROOF; motion.fixed = !other.loose && !other.recover;
+            const motion = traffic.motion(other), profile = other.profile ?? other.spec.profile;
+            motion.y = other.position.y; motion.profile = profile; motion.height = profile?.height ?? ROOF; motion.fixed = !other.loose && !other.recover; motion.owner = other;
             const hit = this.contact(body, motion);
             if (!hit) break;
             traffic.strike(other, hit.x, hit.z, hit.spin);
@@ -1050,6 +1161,7 @@ export class LooseProps {
         if (!body.asleep) this.step(body, dt, chunks);
       }
       this.meetAll();
+      this.squeeze();
     }
     this.bits.update(dt);
   }

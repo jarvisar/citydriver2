@@ -25,6 +25,7 @@ import { NightLighting } from './night-lighting.js';
 import { LooseProps } from './loose-props.js';
 import { cityDistrict, citySoundscape, cityHeight, nearestLanePose, journeyStart, lanePose, roadAt, surfaceAt, waterAt } from './world/city-route.js';
 import { CITY } from './world/city.js';
+import { signSheet } from './world/city-signs.js';
 import { loadingStage } from './loading-status.js';
 import { navGraph } from './world/nav-graph.js';
 import { CityGuide } from './city-guide.js';
@@ -1156,6 +1157,8 @@ async function boot() {
     vehicle.render(0, world.origin); traffic.render(1, world.origin); rendering.update(vehicle.car, 1, world.origin); updateHud(); updateJourneyUi(); updateViewUi(); updateGraphicsUi();
     nightLighting.update(world, vehicle, traffic, weather.state.lightLevel);
     await loadingStage('graphics');
+    // (the shop signs are blank until their sheet has loaded)
+    await signSheet;
     await rendering.precompile([...world.warmupObjects(), ...taxiView.warmupObjects(), ...demolitionView.warmupObjects(), createWalkerModel().figure]);
     try { taxiView.navigation.prepare(); } catch { /* The first fare tries again. */ }
     changingJourney = false;

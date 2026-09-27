@@ -5,7 +5,7 @@ import { createTrafficModels, TRAFFIC_MODELS, TRAFFIC_COLORS } from './traffic-m
 import { trafficContact } from './traffic.js';
 import { collisionImpulse, contactPoint, footprintMass, heft, rock, rockFrom, skid, LOOSE_GRIP, HANDBRAKE_GRIP, SCENERY_SURFACE } from './impact.js';
 import { sceneryContacts } from './collision.js';
-import { topOf } from './vehicle.js';
+import { carProfile } from './car-profile.js';
 import { JunctionTraffic, approachControl } from './city-junctions.js';
 import { turnPath, approachSpeed, wayOn, bendSpeed } from './world/lane-paths.js';
 const up = new THREE.Vector3(0, 1, 0), tilt = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -34,7 +34,7 @@ const LOOSE = 2.5, LOOSE_SPIN = .6, STRANDED = 3, WAIT = 4, OUT_OF_SIGHT = 120;
 const DAZE = .1, DAZE_MOST = 1.6;
 // Stand-ins for parked cars knocked loose, of each model: made at the start,
 // and at most (more are made as a rampage needs them); and how far off the
-// player must be before one is put back in its bay
+// player must be before one is put back in its bay (once no other car is in it)
 const PARKED_POOL = 4, PARKED_MOST = 16, PARKED_RETURN = 150;
 // How far behind a loose car the scenery is looked for, to tell whether a
 // push would drive it into it (see pinned)
@@ -108,8 +108,8 @@ export class CityTraffic {
     this.vehicles = Array.from({ length: 24 }, (_, index) => {
       const model = this.models.create(index % TRAFFIC_MODELS.length, TRAFFIC_COLORS[index % TRAFFIC_COLORS.length]);
       this.group.add(model.car);
-      // (how high it reaches, for what lands on its roof: see LooseProps.contact)
-      return { ...model, index, generation: 0, height: topOf(model.car), position: new THREE.Vector3(), previousPosition: new THREE.Vector3(), quaternion: new THREE.Quaternion(), previousQuaternion: new THREE.Quaternion() };
+      // (its shape, for loose pieces to meet: see carProfile)
+      return { ...model, index, generation: 0, profile: this.profileOf(model), position: new THREE.Vector3(), previousPosition: new THREE.Vector3(), quaternion: new THREE.Quaternion(), previousQuaternion: new THREE.Quaternion() };
     });
     // Stand-ins for parked cars knocked loose (see wake)
     this.woken = []; this.standInLimit = PARKED_MOST;
@@ -126,10 +126,17 @@ export class CityTraffic {
     this.onDamage = null;
     this.reset(route, s, journey, u);
   }
+  // A model's shape along its length (see carProfile), read once for each
+  // of the fleet's models
+  profileOf(model) {
+    this.profiles ??= new Map();
+    if (!this.profiles.has(model.spec.name)) this.profiles.set(model.spec.name, carProfile(model.car, model.spec.length));
+    return this.profiles.get(model.spec.name);
+  }
   addStandIn(model) {
     const made = this.models.create(model, TRAFFIC_COLORS[0]);
     made.car.visible = false; this.group.add(made.car);
-    const car = { ...made, index: 100 + this.woken.length, height: topOf(made.car), parked: null, loose: null, rock: null, s: 0, u: 0, heading: 0, position: new THREE.Vector3(), previousPosition: new THREE.Vector3(), quaternion: new THREE.Quaternion(), previousQuaternion: new THREE.Quaternion() };
+    const car = { ...made, index: 100 + this.woken.length, profile: this.profileOf(made), parked: null, loose: null, rock: null, s: 0, u: 0, heading: 0, position: new THREE.Vector3(), previousPosition: new THREE.Vector3(), quaternion: new THREE.Quaternion(), previousQuaternion: new THREE.Quaternion() };
     this.woken.push(car);
     return car;
   }
@@ -243,11 +250,15 @@ export class CityTraffic {
     car.slope = 0; car.around = null; car.merging = false;
   }
   // Moved a little, as when parted from a car it overlaps
-  nudge(car, dx, dz) {
-    // (on its rails, only back or on along them: backed off what it cannot
-    // shove, it waits there rather than creeping into it)
-    if (car.edge && !car.loose && !car.recover) { car.along = Math.max(0, car.along + dx * Math.sin(car.laneHeading) - dz * Math.cos(car.laneHeading)); this.pose(car); return; }
-    car.u += dx; car.s -= dz; car.moved = true; this.pose(car);
+  nudge(car, dx, dz) { car.u += dx; car.s -= dz; car.moved = true; this.pose(car); }
+  // Whether a car other than `except` stands on a collider's spot (a parked
+  // car's bay, or where furniture stood: see LooseProps.update), as a disc of its reach
+  standsIn(collider, except = null) {
+    return [this.vehicles, this.woken, this.playerCars].some(list => list.some(other => {
+      if (other === except || !other.car.visible || !(list === this.playerCars || other.edge || other.parked)) return false;
+      const a = this.motion(other), cos = Math.cos(a.heading), sin = Math.sin(a.heading), dx = collider.x - a.x, dz = collider.z - a.z;
+      return Math.abs(dx * cos + dz * sin) < a.halfWidth + collider.reach && Math.abs(dx * sin - dz * cos) < a.halfLength + collider.reach;
+    }));
   }
   // Whether another car stands where this one does
   crowded(car) {
@@ -293,7 +304,7 @@ export class CityTraffic {
     sceneryContacts(() => ({ x: car.u, z: -car.s, heading: car.heading, halfWidth, halfLength }), chunks.values(), (contact, solid) => {
       if (solid.parked && this.wake(solid, car)) return;
       // (and furniture it slides into flies, taking a little of its speed: see LooseProps)
-      const knocked = solid.prop && this.props?.knock(solid, contact, { ...this.motion(car), y: car.position.y, height: car.height });
+      const knocked = solid.prop && this.props?.knock(solid, contact, { ...this.motion(car), y: car.position.y, height: car.profile.height });
       if (knocked) { this.strike(car, knocked.x, knocked.z, knocked.spin); return; }
       const point = contact.point, blow = collisionImpulse(this.motion(car), { x: point.x, z: point.z, vx: 0, vz: 0, mass: Infinity }, contact, point, SCENERY_SURFACE);
       if (blow) { this.strike(car, blow.a.x, blow.a.z, blow.a.spin); this.onDamage?.(car, blow.closing); }
@@ -949,7 +960,7 @@ export class CityTraffic {
     }
     for (const car of this.woken) {
       if (!car.parked) continue;
-      if (Math.hypot(car.s - player.s, car.u - player.u) > PARKED_RETURN) { this.release(car); continue; }
+      if (Math.hypot(car.s - player.s, car.u - player.u) > PARKED_RETURN && !this.standsIn(car.parked, car)) { this.release(car); continue; }
       car.previousPosition.copy(car.position); car.previousQuaternion.copy(car.quaternion);
       this.slide(car, dt, chunks);
       if (car.rock && !rock(car.rock, dt)) car.rock = null;

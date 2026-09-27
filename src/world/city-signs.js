@@ -1,44 +1,71 @@
 import * as THREE from 'three';
 import { CITY_PLACES, SPACE_NAMES } from './city-places.js';
-import { SHOP_BRANDS, placeName } from './city-businesses.js';
-import { SHOP_SIGN_DESIGNS } from './city-shop-signs.js';
+import { placeName } from './city-businesses.js';
 import { PLACE_SIGN_DESIGNS } from './city-place-signs.js';
+import { SHEET_SIGNS, SIGN_SHEET_URL } from './city-sign-sheet.js';
 
-export const SHOP_NAMES = Object.keys(SHOP_BRANDS);
-// Art direction is chosen for each business and public service, independently
-// of the city's random stream. Related public signs share a design on purpose.
-export const SHOP_SIGNS = SHOP_NAMES.flatMap(category => SHOP_BRANDS[category].map((name, variant) => ({
-  ...SHOP_SIGN_DESIGNS[category][variant], category, name,
-})));
+// Every sign face in the city shares one atlas. Businesses (shops, offices,
+// warehouses, flats) take theirs from the painted sign sheet by use (see
+// city-sign-sheet.js and city-building-signs.js). The discovery places keep
+// boards of their own, drawn here, since the sheet has nothing to stand in
+// for City Hall or the observatory. Related public signs share a design.
+export const BUSINESS_SIGNS = SHEET_SIGNS.map(sign => ({ ...sign, aspect: sign.rect[2] / sign.rect[3] }));
 export const DISCOVERY_SIGNS = Object.keys(CITY_PLACES).flatMap(type => SPACE_NAMES[type].map((_, variant) => ({
   ...PLACE_SIGN_DESIGNS[type][variant], type, variant, name: placeName(type, variant),
 })));
-export const SIGN_CATALOG = [...SHOP_SIGNS, ...DISCOVERY_SIGNS].map((sign, tile) => Object.assign(sign, { tile }));
-const shopsByCategory = Object.fromEntries(SHOP_NAMES.map(category => [category, SHOP_SIGNS.filter(sign => sign.category === category)]));
+export const SIGN_CATALOG = [...BUSINESS_SIGNS, ...DISCOVERY_SIGNS].map((sign, tile) => Object.assign(sign, { tile }));
+export const SIGN_USES = ['shop', 'firm', 'works', 'home', 'upstairs', 'vacant', 'decal'];
+export const SIGNS_BY_USE = Object.fromEntries(SIGN_USES.map(use => [use, BUSINESS_SIGNS.filter(sign => sign.uses.includes(use))]));
 
-// A block's shops are dealt from the whole catalogue in turn, each block from
-// a start and a stride of its own that changes the kind of shop at every
-// step, so no two shops round a block share a name and a street of shops is
-// not a bakery beside a bakery.
+// A block deals its buildings their signs of each use in turn, from a start
+// and a stride of its own (one that shares no factor with the number of signs
+// to deal), so no two buildings round a block with fewer lots than signs show
+// the same one, and a street of shops is not a bakery beside a bakery. (A
+// private hash leaves the architecture's seeded random sequence untouched.)
 const STRIDES = [13, 37, 49, 73, 97, 109];
 const mix = n => { n = Math.imul(n ^ (n >>> 16), 0x45d9f3b); return (n ^ (n >>> 16)) >>> 0; };
-export function shopSignFor(building) {
-  // (a private hash leaves the architecture's seeded random sequence untouched)
-  if (building.shopSlot !== undefined) {
-    const block = mix(Math.imul(building.shopBlock, 0x9e3779b1) ^ 7411), stride = STRIDES[block % STRIDES.length];
-    return SHOP_SIGNS[(mix(block) + building.shopSlot * stride) % SHOP_SIGNS.length];
-  }
-  const choices = shopsByCategory[building.shop];
-  return choices[mix(building.seed) % choices.length];
+const gcd = (a, b) => b ? gcd(b, a % b) : a;
+export function dealSign(building, use) {
+  const signs = SIGNS_BY_USE[use], salt = Math.imul(SIGN_USES.indexOf(use) + 1, 0x632be5ab);
+  if (building.shopSlot === undefined) return signs[mix(building.seed ^ salt) % signs.length];
+  const block = mix(Math.imul(building.shopBlock, 0x9e3779b1) ^ 7411 ^ salt), strides = STRIDES.filter(s => gcd(s, signs.length) === 1);
+  return signs[(mix(block) + building.shopSlot * strides[block % strides.length]) % signs.length];
 }
+export const shopSignFor = building => dealSign(building, 'shop');
 export function discoverySignFor(type, variant = 0) {
   return DISCOVERY_SIGNS.find(sign => sign.type === type && sign.variant === variant) ?? DISCOVERY_SIGNS.find(sign => sign.type === type);
 }
 
-// All silhouettes are alpha cutouts on the same two-triangle plane. Tiles use
-// padding and a half-texel inset; only one atlas is uploaded per world.
-const atlasRows = Math.ceil(SIGN_CATALOG.length / 8);
-export const SIGN_ATLAS = { width: 2048, height: atlasRows * 128, columns: 8, rows: atlasRows, tileWidth: 256, tileHeight: 128, padding: 4 };
+// The atlas gives every face a rectangle at its own proportions, laid in rows,
+// tallest first. The sheet's designs go in at .42 of their size (a small
+// sticker at up to its own), about the texels a metre a fascia needs from
+// across the street, and the drawn boards 120 px tall. Each keeps a gutter of
+// its own edge pixels so that mipmaps do not bleed one face into the next.
+const ATLAS_WIDTH = 4096, GUTTER = 4, SHEET_SCALE = .42, SMALL = 20000, DRAWN_HEIGHT = 120;
+function faceSize(sign) {
+  if (!sign.rect) return [Math.round(DRAWN_HEIGHT * sign.aspect), DRAWN_HEIGHT];
+  const [, , w, h] = sign.rect, scale = Math.min(1, Math.max(SHEET_SCALE, Math.sqrt(SMALL / (w * h))));
+  return [Math.round(w * scale), Math.round(h * scale)];
+}
+function layAtlas(signs) {
+  let x = 0, y = 0, row = 0;
+  for (const sign of signs.slice().sort((a, b) => faceSize(b)[1] - faceSize(a)[1] || a.tile - b.tile)) {
+    const [w, h] = faceSize(sign);
+    if (x + w + 2 * GUTTER > ATLAS_WIDTH) { y += row; x = 0; row = 0; }
+    sign.atlas = [x + GUTTER, y + GUTTER, w, h];
+    x += w + 2 * GUTTER; row = Math.max(row, h + 2 * GUTTER);
+  }
+  return Math.ceil((y + row) / 16) * 16;
+}
+export const SIGN_ATLAS = { width: ATLAS_WIDTH, height: layAtlas(SIGN_CATALOG), gutter: GUTTER };
+// A sign's instances carry its rectangle in their colour, for the shader: the
+// left edge, the bottom edge counted up (the texture is flipped), and the
+// width and height packed into one (exact in a float up to 4096 x 4096)
+for (const sign of SIGN_CATALOG) {
+  const [x, y, w, h] = sign.atlas;
+  sign.tint = [x, SIGN_ATLAS.height - y - h, w * 4096 + h];
+}
+
 function outline(ctx, shape, w, h) {
   const e = 5;
   ctx.beginPath();
@@ -61,34 +88,17 @@ function lettering(ctx, text, x, y, width, size, font, weight = 'bold') {
   ctx.font = `${weight} ${fitted}px ${font}`;
   ctx.fillText(text, x, y);
 }
-// A few flat trade/service symbols, with strokes thick enough for the atlas.
+// A few flat public-service symbols, with strokes thick enough for the atlas.
 // These are identifiers, not a decorative badge added to every sign.
 function pictogram(ctx, icon, x, y, size) {
   ctx.save(); ctx.translate(x, y); ctx.scale(size, size);
   ctx.lineWidth = .065; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   ctx.strokeStyle = ctx.fillStyle;
   const line = points => { ctx.beginPath(); points.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.stroke(); };
-  const circle = (x, y, r) => { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke(); };
-  if (icon === 'cup') {
-    line([[-.32, -.26], [.22, -.26], [.19, .23], [-.26, .23], [-.32, -.26]]);
-    ctx.beginPath(); ctx.arc(.23, -.05, .18, -Math.PI / 2, Math.PI / 2); ctx.stroke();
-    line([[-.36, .35], [.31, .35]]);
-  } else if (icon === 'record') {
-    circle(0, 0, .4); circle(0, 0, .14);
-    ctx.beginPath(); ctx.arc(0, 0, .28, -1.3, .1); ctx.stroke();
-  } else if (icon === 'bicycle') {
-    circle(-.3, .19, .2); circle(.3, .19, .2);
-    line([[-.3, .19], [-.13, -.16], [.08, .19], [-.3, .19], [.18, -.18], [.3, .19]]);
-    line([[.18, -.18], [.13, -.32], [.27, -.32]]); line([[-.23, -.2], [-.08, -.2]]);
-  } else if (icon === 'leaf') {
+  if (icon === 'leaf') {
     ctx.beginPath(); ctx.moveTo(-.25, .3); ctx.quadraticCurveTo(-.5, -.3, .31, -.4);
     ctx.quadraticCurveTo(.47, .31, -.25, .3); ctx.fill();
     line([[-.33, .43], [-.08, .08]]);
-  } else if (icon === 'book') {
-    line([[0, .32], [-.38, .23], [-.38, -.34], [0, -.25], [.38, -.34], [.38, .23], [0, .32], [0, -.25]]);
-  } else if (icon === 'bowl') {
-    ctx.beginPath(); ctx.arc(0, -.04, .38, 0, Math.PI); ctx.closePath(); ctx.stroke();
-    line([[-.19, .4], [.19, .4]]); line([[-.05, -.2], [.37, -.4]]); line([[-.12, -.3], [.28, -.5]]);
   } else if (icon === 'cross') {
     ctx.fillRect(-.12, -.4, .24, .8); ctx.fillRect(-.4, -.12, .8, .24);
   } else if (icon === 'rail') {
@@ -103,36 +113,7 @@ function pictogram(ctx, icon, x, y, size) {
   }
   ctx.restore();
 }
-function shopLettering(ctx, sign, w, h, x, width) {
-  const trade = sign.shopType, side = trade && sign.typePosition === 'side';
-  const above = trade && sign.typePosition === 'above', band = trade && sign.layout === 'band';
-  const lines = (sign.lines ?? [sign.name]).map(line => sign.uppercase ? line.toUpperCase() : line);
-  const two = lines.length > 1, scales = lines.map((_, i) => sign.lineScales?.[i] ?? 1);
-  if (side) {
-    x = w * .075; width = w * .55; ctx.textAlign = 'left';
-    ctx.fillStyle = sign.accent; ctx.fillRect(w * .665, h * .24, 2, h * .52);
-  }
-  const size = h * (sign.nameSize ?? (two ? .30 : .41));
-  // Explicit line breaks and emphasis belong to each business's lettering.
-  // A trade label always remains secondary, even on a long, fitted name.
-  const fit = Math.min(1, ...lines.map((line, i) => {
-    ctx.font = `${sign.weight} ${size * scales[i]}px ${sign.font}`;
-    return width / Math.max(1, ctx.measureText(line).width);
-  }));
-  const centre = side || !trade ? .51 : band ? .35 : above ? .60 : sign.shape === 'arch' ? .46 : .42;
-  ctx.fillStyle = sign.ink;
-  lines.forEach((line, i) => lettering(ctx, line, x, h * (centre + (i - (lines.length - 1) / 2) * .31),
-    width, size * scales[i] * fit, sign.font, sign.weight));
-  if (!trade) return;
-  const tradeSize = Math.min(h * (sign.typeSize ?? .16), size * fit * .65);
-  ctx.fillStyle = band ? sign.background : sign.ink;
-  if (side) ctx.textAlign = 'center';
-  const framed = sign.layout === 'frame';
-  const tradeY = side ? .51 : above ? (framed ? .24 : .20) : band ? .84 : two ? (framed ? .79 : .84) : .77;
-  lettering(ctx, sign.typeUppercase ? trade.toUpperCase() : trade, side ? w * .81 : x,
-    h * tradeY, side ? w * .23 : width * .94,
-    tradeSize, 'sans-serif', 'normal');
-}
+// A discovery place's board, 512 wide and 512 / aspect high
 export function drawSign(ctx, sign) {
   const w = 512, h = w / sign.aspect;
   ctx.save();
@@ -146,20 +127,15 @@ export function drawSign(ctx, sign) {
   } else if (sign.layout === 'marquee') {
     ctx.fillStyle = sign.accent;
     for (const y of [.11, .87]) ctx.fillRect(w * .06, h * y, w * .88, Math.max(3, h * .025));
-  } else if (sign.layout === 'band' && (sign.shopType || sign.subtitle)) {
+  } else if (sign.layout === 'band' && sign.subtitle) {
     ctx.fillStyle = sign.ink; ctx.fillRect(5, h * .69, w - 10, h * .31 - 5);
   }
-
   const left = sign.layout === 'left', split = sign.layout === 'split';
   const inset = sign.shape === 'oval' ? .74 : sign.layout === 'frame' ? .80 : .85;
   const x = left ? w * .08 : split ? w * .62 : w / 2, width = w * (split ? .61 : inset);
   if (left) ctx.textAlign = 'left';
   ctx.fillStyle = sign.ink;
   if (split && sign.icon) pictogram(ctx, sign.icon, w * .15, h * .5, Math.min(h * .64, w * .18));
-  if (sign.category) {
-    shopLettering(ctx, sign, w, h, x, width);
-    ctx.restore(); return;
-  }
   const lines = (sign.lines ?? [sign.name]).map(line => sign.uppercase ? line.toUpperCase() : line);
   const band = sign.layout === 'band' && sign.subtitle, two = lines.length > 1;
   const centre = band ? .36 : sign.subtitle ? .42 : .51;
@@ -183,6 +159,50 @@ export function signCore(sign, width, height) {
   const [w, h, y] = CORES[sign.shape] ?? CORES.plaque;
   return { width: width * w, height: height * h, y: height * y };
 }
+
+// The sheet, loading as soon as a page imports this: null where there is no
+// page (Node), or if it cannot be had (its signs are then left blank)
+// (decoded off the main thread, not at the first drawImage)
+export const signSheet = globalThis.document ? new Promise(resolve => {
+  const image = new Image();
+  image.src = SIGN_SHEET_URL;
+  image.decode().then(() => resolve(image), () => { console.warn('The sign sheet did not load'); resolve(null); });
+}) : Promise.resolve(null);
+// The atlas is drawn once a page: the discovery boards at once, the sheet's
+// designs as soon as it has loaded. Each face's edge pixels are copied out
+// into its gutter.
+let atlasCanvas = null;
+function spread(ctx, [x, y, w, h]) {
+  const g = GUTTER, canvas = ctx.canvas;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(canvas, x, y, w, 1, x, y - g, w, g);
+  ctx.drawImage(canvas, x, y + h - 1, w, 1, x, y + h, w, g);
+  ctx.drawImage(canvas, x, y - g, 1, h + 2 * g, x - g, y - g, g, h + 2 * g);
+  ctx.drawImage(canvas, x + w - 1, y - g, 1, h + 2 * g, x + w, y - g, g, h + 2 * g);
+  ctx.imageSmoothingEnabled = true;
+}
+function drawAtlas() {
+  const canvas = document.createElement('canvas'); canvas.width = SIGN_ATLAS.width; canvas.height = SIGN_ATLAS.height;
+  const ctx = canvas.getContext('2d');
+  for (const sign of DISCOVERY_SIGNS) {
+    const [x, y, w, h] = sign.atlas;
+    ctx.save(); ctx.translate(x, y); ctx.scale(w / 512, h / (512 / sign.aspect));
+    drawSign(ctx, sign); ctx.restore();
+    spread(ctx, sign.atlas);
+  }
+  signSheet.then(image => {
+    if (!image) return;
+    ctx.imageSmoothingQuality = 'high';
+    for (const sign of BUSINESS_SIGNS) {
+      const [x, y, w, h] = sign.atlas;
+      if (sign.backing) { ctx.fillStyle = sign.backing; ctx.fillRect(x, y, w, h); }
+      ctx.drawImage(image, ...sign.rect, x, y, w, h);
+      spread(ctx, sign.atlas);
+    }
+  });
+  return canvas;
+}
+
 // The painted faces, and a board for each: the same silhouette in dark paint
 // a little bigger, behind the face, so a sign's board follows its shape (an
 // oval board behind an oval sign) rather than showing a box's corners
@@ -192,25 +212,22 @@ export function createSignMaterials() {
 }
 export function createSignMaterial({ map: shared = undefined, edge = null } = {}) {
   let map = shared ?? null;
-  const { width, height, columns, rows, tileWidth, tileHeight, padding } = SIGN_ATLAS;
+  const { width, height } = SIGN_ATLAS;
   if (shared === undefined && globalThis.document) {
-    const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    for (const sign of SIGN_CATALOG) {
-      ctx.save();
-      ctx.translate(sign.tile % columns * tileWidth + padding, Math.floor(sign.tile / columns) * tileHeight + padding);
-      ctx.scale((tileWidth - 2 * padding) / 512, (tileHeight - 2 * padding) / (512 / sign.aspect));
-      drawSign(ctx, sign); ctx.restore();
-    }
-    map = new THREE.CanvasTexture(canvas); map.colorSpace = THREE.SRGBColorSpace;
+    atlasCanvas ??= drawAtlas();
+    map = new THREE.CanvasTexture(atlasCanvas); map.colorSpace = THREE.SRGBColorSpace;
+    // (fascias are mostly seen at a slant, from along the street)
+    map.anisotropy = 8;
+    signSheet.then(image => { if (image) map.needsUpdate = true; });
   }
   const material = new THREE.MeshBasicMaterial({ map, alphaTest: .5, toneMapped: false, side: edge ? THREE.DoubleSide : THREE.FrontSide });
   material.userData.signAtlas = true;
   const ink = edge ? new THREE.Color(edge) : null;
-  material.customProgramCacheKey = () => `citydriver-sign-atlas-v2-${columns}-${rows}${edge ? '-edge' : ''}`;
+  material.customProgramCacheKey = () => `citydriver-sign-atlas-v3-${width}x${height}${edge ? '-edge' : ''}`;
   material.onBeforeCompile = shader => {
-    // Reuse instanceColor as a tile index; no per-sign uniforms, geometries or
-    // per-frame uploads. Keep the atlas colors independent of this index.
+    // Reuse instanceColor as the face's atlas rectangle (see tint); no
+    // per-sign uniforms, geometries or per-frame uploads. Keep the atlas
+    // colours independent of it.
     shader.vertexShader = shader.vertexShader.replace('#include <color_vertex>', `
         #ifdef USE_INSTANCING_COLOR
           vColor = vec4(1.0);
@@ -219,10 +236,8 @@ export function createSignMaterial({ map: shared = undefined, edge = null } = {}
       .replace('#include <uv_vertex>', `
         #include <uv_vertex>
         #if defined(USE_MAP) && defined(USE_INSTANCING_COLOR)
-          float tile = floor(instanceColor.r + 0.5);
-          vec2 cell = vec2(mod(tile, ${columns}.0), ${rows - 1}.0 - floor(tile / ${columns}.0));
-          vMapUv = (cell * vec2(${tileWidth}.0, ${tileHeight}.0) + vec2(${padding + .5})
-            + uv * vec2(${tileWidth - 2 * padding - 1}.0, ${tileHeight - 2 * padding - 1}.0)) / vec2(${width}.0, ${height}.0);
+          float faceWidth = floor(instanceColor.b / 4096.0), faceHeight = instanceColor.b - faceWidth * 4096.0;
+          vMapUv = (instanceColor.rg + 0.5 + uv * vec2(faceWidth - 1.0, faceHeight - 1.0)) / vec2(${width}.0, ${height}.0);
         #endif
       `);
     // A board keeps only its sign's silhouette, in its own flat colour

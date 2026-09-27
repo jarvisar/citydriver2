@@ -134,13 +134,13 @@ test('every venue is built as its landmark, with its name on it', () => {
       if (!cells.has(key)) cells.set(key, new CityChunk(world, ix, iz));
       const chunk = cells.get(key);
       assert.ok(chunk.features.buildings.some(b => b.type === `landmark-${place.type}` && Math.hypot(b.x - place.u, b.s - place.s) < 1), `${place.name} is not built`);
-      // (a sign board's instance colour is its tile in the sign atlas)
-      const tile = discoverySignFor(place.type, place.variant).tile, colour = new THREE.Color(), tiles = [];
+      // (a sign board's instance colour is its face's rectangle in the sign atlas)
+      const tint = discoverySignFor(place.type, place.variant).tint.join(), colour = new THREE.Color(), tints = [];
       chunk.group.traverse(mesh => {
         if (!mesh.name.endsWith('sign-board')) return;
-        for (let i = 0; i < mesh.count; i++) { mesh.getColorAt(i, colour); tiles.push(Math.round(colour.r)); }
+        for (let i = 0; i < mesh.count; i++) { mesh.getColorAt(i, colour); tints.push(colour.toArray().join()); }
       });
-      assert.ok(tiles.includes(tile), `${place.name} has no name on it`);
+      assert.ok(tints.includes(tint), `${place.name} has no name on it`);
       for (const c of chunk.features.colliders) assert.ok(Number.isFinite(c.x) && Number.isFinite(c.z) && c.reach > 0);
     }
     for (const chunk of cells.values()) chunk.dispose();

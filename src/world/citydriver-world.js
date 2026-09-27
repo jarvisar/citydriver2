@@ -218,7 +218,7 @@ function* renderBatchSteps(group, batches, east = 0, start = 0) {
       const matrix = cityItemMatrix(item, east, start, transform.matrix);
       mesh.setMatrixAt(i, matrix); mesh.setColorAt(i, setColor(tint, item.color));
       if (item.wakeable) item.render = { mesh, index: i };
-      if (item.signTile !== undefined) mesh.setColorAt(i, tint.setRGB(item.signTile, 0, 0));
+      if (item.signTile !== undefined) mesh.setColorAt(i, tint.setRGB(...item.signTile));
       if (key === 'residents') setWalkerAppearance(mesh, i, item.appearance);
     }
     finishBatchMesh(mesh, batchFlags(key, material), structure);
@@ -352,17 +352,24 @@ export class CityChunk {
   signFace(key, sign, x, y, s, yaw, width, height, back = .05, border = .09) {
     if (this.distant || !sign) return;
     const nx = Math.sin(yaw), ns = -Math.cos(yaw);
-    this.item(key, windowGeometry, this.materials.signs, [x, y, -s], [width, height, 1], '#ffffff', yaw).signTile = sign.tile;
-    if (back !== null) this.item('sign-edge', windowGeometry, this.materials.signEdges, [x - nx * back, y, -(s - ns * back)], [width + 2 * border, height + 2 * border, 1], '#ffffff', yaw).signTile = sign.tile;
+    this.item(key, windowGeometry, this.materials.signs, [x, y, -s], [width, height, 1], '#ffffff', yaw).signTile = sign.tint;
+    if (back !== null) this.item('sign-edge', windowGeometry, this.materials.signEdges, [x - nx * back, y, -(s - ns * back)], [width + 2 * border, height + 2 * border, 1], '#ffffff', yaw).signTile = sign.tint;
+  }
+  // A board painted on both faces, `gap` metres either side of its middle,
+  // the dark silhouette between them: the first face looks along the yaw
+  doubleSign(key, sign, x, y, s, yaw, width, height, gap = .045, border = .09) {
+    if (this.distant || !sign) return;
+    const nx = Math.sin(yaw), ns = -Math.cos(yaw);
+    for (const side of [1, -1]) this.signFace(key, sign, x + nx * side * gap, y, s + ns * side * gap, side > 0 ? yaw : yaw + Math.PI, width, height, null);
+    this.item('sign-edge', windowGeometry, this.materials.signEdges, [x, y, -s], [width + 2 * border, height + 2 * border, 1], '#ffffff', yaw).signTile = sign.tint;
   }
   // A free-standing board, painted on both faces, its bottom `bottom` above
   // the ground, on two posts or (`plinth`) a stone base: the posts and the
   // board's core run up behind the faces, wherever the sign's outline is
   standingSign(sign, x, s, yaw, width = 4.2, bottom = 1.9, plinth = null) {
     if (this.distant || !sign) return;
-    const height = width / sign.aspect, y = PAVEMENT_LEVEL + bottom + height / 2, ex = Math.cos(yaw), es = Math.sin(yaw), nx = Math.sin(yaw), ns = -Math.cos(yaw);
-    for (const side of [1, -1]) this.signFace('sign-board', sign, x + nx * side * .045, y, s + ns * side * .045, side > 0 ? yaw : yaw + Math.PI, width, height, null);
-    this.item('sign-edge', windowGeometry, this.materials.signEdges, [x, y, -s], [width + .18, height + .18, 1], '#ffffff', yaw).signTile = sign.tile;
+    const height = width / sign.aspect, y = PAVEMENT_LEVEL + bottom + height / 2, ex = Math.cos(yaw), es = Math.sin(yaw);
+    this.doubleSign('sign-board', sign, x, y, s, yaw, width, height);
     const core = signCore(sign, width, height);
     this.box(x, y + core.y, s, core.width, core.height, .07, '#2f3538', 'solid', yaw);
     if (plinth) {

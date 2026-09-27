@@ -265,9 +265,9 @@ test('shop entrances, glazing, awnings and signs fit narrow, wide and mirrored f
     const boxes = [], signs = [], c = { distant, bodies: new Surface(), materials: { glass: {} },
       box(x, y, s, w, h, d, colour, kind) { boxes.push({ x, y, s, w, h, d, colour, kind }); },
       item(key, geometry, material, p, scale, colour) { boxes.push({ x: p[0], y: p[1], s: -p[2], w: scale[0], h: scale[1], colour, kind: 'glass' }); },
-      signFace(key, sign, x, y, s, yaw, w, h) { signs.push({ x, y, s, w, h }); } };
+      signFace(key, sign, x, y, s, yaw, w, h) { signs.push({ x, y, s, w, h }); }, doubleSign() {} };
     const f = edgeFacade(c, { x: 13, y: 27 }, { x: 13 + span * .6, y: 27 + span * .8 });
-    shopFront(c, { type: 'apartment', variation, accent: '#386f73', shop: 'CAFE', seed: 41 }, f, 5.4, true);
+    shopFront(c, { type: 'apartment', variation, accent: '#386f73', seed: 41 }, f, 5.4, true);
     const local = boxes.map(p => ({ ...p, offset: f.local(p.x, p.s).offset }));
     const doors = local.filter(p => p.kind === 'glass' && p.y - p.h / 2 < PAVEMENT_LEVEL + .25);
     assert.equal(doors.length, span >= 12 ? 2 : 1, 'one shop door, plus an upstairs entrance where there is room');

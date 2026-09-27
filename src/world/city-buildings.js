@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { seededRandom } from './route.js';
 import { PAVEMENT_LEVEL as G } from './city-route.js';
 import { CITY, cityStyleDistrict } from './city.js';
-import { SHOP_NAMES, shopSignFor } from './city-signs.js';
+import { buildingSignage, shopSigns, upstairsSign, crownSign, lobbySign, worksSign } from './city-building-signs.js';
 import { grassArea } from './city-grass.js';
 import { placeForLot, placeForBlock } from '../city-exploration.js';
 import { buildLandmark } from './city-landmarks.js';
@@ -245,6 +245,15 @@ export function edgeFacade(c, a, b) {
     local(x, s) { const ex = x - mx, ey = s - my; return { offset: ex * tx + ey * ty, outward: ex * nx + ey * ny }; },
     // Whether a rectangle on the wall would stand behind a sign
     blocked(offset, y, w, h) { return this.clear.some(z => offset + w / 2 > z.from && offset - w / 2 < z.to && y + h / 2 > z.bottom && y - h / 2 < z.top); },
+    // Whether the pavement in front of the wall at `offset`, `reach` metres
+    // out and a little either side, is clear of `plots`: the building's own
+    // footprint (a wing standing forward) and its neighbours' lots
+    open(offset, reach) {
+      return !(this.plots ?? []).some(plot => [-.35, .35].some(side => [.3, reach / 2, reach].some(out => {
+        const p = this.position(offset + side, 0, out);
+        return insidePolygon({ x: p[0], y: -p[2] }, plot);
+      })));
+    },
     position(offset, y, outward) { const p = point(offset, outward); return [p.x, y, -p.s]; },
     add(offset, y, outward, w, h, d, color, kind = 'solid', broad = false) {
       if (c.distant && kind === 'solid' && !broad) return;
@@ -267,7 +276,7 @@ export function edgeFacade(c, a, b) {
 }
 
 // Which of its block's lots a lot is, counting round the block, so the block
-// can deal its shops their signs in turn (see city-signs.js)
+// can deal its buildings their signs in turn (see dealSign in city-signs.js)
 let firstLots = null;
 function shopSlot(lot) {
   if (lot.index === undefined || !(lot.block >= 0) || !CITY.lotBlocks) return {};
@@ -424,10 +433,13 @@ export function planLot(c, lot) {
   const neighbours = lot.index === undefined ? null : neighboursOf(lot);
   const windows = wallKinds.map((kind, i) => street[i] || (kind === 'rear' && (rear > 2.4 || footprintOut !== footprint))
     || (kind === 'side' && (insets.side > 1.5 || Boolean(neighbours && wallHasOutlook(footprintOut, i, neighbours)))));
-  return { kind: 'building', lot, district, footprint: local(footprintOut, c), lotLocal: local(polygon, c), court: local(court, c), street, windows, type, floors, area: massedArea, breadth,
+  const plan = { kind: 'building', lot, district, footprint: local(footprintOut, c), lotLocal: local(polygon, c), court: local(court, c), street, windows, type, floors, area: massedArea, breadth,
     wall: pick(style.walls, random), accent: pick(ACCENTS, random), roof: pick(pitched ? TILES[district] ?? ROOFS : ROOFS, random), roofType: house ? 'hip' : pitched ? 'gable' : stepped ? 'terrace' : 'flat', eaves,
     setbackFloors: stepped ? Math.max(2, Math.floor(floors * .57)) : floors, seed: (lot.seed + 9973) >>> 0, variation: integer(random, 0, 3),
-    shop: pick(SHOP_NAMES, random), ...shopSlot(lot), shopfront, domestic, lawn: insets.lawn, side: insets.side, party: wallKinds.map(kind => kind === 'side'), lotStreet: kinds.map(kind => kind === 'street'), rearWindows: rear > 2.4 || footprintOut !== footprint };
+    ...shopSlot(lot), shopfront, domestic, lawn: insets.lawn, side: insets.side, party: wallKinds.map(kind => kind === 'side'), lotStreet: kinds.map(kind => kind === 'street'), rearWindows: rear > 2.4 || footprintOut !== footprint };
+  // (what it says on it: see city-building-signs.js)
+  plan.signs = buildingSignage(plan);
+  return plan;
 }
 
 // A wall's window bays, .9 m in from each end of its front. The segments of
@@ -459,12 +471,21 @@ function bayLayout(f, target, width = 0) {
   return { spacing: Number.isFinite(spacing) ? spacing : f.span - 1.8, windows, piers };
 }
 
+// A wall's upper windows: their width, where they stand and the piers
+// between them (see bayLayout), by the kind of building, and how far out
+// from the wall the pilasters or fins on its piers come (`pierFront`)
+const PIER_PILASTERS = { deco: [.18, .38, .4], atrium: [.4, .25, .85], pavilion: [.4, .25, .85] };
+export function windowBays(b, f) {
+  const modern = b.type === 'office' || b.type === 'atrium', loft = b.type === 'warehouse' || b.type === 'loft';
+  const target = modern ? 4.4 : loft ? 6.5 : b.variation === 1 ? 5.6 : 4.8, { spacing } = bayLayout(f, target);
+  const windowWidth = Math.min(modern ? spacing - .36 : loft ? Math.min(3.7, spacing - 1) : b.variation === 2 ? 2.25 : 1.65, spacing - .5);
+  const pilaster = PIER_PILASTERS[b.type];
+  return { windowWidth, pierFront: pilaster ? pilaster[0] + pilaster[2] / 2 : 0, ...bayLayout(f, target, windowWidth + .25) };
+}
 export function edgeWindows(c, b, f, bottom, floors, random) {
   const modern = b.type === 'office' || b.type === 'atrium', loft = b.type === 'warehouse' || b.type === 'loft', span = f.span;
   if (span < 3.2 && !f.run) return;
-  const target = modern ? 4.4 : loft ? 6.5 : b.variation === 1 ? 5.6 : 4.8, { spacing } = bayLayout(f, target);
-  const windowWidth = Math.min(modern ? spacing - .36 : loft ? Math.min(3.7, spacing - 1) : b.variation === 2 ? 2.25 : 1.65, spacing - .5);
-  const { windows, piers } = bayLayout(f, target, windowWidth + .25);
+  const { windowWidth, windows, piers } = windowBays(b, f);
   const h = loft ? 2.45 : modern ? 2.75 : 2.2, frame = b.type === 'brick' || b.type === 'townhouse' ? '#e0ccab' : '#b3c5bc';
   for (let floor = 0; floor < floors; floor++) {
     const y = bottom + 1.7 + floor * 3.6;
@@ -515,12 +536,13 @@ export function edgeWindows(c, b, f, bottom, floors, random) {
   // (pilasters, fins and string courses stop under the cornice or eaves that
   // cap the wall, rather than meeting its faces)
   const rise = floors * 3.6 - .12;
-  if (b.type === 'deco') for (const pier of piers) f.add(pier, bottom + rise / 2, .18, .38, rise, .4, '#cfbea2', 'solid', true);
+  const pilaster = PIER_PILASTERS[b.type];
+  if (b.type === 'deco') for (const pier of piers) f.add(pier, bottom + rise / 2, pilaster[0], pilaster[1], rise, pilaster[2], '#cfbea2', 'solid', true);
   if (b.type === 'loft' || b.type === 'townhouse') for (let floor = 1; floor < floors; floor++) {
     f.add(0, bottom + floor * 3.6 - .12, .16, span + .2, b.type === 'loft' ? .4 : .22, .3, '#d6c1a0', 'solid', true);
   }
   if (b.type === 'atrium' || b.type === 'pavilion') for (const pier of piers) {
-    f.add(pier, bottom + rise / 2, .4, .25, rise, .85, b.type === 'pavilion' ? '#bf976c' : '#d5d9bd', 'solid', true);
+    f.add(pier, bottom + rise / 2, pilaster[0], pilaster[1], rise, pilaster[2], b.type === 'pavilion' ? '#bf976c' : '#d5d9bd', 'solid', true);
   }
 }
 
@@ -534,35 +556,6 @@ function entrance(b, span, primary) {
   if (b.type === 'warehouse') return { offset: 0, width: Math.min(8, span * .5) + 1 };
   if (primary) return { offset: 0, width: 1.6 };
   return span > 9 ? { offset: span * .3 * (b.variation % 2 ? 1 : -1), width: 1.6 } : null;
-}
-
-// Where along a shopfront its sign goes, and how big: over the middle, unless
-// a street tree's crown or a lamp's column stands in front of it there. Then
-// it moves over one of the shop's windows or its door (`centres`), or to one
-// end of the fascia, a little smaller if need be, if far less of it is hidden.
-const IN_FRONT = { lamp: .3, 'median-lamp': .3, lantern: .3, 'street-lantern': .3, signal: .3 };
-function signPlace(c, f, w, centres) {
-  const obstacles = [];
-  for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (const piece of c.world?.furnitureByChunk?.get(`${c.ix + dx},${c.iz + dz}`) ?? []) {
-    const reach = piece.kind === 'tree' ? piece.scale * .5 : IN_FRONT[piece.kind] ?? 0;
-    if (!reach) continue;
-    const q = f.local(piece.u - c.east, piece.s - c.start);
-    if (q.outward > .5 && q.outward < 9 && Math.abs(q.offset) < f.span / 2 + reach) obstacles.push({ offset: q.offset, reach });
-  }
-  const centre = { offset: 0, scale: 1 };
-  if (!obstacles.length) return centre;
-  // (the share of the sign hidden, from straight across the street)
-  const hidden = (o, width) => obstacles.reduce((sum, p) => sum + Math.max(0, Math.min(o + width / 2, p.offset + p.reach) - Math.max(o - width / 2, p.offset - p.reach)), 0) / width;
-  let best = centre, least = hidden(0, w);
-  for (const scale of [1, .8]) {
-    const end = f.span / 2 - 1.3 - w * scale / 2;
-    for (const offset of [...centres, end, -end]) {
-      if (Math.abs(offset) > end + 1e-6) continue;
-      const share = hidden(offset, w * scale) + (1 - scale) * .5;
-      if (share < least - .1) { best = { offset, scale }; least = share; }
-    }
-  }
-  return best;
 }
 
 // Thin fabric, falling away from the fascia to a short valance. Both sides
@@ -611,12 +604,15 @@ export function shopFront(c, b, facade, base, primary) {
   const signBottom = 3.65, signTop = base - .18, signY = (signBottom + signTop) / 2;
   f.add(0, G + signY, .13, span - .5, signTop - signBottom, .28, b.accent, 'solid', true);
   const units = Math.max(1, Math.round((span - 1.6) / 5.5)), spacing = (span - 1.6) / units;
-  const doorBay = side > 0 ? units - 1 : 0;
+  const doorBay = side > 0 ? units - 1 : 0, panes = [];
+  let doorAt = side * span / 2;
   for (let i = 0; i < units; i++) {
     const offset = (i - (units - 1) / 2) * spacing;
     const width = spacing - .45, door = i === doorBay && (primary || facade.shopSign) ? Math.min(1.25, width * .32) : 0;
     const gap = door ? .16 : 0, doorOffset = offset + side * (width - door) / 2;
     const display = width - door - gap, displayOffset = offset - side * (door + gap) / 2;
+    panes.push({ offset: displayOffset, width: display, mullion: display > 3.1 });
+    if (door) doorAt = doorOffset;
     // (the bay's frame reaches the ground, below the lot's own, as the wall does)
     f.add(offset, G + 1.705, .075, width + .24, 3.41, .11, b.accent);
     f.add(displayOffset, G + 1.69, .17, display, 2.03, .1, '#456971', 'glass');
@@ -633,14 +629,11 @@ export function shopFront(c, b, facade, base, primary) {
       shopAwning(c, f, offset, spacing - .3, b.accent, b.variation);
     }
   }
-  if (!c.distant && (primary || facade.shopSign)) {
-    // The shop's name on its fascia board, high enough that the awnings
-    // below it hide none of it from across the street
-    const sign = shopSignFor(b), full = Math.min(1.15, signTop - signBottom - .3, span * .65 / sign.aspect, 6.2 / sign.aspect);
+  // The shop's name on its fascia board, over one of its windows or its door
+  // if a tree stands in front of the middle, and its other signs
+  if (primary || facade.shopSign) {
     const centres = Array.from({ length: units }, (_, i) => (i - (units - 1) / 2) * spacing).flatMap(offset => [offset, offset + spacing * .25]);
-    const { offset, scale } = signPlace(c, f, full * sign.aspect, centres), h = full * scale, w = h * sign.aspect;
-    const y = Math.min(signTop - .1 - h / 2, Math.max(signY, 3.92 + h / 2)), p = f.position(offset, G + y, .34);
-    c.signFace('shop-signs', sign, p[0], p[1], -p[2], f.yaw, w, h, .05, .05);
+    shopSigns(c, b, f, { bottom: signBottom, top: signTop, centres, panes, door: doorAt, primary });
   }
 }
 
@@ -701,6 +694,7 @@ export function groundFloor(c, b, f, base, primary, random) {
       f.add(0, G + 1.3, .24, .1, 2.6, .14, '#b6c9c8', c.distant ? 'inlay' : 'solid');
       f.add(0, G + 2.675, .24, 2.68, .15, .14, '#d8dbd2', c.distant ? 'inlay' : 'solid');
       f.add(0, G + 3.05, 1.1, 4.2, .18, 2.2, '#b6c9c8', 'solid', true);
+      lobbySign(c, f, b.signs?.lobby, G + 3.14, 2.2, 4.2);
     }
   } else if (b.type === 'warehouse') {
     const door = Math.min(8, span * .5);
@@ -715,6 +709,7 @@ export function groundFloor(c, b, f, base, primary, random) {
     }
     for (const side of [-1, 1]) f.add(side * (door / 2 + .07), G + 1.525, .2, .14, 3.05, .2, '#85968f', 'solid', true);
     f.add(0, G + 3.3, .3, canopy, .35, .7, b.accent, 'solid', true);
+    if (primary) worksSign(c, f, b.signs?.works, G + 3.475, canopy);
     // Beside the loading door on the main front, a door for the people who
     // work there, and along the rest of a long front a row of high windows
     if (staff !== null) {
@@ -996,7 +991,7 @@ function gableRoof(c, b, bodies, ring, top, random, solid) {
 const COMMERCIAL = new Set(['office', 'atrium', 'deco']);
 const BASE_STONE = new THREE.Color('#6f6c64');
 const TANK_DISTRICTS = new Set(['Old town', 'Warehouse district', 'Market district']);
-function roofDetails(c, b, deck, top, random, holes = []) {
+function roofDetails(c, b, deck, top, random, holes = [], keep = []) {
   const blocked = holes.map(hole => offsetPolygon(hole, 1.8));
   // A deco tower steps up to a crown; a low deco block keeps its tall parapet
   if (b.type === 'deco' && !holes.length && b.floors >= 7) {
@@ -1066,7 +1061,7 @@ function roofDetails(c, b, deck, top, random, holes = []) {
       if (length < 4) continue;
       const t = .2 + random() * .6, nx = -(p1.y - p0.y) / length, ny = (p1.x - p0.x) / length;
       const p = { x: p0.x + (p1.x - p0.x) * t + nx * .75, y: p0.y + (p1.y - p0.y) * t + ny * .75 };
-      if (clear.some(hole => insidePolygon(p, hole)) || placed.some(o => Math.hypot(o.x - p.x, o.y - p.y) < o.r + 1)) continue;
+      if (clear.some(hole => insidePolygon(p, hole)) || keep.some(strip => insidePolygon(p, strip)) || placed.some(o => Math.hypot(o.x - p.x, o.y - p.y) < o.r + 1)) continue;
       const along = Math.atan2(p1.y - p0.y, p1.x - p0.x), height = 1.2 + random() * .8;
       c.box(p.x, top + height / 2, p.y, 1.5, height, .75, '#8a6353', 'solid', along); c.box(p.x, top + height + .07, p.y, 1.7, .14, .95, '#6f5a4e', 'solid', along);
     }
@@ -1187,14 +1182,18 @@ function buildBuilding(c, b) {
   // Windowed walls of the same kind that meet at gentle bends, the segments
   // of a curved front, share one run of bays (see bayLayout)
   const runs = facadeRuns(ring, k => b.windows[k] && edgeLength(ring, k) >= 2.5, k => b.street[k]);
+  // (what a sign standing out from a wall has to keep clear of)
+  const plots = c.distant ? [] : [ring, ...(b.lot?.index === undefined ? [] : neighboursOf(b.lot).map(plot => local(plot, c)))];
   for (let i = 0; i < n; i++) {
     const f = edgeFacade(c, ring[i], ring[(i + 1) % n]);
+    f.plots = plots;
     f.street = b.street[i];
     f.run = runs[i];
     f.shopSign = i === secondary;
     if (f.span < 2.5) continue;
     if (f.street) groundFloor(c, b, f, base, i === primary, random);
     else if (b.windows[i] && (b.type === 'office' || b.type === 'atrium')) groundFloor(c, { ...b, shopfront: false }, f, base, false, random);
+    if (i === primary && b.signs?.upstairs && b.windows[i]) upstairsSign(c, f, b.signs.upstairs, windowBays(b, f), b.variation % 2 ? -1 : 1, G + base, lowerTop);
     // (a detached house's ground floor is a storey like the others, windowed
     // round its garden)
     const garden = b.domestic && b.lawn && !f.street;
@@ -1205,7 +1204,10 @@ function buildBuilding(c, b) {
   if (b.roofType === 'gable') { gableRoof(c, b, bodies, ring, lowerTop, random, solid); return; }
   const trim = b.type === 'office' ? '#b8cccd' : '#d6c9b1';
   const reach = k => b.party?.[k] && b.side < .32 ? b.side : .32;
-  let { deck, holes } = cornice(bodies, ring, lowerTop, trim, b.roof, b.wall, b.type === 'deco' ? 1.2 : .65, courts, reach, b.lotLocal), top = lowerTop;
+  const parapet = b.type === 'deco' ? 1.2 : .65;
+  let { deck, holes } = cornice(bodies, ring, lowerTop, trim, b.roof, b.wall, parapet, courts, reach, b.lotLocal), top = lowerTop;
+  // (a name on the roof over the main front, see crownSign)
+  const crown = primary >= 0 && b.signs?.crown ? crownSign(c, edgeFacade(c, ring[primary], ring[(primary + 1) % n]), b.signs.crown, lowerTop + .18, lowerTop + .12 + parapet) : null;
   if (lower < b.floors) {
     const inset = Math.min(4, b.breadth * .15), upper = offsetPolygon(ring, -inset);
     if (upper.length >= 3 && calcPolygonArea(upper) > 50) {
@@ -1219,7 +1221,7 @@ function buildBuilding(c, b) {
       ({ deck, holes } = cornice(bodies, upper, upperTop, trim, b.roof, wall, .85)); top = upperTop;
     }
   }
-  roofDetails(c, b, deck, top, random, holes);
+  roofDetails(c, b, deck, top, random, holes, crown ? [crown] : []);
 }
 
 // A lot with no room for a building. Where the houses have gardens it is one

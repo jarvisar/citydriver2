@@ -1,6 +1,9 @@
-// The complete sign catalogue, grouped by trade/place for a visual review.
-// node scripts/sign-review.mjs [outDir] [--street seed] [--shops]
-// Each face uses the game's canvas painter and its physical proportions.
+// The complete sign catalogue, as the atlas holds it, grouped by use (the
+// sheet's business signs) and by place (the discovery boards), for a visual
+// review: node scripts/sign-review.mjs [outDir] [--street seed] [--shops]
+// Every face is cut from the game's own atlas, so this is exactly what the
+// buildings show. --street adds eye-height front and angled samples of each
+// group in the generated city; --shops keeps to the business signs.
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from '@playwright/test';
 import { createServer } from 'vite';
@@ -13,6 +16,7 @@ const server = await createServer({ server: { port: 0, host: '127.0.0.1', hmr: f
 await server.listen();
 const browser = await chromium.launch();
 const errors = [];
+const png = data => Buffer.from(data.split(',')[1], 'base64');
 try {
   const page = await browser.newPage({ viewport: { width: 1200, height: 900 }, deviceScaleFactor: 1 });
   page.on('pageerror', error => errors.push(error.message));
@@ -21,31 +25,36 @@ try {
   await page.route('**/sign-review', route => route.fulfill({ contentType: 'text/html', body: '<html><body></body></html>' }));
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/sign-review`);
   const groups = await page.evaluate(async shopsOnly => {
-    const { SIGN_CATALOG, drawSign } = await import('/src/world/city-signs.js');
-    window.drawSign = drawSign; window.signs = SIGN_CATALOG.filter(sign => !shopsOnly || sign.category);
+    const { SIGN_CATALOG, createSignMaterial, signSheet } = await import('/src/world/city-signs.js');
+    const material = createSignMaterial();
+    await signSheet;
+    window.atlas = material.map.image;
+    // (a business sign is grouped under its first use)
+    window.groupOf = sign => sign.uses?.[0] ?? sign.type;
+    window.signs = SIGN_CATALOG.filter(sign => !shopsOnly || sign.uses);
     document.head.insertAdjacentHTML('beforeend', `<style>
       * { box-sizing: border-box } body { margin: 0; padding: 24px; background: #d4d3ca; color: #27332f; font: 14px sans-serif }
       h1 { margin: 0 0 20px; font-size: 22px } main { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px }
-      article { background: #e9e7df; padding: 12px } canvas { display: block; width: 352px; height: 172px }
-      p { margin: 10px 0 0; font-size: 12px }
+      article { background: #8f9690; padding: 12px } canvas { display: block; width: 352px; height: 172px }
+      p { margin: 10px 0 0; font-size: 12px; color: #f3f1ea }
     </style>`);
-    return [...new Set(window.signs.map(sign => sign.category ?? sign.type))];
+    return [...new Set(window.signs.map(window.groupOf))];
   }, shopsOnly);
+  await writeFile(`${out}/atlas.png`, png(await page.evaluate(() => window.atlas.toDataURL('image/png'))));
   for (const group of [...groups, 'overview']) {
     const count = await page.evaluate(group => {
       document.body.replaceChildren();
       const heading = document.createElement('h1'); heading.textContent = group; document.body.append(heading);
       const main = document.createElement('main'); document.body.append(main);
       const signs = group === 'overview'
-        ? window.signs.filter((sign, i, signs) => signs.findIndex(other => (other.category ?? other.type) === (sign.category ?? sign.type)) === i)
-        : window.signs.filter(sign => (sign.category ?? sign.type) === group);
+        ? window.signs.filter((sign, i, signs) => signs.findIndex(other => window.groupOf(other) === window.groupOf(sign)) === i)
+        : window.signs.filter(sign => window.groupOf(sign) === group);
       for (const sign of signs) {
         const article = document.createElement('article'), canvas = document.createElement('canvas');
         canvas.width = 704; canvas.height = 344;
-        const ctx = canvas.getContext('2d'), scale = Math.min(660 / 512, 306 / (512 / sign.aspect));
-        ctx.translate((canvas.width - 512 * scale) / 2, (canvas.height - 512 / sign.aspect * scale) / 2);
-        ctx.scale(scale, scale); window.drawSign(ctx, sign);
-        const label = document.createElement('p'); label.textContent = `${sign.tile} · ${sign.name}`;
+        const ctx = canvas.getContext('2d'), [x, y, w, h] = sign.atlas, scale = Math.min(660 / w, 306 / h);
+        ctx.drawImage(window.atlas, x, y, w, h, (canvas.width - w * scale) / 2, (canvas.height - h * scale) / 2, w * scale, h * scale);
+        const label = document.createElement('p'); label.textContent = `${sign.tile} · ${sign.name}${sign.uses ? ` · ${sign.uses.join(', ')}` : ''}`;
         article.append(canvas, label); main.append(article);
       }
       return signs.length;
@@ -54,7 +63,7 @@ try {
     await page.screenshot({ path: `${out}/${group.toLowerCase()}.png`, fullPage: true });
     console.log(`${group}: ${count} signs`);
   }
-  await writeFile(`${out}/catalogue.json`, JSON.stringify(await page.evaluate(() => window.signs), null, 2));
+  await writeFile(`${out}/catalogue.json`, JSON.stringify(await page.evaluate(() => window.signs.map(({ tile, name, uses, type, rect, atlas, aspect }) => ({ tile, name, uses, type, rect, atlas, aspect }))), null, 2));
   if (street >= 0) {
     const seed = args[street + 1] ?? '4817';
     await page.setViewportSize({ width: 1200, height: 760 });
@@ -68,6 +77,7 @@ try {
       const { cityPlaces } = await import('/src/city-exploration.js');
       const { SIGN_CATALOG } = await import('/src/world/city-signs.js');
       const { PAVEMENT_LEVEL } = await import('/src/world/city-route.js');
+      const byTint = new Map(SIGN_CATALOG.map(sign => [sign.tint.join(), sign]));
       g.traffic.setEnabled(false, g.vehicle);
       g.weather.setMode('clear', { immediate: true });
       window.reviewSigns = spot => {
@@ -78,15 +88,16 @@ try {
         const r = g.rendering;
         r.setView(4); r.snap(); v.render(0, g.world.origin); r.update(v.car, 1, g.world.origin);
         r.scene.updateMatrixWorld(true);
-        const found = [], m = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), scale = new THREE.Vector3();
+        const found = [], m = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), scale = new THREE.Vector3(), colour = new THREE.Color();
         r.scene.traverse(o => {
           if (!o.isInstancedMesh || !o.visible || !o.material?.userData?.signAtlas || o.name.endsWith('sign-edge')) return;
           for (let i = 0; i < o.count; i++) {
             o.getMatrixAt(i, m); m.premultiply(o.matrixWorld); m.decompose(p, q, scale);
             if (Math.hypot(p.x - spot.u, g.world.origin - p.z - spot.s) > 100) continue;
-            const sign = SIGN_CATALOG[Math.round(o.instanceColor.array[i * 3])];
+            const sign = byTint.get(o.getColorAt(i, colour).toArray().join());
+            if (!sign) continue;
             const n = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
-            found.push({ family: sign.category ?? sign.type, name: sign.name, tile: sign.tile, x: p.x, y: p.y, z: p.z, nx: n.x, nz: n.z, width: scale.x });
+            found.push({ family: sign.uses?.[0] ?? sign.type, name: sign.name, tile: sign.tile, x: p.x, y: p.y, z: p.z, nx: n.x, nz: n.z, width: scale.x });
           }
         });
         return found;
@@ -105,20 +116,20 @@ try {
         return r.renderer.domElement.toDataURL('image/png');
       };
       // Large parks put their boards at a gate, sometimes well away from the
-      // park's centre. Include both so every existing sign family is sampled.
+      // park's centre. Include both so every existing sign family is sampled;
+      // the places stand among ordinary streets, with their shops and offices.
       return cityPlaces().flatMap(p => [{ u: p.u, s: p.s, family: p.type }, { u: p.entrance.u, s: p.entrance.s, family: p.type }]);
     });
     const seen = new Set(), rows = [];
     for (const spot of spots) {
       if (seen.size === groups.length) break;
-      if (seen.has(spot.family) && groups.filter(group => group === group.toUpperCase()).every(group => seen.has(group))) continue;
       const signs = await page.evaluate(spot => window.reviewSigns(spot), spot);
       for (const sign of signs) {
         if (!groups.includes(sign.family) || seen.has(sign.family)) continue;
         seen.add(sign.family); rows.push(sign);
         for (const [view, angle] of [['front', 0], ['angle', .55]]) {
           const data = await page.evaluate(([sign, angle]) => window.reviewShot(sign, angle), [sign, angle]);
-          await writeFile(`${out}/street-${sign.family.toLowerCase()}-${view}.png`, Buffer.from(data.split(',')[1], 'base64'));
+          await writeFile(`${out}/street-${sign.family.toLowerCase()}-${view}.png`, png(data));
         }
         console.log(`Street: ${sign.family} / ${sign.name}`);
       }

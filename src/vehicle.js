@@ -11,6 +11,7 @@ import { createHelicopter, Helicopter } from './helicopter.js';
 import { createWalkerModel, Walker, WALKER_SPEC, WALKER_STATS } from './walker.js';
 import { collisionImpulse, footprintMass, heft, leadingPoint, rock, rockFrom, SCENERY_SURFACE } from './impact.js';
 import { steerCurve, steeringResponse, driftDirection, turnRate, corneringLoad, travelHeading } from './handling.js';
+import { carProfile } from './car-profile.js';
 
 const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: .74, flatShading: true, ...extra });
 function box(group, size, location, material) {
@@ -190,18 +191,6 @@ export function createClassicCar(entry = carEntry(DEFAULT_CAR)) {
   return { car, body, wheels, nightLights, applyTrim, paintCar, disposeModel };
 }
 
-// How high a model reaches over where its tyres meet the ground (its own y
-// = 0), for whatever lands on its roof (see LooseProps.contact)
-const topBox = new THREE.Box3(), partBox = new THREE.Box3(), toModel = new THREE.Matrix4(), partMatrix = new THREE.Matrix4();
-export function topOf(model) {
-  model.updateMatrixWorld(true); toModel.copy(model.matrixWorld).invert(); topBox.makeEmpty();
-  model.traverse(part => {
-    if (!part.geometry) return;
-    if (!part.geometry.boundingBox) part.geometry.computeBoundingBox();
-    topBox.union(partBox.copy(part.geometry.boundingBox).applyMatrix4(partMatrix.multiplyMatrices(toModel, part.matrixWorld)));
-  });
-  return topBox.isEmpty() ? 1.5 : topBox.max.y;
-}
 export function createCar(id = DEFAULT_CAR) {
   const entry = carEntry(id);
   if (entry.kind === 'formula') return createFormulaCar(entry);
@@ -291,7 +280,9 @@ export class DrivingController {
       ? new THREE.Vector3(...eye)
       : new THREE.Vector3(0, cabinY + cabin[1] * .7 - drop, cabinZ - cabin[2] / 2 + glassSlope - .18);
     this.car.userData.chaseLift = chaseLift;
-    this.spec = { name: carId, width, length, height: topOf(this.car), mass: entry.mass ?? footprintMass(width, length), breaks: entry.breaks ?? [] };
+    // (its shape along its length, for loose pieces to meet: see carProfile)
+    const profile = carProfile(this.car, length);
+    this.spec = { name: carId, width, length, height: profile.height, profile, mass: entry.mass ?? footprintMass(width, length), breaks: entry.breaks ?? [] };
     this.stats = carStats(carId);
     parent?.add(this.car);
     this.setLights(Number(this.night)); this.setAppearance(this.journeyId); this.setPaint(paint);
@@ -415,10 +406,12 @@ export class DrivingController {
     this.render(0);
   }
   // Another car gives way as far as its weight allows. This one is put back
-  // outside it and takes its share of the blow (see impact.js and strike).
-  resolveTrafficCollision(dx, dz, dvx = 0, dvz = 0, spin = 0, impact = Math.hypot(dvx, dvz), scrape = 0) {
+  // outside it and takes its share of the blow (see impact.js and strike),
+  // and while `pushing` a car its engine holds to its tyres' grip (a loose
+  // piece of furniture is no car to push: see LooseProps).
+  resolveTrafficCollision(dx, dz, dvx = 0, dvz = 0, spin = 0, impact = Math.hypot(dvx, dvz), scrape = 0, pushing = true) {
     if (this.walker) { this.walker.resolveTrafficCollision(dx, dz, dvx, dvz, spin, impact); return; }
-    this.strike(dvx, dvz, spin, impact, scrape); this.pushing = PUSHING;
+    this.strike(dvx, dvz, spin, impact, scrape); if (pushing) this.pushing = PUSHING;
     this.shift(dx, dz);
     if (!this.freeDriving) this.u = clamp(this.u, ...this.route.bounds(this.s));
     this.placeAfterCollision();
