@@ -180,7 +180,7 @@ test('windows can overlook open ground but not neighbouring plots or the return 
 // histories: the same physical tree must keep its silhouette at a LOD handover.
 const tree = (east, start, x, s, distant, seed) => {
   const items = [], c = { east, start, distant, random: seededRandom(seed), materials: {}, features: {},
-    item(key, geometry, material, position, scale, colour, yaw) { items.push({ key, scale, colour, yaw }); }, box() {}, post() {} };
+    item(key, geometry, material, position, scale, colour, yaw) { items.push({ key, scale, colour, yaw }); }, box() {}, post() {}, knockable() {} };
   CityChunk.prototype.tree.call(c, x, s, 8);
   return items.find(item => item.key.startsWith('tree-crowns-'));
 };

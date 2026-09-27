@@ -2,7 +2,7 @@
 // pink-noise fingerprint. Road noise has contact grains and irregular density,
 // wind has slow pressure movement, and rain has many small overlapping droplets.
 export function createTextureBuffer(ctx, kind) {
-  const rate = ctx.sampleRate, length = Math.round(rate * 8), overlap = Math.round(rate * .12);
+  const rate = ctx.sampleRate, length = Math.round(rate * 4), overlap = Math.round(rate * .12);
   const buffer = ctx.createBuffer(2, length, rate);
   let state = { road: 0x173acd, wind: 0x712abc, rain: 0x817de }[kind] ?? 0x173acd;
   const random = () => { state ^= state << 13; state ^= state >>> 17; state ^= state << 5; return (state >>> 0) / 4294967296; };

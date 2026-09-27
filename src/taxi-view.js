@@ -7,7 +7,7 @@ import { taxiLicense } from './taxi-license.js';
 import { goalProgress } from './taxi-goals.js';
 import { routeDistance } from './world/nav-graph.js';
 import { DestinationArrow } from './destination-arrow.js';
-import { applyWalkerHop } from './world/pedestrian-reactions.js';
+import { lookYaw } from './world/pedestrian-reactions.js';
 
 const $ = id => document.getElementById(id);
 const money = value => `$${Math.round(value ?? 0).toLocaleString('en-US')}`;
@@ -114,7 +114,8 @@ export class TaxiView {
         person.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         // All riders share a draw call and stay in a compact line on the curb.
         const curb = street.halfWidth - street.lane + 2;
-        person.boundingSphere = new THREE.Sphere(new THREE.Vector3(curb, PAVEMENT_LEVEL + 1.5, 0), 5);
+        // (wide enough for one knocked flying, see PedestrianContacts)
+        person.boundingSphere = new THREE.Sphere(new THREE.Vector3(curb, PAVEMENT_LEVEL + 1.5, 0), 40);
         group.add(person);
       }
       group.traverse(object => { object.userData.ambientOcclusion = false; });
@@ -136,17 +137,20 @@ export class TaxiView {
       const selected = run.status === 'driving' || marker.stop.id === run.boarding?.id;
       marker.group.position.set(marker.stop.u, 0, -marker.stop.s);
       if (marker.person) {
-        const { stop, person, curb } = marker;
-        const cos = Math.cos(marker.group.rotation.y), sin = Math.sin(marker.group.rotation.y);
+        const { person, curb } = marker;
+        marker.group.updateMatrix();
+        // Whoever of the party is knocked over, the rest turn to watch until they are back
+        const down = marker.reactions.find(reaction => reaction.drawn && (reaction.body || reaction.rise || reaction.back));
         for (let i = 0; i < person.count; i++) {
-          const motion = walkerFloat(marker.float, time + i * .7, passengerFloat);
+          const motion = walkerFloat(marker.float, time + i * .7, passengerFloat), reaction = marker.reactions[i];
           const along = (i - (person.count - 1) / 2) * 1.35;
+          const look = down && down !== reaction ? Math.atan2(curb - down.drawn.x, along - down.drawn.z) : null;
           this.transform.position.set(curb, PAVEMENT_LEVEL + motion.lift, along);
-          this.transform.rotation.set(0, Math.PI / 2, motion.roll);
+          this.transform.rotation.set(0, lookYaw(reaction, Math.PI / 2, look, time), motion.roll);
           this.transform.scale.set(1.25, 1.25 * motion.stretch, 1.25); this.transform.updateMatrix();
-          const p = this.transform.position, reaction = marker.reactions[i];
-          contacts?.hit(reaction, stop.u + cos * p.x + sin * p.z, p.y, -stop.s - sin * p.x + cos * p.z, .35, time);
-          applyWalkerHop(reaction, this.transform.matrix, time);
+          contacts?.person(reaction, this.transform.matrix, marker.group.matrix, .35, time);
+          reaction.drawn ??= { x: 0, z: 0 };
+          reaction.drawn.x = this.transform.matrix.elements[12]; reaction.drawn.z = this.transform.matrix.elements[14];
           person.setMatrixAt(i, this.transform.matrix);
         }
         person.instanceMatrix.needsUpdate = true;

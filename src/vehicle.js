@@ -187,7 +187,7 @@ export class DrivingController {
     this.knock = { x: 0, z: 0, spin: 0 }; this.jolt = { pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 };
     // The turn the driver is making, and how shaken the view is (0 to 1).
     this.yawRate = 0; this.trauma = 0; this.pushing = 0;
-    this.audioTelemetry = { speed: 0, throttle: 0, brake: 0, offRoad: 0, steer: 0, handbrake: 0, slip: 0, impact: 0, impactSerial: 0, scrape: 0 };
+    this.audioTelemetry = { speed: 0, throttle: 0, brake: 0, offRoad: 0, steer: 0, handbrake: 0, slip: 0, impact: 0, impactSerial: 0, scrape: 0, boost: 0, bump: 0, bumpSerial: 0 };
     const pose = () => ({ position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), bodyPitch: 0, bodyRoll: 0, wheelSpin: 0, steer: 0, slip: 0 });
     this.previousPose = pose(); this.currentPose = pose();
     this.update(0, {});
@@ -211,7 +211,7 @@ export class DrivingController {
       ? new THREE.Vector3(...eye)
       : new THREE.Vector3(0, cabinY + cabin[1] * .7 - drop, cabinZ - cabin[2] / 2 + glassSlope - .18);
     this.car.userData.chaseLift = chaseLift;
-    this.spec = { name: carId, width, length, mass: entry.mass ?? footprintMass(width, length) };
+    this.spec = { name: carId, width, length, mass: entry.mass ?? footprintMass(width, length), breaks: entry.breaks ?? [] };
     this.stats = carStats(carId);
     parent?.add(this.car);
     this.setLights(Number(this.night)); this.setAppearance(this.journeyId); this.setPaint(paint);
@@ -514,6 +514,9 @@ export class DrivingController {
     }
     // Models put their tyre bottoms at zero; the route already gives the surface height.
     const p = positionAt(this.s, this.u, ground.height);
+    // The step of a kerb under the wheels, for the sound (see DriveAudio.bump)
+    const kerb = Math.abs(p.y - this.groundedPosition.y);
+    if (dt > 0 && kerb > .05 && kerb < .5 && Math.abs(this.speed) > 1) { this.audioTelemetry.bump = kerb; this.audioTelemetry.bumpSerial++; }
     this.groundedPosition.set(p.x, p.y, p.z); this.car.position.copy(this.groundedPosition);
     const { slope, lateralSlope } = ground;
     this.pitch = THREE.MathUtils.damp(this.pitch, Math.atan(slope * Math.cos(difference) + lateralSlope * Math.sin(difference)), 10, dt || 1);
@@ -537,6 +540,7 @@ export class DrivingController {
     this.audioTelemetry.offRoad = looseness;
     this.audioTelemetry.steer = this.steer;
     this.audioTelemetry.handbrake = input.handbrake ? 1 : 0;
+    this.audioTelemetry.boost = this.boosting ? 1 : 0;
     this.slip = Math.atan2(Math.sin(this.heading - this.slideHeading), Math.cos(this.heading - this.slideHeading));
     this.audioTelemetry.slip = Math.abs(this.slip);
     // Scraping along a wall or a car sounds only while it goes on.

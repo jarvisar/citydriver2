@@ -22,7 +22,7 @@ import { resolveWorldSeed } from './world/generation.js';
 import { CityWeather } from './world/city-weather.js';
 import { NightLighting } from './night-lighting.js';
 import { LooseProps } from './loose-props.js';
-import { cityDistrict, nearestLanePose, journeyStart, lanePose, roadAt } from './world/city-route.js';
+import { cityDistrict, citySoundscape, nearestLanePose, journeyStart, lanePose, roadAt, surfaceAt, waterAt } from './world/city-route.js';
 import { CITY } from './world/city.js';
 import { loadingStage } from './loading-status.js';
 import { navGraph } from './world/nav-graph.js';
@@ -133,11 +133,18 @@ async function boot() {
     // The menu cruises in a cab; starting either mode applies its own saved car.
     const vehicle = new DrivingController(JOURNEYS[journey].route, journeyStart(), 'taxi'); const audio = new DriveAudio();
     const refreshAudioMixer = setupAudioMixer(audio);
+    const showSound = enabled => {
+      $('#sound').setAttribute('aria-pressed', String(enabled));
+      $('#sound').setAttribute('aria-label', enabled ? 'Turn sound off' : 'Turn sound on'); $('#sound').title = enabled ? 'Turn sound off' : 'Turn sound on';
+    };
+    // Silent until a drive starts. Sound left on last visit is built now and
+    // comes back with the first click or key after that.
+    audio.setPaused(true); showSound(audio.restore());
     // Free driving starts on; the hidden code only changes the paint.
     vehicle.toggleFreeDriving();
     vehicle.setAppearance(journey);
     vehicle.setLights(weather.state.lightLevel);
-    rendering.setJourney(journey); audio.setJourney(journey);
+    rendering.setJourney(journey);
     const carDialog = $('#car-dialog'), pauseOverlay = $('#pause-overlay');
     const fleetDialog = $('#taxi-fleet-dialog'), worldMapDialog = $('#world-map-dialog');
     const choosers = [carDialog, fleetDialog, worldMapDialog];
@@ -172,7 +179,7 @@ async function boot() {
       nightLighting.update(world, vehicle, traffic, weather.state.lightLevel);
       return drawScene(...args);
     };
-    const cityGuide = new CityGuide(toast, () => vehicle);
+    const cityGuide = new CityGuide(text => { toast(text); audio.cue('discovery'); }, () => vehicle);
     let taxiStorage; try { taxiStorage = localStorage; } catch { /* Optional storage. */ }
     const taxi = new TaxiRun(taxiStorage), taxiView = new TaxiView(scene); cityGuide.taxi = taxi;
     const fleetView = setupTaxiFleet(taxi.fleet, { running: () => taxi.running, career: taxi.career, onChange: () => { needsRender = true; },
@@ -246,6 +253,7 @@ async function boot() {
     worldMapCanvas.addEventListener('pointerleave', () => { $('#world-map-status').textContent = hereText(); });
     $('#close-fleet').addEventListener('click', () => fleetDialog.close());
     const soundScene = { player: vehicle, traffic, props, interior: false, heading: 0 };
+    let placeTime = -Infinity, shiftTick = Infinity;
     const autodrive = new Autodrive();
     const touchControls = $('.touch-controls');
     let touchControlsTimer;
@@ -333,7 +341,8 @@ async function boot() {
       paused = value; if (!preserveInput) input.clear(); frameClock.suspend();
       if (!paused && autodrive.enabled) start();
       if (paused) { clearTimeout(toastTimer); $('#toast').classList.remove('show'); }
-      audio.setPaused(paused);
+      // (the title screen is silent: sound begins with the drive)
+      audio.setPaused(paused || !started);
       pauseOverlay.hidden = !paused; $('#pause').setAttribute('aria-pressed', String(paused)); $('#pause').setAttribute('aria-label', paused ? 'Resume' : 'Pause');
       $('#pause .control-label').textContent = paused ? 'resume' : 'pause';
       if (paused) { renderGoals(); $('#resume').focus(); } else $('#pause').blur();
@@ -520,8 +529,7 @@ async function boot() {
       }
       if (name === 'sound') {
         try {
-          const enabled = await audio.toggle(); $('#sound').setAttribute('aria-pressed', String(enabled));
-          $('#sound').setAttribute('aria-label', enabled ? 'Turn sound off' : 'Turn sound on'); $('#sound').title = enabled ? 'Turn sound off' : 'Turn sound on';
+          const enabled = await audio.toggle(); showSound(enabled);
           toast(enabled ? JOURNEYS[journey].sound : 'Sound off');
         } catch { toast('Sound unavailable'); }
       }
@@ -859,9 +867,13 @@ async function boot() {
             setPaused(true); pauseOverlay.hidden = true; taxiView.hud(taxi, vehicle); taxiView.results(taxi); fleetView.render(); $('#taxi-retry').focus();
           } else if (event.kind === 'goal') {
             // A goal usually completes on a payout, whose toast lands first.
-            renderGoals(); setTimeout(() => { if (taxi.running && !paused) toast(event.text, 'goal'); }, 1500);
-          } else toast(event.text, event.rating ?? (event.kind === 'missed' ? 'slow' : ''));
+            renderGoals(); setTimeout(() => { if (taxi.running && !paused) { toast(event.text, 'goal'); audio.cue('goal'); } }, 1500);
+          } else { toast(event.text, event.rating ?? (event.kind === 'missed' ? 'slow' : '')); audio.cue(event.kind, event); }
         }
+        // The shift's last ten seconds tick away
+        const left = Math.ceil(taxi.timeLeft);
+        if (left < shiftTick && left <= 10 && left > 0) audio.cue('tick', { urgent: left <= 5 });
+        shiftTick = left;
       }
     };
     function frame(timestamp, xrFrame) {
@@ -880,7 +892,7 @@ async function boot() {
         if (vr.active && started && Math.abs(vehicle.speed) > 2) vrHintTime += dt;
         world.update(vehicle.s, vehicle.u, { budgetMs: 3 }); vehicle.render(frameClock.alpha, world.origin);
         traffic.render(frameClock.alpha, world.origin); props.render(frameClock.alpha, world.origin);
-        pedestrianContacts.update(vehicle, traffic, time);
+        pedestrianContacts.update(vehicle, traffic, time, props);
         rendering.update(vehicle.car, dt, world.origin); world.animate(time, traffic.time, vr.active ? null : rendering.camera, pedestrianContacts);
         taxiView.render(taxi, vehicle, world.origin, time, pedestrianContacts);
         applyWeather(dt);
@@ -888,6 +900,12 @@ async function boot() {
       comfort.update(rendering.camera, vehicle.speed, running ? dt : 0, vr.active && running && started);
       soundScene.interior = rendering.viewLabel === 'First-person view';
       soundScene.lightning = weather.flash; soundScene.rain = weather.state.rain; soundScene.wetness = weather.state.wetness;
+      soundScene.snow = weather.state.snow; soundScene.night = weather.state.stars;
+      // Where the car is, for the soundscape (twice a second, and only with sound on)
+      if (audio.enabled) {
+        soundScene.deck = waterAt(vehicle.s, vehicle.u) && surfaceAt(vehicle.s, vehicle.u) === 'road';
+        if (!(timestamp - placeTime < 500)) { soundScene.place = citySoundscape(vehicle.s, vehicle.u); placeTime = timestamp; }
+      }
       const cameraMatrix = (vr.active ? rendering.vrCamera.camera : rendering.camera).matrixWorld.elements;
       soundScene.heading = Math.atan2(cameraMatrix[2], cameraMatrix[0]);
       audio.update(vehicle.audioTelemetry, dt, false, soundScene);

@@ -4,50 +4,70 @@ export const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const finite = value => Number.isFinite(value) ? value : 0;
 const damp = (from, to, dt, seconds) => from + (to - from) * (1 - Math.exp(-dt / seconds));
 
-// Sound-only automatic gearing. Different up/down thresholds avoid hunting
-// between gears; physics and the controls remain independent of this model.
+// Engine revs per m/s in each gear, from the speed the car really holds
+// (`cruise`, see carStats): first gear runs out at about a quarter of it and
+// top gear holds it at 80% of the redline, so a car at full speed is still
+// pulling and boost takes it the rest of the way. Steps are geometric.
+export function gearRatios(profile, cruise = 28) {
+  const top = .8 * profile.redline / Math.max(5, cruise), first = profile.redline / (Math.max(5, cruise) * .26);
+  const step = (first / top) ** (1 / Math.max(1, profile.gears - 1));
+  return Array.from({ length: profile.gears }, (_, gear) => first / step ** gear);
+}
+
+// Sound-only automatic gearbox. It changes up late under full throttle and
+// early when cruising, kicks down when the pedal goes to the floor, and a
+// torque converter lets the engine rev before the car moves. Each downshift
+// point sits well under the revs the upshift before it lands on, so it never
+// hunts. Physics and the controls remain independent of this model.
 export class DriveSoundModel {
-  constructor() { this.profile = engineFor('coast'); this.reset(); }
-  setProfile(profile) { this.profile = profile; this.reset(); }
-  reset() { this.gear = 0; this.rpm = this.profile.idle; this.load = 0; this.shift = 0; this.reverse = false; this.shiftSerial = 0; }
+  constructor() { this.setProfile(engineFor('city')); }
+  setProfile(profile, cruise = this.cruise ?? 28) {
+    this.profile = profile; this.cruise = cruise; this.ratios = gearRatios(profile, cruise); this.reset();
+  }
+  reset() {
+    this.gear = 0; this.rpm = this.profile.idle; this.load = 0; this.shift = 0; this.reverse = false;
+    this.shiftSerial = 0; this.liftSerial = 0; this.drive = 0; this.lifted = true;
+  }
   update(telemetry = {}, delta = 1 / 60) {
     const dt = clamp(finite(delta), 0, .1);
-    const profile = this.profile;
-    const signedSpeed = clamp(finite(telemetry.speed), -80, 80);
+    const { idle, redline } = this.profile, ratios = this.ratios, last = ratios.length - 1;
+    const signedSpeed = clamp(finite(telemetry.speed), -120, 120);
     const speed = Math.abs(signedSpeed), reverse = signedSpeed < -.3;
     const throttle = clamp(finite(telemetry.throttle), 0, 1);
     const brake = clamp(finite(telemetry.brake), 0, 1);
-    const thresholds = profile.redline > 8000 ? [8, 16, 25, 35, 44] : profile.redline > 5000 ? [8.5, 16, 24, 30] : [7.5, 14.5, 22];
-    if (speed < .5 || reverse !== this.reverse) { this.gear = 0; this.shift = 0; }
+    const boost = telemetry.boost ? 1 : 0;
+    // The gearbox reads a settled pedal: a stab kicks down a moment later
+    this.drive = damp(this.drive, Math.max(throttle, boost), dt, .25);
+    if (speed < 1 || reverse !== this.reverse) { this.gear = 0; this.shift = 0; }
     this.reverse = reverse;
     this.shift = Math.max(0, this.shift - dt);
-    if (!reverse && this.shift === 0) {
-      const previousGear = this.gear;
-      if (this.gear < thresholds.length && speed > thresholds[this.gear]) this.gear++;
-      else if (this.gear > 0 && speed < thresholds[this.gear - 1] - 2.5) this.gear--;
-      if (this.gear !== previousGear) { this.shift = .3; this.shiftSerial++; }
+    if (!reverse && speed >= 1 && this.shift === 0) {
+      const up = redline * (.36 + .54 * this.drive), wheel = speed * ratios[this.gear];
+      const previous = this.gear;
+      if (this.gear < last && wheel > up) this.gear++;
+      else if (this.gear > 0 && wheel < .8 * up * ratios[this.gear] / ratios[this.gear - 1]) this.gear--;
+      if (this.gear !== previous) { this.shift = .22; this.shiftSerial++; }
     }
-    const clutch = this.shift > 0 ? .75 : 1;
-    const targetRpm = clamp(profile.idle + speed * (reverse ? 205 : [230, 145, 105, 80, 68, 59][this.gear]) * profile.gearing + throttle * 220, profile.idle, profile.redline);
-    this.rpm = damp(this.rpm, targetRpm, dt, this.shift ? .12 : .2);
-    this.load = damp(this.load, throttle * (1 - brake) * clutch, dt, .16);
+    // A lift from high revs: the sporty ones crackle (see DriveAudio.effects)
+    if (throttle > .5) this.lifted = false;
+    else if (!this.lifted && throttle < .15 && this.drive > .6 && this.rpm > redline * .55) { this.lifted = true; this.liftSerial++; }
+    const clutch = this.shift > 0 ? .35 : 1;
+    const wheel = speed * (reverse ? ratios[0] * .85 : ratios[this.gear]);
+    // Standing on the gas at a standstill takes the engine a third of the way up its range
+    const slip = idle + (redline - idle) * .36 * Math.max(throttle, boost);
+    const targetRpm = clamp(Math.max(wheel, slip) + boost * (redline - idle) * .03, idle, redline);
+    this.rpm = damp(this.rpm, targetRpm, dt, this.shift ? .07 : .16);
+    this.load = damp(this.load, Math.max(throttle * (1 - brake), boost) * clutch, dt, .12);
     const motion = clamp(speed / 28, 0, 1);
     const offRoad = clamp(finite(telemetry.offRoad), 0, 1);
-    // Corner scrub plus actual chassis/travel slip keep a powerslide audible
-    // after the handbrake is released, fading as the tires catch.
-    const corner = Math.abs(clamp(finite(telemetry.steer), -1, 1)) * motion;
-    const slide = clamp(finite(telemetry.slip) / .4, 0, 1) * motion;
-    const skid = clamp((corner - .38) * 1.5 + brake * Math.max(0, motion - .28) * .6 + Math.max(slide, finite(telemetry.handbrake) * motion * .7), 0, 1);
     return {
-      rpm: this.rpm, load: this.load, gear: reverse ? -1 : this.gear + 1, motion,
-      shiftSerial: this.shiftSerial, clutch,
-      engineLevel: (.085 + this.load * .09 + motion * .018) * clutch,
-      engineCutoff: 380 + this.load * 1350 + motion * 550 + (profile.redline > 8000 ? 1100 : 0),
+      rpm: this.rpm, load: this.load, gear: reverse ? -1 : this.gear + 1, motion, boost,
+      shiftSerial: this.shiftSerial, liftSerial: this.liftSerial, clutch,
+      engineLevel: (.085 + this.load * .09 + motion * .018) * (this.shift > 0 ? .8 : 1),
+      engineCutoff: 380 + this.load * 1350 + motion * 550 + (redline > 8000 ? 1100 : 0),
       roadLevel: Math.pow(motion, .85) * .18 * (1 - offRoad * .65),
       roughLevel: Math.sqrt(motion) * offRoad * .17,
       windLevel: Math.pow(motion, 1.7) * .12,
-      skidLevel: skid * (1 - offRoad * .85) * .075,
-      skidFrequency: 950 + corner * 600,
       reverseLevel: reverse ? Math.min(1, speed / 5) * .035 : 0,
       reverseFrequency: 260 + speed * 65,
     };
@@ -68,5 +88,38 @@ export function trafficSound(player, car, listenerHeading = player.heading) {
     level: Math.pow(clamp(1 - distance / 85, 0, 1), 2) / (1 + distance * .035),
     pan: clamp((dx * Math.cos(listenerHeading) + dz * Math.sin(listenerHeading)) / Math.max(6, distance * .55), -.95, .95),
     doppler: clamp(343 / (343 + radial), .78, 1.28),
+  };
+}
+// What one traffic car sounds like from where it is heard: its engine,
+// quieter idling than pulling away and deeper for a van; its tyres, which
+// only a moving car has; and the air taking the edge off a distant one.
+const HEAVY = { van: 1, pickup: .6 };
+export function trafficVoice(car, sound) {
+  const speed = Math.abs(finite(car.speed)), heavy = HEAVY[car.spec?.name] ?? 0;
+  return {
+    engine: sound.level * (.35 + .65 * clamp(speed / 12, 0, 1)) * (1 + heavy * .25),
+    tyres: sound.level * clamp(speed / 16, 0, 1) ** 1.3,
+    pitch: (58 - heavy * 13 + speed * 2.6 + finite(car.index) % 5 * 2.5) * sound.doppler,
+    hiss: (550 + speed * 38) * (1 - .45 * clamp(sound.distance / 85, 0, 1)),
+  };
+}
+
+// The city round the car: a hum of distant traffic that thins out in the
+// parks and at night, leaves and air stirring as the wind gusts (more in a
+// storm, less under snow), and the rain, drumming duller on the roof from
+// inside. `place` comes from citySoundscape (world/city.js).
+export function cityAmbience(place = {}, weather = {}, now = 0) {
+  const urban = clamp(finite(place.urban ?? .6), 0, 1), green = clamp(finite(place.green), 0, 1), water = clamp(finite(place.water), 0, 1);
+  const rain = clamp(finite(weather.rain), 0, 1), snow = clamp(finite(weather.snow), 0, 1), night = clamp(finite(weather.night), 0, 1);
+  now = finite(now);
+  const gust = .5 + .3 * Math.sin(now * .23) + .2 * Math.sin(now * .61 + 2), storm = clamp((rain - .75) * 4, 0, 1);
+  return {
+    hum: (.02 + .055 * urban + .012 * water) * (1 - .35 * night) * (1 - .45 * snow) * (.85 + .15 * gust),
+    humFrequency: 230 + 120 * urban,
+    air: (.004 + .016 * green * gust * gust + .012 * rain + .03 * storm * gust) * (1 - .7 * snow),
+    airFrequency: 2300 * (.8 + gust * .4),
+    rain: rain * (.28 + gust * .09) * (weather.cabin ? 1.2 : 1),
+    rainFrequency: weather.cabin ? 1800 : 4700,
+    gust, storm,
   };
 }

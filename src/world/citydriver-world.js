@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { CITY, cityCell, CITY_CELL } from './city.js';
 import { ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL } from './city-route.js';
 import { HarbourBoats } from './city-boats.js';
-import { cityAssets, cityTrees, twinLamp, signalMastPiece, LANTERN_HEIGHT, SIGNAL_LENSES, MAST_HEIGHT, parkedCars, PARKED_PAINTS, boatModels } from './city-assets.js';
+import { cityAssets, cityTrees, looseTree, twinLamp, signalMastPiece, LANTERN_HEIGHT, SIGNAL_LENSES, MAST_HEIGHT, parkedCars, PARKED_PAINTS, boatModels } from './city-assets.js';
 import { TRAFFIC_MODELS } from '../traffic-models.js';
 import { seededRandom, randomAt } from './route.js';
 import { residentWindow } from './resident.js';
@@ -14,7 +14,7 @@ import { buildGrassFringe } from './city-grass.js';
 import { createWaterMaterial } from './city-water.js';
 import { Surface, setColor } from './surface.js';
 import { cityWalker, walkerFloat, WALKER_COLORS, createWalkerMaterial, walkerAppearance, setWalkerAppearance, pairWalkers, offsetWalkerPose } from './city-life.js';
-import { applyWalkerHop, walkerTravelTime, holdWalkerTravel } from './pedestrian-reactions.js';
+import { walkedAt, paceAt, standing, rejoinWalk, stopWalkers, regroupWalkers, lookYaw, lean } from './pedestrian-reactions.js';
 import { stableShadowDepth } from './shadow-depth.js';
 import { navGraph } from './nav-graph.js';
 import { cityGreen } from '../city-junctions.js';
@@ -32,6 +32,8 @@ for (const name of ['position', 'normal', 'color']) warmupMergedGeometry.setAttr
 const transform = new THREE.Object3D();
 const residentItem = { p: [0, 0, 0], scale: [1, 1, 1], yaw: 0, roll: 0 };
 const residentFloat = {};
+// How far either side of a corner of their walk a resident turns through it (m)
+const WALKER_TURN = 1.2;
 const tint = new THREE.Color();
 // A structure's batch key, made once for each (a key made afresh for every
 // window of every building is hashed afresh by every lookup)
@@ -411,11 +413,12 @@ export class CityChunk {
     const index = random() < .28 ? 1 : 0, variant = cityTrees[index], p = [x, PAVEMENT_LEVEL, -s];
     const width = scale * (.82 + random() * .24), size = [width, scale, width], colour = pick(GREENS, random), yaw = random() * Math.PI * 2;
     if (this.distant) this.box(x, PAVEMENT_LEVEL + scale * .24, s, width * .085, scale * .48, width * .085, '#625548', 'solid', yaw);
-    else this.item(`tree-trunks-${index}`, variant.bark, this.materials.bark, p, size, '#ffffff', yaw);
-    this.item(`tree-crowns-${index}`, variant.leaves, this.materials.leaves, p, size, colour, yaw);
+    const trunk = this.distant ? null : this.item(`tree-trunks-${index}`, variant.bark, this.materials.bark, p, size, '#ffffff', yaw);
+    const crown = this.item(`tree-crowns-${index}`, variant.leaves, this.materials.leaves, p, size, colour, yaw);
     this.features.trees ??= [];
     this.features.trees.push({ x, s, scale });
     this.post(x, s, .28);
+    this.knockable([trunk, crown], [{ kind: 'tree', get geometry() { return looseTree(index, colour); } }]);
   }
   // A busy street's furniture, a few dozen pieces per step of a streamed build
   *furnitureSteps() {
@@ -423,8 +426,9 @@ export class CityChunk {
       if (index && index % 40 === 0) yield;
       const x = piece.u - this.east, s = piece.s - this.start;
       if (buildMonument(this, piece, x, s)) continue;
-      // Posts, signs, bins and benches can be knocked loose; trees, railings,
-      // shelters and the mast signals over the road stand firm
+      // Posts, signs, bins and benches can be knocked loose; trees and
+      // shelters only by a car that breaks them (see LooseProps); railings
+      // and the mast signals over the road stand firm
       if (piece.kind === 'lamp') { const lamp = this.prop('lamp', x, s, piece.yaw); this.post(x, s, .25); this.knockable([lamp], [{ kind: 'lamp', geometry: cityAssets.lamp }]); }
       // Two lamps back to back on one column, an arm over each carriageway
       else if (piece.kind === 'median-lamp') {
@@ -497,7 +501,11 @@ export class CityChunk {
           this.knockable([pole, ...head(0, 4.6)], [{ kind: 'signal', geometry: cityAssets.signal }]);
         }
       }
-      else if (piece.kind === 'shelter') { this.prop('shelter', x, s, piece.yaw); this.rigid(x, s, () => this.solid(x + .5, s, .6, 4), itemFrame(piece.s, piece.u, piece.yaw)); }
+      else if (piece.kind === 'shelter') {
+        const shelter = this.prop('shelter', x, s, piece.yaw);
+        this.rigid(x, s, () => this.solid(x + .5, s, .6, 4), itemFrame(piece.s, piece.u, piece.yaw));
+        this.knockable([shelter], [{ kind: 'shelter', geometry: cityAssets.shelter }]);
+      }
       else if (piece.kind === 'fountain') {
         // A round basin with a column in it carrying a bowl of water, and in
         // a big square's fountain a smaller bowl above that, and a finial
@@ -571,33 +579,57 @@ export class CityChunk {
       this.batches.get('residents').items.at(-1).appearance = walker.appearance;
     }
   }
-  // Where a walker is on its loop: world (x east, s north) and a yaw facing the way it walks
-  walkerPose(walker, time) {
-    const loop = walker.loop, travel = walker.phase + time * walker.speed * walker.direction;
-    const d = ((travel % loop.perimeter) + loop.perimeter) % loop.perimeter, points = loop.points, cumulative = loop.cumulative;
+  // Where a walker is on its loop, `walked` metres on: world (x east, s north)
+  // and a yaw facing the way it walks. The yaw turns through each corner
+  // over a metre or so either side of it (less on a short side), so a walker
+  // rounds it rather than snapping about, and a pair's sideways spacing,
+  // which follows the yaw, swings round with them.
+  walkerPose(walker, walked) {
+    const loop = walker.loop, travel = walker.phase + walked * walker.direction;
+    const d = ((travel % loop.perimeter) + loop.perimeter) % loop.perimeter, points = loop.points, cumulative = loop.cumulative, n = points.length;
     let i = 0;
-    while (i < points.length - 1 && cumulative[i + 1] <= d) i++;
-    const a = points[i], b = points[(i + 1) % points.length], span = (cumulative[i + 1] - cumulative[i]) || 1, t = (d - cumulative[i]) / span;
-    const du = (b.x - a.x) / span * walker.direction, ds = (b.y - a.y) / span * walker.direction;
-    return { x: a.x + (b.x - a.x) * t, s: a.y + (b.y - a.y) * t, yaw: -Math.atan2(du, ds) };
+    while (i < n - 1 && cumulative[i + 1] <= d) i++;
+    const a = points[i], b = points[(i + 1) % n], span = (cumulative[i + 1] - cumulative[i]) || 1, t = (d - cumulative[i]) / span;
+    const side = k => { const p = points[((k % n) + n) % n], q = points[(((k + 1) % n) + n) % n]; return Math.atan2(q.x - p.x, q.y - p.y); };
+    const length = k => cumulative[((k % n) + n) % n + 1] - cumulative[((k % n) + n) % n];
+    // (the corner nearer this point, and how far through its turn it is)
+    const along = d - cumulative[i], atEnd = along > span / 2, reach = Math.min(WALKER_TURN, span / 2, length(atEnd ? i + 1 : i - 1) / 2);
+    const from = atEnd ? side(i) : side(i - 1), to = atEnd ? side(i + 1) : side(i), past = atEnd ? along - span : along;
+    const blend = reach > 1e-6 ? THREE.MathUtils.smoothstep(past, -reach, reach) : past >= 0 ? 1 : 0;
+    const heading = from + Math.atan2(Math.sin(to - from), Math.cos(to - from)) * blend;
+    return { x: a.x + (b.x - a.x) * t, s: a.y + (b.y - a.y) * t, yaw: -heading + (walker.direction < 0 ? Math.PI : 0) };
   }
   animate(time, signalTime = time, animatePeople = true, contacts = null) {
     this.animateSignals(signalTime);
     if (!animatePeople || !this.peopleMesh) return;
     const mesh = this.peopleMesh;
+    // (from where the residents are drawn to the world, for those knocked flying)
+    this.peopleFrame ??= new THREE.Matrix4().makeTranslation(this.east, 0, -this.start);
     for (let i = 0; i < this.walkers.length; i++) {
-      const walker = this.walkers[i], travelTime = walkerTravelTime(walker, time);
-      const pose = offsetWalkerPose(this.walkerPose(walker, travelTime), walker);
+      const walker = this.walkers[i], partner = walker.pairOffset ? this.walkers[i + (walker.pairOffset < 0 ? 1 : -1)] : null;
+      const pose = offsetWalkerPose(this.walkerPose(walker, walkedAt(walker, time)), walker);
       const motion = walkerFloat(walker, time, residentFloat), width = walker.size * walker.width;
-      residentItem.p[0] = pose.x - this.east; residentItem.p[1] = PAVEMENT_LEVEL + motion.lift; residentItem.p[2] = -(pose.s - this.start);
-      residentItem.yaw = pose.yaw; residentItem.roll = motion.roll;
+      const x = pose.x - this.east, z = -(pose.s - this.start), pace = paceAt(walker, time);
+      // The slower they go, the less they bob; standing still, barely. Waiting
+      // for someone knocked over or catching up, they turn to watch them;
+      // going back to meet them, they face that way.
+      let look = null;
+      if (pace < 0) look = pose.yaw + Math.PI;
+      else if (standing(walker, time) && partner?.drawn && (partner.away || !standing(partner, time))) look = Math.atan2(x - partner.drawn.x, z - partner.drawn.z);
+      const bob = .3 + .7 * Math.min(1, Math.abs(pace) / walker.speed);
+      residentItem.p[0] = x; residentItem.p[1] = PAVEMENT_LEVEL + motion.lift * bob; residentItem.p[2] = z;
+      residentItem.yaw = lookYaw(walker, pose.yaw, look, time); residentItem.roll = motion.roll * bob;
       residentItem.scale[0] = residentItem.scale[2] = width; residentItem.scale[1] = walker.size * motion.stretch;
-      const matrix = cityItemMatrix(residentItem, this.east, this.start, transform.matrix), e = matrix.elements;
-      if (contacts?.hit(walker, e[12] + this.east, e[13], e[14] - this.start, .28 * width, time)) {
-        const partner = walker.pairOffset ? this.walkers[i + (walker.pairOffset < 0 ? 1 : -1)] : null;
-        holdWalkerTravel(walker, partner, time);
-      }
-      applyWalkerHop(walker, matrix, time);
+      const matrix = cityItemMatrix(residentItem, this.east, this.start, transform.matrix);
+      lean(matrix, pace - walker.speed - .3);
+      // Knocked over they stop, and so does anyone with them; up again, they
+      // rejoin their walk from where they landed (see rejoinWalk), and once
+      // back on it, catch up with each other (see regroupWalkers)
+      const away = contacts?.person(walker, matrix, this.peopleFrame, .28 * width, time, rejoinWalk) ?? false;
+      if (away && !walker.away) { walker.away = true; stopWalkers(walker, partner, time); }
+      else if (!away && walker.away) { walker.away = false; regroupWalkers(walker, partner, time, walker.arrival ?? 0); walker.arrival = 0; }
+      walker.drawn ??= { x: 0, z: 0 };
+      walker.drawn.x = matrix.elements[12]; walker.drawn.z = matrix.elements[14];
       mesh.setMatrixAt(i, matrix);
     }
     mesh.instanceMatrix.needsUpdate = true;

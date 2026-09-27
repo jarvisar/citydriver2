@@ -1,6 +1,6 @@
 import { CITY } from './city.js';
 import { medianAt, MEDIAN_KERB } from './city-medians.js';
-export { cityCell, cityDistrict } from './city.js';
+export { cityCell, cityDistrict, citySoundscape } from './city.js';
 
 // The route the car drives: a flat plane with s pointing north and u east,
 // answered from the generated city. The surfaces

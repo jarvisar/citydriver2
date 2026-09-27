@@ -411,6 +411,29 @@ function parkingSign() {
 }
 
 export const cityTrees = [streetTree(0), streetTree(1)];
+// A street tree as one piece to knock loose: its trunk and crown in one
+// model, their colours baked in (bark, and the crown's `green`), made when
+// first needed
+const looseTrees = new Map();
+export function looseTree(index, green) {
+  const key = `${index} ${green}`;
+  if (looseTrees.has(key)) return looseTrees.get(key);
+  const parts = [[cityTrees[index].bark, new THREE.Color('#625548')], [cityTrees[index].leaves, new THREE.Color(green)]].map(([geometry, tint]) => {
+    const flat = geometry.index ? geometry.toNonIndexed() : geometry.clone(), colour = flat.attributes.color;
+    for (let i = 0; i < colour.count; i++) colour.setXYZ(i, colour.getX(i) * tint.r, colour.getY(i) * tint.g, colour.getZ(i) * tint.b);
+    return flat;
+  });
+  const geometry = new THREE.BufferGeometry();
+  for (const name of ['position', 'normal', 'color']) {
+    const arrays = parts.map(part => part.attributes[name].array), joined = new Float32Array(arrays.reduce((n, a) => n + a.length, 0));
+    let at = 0; for (const array of arrays) { joined.set(array, at); at += array.length; }
+    geometry.setAttribute(name, new THREE.BufferAttribute(joined, 3));
+  }
+  for (const part of parts) part.dispose();
+  geometry.computeBoundingSphere();
+  looseTrees.set(key, geometry);
+  return geometry;
+}
 export const cityAssets = { lamp: lampPost(), signal: trafficSignal(), stop: stopSign(), yield: yieldSign(), bench: bench(), shelter: busShelter(), railing: railing(), bollard: bollard(), manhole: manhole(), tank: waterTank(), kiosk: kiosk(), bin: litterBin(), 'mooring-line': mooringLine(), lantern: parkLantern(), bandstand: bandstand(), 'signal-head': signalHead(), 'signal-mast': signalMast(), 'parking-sign': parkingSign() };
 // A mast-arm signal as one piece to knock loose: its pole, the arm out along
 // local -x over the lanes and a head at each of `mast`'s distances along it.

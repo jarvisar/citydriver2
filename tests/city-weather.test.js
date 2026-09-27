@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { CityWeather, sampleCityWeather, weatherLightning, WEATHER_CYCLE, WEATHER_INTERVAL, WEATHER_PRESETS, WEATHER_START, WEATHER_TRANSITION } from '../src/world/city-weather.js';
-import { DriveAudio } from '../src/audio.js';
+import { cityAmbience } from '../src/audio/model.js';
 import { SkyClouds } from '../src/sky-clouds.js';
 import { SoundDirector } from '../src/audio/director.js';
 
@@ -235,15 +235,10 @@ test('lightning appears only in heavy storms and honors reduced motion', () => {
 });
 
 test('city rain audio follows rain intensity and dry skies have no drips or thunder', () => {
-  const audio = new DriveAudio(); audio.setJourney('city');
-  audio.graph = Object.fromEntries(['bed', 'air', 'rain', 'insects'].map(key => [key, { level: { value: 0 }, frequency: { value: 0 } }]));
-  audio.graph.insectPulse = {}; audio.graph.insectMod = { frequency: {} };
-  audio.target = (parameter, value) => { parameter.value = value; };
-  audio.ambience({ motion: 0 }, 20, { rain: 0 }); assert.equal(audio.graph.rain.level.value, 0);
-  audio.ambience({ motion: 0 }, 20, { rain: .5 }); const lightRain = audio.graph.rain.level.value;
-  audio.ambience({ motion: 0 }, 20, { rain: 1 }); assert.equal(audio.graph.rain.level.value, lightRain * 2);
+  assert.equal(cityAmbience({}, { rain: 0 }, 20).rain, 0);
+  assert.equal(cityAmbience({}, { rain: 1 }, 20).rain, cityAmbience({}, { rain: .5 }, 20).rain * 2);
   const events = [], director = new SoundDirector();
-  const ambience = { journey: 'city', mix: { ambience: 1, music: 0 }, graph: { pads: [], event: (...args) => events.push(args) } };
+  const ambience = { place: { urban: .3 }, mix: { ambience: 1 }, graph: { event: (...args) => events.push(args) } };
   director.update(ambience, { motion: 0 }, 100, { rain: 0, lightning: 0 });
   assert.deepEqual(events, []);
   director.update(ambience, { motion: 0 }, 101, { rain: 1, lightning: .5 });

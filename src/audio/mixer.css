@@ -22,6 +22,6 @@
 .audio-channel input::-webkit-slider-thumb { appearance: none; -webkit-appearance: none; width: 16px; height: 16px; margin-top: -6px; border: 2px solid var(--cream); border-radius: 50%; background: var(--ink); box-shadow: 0 0 0 1px var(--ui-line); }
 .audio-channel input::-moz-range-thumb { box-sizing: border-box; width: 16px; height: 16px; border: 2px solid var(--cream); border-radius: 50%; background: var(--ink); box-shadow: 0 0 0 1px var(--ui-line); }
 .audio-mixer :is(button, input):focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
-.audio-mixer #audio-night { font-size: 11px; }
+.audio-mixer #audio-night { margin-top: 16px; font-size: 11px; }
 @media (prefers-reduced-motion: reduce) { .audio-mixer-toggle .audio-chevron { transition: none; } }
 @media (forced-colors: active) { .audio-channel input { appearance: auto; -webkit-appearance: auto; accent-color: auto; } }

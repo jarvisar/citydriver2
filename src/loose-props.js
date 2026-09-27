@@ -33,6 +33,12 @@ const KINDS = {
   table: { mass: .05, firm: 0, lift: .3, bounce: .3, sound: 'light' },
   chair: { mass: .01, firm: 0, lift: .5, bounce: .3, sound: 'light' },
   stall: { mass: .35, firm: 2, lift: .15, bounce: .15, sound: 'wood', bits: 'fruit' },
+  // A pedestrian a car meets (see person): scooped off their feet, they
+  // tumble, land and slide to a stop, then get up (see PedestrianContacts)
+  person: { mass: .07, firm: 0, lift: .45, bounce: .1, sound: 'thud' },
+  // Stand firm against any car but one that `breaks` them (see Vehicle.spec)
+  tree: { mass: 1.4, firm: 4, topples: true, lift: .25, bounce: .1, sound: 'wood', bits: 'leaves', only: true },
+  shelter: { mass: .6, firm: 3, lift: .35, bounce: .15, sound: 'metal', bits: 'glass', only: true },
 };
 // A little heavier than real, so flung furniture does not hang in the air
 const GRAVITY = 13;
@@ -40,6 +46,9 @@ const GRAVITY = 13;
 // the parked cars do (see CityTraffic); and no more than this many are loose
 // at once, the furthest going back first
 const RETURN = 150, MOST = 80;
+// A pedestrian's body nobody has drawn for this long (their fare taken, or
+// their block streamed out) is put away, so nothing unseen lies in the road
+const UNSEEN = 4;
 // The ground is never higher than a median's kerb, so a point above it needs no lookup
 const TOP = ROAD_LEVEL + MEDIAN_KERB + .01;
 // Friction: the ground under a sliding piece, a car's bumper dragging one
@@ -126,9 +135,20 @@ function shapeOf(geometry) {
   return shape;
 }
 
+// A shape scaled by `s` (a Vector3), for a piece drawn scaled
+function scaledShape(unit, s) {
+  const points = unit.points.slice();
+  for (let i = 0; i < points.length; i += 3) { points[i] *= s.x; points[i + 1] *= s.y; points[i + 2] *= s.z; }
+  const size = unit.size.clone().multiply(s);
+  return {
+    points, com: unit.com.clone().multiply(s), size, radius: unit.radius * Math.max(s.x, s.y, s.z), height: size.y,
+    inertia: new THREE.Vector3((size.y ** 2 + size.z ** 2) / 12, (size.x ** 2 + size.z ** 2) / 12, (size.x ** 2 + size.y ** 2) / 12),
+  };
+}
+
 // The ground under a point: a pavement, a median's kerb or the road, and
 // none (NaN) over the water
-function level(x, z) {
+export function level(x, z) {
   const surface = surfaceAt(-z, x);
   return surface === 'pavement' ? PAVEMENT_LEVEL : surface === 'median' ? ROAD_LEVEL + MEDIAN_KERB : surface === 'water' ? NaN : ROAD_LEVEL;
 }
@@ -196,6 +216,7 @@ const BITS = {
   litter: { colours: ['#ebe5d3', '#cfc9b8', '#7fa06f', '#d9b24a', '#b8574a'], size: [.08, .13], shape: [1, .08, .8], count: 12, speed: 3.5, up: 4, life: 3, drag: 2.5 },
   fruit: { colours: ['#c96246', '#d8af51', '#819d4e', '#d58c43'], size: [.1, .13], shape: [1, .9, 1], count: 22, speed: 4.5, up: 3.5, life: 4.5, rolls: true },
   splash: { colours: ['#e3f1f2', '#b4d6d9', '#ffffff'], size: [.07, .14], shape: [1, 1, 1], count: 16, speed: 1.6, up: 5, life: 1.1 },
+  leaves: { colours: ['#63924d', '#80a85c', '#4f8054', '#93ab65', '#6b5a48'], size: [.1, .18], shape: [1, .12, .7], count: 20, speed: 3, up: 3.5, life: 2.6, drag: 2.2 },
 };
 const BIT_LIMIT = 160;
 class Bits {
@@ -260,7 +281,7 @@ export class LooseProps {
   // `material`: the street furniture's own (vertex colours, instanced)
   constructor(scene, material) {
     this.group = new THREE.Group(); this.group.name = 'loose-props'; scene.add(this.group);
-    this.material = material; this.pools = new Map(); this.bodies = []; this.loose = [];
+    this.material = material; this.pools = new Map(); this.bodies = []; this.loose = []; this.people = []; this.alpha = 1;
     this.bits = new Bits(this.group, material);
     // What was heard: { kind, strength (m/s), x, z }, for the sound to take (see DriveAudio)
     this.sounds = [];
@@ -274,30 +295,60 @@ export class LooseProps {
   knock(collider, contact, car) {
     const prop = collider.prop;
     if (!prop?.ready || collider.woken) return null;
-    const closing = -(car.vx * contact.x + car.vz * contact.z);
-    if (closing < Math.max(.2, KINDS[prop.pieces[0].kind].firm)) return null;
+    const closing = -(car.vx * contact.x + car.vz * contact.z), piece = prop.pieces[0].kind;
+    if (closing < Math.max(.2, KINDS[piece].firm) || (KINDS[piece].only && !car.breaks?.includes(piece))) return null;
     const point = contact.point ?? { x: collider.x, z: collider.z }, bodies = this.loosen(collider);
     const hit = bodies.reduce((a, b) => Math.hypot(a.p.x - point.x, a.p.z - point.z) <= Math.hypot(b.p.x - point.x, b.p.z - point.z) ? a : b), kind = hit.kind;
-    let blow;
-    if (kind.topples) blow = this.topple(hit, car, contact, point);
-    else {
-      // Flung off the bumper, it is swept a little aside out of the car's
-      // path, like a skittle, and pops up no higher than POP
-      const ax = Math.cos(car.heading), az = Math.sin(car.heading), side = Math.sign((hit.p.x - car.x) * ax + (hit.p.z - car.z) * az) || 1;
-      let nx = -contact.x + ax * side * ASIDE, nz = -contact.z + az * side * ASIDE;
-      const length = Math.hypot(nx, nz); nx /= length; nz /= length;
-      // (met on the furniture's own outline, which for a cafe's chair can be
-      // a metre off it: the blow lands on the chair's side, not beyond it)
-      r.set(point.x - hit.p.x, 0, point.z - hit.p.z);
-      const reach = Math.max(hit.shape.size.x, hit.shape.size.z) / 4, off = Math.hypot(r.x, r.z);
-      if (off > reach) r.multiplyScalar(reach / off);
-      r.y = Math.min(car.y + BUMPER, hit.p.y) - hit.p.y;
-      blow = this.blow(hit, car, r, nx, nz, kind.lift);
-      if (blow) { this.tumble(hit, nx, nz, blow.closing); hit.v.y = Math.min(hit.v.y, POP); }
-    }
+    const blow = kind.topples ? this.topple(hit, car, contact, point) : this.fling(hit, car, contact, point);
     if (kind.bits && !kind.topples) this.bits.burst(kind.bits, hit.p.x, hit.p.y, hit.p.z, hit.v.x * .4, hit.v.z * .4);
     this.sound(kind.sound, closing, point.x, point.z);
     return blow ?? { x: 0, z: 0, spin: 0, closing };
+  }
+  // Flung off the bumper, a piece is swept a little aside out of the car's
+  // path, like a skittle, and pops up no higher than POP
+  fling(hit, car, contact, point) {
+    const ax = Math.cos(car.heading), az = Math.sin(car.heading), side = Math.sign((hit.p.x - car.x) * ax + (hit.p.z - car.z) * az) || 1;
+    let nx = -contact.x + ax * side * ASIDE, nz = -contact.z + az * side * ASIDE;
+    const length = Math.hypot(nx, nz); nx /= length; nz /= length;
+    // (met on the furniture's own outline, which for a cafe's chair can be
+    // a metre off it: the blow lands on the chair's side, not beyond it)
+    r.set(point.x - hit.p.x, 0, point.z - hit.p.z);
+    const reach = Math.max(hit.shape.size.x, hit.shape.size.z) / 4, off = Math.hypot(r.x, r.z);
+    if (off > reach) r.multiplyScalar(reach / off);
+    r.y = Math.min(car.y + BUMPER, hit.p.y) - hit.p.y;
+    const blow = this.blow(hit, car, r, nx, nz, hit.kind.lift);
+    if (blow) { this.tumble(hit, nx, nz, blow.closing); hit.v.y = Math.min(hit.v.y, POP); }
+    return blow;
+  }
+  // A pedestrian (`geometry` drawn by `matrix`, in the world) that `car` (as
+  // for knock) has run into: a body in their place, its points scaled to
+  // them, flung off the car. Their owner draws it (see PedestrianContacts).
+  // Returns { body, blow }, the blow being what the car takes back.
+  person(geometry, matrix, car) {
+    const body = this.add({ kind: 'person', geometry, person: true }, matrix);
+    body.slept = 0; body.unseen = 0; this.people.push(body);
+    // Met on the face of the car nearest them
+    const cos = Math.cos(car.heading), sin = Math.sin(car.heading), dx = body.p.x - car.x, dz = body.p.z - car.z;
+    const across = dx * cos + dz * sin, along = dx * sin - dz * cos, contact = { x: 0, z: 0 };
+    if (Math.abs(across) / car.halfWidth > Math.abs(along) / car.halfLength) { contact.x = -(Math.sign(across) || 1) * cos; contact.z = -(Math.sign(across) || 1) * sin; }
+    else { contact.x = -(Math.sign(along) || 1) * sin; contact.z = (Math.sign(along) || 1) * cos; }
+    const blow = this.fling(body, car, contact, { x: body.p.x, z: body.p.z });
+    if (blow) this.sound('thud', blow.closing, body.p.x, body.p.z);
+    return { body, blow };
+  }
+  // A pedestrian's body put away: they are back on their feet
+  release(body) {
+    if (body.removed) return;
+    body.removed = true; this.remove(body);
+    this.people[this.people.indexOf(body)] = this.people.at(-1); this.people.pop();
+  }
+  // Where a pedestrian's body is drawn from, in the world, between steps as render left it
+  personMatrix(body, out) {
+    const a = this.alpha;
+    position.lerpVectors(body.last.p, body.p, a); rotation.slerpQuaternions(body.last.q, body.q, a);
+    position.sub(t1.copy(body.shape.com).applyQuaternion(rotation));
+    body.unseen = 0;
+    return out.compose(position, rotation, body.scale);
   }
   // The player's car running into standing furniture: true if it gave way,
   // and the car has taken its share of the blow
@@ -308,7 +359,7 @@ export class LooseProps {
   }
   carOf(player) {
     const car = player.motion();
-    car.y = player.groundedPosition.y; car.height = player.spec.mass > 3 ? CAB : ROOF;
+    car.y = player.groundedPosition.y; car.height = player.spec.mass > 3 ? CAB : ROOF; car.breaks = player.spec.breaks;
     return car;
   }
   // Its bodies take the furniture's place
@@ -325,23 +376,32 @@ export class LooseProps {
     prop.bodies = null; collider.woken = false; prop.hide(false);
     this.loose.splice(this.loose.indexOf(collider), 1);
   }
-  reset() { while (this.loose.length) this.restore(this.loose[0]); this.bits.clear(); this.sounds = []; }
+  reset() {
+    while (this.loose.length) this.restore(this.loose[0]);
+    while (this.people.length) this.release(this.people[0]);
+    this.bits.clear(); this.sounds = [];
+  }
   add(piece, base) {
-    const shape = shapeOf(piece.geometry), kind = KINDS[piece.kind];
+    const kind = KINDS[piece.kind];
     frame.copy(base); if (piece.at) frame.multiply(piece.at);
     frame.decompose(position, rotation, scale);
-    const p = shape.com.clone().applyMatrix4(frame), body = {
+    // (a piece drawn scaled, a tree or a person, stands on its points scaled)
+    const scaled = Math.abs(scale.x - 1) + Math.abs(scale.y - 1) + Math.abs(scale.z - 1) > 1e-4;
+    const shape = scaled ? scaledShape(shapeOf(piece.geometry), scale) : shapeOf(piece.geometry);
+    const p = shape.com.clone().applyMatrix4(frame.compose(position, rotation, ONE)), body = {
       piece, kind, shape, p, q: rotation.clone(), v: new THREE.Vector3(), w: new THREE.Vector3(),
       last: { p: p.clone(), q: rotation.clone() }, rest: { p: p.clone(), q: rotation.clone() }, asleep: false, still: 0, awake: 0, grounded: true, sunk: false, splashed: false, clatter: 0,
       // Where each point last looked up the ground (x, z) and what it found
       ground: new Float32Array(shape.points.length).fill(NaN),
       // A turn of its own, either way, for a little variety
       jitter: Math.sin(p.x * 12.9898 + p.z * 78.233) * 43758.5453 % 1,
+      scale: scaled ? scale.clone() : ONE,
     };
-    let pool = this.pools.get(piece.geometry);
+    // (a pedestrian is drawn by their owner, among the other people)
+    let pool = piece.person ? { bodies: [], dirty: false } : this.pools.get(piece.geometry);
     if (!pool) this.pools.set(piece.geometry, pool = { geometry: piece.geometry, mesh: null, capacity: 0, bodies: [], dirty: true });
     pool.bodies.push(body); body.pool = pool; pool.dirty = true;
-    if (pool.bodies.length > pool.capacity) {
+    if (!piece.person && pool.bodies.length > pool.capacity) {
       pool.mesh?.removeFromParent(); pool.mesh?.dispose();
       pool.capacity = Math.max(8, pool.capacity * 2);
       const mesh = pool.mesh = new THREE.InstancedMesh(piece.geometry, this.material, pool.capacity);
@@ -433,9 +493,17 @@ export class LooseProps {
     else { body.p.x += nx * (depth + .01); body.p.z += nz * (depth + .01); }
     body.pool.dirty = true;
     r.set(points[best], points[best + 1], points[best + 2]).applyQuaternion(body.q);
-    return roof ? this.blow(body, car, r, 0, 0, 1, SLICK) : this.blow(body, car, r, nx, nz, .3);
+    if (roof) return this.blow(body, car, r, 0, 0, 1, SLICK);
+    // A person met by the nose or tail is swept aside off it, as when first
+    // hit, rather than pushed on ahead of the car
+    if (body.kind === KINDS.person && Math.abs(nx * sin - nz * cos) > .9) {
+      const side = Math.sign((body.p.x - car.x) * cos + (body.p.z - car.z) * sin) || Math.sign(body.jitter) || 1;
+      nx += cos * side * ASIDE * 2; nz += sin * side * ASIDE * 2;
+      const length = Math.hypot(nx, nz); nx /= length; nz /= length;
+    }
+    return this.blow(body, car, r, nx, nz, .3);
   }
-  wake(body) { body.asleep = false; body.still = 0; body.awake = 0; }
+  wake(body) { body.asleep = false; body.still = 0; body.awake = 0; body.slept = 0; }
   sleep(body) {
     body.asleep = true; body.v.set(0, 0, 0); body.w.set(0, 0, 0);
     body.last.p.copy(body.p); body.last.q.copy(body.q); body.pool.dirty = true;
@@ -561,9 +629,19 @@ export class LooseProps {
       const collider = this.loose[i];
       if (Math.hypot(collider.x - at.x, collider.z - at.z) > RETURN) this.restore(collider);
     }
+    // A pedestrian lies still a while before getting up (see PedestrianContacts)
+    for (let i = this.people.length - 1; i >= 0; i--) {
+      const body = this.people[i];
+      body.unseen += dt;
+      if (body.sunk || body.unseen > UNSEEN || Math.hypot(body.p.x - at.x, body.p.z - at.z) > RETURN) this.release(body);
+      else if (body.asleep) body.slept += dt;
+    }
     while (this.bodies.length > MOST) {
-      const furthest = this.loose.reduce((a, b) => Math.hypot(a.x - at.x, a.z - at.z) >= Math.hypot(b.x - at.x, b.z - at.z) ? a : b);
-      this.restore(furthest);
+      const away = o => Math.hypot(o.x - at.x, o.z - at.z), apart = o => Math.hypot(o.p.x - at.x, o.p.z - at.z);
+      const collider = this.loose.length ? this.loose.reduce((a, b) => away(a) >= away(b) ? a : b) : null;
+      const body = this.people.length ? this.people.reduce((a, b) => apart(a) >= apart(b) ? a : b) : null;
+      if (body && (!collider || apart(body) > away(collider))) this.release(body);
+      else this.restore(collider);
     }
     if (this.bodies.length) {
       const car = this.carOf(player), cars = traffic?.enabled ? [...traffic.vehicles, ...traffic.woken ?? []] : [];
@@ -585,7 +663,7 @@ export class LooseProps {
   }
   render(alpha = 1, origin = 0) {
     this.group.position.z = origin;
-    const a = Math.min(1, Math.max(0, alpha));
+    const a = this.alpha = Math.min(1, Math.max(0, alpha));
     for (const pool of this.pools.values()) {
       if (!pool.dirty && !pool.bodies.some(body => !body.asleep && !body.sunk)) continue;
       pool.bodies.forEach((body, i) => {
@@ -593,7 +671,7 @@ export class LooseProps {
         else {
           position.lerpVectors(body.last.p, body.p, a); rotation.slerpQuaternions(body.last.q, body.q, a);
           position.sub(t1.copy(body.shape.com).applyQuaternion(rotation));
-          matrix.compose(position, rotation, ONE);
+          matrix.compose(position, rotation, body.scale);
         }
         pool.mesh.setMatrixAt(i, matrix);
       });

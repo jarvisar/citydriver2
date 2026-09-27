@@ -105,7 +105,7 @@ export const CARS = {
   },
   // Goes anywhere at the same unhurried pace, and leans on its tyres to stop or turn.
   monster: {
-    name: 'Monster Truck', mass: 4.5, kind: 'special', paint: '#3f7fb5', shape: SPECIAL_SHAPES.monster,
+    name: 'Monster Truck', mass: 4.5, kind: 'special', paint: '#3f7fb5', shape: SPECIAL_SHAPES.monster, breaks: ['shelter'],
     stats: { topSpeed: 23.5, acceleration: 10.4, braking: 16.5, grip: .8, offRoad: 21.5 },
   },
   // All engine: quicker in a straight line than the coupe, and nowhere else.
@@ -115,7 +115,7 @@ export const CARS = {
   },
   // Eight tonnes of tractor unit. It gets there, and it needs the room to stop.
   rig: {
-    name: 'Truck', mass: 8, kind: 'special', paint: '#a3312c', shape: SPECIAL_SHAPES.rig,
+    name: 'Truck', mass: 8, kind: 'special', paint: '#a3312c', shape: SPECIAL_SHAPES.rig, breaks: ['tree', 'shelter'],
     stats: { topSpeed: 27, acceleration: 8.6, braking: 15.5, grip: .78, offRoad: 16.2, turnRadius: 5.4 },
   },
   // Out of breath by 48 mph, but it changes lanes like a thought.
@@ -164,6 +164,9 @@ export function carStats(id) {
     // the off-road figure, so the number on the card falls out of the physics
     // rather than being clamped on top of it.
     loose: Math.max(0, acceleration - DRAG.rolling - DRAG.air * offRoad * offRoad),
+    // The speed full throttle holds on the flat: the top speed, or where the
+    // air balances the engine first (the Formula's 79 m/s). Sets the sound's gearing.
+    cruise: Math.min(topSpeed, Math.sqrt(Math.max(0, acceleration - DRAG.rolling) / DRAG.air)),
   };
 }
 

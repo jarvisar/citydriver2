@@ -386,7 +386,7 @@ export class CityTraffic {
     const reach = Math.min(70, car.speed * car.speed / (2 * FOLLOW_DECEL) + 18);
     // (the path ahead is walked only once something is near enough to be on it)
     let path = null, crossing = null;
-    let limit = Infinity;
+    let limit = Infinity, blocker = null;
     // (parked cars knocked loose into the road are in the way too)
     const count = this.vehicles.length, total = count + this.woken.length;
     for (let i = 0; i <= total; i++) {
@@ -412,11 +412,14 @@ export class CityTraffic {
         let hit = false;
         for (let j = 0; j < discs.length && !hit; j += 2) hit = Math.hypot(px - discs[j], py - discs[j + 1]) < clear;
         if (hit) {
-          limit = Math.min(limit, Math.sqrt(2 * FOLLOW_DECEL * Math.max(0, path[k] - car.spec.length / 2 - FOLLOW_GAP)));
+          const allowed = Math.sqrt(2 * FOLLOW_DECEL * Math.max(0, path[k] - car.spec.length / 2 - FOLLOW_GAP));
+          if (allowed < limit) { limit = allowed; blocker = other; }
           break;
         }
       }
     }
+    // (who set the limit, for the horn: see update)
+    this.blocker = blocker;
     return limit;
   }
   // Whether `other` can be left out of `car`'s way while `car` crosses the
@@ -461,7 +464,11 @@ export class CityTraffic {
       if (car.turn) target = Math.min(target, approachSpeed(car.turn, car.turn.start - car.along));
       // and slow for the street's own bends before the turn
       if (!car.turn || car.along < car.turn.start) target = Math.min(target, bendSpeed(this.nav, car.edge, car.direction, car.along, car.lane));
-      target = Math.min(target, after, this.following(car, player));
+      const follow = this.following(car, player);
+      // Seconds held up by the player alone, not a light or the traffic: the
+      // driver sounds the horn (see DriveAudio.horn)
+      car.held = this.blocker === player && car.speed < .5 && follow < Math.min(target, after) - .5 ? (car.held || 0) + dt : 0;
+      target = Math.min(target, after, follow);
       car.targetSpeed = target;
     }
     for (const car of this.vehicles) {

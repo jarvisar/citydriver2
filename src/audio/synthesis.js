@@ -4,7 +4,7 @@ import { createTextureBuffer } from './textures.js';
 
 // Stereo pink noise with a seamless join: the noise layers' default buffer.
 export function createNoiseBuffer(ctx, seed = 0x71ca9) {
-  const length = Math.ceil(ctx.sampleRate * 12), overlap = Math.ceil(ctx.sampleRate * .15);
+  const length = Math.ceil(ctx.sampleRate * 8), overlap = Math.ceil(ctx.sampleRate * .15);
   const buffer = ctx.createBuffer(2, length, ctx.sampleRate);
   let state = seed >>> 0;
   for (let channel = 0; channel < 2; channel++) {
@@ -28,125 +28,186 @@ export function createNoiseBuffer(ctx, seed = 0x71ca9) {
   return buffer;
 }
 
+// One cricket's chirp: four quick pulses of a high tone, each a shade lower
+// as the wing's file runs down. Played as a sample, a few times a second.
+export function createCricketBuffer(ctx) {
+  const rate = ctx.sampleRate, buffer = ctx.createBuffer(1, Math.round(rate * .16), rate), data = buffer.getChannelData(0);
+  for (let pulse = 0; pulse < 4; pulse++) {
+    const start = Math.round(rate * pulse * .036), n = Math.round(rate * .022);
+    let phase = 0;
+    for (let i = 0; i < n; i++) {
+      phase += 2 * Math.PI * (4750 - pulse * 40 - i / n * 120) / rate;
+      data[start + i] = Math.sin(phase) * Math.sin(Math.PI * i / n) ** 2 * (1 - pulse * .08);
+    }
+  }
+  return buffer;
+}
+
+// A two-tone car horn as one waveform: a fundamental a fifth of the way down
+// whose 4th and 5th harmonics are the two notes (a major third apart), each
+// with its own reedy overtones up to about 3.5 kHz.
+function hornPartials() {
+  const imag = new Float32Array(41);
+  for (const note of [4, 5]) for (let k = 1; note * k <= 40; k++) imag[note * k] += (note === 4 ? 1 : .85) / k ** .8 * (k === 1 ? 1 : .7);
+  return imag;
+}
+
+// Continuous parameters move at the control rate (once every 128 samples):
+// Chromium otherwise recomputes an automated filter's coefficients every
+// sample, which costs it twice as much and is inaudible at these speeds.
+function controlRate(param) {
+  try { param.automationRate = 'k-rate'; } catch { /* Fixed-rate parameter. */ }
+  return param;
+}
+
+// The whole graph, built once. Silence is kept cheap: a continuous layer is
+// unhooked from its source once it has faded out (see DriveAudio.layer), four
+// shared noise loops feed every noise layer, and an event plays a one-shot
+// source through a fixed voice, so an idle voice costs nothing either.
 export function createSoundGraph(ctx) {
-  const nodes = [], sources = [];
+  const nodes = [], sources = [], layers = [];
   const keep = node => { nodes.push(node); return node; };
   const gain = (value, destination) => {
     const node = keep(ctx.createGain()); node.gain.value = value;
-    node.connect(destination); return node;
+    if (destination) node.connect(destination);
+    return node;
   };
   const filter = (type, frequency, destination, q = .65) => {
     const node = keep(ctx.createBiquadFilter()); node.type = type; node.frequency.value = frequency; node.Q.value = q;
+    controlRate(node.frequency); controlRate(node.Q);
     node.connect(destination); return node;
   };
-  const oscillator = (frequency, destination, type = 'sine') => {
-    const node = keep(ctx.createOscillator()); node.frequency.value = frequency;
-    node.type = type;
-    node.connect(destination); node.start(); sources.push(node); return node;
+  const loop = buffer => {
+    const node = keep(ctx.createBufferSource()); node.buffer = buffer; node.loop = true;
+    node.start(); sources.push(node); return node;
   };
+  const oscillator = (type, frequency, wave = null) => {
+    const node = keep(ctx.createOscillator()); node.frequency.value = frequency; controlRate(node.frequency);
+    if (wave) node.setPeriodicWave(wave); else node.type = type;
+    node.start(); sources.push(node); return node;
+  };
+  const periodic = partials => ctx.createPeriodicWave(new Float32Array(partials.length), partials);
+
+  // Output: every bus, the cabin's muffling in first person, the world's
+  // backdrop (ducked under a crash), then protection against rumble and peaks
   const master = gain(0, ctx.destination);
   const compressor = keep(ctx.createDynamicsCompressor());
   compressor.threshold.value = -14; compressor.knee.value = 12; compressor.ratio.value = 3;
   compressor.attack.value = .006; compressor.release.value = .24; compressor.connect(master);
-  const highpass = filter('highpass', 28, compressor, .7);
-  const bus = filter('lowpass', 7200, highpass);
-  const buses = {}, perspective = {};
-  for (const name of ['engine', 'road', 'ambience', 'traffic', 'music']) {
-    perspective[name] = filter('lowpass', 14000, bus);
-    buses[name] = gain(0, perspective[name]);
-  }
-  const pink = createNoiseBuffer(ctx);
-  const contactNoise = createTextureBuffer(ctx, 'road'), windNoise = createTextureBuffer(ctx, 'wind'), rainNoise = createTextureBuffer(ctx, 'rain');
-  const noiseLayer = (type, frequency, low, offset, rate = 1, destination = buses.road, q = .65, buffer = pink) => {
-    const level = gain(0, destination);
-    const shape = filter(type, frequency, level, q);
-    const cut = filter('highpass', low, shape);
-    const source = keep(ctx.createBufferSource()); source.buffer = buffer; source.loop = true; source.playbackRate.value = rate;
-    source.connect(cut); source.start(0, offset); sources.push(source);
-    return { level: level.gain, frequency: shape.frequency, rate: source.playbackRate };
+  const mix = gain(1, filter('highpass', 50, compressor, .7));
+  const cabin = { engine: filter('lowpass', 20000, mix, 0), world: filter('lowpass', 20000, mix, 0) };
+  const backdrop = gain(1, cabin.world);
+  const buses = {
+    engine: gain(0, cabin.engine), road: gain(0, cabin.world), ambience: gain(0, backdrop), traffic: gain(0, backdrop), cues: gain(0, mix),
   };
+
+  const buffers = { pink: createNoiseBuffer(ctx), road: createTextureBuffer(ctx, 'road'), wind: createTextureBuffer(ctx, 'wind'), rain: createTextureBuffer(ctx, 'rain'), cricket: createCricketBuffer(ctx) };
+  const noise = { pink: loop(buffers.pink), road: loop(buffers.road), wind: loop(buffers.wind), rain: loop(buffers.rain) };
+  // A continuous layer: its source (a shared loop or its own oscillator)
+  // through its level, then its filters. `frequency` is the last filter's.
+  const layer = (input, destination, ...shape) => {
+    const level = gain(0);
+    let node = level, frequency = input.frequency ?? null;
+    for (const [type, value, q] of shape) {
+      const next = keep(ctx.createBiquadFilter()); next.type = type; next.frequency.value = value; next.Q.value = q ?? .65;
+      controlRate(next.frequency); node.connect(next); node = next; frequency = next.frequency;
+    }
+    node.connect(destination);
+    const result = { level: level.gain, frequency, links: [[input, level]], open: false, closeAt: Infinity };
+    layers.push(result); return result;
+  };
+
   const engineLevel = gain(0, buses.engine);
-  const engineFilter = filter('lowpass', 420, engineLevel);
+  // The exhaust's fixed low resonance droned under everything: outside the car
+  // it is taken down so the revs carry; the cabin keeps more of its boom
+  const engineShelf = filter('lowshelf', 150, engineLevel, 0); engineShelf.gain.value = -5;
+  const engineFilter = filter('lowpass', 420, engineShelf);
   const engineBank = createEngineBank(ctx, engineFilter);
-  engineBank.setProfile(ENGINES.coast);
+  engineBank.setProfile(ENGINES.city);
+  const combustion = layer(noise.pink, buses.engine, ['bandpass', 550]);
+  const intake = layer(noise.pink, buses.engine, ['bandpass', 1400]);
+  // Boost: the intake roaring as the charge comes in
+  const boost = layer(noise.pink, buses.engine, ['bandpass', 1000, 1.2]);
+  const reverse = layer(oscillator('triangle', 260), buses.engine);
+  const road = layer(noise.road, buses.road, ['highpass', 90], ['lowpass', 1100]);
+  const rough = layer(noise.road, buses.road, ['bandpass', 1000, .8]);
+  // Loose ground judders: a low oscillator swings the rough layer's level
+  const roughMod = oscillator('sine', 17), roughPulse = gain(0);
+  roughPulse.connect(rough.level); rough.links.push([roughMod, roughPulse]);
+  const wind = layer(noise.wind, buses.road, ['highpass', 100], ['lowpass', 1500]);
+  // Metal grinding along a wall or another car
+  const scrape = layer(noise.road, buses.road, ['bandpass', 1500, 1.6]);
+  const bed = layer(noise.wind, buses.ambience, ['highpass', 60], ['lowpass', 300]);
+  const air = layer(noise.rain, buses.ambience, ['highpass', 600], ['bandpass', 2300]);
+  const rain = layer(noise.rain, buses.ambience, ['highpass', 350], ['lowpass', 4700]);
+
   // Distant traffic uses a cheaper harmonic voice; the player's engine uses
   // combustion textures with separate RPM and load blends.
-  const waves = new Map(Object.values(ENGINES).map(profile => {
-    const harmonics = new Float32Array([0, ...profile.harmonics]);
-    return [profile, ctx.createPeriodicWave(new Float32Array(harmonics.length), harmonics)];
-  }));
-  const bodyLevel = gain(.018, buses.engine);
-  const body = oscillator(820 / 60, bodyLevel);
-  const combustion = noiseLayer('bandpass', 550, 150, 1.7, 1, buses.engine);
-  const intake = noiseLayer('bandpass', 1400, 480, 4.4, 1, buses.engine);
-  const reverseLevel = gain(0, buses.engine);
-  const reverse = oscillator(260, reverseLevel, 'triangle');
-  const road = noiseLayer('lowpass', 1100, 90, 3.1, 1, buses.road, .65, contactNoise);
-  const rough = noiseLayer('bandpass', 1000, 110, 5.6, .74, buses.road, .8, contactNoise);
-  const roughPulse = gain(0, rough.level);
-  const roughMod = oscillator(17, roughPulse);
-  const wind = noiseLayer('lowpass', 1500, 100, 4.3, 1, buses.road, .65, windNoise);
-  const skid = noiseLayer('bandpass', 1100, 650, 2.3, 1, buses.road, 3);
-  // Metal grinding along a wall or another car
-  const scrape = noiseLayer('bandpass', 1500, 380, 7.7, 1, buses.road, 1.6, contactNoise);
-  const skidToneLevel = gain(0, buses.road);
-  const skidTone = oscillator(1050, skidToneLevel);
-  const bed = noiseLayer('lowpass', 440, 65, 0, .83, buses.ambience, .65, windNoise);
-  const air = noiseLayer('bandpass', 2300, 600, 6.9, .91, buses.ambience, .65, rainNoise);
-  const rain = noiseLayer('lowpass', 4700, 350, 1.2, 1, buses.ambience, .65, rainNoise);
-  const insects = noiseLayer('bandpass', 4200, 2800, 6.1, 1.1, buses.ambience, 5);
-  const insectPulse = gain(0, insects.level);
-  const insectMod = oscillator(31, insectPulse);
-
-  const traffic = Array.from({ length: 4 }, (_, index) => {
-    const pan = keep(ctx.createStereoPanner()); pan.connect(buses.traffic);
-    const level = gain(0, pan);
-    const toneLevel = gain(.11, level);
-    const tone = oscillator(75 + index * 9, toneLevel);
-    tone.setPeriodicWave(waves.get(ENGINES.sedan));
-    const wash = noiseLayer('bandpass', 900, 150, index * 2.6, 1, level);
-    wash.level.value = .2;
-    return { level: level.gain, pan: pan.pan, tone: tone.frequency, wash: wash.frequency, rate: wash.rate };
+  const waves = { horn: periodic(hornPartials()), gull: periodic(new Float32Array([0, 1, .75, .55, .38, .24, .14, .08, .05])) };
+  for (const name of ['hatchback', 'sedan', 'wagon', 'pickup', 'van']) waves[name] = periodic(new Float32Array([0, ...ENGINES[name].harmonics]));
+  const traffic = Array.from({ length: 4 }, () => {
+    const pan = keep(ctx.createStereoPanner()); controlRate(pan.pan); pan.connect(buses.traffic);
+    const engine = oscillator('sine', 60, waves.sedan);
+    return { pan: pan.pan, engine, tone: layer(engine, pan), wash: layer(noise.pink, pan, ['highpass', 150], ['bandpass', 900]), wave: 'sedan' };
   });
 
-  // Fixed voice pools: a long session never accumulates oscillators, buffers,
-  // onended callbacks or timers. Busy voices are skipped, never cut mid-note.
+  // Fixed voice pools: a long session never accumulates nodes. Busy voices
+  // are skipped, never cut mid-note. `tone` voices play a fresh oscillator (or
+  // a sample) per note; `noise` voices a slice of noise through a bandpass
+  // whose centre sweeps; a horn voice has a lowpass for distance.
   const pools = {};
-  // (street furniture knocked flying rings, `clang`, and cracks, `smash`, over the road)
-  for (const [name, count, noisy] of [['ambience', 5, false], ['engine', 2, true], ['road', 2, true], ['weather', 2, true], ['music', 6, false], ['clang', 4, false], ['smash', 3, true]]) {
-    pools[name] = Array.from({ length: count }, (_, index) => {
-      const pan = keep(ctx.createStereoPanner()); pan.connect(buses[{ weather: 'ambience', clang: 'road', smash: 'road' }[name] ?? name]);
-      const envelope = gain(0, pan);
-      let frequency;
-      if (noisy) {
-        const noise = noiseLayer('bandpass', 500, 70, index * 3.7, 1, envelope);
-        noise.level.value = 1; frequency = noise.frequency;
-      } else {
-        frequency = oscillator(440, envelope, name === 'music' ? 'triangle' : 'sine').frequency;
-      }
-      return { envelope: envelope.gain, pan: pan.pan, frequency, until: 0 };
+  for (const [name, count, bus, kind] of [
+    ['ambience', 6, 'ambience', 'tone'], ['cue', 6, 'cues', 'tone'], ['clang', 4, 'road', 'tone'], ['thump', 3, 'road', 'tone'], ['horn', 2, 'traffic', 'horn'],
+    ['engine', 3, 'engine', 'noise'], ['road', 3, 'road', 'noise'], ['smash', 3, 'road', 'noise'], ['weather', 2, 'ambience', 'noise'], ['water', 3, 'ambience', 'noise'],
+  ]) {
+    pools[name] = Array.from({ length: count }, () => {
+      const pan = keep(ctx.createStereoPanner()); pan.connect(buses[bus]);
+      const shape = kind === 'noise' ? filter('bandpass', 500, pan) : kind === 'horn' ? filter('lowpass', 3000, pan, 0) : null;
+      const envelope = gain(0, shape ?? pan);
+      return { kind, envelope: envelope.gain, input: envelope, pan: pan.pan, frequency: kind === 'noise' ? shape.frequency : null, q: kind === 'noise' ? shape.Q : null, tone: kind === 'horn' ? shape.frequency : null, until: 0 };
     });
   }
-  const pads = Array.from({ length: 3 }, (_, index) => {
-    const pan = keep(ctx.createStereoPanner()); pan.pan.value = (index - 1) * .45; pan.connect(buses.music);
-    const level = gain(0, pan);
-    const low = filter('lowpass', 850, level);
-    const tone = oscillator(220, low, 'triangle'); tone.detune.value = (index - 1) * 4;
-    return { level: level.gain, frequency: tone.frequency };
-  });
-  function event(name, { time = ctx.currentTime, duration = .2, level = .02, frequency = 440, endFrequency = frequency, pan = 0, attack = .02 }) {
+
+  let seed = 0x2f6e2b1;
+  const random = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return (seed >>> 0) / 4294967296; };
+  // `contour` is [[fraction of the note, frequency], ...]; without one the
+  // pitch sweeps from `frequency` to `endFrequency`. A `hold` keeps the note
+  // at full level before it decays; `buffer` plays a sample (`rate` its speed).
+  // A noise voice's `level` means about what a tone's does: filtering noise to
+  // a band keeps only a share of it, less the narrower the band (`q`).
+  function event(name, { time = ctx.currentTime, duration = .2, level = .02, frequency = 440, endFrequency = frequency, contour = null, pan = 0, attack = .02, hold = 0, q = null, wave = 'sine', tone = null, buffer = null, rate = 1 }) {
+    time = Math.max(time, ctx.currentTime);
     const voice = pools[name]?.find(voice => voice.until <= time);
-    if (!voice) return false;
-    voice.until = time + duration + .025;
-    voice.pan.setValueAtTime(pan, time);
-    voice.frequency.cancelScheduledValues(time);
-    voice.frequency.setValueAtTime(frequency, time);
-    voice.frequency.exponentialRampToValueAtTime(Math.max(30, endFrequency), time + duration);
-    voice.envelope.cancelScheduledValues(time);
-    voice.envelope.setValueAtTime(0, time);
-    voice.envelope.linearRampToValueAtTime(level, time + Math.min(attack, duration * .3));
-    voice.envelope.exponentialRampToValueAtTime(.00001, time + duration);
-    voice.envelope.setValueAtTime(0, voice.until);
+    if (!voice || !(level > 0) || !(duration > 0)) return false;
+    const end = time + duration;
+    voice.until = end + .03;
+    voice.pan.setValueAtTime(Math.max(-1, Math.min(1, pan)), time);
+    let source, pitch = voice.frequency;
+    if (buffer) { source = ctx.createBufferSource(); source.buffer = buffers[buffer]; source.playbackRate.value = rate; pitch = null; }
+    else if (voice.kind === 'noise') { source = ctx.createBufferSource(); source.buffer = buffers.pink; source.loop = true; }
+    else {
+      source = ctx.createOscillator(); controlRate(source.frequency);
+      if (waves[wave]) source.setPeriodicWave(waves[wave]); else source.type = wave;
+      pitch = source.frequency;
+    }
+    if (pitch) {
+      pitch.cancelScheduledValues(time);
+      const points = contour ?? [[0, frequency], [1, endFrequency]];
+      pitch.setValueAtTime(Math.max(20, points[0][1]), time);
+      for (const [at, value] of points.slice(1)) pitch.exponentialRampToValueAtTime(Math.max(20, value), time + at * duration);
+    }
+    voice.q?.setValueAtTime(q ?? .65, time);
+    voice.tone?.setValueAtTime(tone ?? 3000, time);
+    if (voice.kind === 'noise' && !buffer) level *= 3.8 * Math.sqrt((q ?? .65) / .65);
+    const envelope = voice.envelope, peak = time + Math.min(attack, duration * .5);
+    envelope.cancelScheduledValues(time);
+    envelope.setValueAtTime(0, time);
+    envelope.linearRampToValueAtTime(level, peak);
+    if (hold > 0) envelope.setValueAtTime(level, Math.min(end - .01, peak + hold));
+    envelope.exponentialRampToValueAtTime(.0001, end);
+    envelope.setValueAtTime(0, end + .01);
+    source.connect(voice.input);
+    source.start(time, voice.kind === 'noise' && !buffer ? random() * 7 : 0); source.stop(end + .02);
     return true;
   }
   function silenceEvents() {
@@ -154,20 +215,23 @@ export function createSoundGraph(ctx) {
     for (const pool of Object.values(pools)) for (const voice of pool) {
       voice.envelope.cancelScheduledValues(now);
       voice.envelope.setTargetAtTime(0, now, .025);
-      voice.frequency.cancelScheduledValues(now);
+      voice.envelope.setValueAtTime(0, now + .15);
       voice.until = now + .15;
     }
   }
   let disposed = false;
   return {
-    master: master.gain, engineBank, engineLevel: engineLevel.gain, engineFilter: engineFilter.frequency,
-    compressor, buses: Object.fromEntries(Object.entries(buses).map(([name, node]) => [name, node.gain])),
-    perspective: Object.fromEntries(Object.entries(perspective).map(([name, node]) => [name, node.frequency])),
-    body, bodyLevel: bodyLevel.gain, combustion, intake, reverse, reverseLevel: reverseLevel.gain,
-    road, rough, roughPulse: roughPulse.gain, roughMod, wind, skid, skidTone, skidToneLevel: skidToneLevel.gain, scrape,
-    bed, air, rain, insects, insectPulse: insectPulse.gain, insectMod, traffic, pads, event, silenceEvents,
+    master: master.gain, engineBank, engineLevel: engineLevel.gain, engineFilter: engineFilter.frequency, engineShelf: engineShelf.gain,
+    compressor, backdrop: backdrop.gain, cabin: { engine: cabin.engine.frequency, world: cabin.world.frequency },
+    buses: Object.fromEntries(Object.entries(buses).map(([name, node]) => [name, node.gain])),
+    combustion, intake, boost, reverse, road, rough, roughPulse: roughPulse.gain, roughMod, wind, scrape,
+    bed, air, rain, traffic, waves, layers, event, silenceEvents, random,
     setEngine(profile) { engineBank.setProfile(profile); },
     nodeCount: nodes.length + engineBank.nodeCount, sourceCount: sources.length + engineBank.sourceCount,
-    dispose() { if (disposed) return; disposed = true; engineBank.dispose(); for (const source of sources) source.stop(); for (const node of nodes) node.disconnect(); },
+    dispose() {
+      if (disposed) return; disposed = true; engineBank.dispose();
+      for (const source of sources) source.stop();
+      for (const node of nodes) node.disconnect();
+    },
   };
 }

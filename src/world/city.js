@@ -654,6 +654,25 @@ function nearSea(s, u) {
   for (const [du, ds] of [[60, 0], [-60, 0], [0, 60], [0, -60]]) if (CITY.mask.at(u + du, s + ds) && !CITY.inRiver({ x: u + du, y: s + ds })) return true;
   return false;
 }
+// What the city sounds like round a point (see cityAmbience and
+// SoundDirector in src/audio): how built up its district is, and how much of
+// a ring 40 m out is park or water, and whether that water is the sea.
+const URBAN = { Midtown: 1, 'Market district': .8, 'Civic quarter': .7, 'Old town': .6, 'Warehouse district': .55, 'Garden quarter': .3 };
+const SOUND_RING = [[0, 0], ...Array.from({ length: 8 }, (_, i) => [Math.cos(i * Math.PI / 4) * 40, Math.sin(i * Math.PI / 4) * 40])];
+export function citySoundscape(s, u) {
+  let park = 0, water = 0, sea = 0;
+  for (const [du, ds] of SOUND_RING) {
+    const x = u + du, y = s + ds;
+    if (CITY.mask.at(x, y)) { water++; if (!CITY.inRiver({ x, y })) sea++; }
+    else if (CITY.pavement.find(x, y)?.kind === 'park') park++;
+  }
+  const style = cityStyleDistrict(s, u), open = Math.max(park, water) / SOUND_RING.length;
+  return {
+    urban: (URBAN[style] ?? .6) * (1 - .45 * open),
+    green: Math.min(1, park / SOUND_RING.length * 1.6 + (style === 'Garden quarter' ? .3 : 0)),
+    water: Math.min(1, water / SOUND_RING.length * 2), sea: Math.min(1, sea / SOUND_RING.length * 2),
+  };
+}
 export function cityCell(s, u) {
   const ix = Math.floor(u / CITY_CELL), iz = Math.floor(s / CITY_CELL);
   return { ix, iz, key: `${ix},${iz}` };

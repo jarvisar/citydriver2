@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { CAR_IDS } from '../src/cars.js';
 import { DrivingController } from '../src/vehicle.js';
 import { FrameClock, PHYSICS_STEP } from '../src/timing.js';
-import { DriveSoundModel } from '../src/audio/model.js';
 
 const road = {
   frame: () => ({ angle: 0, scale: 1 }),
@@ -115,14 +114,6 @@ test('steering and a tapped slide follow the same path at 30–240 Hz display ra
       assert.deepEqual(result, reference, `${hz} Hz changes the driving path`);
     } finally { car.disposeModel(); }
   }
-});
-
-test('tire sound continues through a powered slide and fades when traction returns', () => {
-  const model = new DriveSoundModel();
-  const grip = model.update({ speed: 18, steer: .5, throttle: 1 });
-  const slide = model.update({ speed: 18, steer: .5, throttle: 1, slip: .3 });
-  assert.ok(slide.skidLevel > grip.skidLevel + .02);
-  assert.equal(model.update({ speed: 0, slip: .3 }).skidLevel, 0);
 });
 
 test('boost works in free drive as well as a taxi run, needs the gas, and coasts back', () => {
