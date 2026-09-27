@@ -260,3 +260,23 @@ test('a parked car the player runs into is knocked loose, and put back in its ba
     assert.equal(parked.parked.hidden, false);
   } finally { traffic.dispose(); world.dispose(); car.disposeModel(); }
 });
+
+test('a parked car still comes loose with every stand-in of its model out, unless they are all still moving', () => {
+  const scene = new THREE.Scene(), world = new CitydriverWorld(scene), start = journeyStart();
+  const traffic = new CityTraffic(scene, citydriverRoute, start.s, 'city', start.u);
+  try {
+    world.update(start.s, start.u); while (world.pending.length) world.update(start.s, start.u);
+    const parked = [...world.chunks.values()].flatMap(c => c.features.colliders).filter(c => c.parked?.ready);
+    const counts = Object.groupBy(parked, c => c.parked.model);
+    const same = Object.values(counts).sort((a, b) => b.length - a.length)[0], pool = traffic.woken.filter(c => c.spec.name === same[0].parked.model).length;
+    assert.ok(same.length > pool, `${same.length} parked ${same[0].parked.model}s`);
+    for (const collider of same.slice(0, pool + 1)) assert.equal(traffic.wake(collider), true);
+    // The last took the stand-in of one resting in its bay, which is back there
+    assert.equal(same[pool].woken, true);
+    const back = same.slice(0, pool).filter(c => !c.woken);
+    assert.equal(back.length, 1);
+    assert.equal(back[0].parked.hidden, false);
+    for (const car of traffic.woken) if (car.parked) car.loose.vx = 3;
+    assert.equal(traffic.wake(back[0]), false);
+  } finally { traffic.dispose(); world.dispose(); }
+});
