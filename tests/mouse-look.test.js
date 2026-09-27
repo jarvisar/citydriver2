@@ -4,7 +4,7 @@ import { MouseLook } from '../src/mouse-look.js';
 
 // Node has no page: a stand-in document and scene that grant every lock
 function fixture({ mouse = true } = {}) {
-  const document = new EventTarget(), element = new EventTarget(), calls = { requests: 0, exits: 0, looks: [], zooms: [] };
+  const document = new EventTarget(), element = new EventTarget(), calls = { requests: 0, exits: 0, releases: 0, looks: [], zooms: [] };
   document.pointerLockElement = null;
   document.exitPointerLock = () => { document.pointerLockElement = null; calls.exits++; };
   element.requestPointerLock = () => { calls.requests++; document.pointerLockElement = element; return Promise.resolve(); };
@@ -12,7 +12,7 @@ function fixture({ mouse = true } = {}) {
   globalThis.matchMedia = () => ({ matches: mouse });
   const state = { lockable: true, zoomable: true };
   const look = new MouseLook(element, { lockable: () => state.lockable, zoomable: () => state.zoomable,
-    look: (yaw, pitch) => calls.looks.push([yaw, pitch]), zoom: factor => calls.zooms.push(factor) });
+    look: (yaw, pitch) => calls.looks.push([yaw, pitch]), zoom: factor => calls.zooms.push(factor), released: () => calls.releases++ });
   const fire = (target, type, fields = {}) => { const event = Object.assign(new Event(type, { cancelable: true }), fields); target.dispatchEvent(event); return event; };
   return { document, element, calls, state, look, fire };
 }
@@ -60,4 +60,15 @@ test('without a mouse nothing is locked, and the wheel zooms by how far it turns
   assert.equal(fire(element, 'wheel', { deltaY: 100, deltaMode: 0, ctrlKey: true }).defaultPrevented, false);
   state.zoomable = false; fire(element, 'wheel', { deltaY: 100, deltaMode: 0 });
   assert.equal(calls.zooms.length, 2);
+});
+
+test('the player taking the pointer back mid-drive is heard, the game letting it go is not', () => {
+  const { document, calls, state, look, fire } = fixture();
+  look.update(); fire(document, 'pointerlockchange');
+  assert.equal(calls.releases, 0, 'taking it is no release');
+  document.pointerLockElement = null; fire(document, 'pointerlockchange');
+  assert.equal(calls.releases, 1, 'Escape freed it while driving');
+  look.update();
+  state.lockable = false; look.update(); fire(document, 'pointerlockchange');
+  assert.equal(calls.releases, 1, 'paused, the game let it go itself');
 });

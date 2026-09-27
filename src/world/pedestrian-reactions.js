@@ -6,8 +6,8 @@ import { cityWalker } from './city-walkers.js';
 // street furniture's (see LooseProps.person), which tumbles, lands and slides
 // to a stop. After lying still a moment they get up where they lie and carry
 // on, unharmed: a resident rejoins their walk round the block at the nearest
-// point of it, a step on (see rejoinWalk), a waiting fare goes back to their
-// spot. Someone walking with them stops and turns to watch; once both are
+// point of it, a step on (see rejoinWalk). (A fare waiting for a taxi only
+// hops out of the way, see applyHop.) Someone walking with them stops and turns to watch; once both are
 // on their feet, whichever is behind hurries to catch up while the other
 // waits, looking back, and they set off together again (see regroupWalkers).
 
@@ -30,6 +30,37 @@ const home = new THREE.Vector3(), homeScale = new THREE.Vector3(), homeRotation 
 const face = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0);
 const world = new THREE.Matrix4(), local = new THREE.Matrix4(), tilt = new THREE.Matrix4();
 const smooth = t => t * t * (3 - 2 * t);
+const hopCentre = new THREE.Vector3(), hopPivot = new THREE.Vector3(), hopSpin = new THREE.Quaternion(), hopSquash = new THREE.Matrix4(), Z = new THREE.Vector3(0, 0, 1);
+
+// A fare waiting for a taxi only jumps out of the way of a car and lands
+// back on their spot, still waiting: a quick crouch, a leap with a
+// cartwheel away from the car, fastest in the middle, and a squash on landing.
+export const PEDESTRIAN_HOP = .6, PEDESTRIAN_HOP_HEIGHT = 1.2, PEDESTRIAN_PIVOT = 1.04;
+const CROUCH = .07, LAND = .1, AIR = PEDESTRIAN_HOP - CROUCH - LAND;
+// A hop at `time` (a `hopStart`, and `hopSpin` 1 or -1 about their front),
+// applied to their `matrix` about their middle. False once they have landed.
+export function applyHop(person, matrix, time) {
+  const t = time - person.hopStart;
+  if (!(t >= 0 && t < PEDESTRIAN_HOP)) { if (t >= PEDESTRIAN_HOP) delete person.hopStart; return false; }
+  // (squashed down before take-off and on landing, stretched off the ground)
+  let stretch = 1;
+  if (t < CROUCH) stretch = 1 - .14 * Math.sin(Math.PI * t / CROUCH);
+  else if (t >= CROUCH + AIR) stretch = 1 - .12 * Math.sin(Math.PI * (t - CROUCH - AIR) / LAND);
+  if (t >= CROUCH && t < CROUCH + AIR) {
+    const u = (t - CROUCH) / AIR, turn = (u - .12 * Math.sin(2 * Math.PI * u)) * Math.PI * 2 * (person.hopSpin ?? 1);
+    stretch = 1 + .07 * Math.abs(1 - 2 * u);
+    hopCentre.set(0, PEDESTRIAN_PIVOT, 0).applyMatrix4(matrix);
+    matrix.decompose(position, rotation, scale);
+    rotation.multiply(hopSpin.setFromAxisAngle(Z, turn));
+    hopPivot.set(0, PEDESTRIAN_PIVOT * scale.y, 0).applyQuaternion(rotation);
+    position.copy(hopCentre).sub(hopPivot); position.y += PEDESTRIAN_HOP_HEIGHT * 4 * u * (1 - u);
+    matrix.compose(position, rotation, scale);
+  }
+  const wide = 1 / Math.sqrt(stretch);
+  matrix.multiply(hopSquash.makeScale(wide, stretch, wide));
+  return true;
+}
+
 const wrap = angle => Math.atan2(Math.sin(angle), Math.cos(angle));
 const E = PEDESTRIAN_EASE;
 
@@ -254,7 +285,17 @@ export class PedestrianContacts {
   // changed to where they are. True while they are away from where they were.
   // `rejoin(person, x, s, time)`, if given, is told where they get up, so
   // their walk can take them on from there (see rejoinWalk).
-  person(person, matrix, frame, radius, time, rejoin = null) {
+  // With `hop`, they only jump out of the way and land where they stood (see applyHop).
+  person(person, matrix, frame, radius, time, rejoin = null, hop = false) {
+    if (hop) {
+      const at = position.setFromMatrixPosition(matrix).applyMatrix4(frame), car = this.hit(person, at.x, at.y, at.z, radius);
+      if (car && person.hopStart === undefined) {
+        // (cartwheeling away from the car: the way their right hand points, if it came from their left)
+        const side = world.multiplyMatrices(frame, matrix).elements, x = side[0], z = side[2];
+        person.hopStart = time; person.hopSpin = (at.x - car.x) * x + (at.z - car.z) * z > 0 ? -1 : 1;
+      }
+      return person.hopStart !== undefined && applyHop(person, matrix, time);
+    }
     if (person.body?.removed) person.body = null;
     if (person.body) {
       const body = person.body;

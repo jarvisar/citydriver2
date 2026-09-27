@@ -148,7 +148,8 @@ export class TaxiView {
           this.transform.position.set(curb, PAVEMENT_LEVEL + motion.lift, along);
           this.transform.rotation.set(0, lookYaw(reaction, Math.PI / 2, look, time), motion.roll);
           this.transform.scale.set(1.25, 1.25 * motion.stretch, 1.25); this.transform.updateMatrix();
-          contacts?.person(reaction, this.transform.matrix, marker.group.matrix, .35, time);
+          // (a fare only jumps out of the way, and is still there to be picked up)
+          contacts?.person(reaction, this.transform.matrix, marker.group.matrix, .35, time, null, true);
           reaction.drawn ??= { x: 0, z: 0 };
           reaction.drawn.x = this.transform.matrix.elements[12]; reaction.drawn.z = this.transform.matrix.elements[14];
           person.setMatrixAt(i, this.transform.matrix);

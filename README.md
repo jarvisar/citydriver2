@@ -44,7 +44,7 @@ Every visit generates a new city. Add `?seed=4817` to the URL to load the same c
 | Reset | R | Y / Triangle |
 | Garage / Taxi fleet | C / G | L3 |
 | Autodrive (free drive) | H | D-pad Up |
-| Fullscreen | F | D-pad Down (while driving) |
+| Fullscreen | F, or hold Escape to leave | D-pad Down (while driving) |
 | Auto-fullscreen (on unless switched off) | Pause menu | Pause menu |
 | Look around the car (chase view, fullscreen) | Mouse | |
 | Camera distance (chase view) | Mouse wheel | |

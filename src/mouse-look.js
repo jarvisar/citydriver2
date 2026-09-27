@@ -10,9 +10,12 @@ const ZOOM = .0012;
 export class MouseLook {
   // `lockable()` says whether the mouse may look round now, `zoomable()`
   // whether the wheel may zoom; `look(yaw, pitch)` and `zoom(factor)` move
-  // the camera (see ThirdPersonCamera)
-  constructor(element, { lockable, zoomable, look, zoom }) {
+  // the camera (see ThirdPersonCamera). `released()` hears the player take
+  // the pointer back while it may still look round: Escape frees a locked
+  // pointer before the page hears the key.
+  constructor(element, { lockable, zoomable, look, zoom, released = () => {} }) {
     this.element = element; this.lockable = lockable;
+    document.addEventListener('pointerlockchange', () => { if (!this.locked && lockable()) released(); });
     // Only with a mouse to look with
     this.mouse = globalThis.matchMedia?.('(any-pointer: fine)') ?? { matches: true };
     // The lock is asked for once, then again after the next click or key: a

@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { PedestrianContacts, PEDESTRIAN_EASE as EASE, PEDESTRIAN_LIE, PEDESTRIAN_RISE, PEDESTRIAN_MEET, PEDESTRIAN_REJOIN_AHEAD,
-  walkedAt, paceAt, setStride, standing, hurrying, nearestOnLoop, rejoinWalk, stopWalkers, regroupWalkers, lookYaw } from '../src/world/pedestrian-reactions.js';
+  walkedAt, paceAt, setStride, standing, hurrying, nearestOnLoop, rejoinWalk, stopWalkers, regroupWalkers, lookYaw,
+  applyHop, PEDESTRIAN_HOP as HOP, PEDESTRIAN_HOP_HEIGHT as HOP_HEIGHT, PEDESTRIAN_PIVOT as PIVOT } from '../src/world/pedestrian-reactions.js';
 import { TaxiView } from '../src/taxi-view.js';
 import { LooseProps } from '../src/loose-props.js';
 import { CitydriverWorld } from '../src/world/citydriver-world.js';
@@ -219,36 +220,67 @@ test('a person nobody draws is put away, and comes back home when next drawn', (
   assert.equal(person.body, null);
 });
 
-test('taxi passengers are thrown in their curb frame and keep their state through marker rebuilds', () => {
+test('a hop leaps one cartwheel about their middle and lands exactly where it started', () => {
+  const original = new THREE.Matrix4().compose(new THREE.Vector3(12, 24.4, -30),
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(0, .7, .03)), new THREE.Vector3(1.25, 1.3, 1.25));
+  const centre = new THREE.Vector3(0, PIVOT, 0).applyMatrix4(original), rotation = new THREE.Quaternion(), scale = new THREE.Vector3(), at = new THREE.Vector3();
+  original.decompose(at, rotation, scale);
+  const x = new THREE.Vector3(1, 0, 0).applyQuaternion(rotation), y = new THREE.Vector3(0, 1, 0).applyQuaternion(rotation);
+  for (const spin of [1, -1]) {
+    let peak = 0, turned = 0, last = 0, lowest = Infinity;
+    for (let i = 0; i <= 120; i++) {
+      const person = { hopStart: 10, hopSpin: spin }, matrix = original.clone(), t = i / 120 * HOP;
+      const hopping = applyHop(person, matrix, 10 + t);
+      const middle = new THREE.Vector3(0, PIVOT, 0).applyMatrix4(matrix), up = new THREE.Vector3().setFromMatrixColumn(matrix, 1).normalize();
+      // (it stays over the same spot, rising and falling, and turns one way only)
+      if (i < 120) assert.ok(hopping);
+      close(middle.x, centre.x, .15); close(middle.z, centre.z, .15);
+      peak = Math.max(peak, middle.y - centre.y); lowest = Math.min(lowest, new THREE.Vector3().setFromMatrixPosition(matrix).y);
+      let angle = Math.atan2(-up.dot(x), up.dot(y)) * spin;
+      while (angle < last - Math.PI) angle += Math.PI * 2;
+      assert.ok(angle >= last - 1e-6, `turns one way (${angle.toFixed(3)} after ${last.toFixed(3)})`); last = angle; turned = Math.max(turned, angle);
+    }
+    close(peak, HOP_HEIGHT, .15);
+    assert.ok(turned > Math.PI * 1.9, 'a whole turn');
+    assert.ok(lowest > at.y - .01, 'never through the pavement');
+  }
+  // Before and after, and at each end, exactly as they stand
+  const person = { hopStart: 5, hopSpin: 1 }, after = original.clone();
+  assert.equal(applyHop(person, after, 5 + HOP + 1e-9), false);
+  after.elements.forEach((n, k) => close(n, original.elements[k]));
+  assert.equal(person.hopStart, undefined);
+  for (const t of [0, HOP - 1e-6]) { const m = original.clone(); applyHop({ hopStart: 0 }, m, t); m.elements.forEach((n, k) => close(n, original.elements[k], 1e-4)); }
+});
+
+test('a waiting fare hopped over by a car is still at their spot, and a party keeps its state through marker rebuilds', () => {
   const view = new TaxiView(new THREE.Scene()), contacts = new PedestrianContacts();
   const props = new LooseProps(new THREE.Scene(), new THREE.MeshBasicMaterial());
   const start = journeyStart();
   const run = { running: true, status: 'pickup', revision: 1,
-    customers: [{ id: 'thrown-group', s: start.s, u: start.u, axis: 'north', side: 1, heading: 0, passengers: 2, color: '#ffffff' }] };
+    customers: [{ id: 'hop-group', s: start.s, u: start.u, axis: 'north', side: 1, heading: 0, passengers: 2, color: '#ffffff' }] };
   try {
     view.render(run, car(1e4, 1e4), 0, 10);
-    const marker = view.markers[0], matrix = new THREE.Matrix4();
-    marker.person.getMatrixAt(0, matrix);
-    const standing = new THREE.Vector3().setFromMatrixPosition(matrix);
+    const marker = view.markers[0], matrix = new THREE.Matrix4(), standing = new THREE.Matrix4();
+    marker.person.getMatrixAt(0, standing);
     marker.group.updateMatrix();
-    const at = standing.clone().applyMatrix4(marker.group.matrix);
+    const at = new THREE.Vector3().setFromMatrixPosition(standing).applyMatrix4(marker.group.matrix);
     // A car driving east through where the first one stands
     const vehicle = driven(at.x - 6, at.z, Math.PI / 2, 14);
     vehicle.groundedPosition.y = at.y - .1;
-    let time = 10;
-    for (; !marker.reactions[0].body && time < 12; time += 1 / 60) {
+    let time = 10, highest = 0;
+    for (; time < 12; time += 1 / 60) {
       vehicle.drive(1 / 60); props.update(1 / 60, vehicle); props.render(1, 0);
       contacts.update(vehicle, null, time, props); view.render(run, vehicle, 0, time, contacts);
+      marker.person.getMatrixAt(0, matrix);
+      highest = Math.max(highest, matrix.elements[13] - standing.elements[13]);
+      assert.equal(marker.reactions[0].body, undefined, 'never thrown');
     }
-    const reactions = marker.reactions, body = reactions[0].body;
-    assert.ok(body, 'knocked flying');
-    for (let i = 0; i < 30; i++) { props.update(1 / 60, vehicle); props.render(1, 0); time += 1 / 60; view.render(run, vehicle, 0, time, contacts); }
-    // Drawn where the body is, in the marker's frame
+    assert.ok(highest > 1, `hopped (${highest.toFixed(2)} m)`);
+    assert.equal(props.people.length, 0);
+    // and back on their spot, still waiting, as they stood (their bob aside)
     marker.person.getMatrixAt(0, matrix);
-    const drawn = new THREE.Vector3().setFromMatrixPosition(matrix).applyMatrix4(marker.group.matrix);
-    const bottom = body.p.clone().sub(body.shape.com.clone().applyQuaternion(body.q));
-    assert.ok(drawn.distanceTo(bottom) < .3, `drawn at the body (${drawn.distanceTo(bottom).toFixed(2)} m off)`);
-    assert.ok(Math.hypot(body.p.x - at.x, body.p.z - at.z) > .5, 'away from the curb');
+    close(matrix.elements[12], standing.elements[12], 1e-6); close(matrix.elements[14], standing.elements[14], 1e-6);
+    const reactions = marker.reactions;
     view.rebuild(run); assert.equal(view.markers[0].reactions, reactions);
     view.reset(); view.render(run, vehicle, 0, time + 1);
     assert.notEqual(view.markers[0].reactions, reactions);

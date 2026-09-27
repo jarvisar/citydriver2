@@ -657,9 +657,13 @@ async function boot() {
         if (!quiet) toast('Press F for fullscreen');
       } finally { fullscreenPending = false; }
     }
-    // A browser's fullscreen swallows Escape to leave, so leaving it mid-drive
-    // other than by F or the switch pauses, as Escape would
+    // A browser's fullscreen takes Escape to leave, and the page never hears
+    // it. Keyboard Lock (Chromium) hands a tap of Escape to the page, so it
+    // pauses and resumes as in a window, and a hold still leaves. Without it,
+    // leaving fullscreen mid-drive other than by F or the switch pauses, as
+    // Escape would.
     document.addEventListener('onfullscreenchange' in document ? 'fullscreenchange' : 'webkitfullscreenchange', () => {
+      if (document.fullscreenElement || document.webkitFullscreenElement) { navigator.keyboard?.lock?.(['Escape'])?.catch(() => {}); return; }
       if (fullscreenActive()) return;
       if (!leavingFullscreen && started && !paused && !vr.active) setPaused(true);
       leavingFullscreen = false;
@@ -702,7 +706,8 @@ async function boot() {
     // Driving in the chase view, the wheel brings the camera in or out, and
     // in fullscreen the mouse looks round the car
     const chasing = () => started && !paused && !changingJourney && !vr.active && rendering.chaseView;
-    const mouseLook = new MouseLook($('#scene'), { lockable: () => chasing() && fullscreenActive(), zoomable: chasing, look: rendering.look, zoom: rendering.zoom });
+    const mouseLook = new MouseLook($('#scene'), { lockable: () => chasing() && fullscreenActive(), zoomable: chasing, look: rendering.look, zoom: rendering.zoom,
+      released: () => setPaused(true) });
     // A touch acts on pointerup: a secondary finger may not synthesize a
     // click while the stick is held.
     for (const name of ['pause', 'view']) {
