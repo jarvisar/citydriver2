@@ -2,7 +2,7 @@
   "id": "./",
   "name": "Citydriver",
   "short_name": "Citydriver",
-  "description": "Arcade taxi driving.",
+  "description": "Free 3D taxi driving game in a generated island city.",
   "lang": "en-US",
   "start_url": "./",
   "scope": "./",

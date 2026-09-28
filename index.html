@@ -4,8 +4,22 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#20323d" />
-    <meta name="description" content="Arcade taxi driving. Pick up passengers, beat the clock, and earn cash, or wreck the city in a demolition truck." />
-    <title>Citydriver</title>
+    <meta name="description" content="Free 3D taxi driving game in your browser. Pick up passengers in a new generated island city every time, beat the clock and earn cash, or wreck the city in a demolition truck. Works on desktop, mobile and VR." />
+    <title>Citydriver 2 - Free 3D Taxi Driving Game in Your Browser</title>
+    <link rel="canonical" href="https://jarvisar.github.io/citydriver2/" />
+    <!-- Link previews need absolute URLs, so these point at the GitHub Pages build -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Citydriver 2" />
+    <meta property="og:title" content="Citydriver 2 - Free 3D Taxi Driving Game" />
+    <meta property="og:description" content="Drive a taxi or a demolition truck around a generated island city. Plays in the browser on desktop, mobile and VR." />
+    <meta property="og:url" content="https://jarvisar.github.io/citydriver2/" />
+    <meta property="og:image" content="https://jarvisar.github.io/citydriver2/screenshots/desktop.jpg" />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="800" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Citydriver 2 - Free 3D Taxi Driving Game" />
+    <meta name="twitter:description" content="Drive a taxi or a demolition truck around a generated island city. Plays in the browser on desktop, mobile and VR." />
+    <meta name="twitter:image" content="https://jarvisar.github.io/citydriver2/screenshots/desktop.jpg" />
     <!-- Keep startup styles inline so the page is covered before the game module loads. -->
     <style>
       html, body { margin: 0; overflow: hidden; background: #20323d; }
@@ -29,12 +43,22 @@
         .loading-spinner { animation: none; }
       }
     </style>
+    <noscript>
+      <style>
+        .loading { display: none; }
+        noscript h1, noscript p { max-width: 640px; margin: 16px; color: #e9f0ef; font-family: 'Segoe UI', Arial, sans-serif; }
+      </style>
+    </noscript>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>
   <body>
     <main id="app">
       <div id="loading" class="loading" role="status"><span class="loading-spinner" aria-hidden="true"></span><span id="loading-status">Loading Citydriver…</span></div>
-      <canvas id="scene" aria-label="An endless low-poly city. Drive in any direction with WASD or the arrow keys."></canvas>
+      <noscript>
+        <h1>Citydriver 2</h1>
+        <p>A free 3D taxi driving game built with Three.js. Every visit generates a new island city with a harbour, a river, parks and six districts. Pick up passengers and get them to their stop before time runs out, or wreck the city in a demolition truck. Citydriver 2 needs JavaScript and WebGL to run.</p>
+      </noscript>
+      <canvas id="scene" aria-label="A generated low-poly island city. Drive with WASD or the arrow keys."></canvas>
       <div class="vignette" aria-hidden="true"></div>
       <header class="topbar">
         <div class="city-hud" aria-label="City navigation">
