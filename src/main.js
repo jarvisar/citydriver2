@@ -29,8 +29,6 @@ import { signSheet } from './world/city-signs.js';
 import { loadingStage } from './loading-status.js';
 import { navGraph } from './world/nav-graph.js';
 import { CityGuide } from './city-guide.js';
-import { cityPlaces } from './city-exploration.js';
-import { SpeechBubbles, compass } from './street-talk.js';
 import { Pigeons } from './world/city-pigeons.js';
 import { WorldMap, DISTRICT_COLORS } from './city-world-map.js';
 import { TaxiRun } from './taxi-run.js';
@@ -144,7 +142,7 @@ async function boot() {
     // The chase camera stays out of the buildings and above the ground, and
     // following someone on foot, out of the cars
     rendering.setSightLine((from, to) => sightLine(world.chunks.values(), from, to, world.origin, vehicle.walker ? onFoot.sightCars() : null));
-    rendering.setGround((x, z) => cityHeight(world.origin - z, x));
+    rendering.setGround((x, z) => cityHeight(world.origin - z, x), (x, z) => Boolean(vehicle.route.under?.(world.origin - z, x)));
     const weather = new CityWeather(scene);
     try { weather.setMode(localStorage.getItem('citydriver-weather') ?? 'auto', { immediate: true }); } catch { /* Storage is optional. */ }
     let changingJourney = true, journeyWasPaused = false;
@@ -194,25 +192,7 @@ async function boot() {
     // and on foot, a marker over the car they would get into
     const onFoot = new OnFoot(vehicle, traffic), enterMarker = new EnterMarker(scene);
     const pedestrianContacts = new PedestrianContacts();
-    // What the residents say to them, in bubbles over their heads (see
-    // street-talk.js): what a resident knows where they stand, and a
-    // landmark they give the way to marked on the street map
-    const bubbles = new SpeechBubbles(scene);
-    Object.assign(onFoot, { world, bubbles, context: talkContext, onPoint: place => cityGuide.pointTo(place) });
-    function talkContext(s, u) {
-      const found = cityGuide.exploration.found;
-      let place = null, near = Infinity;
-      for (const each of cityPlaces()) {
-        const d = Math.hypot(each.s - s, each.u - u);
-        if (d < near && !found.has(each.type)) { near = d; place = each; }
-      }
-      return { weather: weather.state.id, night: weather.state.stars > .5, district: cityDistrict(s, u),
-        place: place && { name: place.name, type: place.type, s: place.s, u: place.u, metres: near, way: compass(place.u - u, place.s - s) } };
-    }
-    // and they call out when shoved, or getting up after the player knocked
-    // them over (not in a demolition run, which has enough on screen)
-    pedestrianContacts.onShove = (person, frame) => onFoot.call(person, frame, 'shoved');
-    pedestrianContacts.onUp = (person, frame, by) => { if (gameMode !== 'demolition') onFoot.call(person, frame, by === 'tackle' ? 'floored' : 'run'); };
+    onFoot.world = world;
     // Pigeons round the benches, which the player puts up on foot or driving
     // by (see city-pigeons.js), with a flutter of wings (see DriveAudio)
     const pigeons = new Pigeons(scene, world.materials.props);
@@ -414,7 +394,8 @@ async function boot() {
     function recoverCar(penalty = false) {
       const pose = nearestLanePose(vehicle.s, vehicle.u, vehicle.heading);
       vehicle.s = pose.s; vehicle.u = pose.u; vehicle.heading = pose.heading;
-      vehicle.pilot?.land(); haltCar();
+      // (on foot, stood on the lane: from a roof they were left up at its height, and fell)
+      vehicle.pilot?.land(); vehicle.walker?.takeOver(); haltCar();
       const run = demolition.running ? demolition : taxi;
       if (penalty) { run.timeLeft = Math.max(0, run.timeLeft - 5); toast('Reset −5s'); }
       taxi.hold = 0;
@@ -557,11 +538,12 @@ async function boot() {
     // Free drive's two buttons climb and descend in the helicopter, and jump
     // and sprint on foot (Space and Shift do, see Input), and are named for it
     const driveButtons = { driving: [['Drift', 'Tap + steer'], ['Boost']], flying: [['Climb', 'Hold'], ['Descend']], walking: [['Jump', 'Tap'], ['Sprint']] };
-    let driveMode = null;
+    let driveMode = null, driveMachine = null;
     function updateDriveUi() {
       const free = started && gameMode === 'free', mode = free && vehicle.pilot ? 'flying' : free && vehicle.walker ? 'walking' : 'driving';
-      if (mode === driveMode) return;
-      driveMode = mode; document.body.dataset.flying = String(mode === 'flying'); document.body.dataset.walking = String(mode === 'walking'); updateViewUi();
+      // (the helicopter and the plane fly on the same buttons, but the stick's help differs)
+      if (mode === driveMode && vehicle.carId === driveMachine) return;
+      driveMode = mode; driveMachine = vehicle.carId; document.body.dataset.flying = String(mode === 'flying'); document.body.dataset.walking = String(mode === 'walking'); updateViewUi();
       ['handbrake', 'boost'].forEach((key, i) => {
         const button = $(`[data-drive-button="${key}"]`), [label, hint] = driveButtons[mode][i];
         button.querySelector('span').textContent = label;
@@ -576,8 +558,10 @@ async function boot() {
       const offer = started && !paused && gameMode === 'free' ? onFoot.offer() : null;
       if (useButton.hidden !== !offer) useButton.hidden = !offer;
       if (!offer) return;
-      // (stopping fast, a second press jumps out: see OnFoot.bail)
-      const label = offer.out ? offer.bail ? 'Jump out' : offer.stopping ? 'Stopping' : 'Get out' : offer.chat ? 'Chat' : 'Get in', detail = offer.out ? offer.bail ? 'Stopping' : '' : offer.own ? 'Your car' : offer.name;
+      // (stopping fast, or landing high up, a second press jumps out: see OnFoot.bail and jump)
+      const stopping = offer.flying ? 'Landing' : 'Stopping';
+      const own = offer.own && (carEntry(offer.car.kept.carId).flies ? `Your ${offer.name.toLowerCase()}` : 'Your car');
+      const label = offer.out ? offer.bail ? 'Jump out' : offer.stopping ? stopping : 'Get out' : 'Get in', detail = offer.out ? offer.bail ? stopping : '' : own || offer.name;
       if (useButton.querySelector('span').textContent !== label) useButton.querySelector('span').textContent = label;
       if (useButton.querySelector('small').textContent !== detail) useButton.querySelector('small').textContent = detail;
     }
@@ -609,10 +593,29 @@ async function boot() {
       autodrive.reset();
       rendering.update(vehicle.car, 0, world.origin);
       updateCarUi(); updateHud(); needsRender = true;
-      // (how to fly, on whatever the player is holding)
-      const flight = !CARS[id].flies ? '' : vr?.active ? ' · Right stick: climb / descend' : document.body.dataset.controller === 'true' ? ' · Right stick or RB / LB: climb / descend'
-        : matchMedia('(pointer: coarse)').matches ? ' · Hold Climb or Descend' : ' · Space / Shift: climb / descend';
+      // (how to fly, on whatever the player is holding: the plane needs a run at it first)
+      const device = vr?.active ? 'vr' : document.body.dataset.controller === 'true' ? 'pad' : matchMedia('(pointer: coarse)').matches ? 'touch' : 'keys';
+      const takeOff = { vr: 'Right trigger', pad: 'RT', touch: 'Push the stick up', keys: 'Hold W' }[device];
+      const climbing = { vr: 'Right stick: climb / descend', pad: 'Right stick or RB / LB: climb / descend', touch: 'Hold Climb or Descend', keys: 'Space / Shift: climb / descend' }[device];
+      const flight = !CARS[id].flies ? '' : CARS[id].kind === 'plane' ? ` · ${takeOff} to take off · ${climbing}` : ` · ${climbing}`;
       toast(`${carEntry(id).name} selected${flight}`);
+    }
+    // The plane's stunts (see Plane), told once each: the roll after a while
+    // up in the air, and the loop after the first roll
+    const flightHintKey = 'citydriver-flight-hints';
+    let flightHints = {};
+    try { flightHints = JSON.parse(localStorage.getItem(flightHintKey)) ?? {}; } catch { /* Storage is optional. */ }
+    function hintFlight(stunt = null) {
+      const pilot = vehicle.pilot;
+      if (!pilot || vehicle.carId !== 'plane' || !started || gameMode !== 'free') return;
+      const hint = !flightHints.roll && pilot.aloft > 6 && !pilot.stunt ? 'roll' : !flightHints.loop && stunt === 'Barrel roll' ? 'loop' : null;
+      if (!hint) return;
+      // (this runs every step in the plane: the device only once there is something to say)
+      const device = vr?.active ? 'vr' : document.body.dataset.controller === 'true' ? 'pad' : matchMedia('(pointer: coarse)').matches ? 'touch' : 'keys';
+      if (hint === 'roll') toast({ keys: 'Double-tap A or D to barrel roll', pad: 'Flick the left stick twice to barrel roll', vr: 'Flick the left stick twice to barrel roll', touch: 'Flick the stick twice sideways to barrel roll' }[device]);
+      else setTimeout(() => { if (vehicle.pilot && !paused) toast({ keys: 'Double-tap Space to loop the loop', pad: 'Double-tap RB to loop the loop', vr: 'Double-tap the right grip to loop the loop', touch: 'Double-tap Climb to loop the loop' }[device]); }, 2400);
+      flightHints[hint] = true;
+      try { localStorage.setItem(flightHintKey, JSON.stringify(flightHints)); } catch { /* Told for this visit. */ }
     }
     function openCars() {
       if (started && gameMode === 'taxi') { openFleet(); return; }
@@ -1049,7 +1052,10 @@ async function boot() {
       $('#view').setAttribute('aria-label', `${rendering.viewLabel}. Change camera`);
       const thirdPerson = rendering.camera.isPerspectiveCamera, flying = document.body.dataset.flying === 'true', walking = document.body.dataset.walking === 'true';
       $('.stick-help-copy').firstChild.textContent = walking ? rendering.firstPersonView ? 'Touch anywhere · ↑ Walk · ↔ Turn' : 'Drag anywhere to walk' : thirdPerson ? `Touch anywhere · ↑ ${flying ? 'Fly' : 'Drive'} · ↔ ${flying ? 'Turn' : 'Steer'}` : `Drag anywhere to ${flying ? 'fly' : 'drive'}`;
-      $('.stick-help-line').textContent = walking ? 'Push further to run' : flying ? thirdPerson ? '↓ Back · Release to hover' : 'Release to hover' : thirdPerson ? '↓ Brake · Release to stop' : 'Release to stop';
+      // (the plane never stops in the air: let go, it cruises)
+      const cruising = flying && carEntry(vehicle.carId).kind === 'plane';
+      $('.stick-help-line').textContent = walking ? 'Push further to run' : cruising ? thirdPerson ? '↓ Slow down · Release to cruise' : 'Release to cruise'
+        : flying ? thirdPerson ? '↓ Back · Release to hover' : 'Release to hover' : thirdPerson ? '↓ Brake · Release to stop' : 'Release to stop';
       $('#touch-stick').setAttribute('aria-label', walking ? 'Virtual joystick: push the way to walk, further to run' : thirdPerson ? 'Virtual joystick: up to accelerate, left and right to steer, down to brake or reverse, release to stop' : 'Virtual joystick');
     }
     // The headset's menus: the page's own choices, drawn by VRStatus.
@@ -1129,8 +1135,8 @@ async function boot() {
     function vrHudModel() {
       if (!vr.active || !started || paused || changingJourney) return null;
       const read = id => document.getElementById(id).textContent;
-      const hint = vrHintTime >= 10 ? '' : vehicle.pilot ? 'Triggers: forward, back · Left stick: turn · Right stick or grips: up, down · B: pause'
-        : vehicle.walker ? 'Left stick: walk · Right stick: look · Left grip: jump · Right grip: sprint · Y: get in, chat · B: pause'
+      const hint = vrHintTime >= 10 ? '' : vehicle.pilot ? `Triggers: forward, back · Left stick: turn · Right stick or grips: up, down${gameMode === 'free' ? ' · Y: get out' : ''} · B: pause`
+        : vehicle.walker ? 'Left stick: walk · Right stick: look · Left grip: jump · Right grip: sprint · Y: get in · B: pause'
           : `Right trigger: gas · Left trigger: brake · Left stick: steer · Grips: drift, boost${gameMode === 'free' ? ' · Y: get out' : ''} · B: pause`;
       if (!taxi.running && !demolition.running) return { heading: read('city-heading'), place: read('city-location'), weather: read('weather-label'), hint };
       // (a demolition run writes its chain into the same panels)
@@ -1176,6 +1182,11 @@ async function boot() {
       state = onFoot.control(state);
       vehicle.update(dt, state);
       if (started) updateControlHelp(vehicle.speed);
+      // (a flying machine's stunts and landings)
+      if (vehicle.pilot) {
+        for (const event of vehicle.pilot.drain()) { toast(event.text, event.kind === 'stunt' ? 'stunt' : ''); if (event.kind === 'stunt') hintFlight(event.text); }
+        hintFlight();
+      }
       // Furniture the player hits may be knocked flying, and a parked car
       // knocked loose while there is traffic to take it; on foot, nothing is
       collideScenery(vehicle, world.chunks, dt, vehicle.walker ? null : (collider, contact) => collider.prop ? props.hit(collider, contact, vehicle) : traffic.enabled && traffic.wake(collider));
@@ -1283,17 +1294,21 @@ async function boot() {
         // In VR, residents are culled with the last frame's head frustum. The head
         // turns little in a frame and each chunk's bound is about a cell across.
         rendering.update(vehicle.car, dt, world.origin); world.animate(time, traffic.time, vr.active ? rendering.vrCamera.camera : rendering.camera, pedestrianContacts);
+        // (a parachute the chase camera has been pulled up into is not drawn)
+        vehicle.walker?.clearView(rendering.camera.position);
         taxiView.render(taxi, vehicle, world.origin, time, pedestrianContacts, vr.active ? null : rendering.camera);
         demolitionView.render(world.origin, time, vr.active ? null : rendering.camera);
-        bubbles.render(world.origin, time, vr.active ? null : rendering.camera, vr.active ? null : { width: renderer.domElement.clientWidth, height: renderer.domElement.clientHeight });
         const at = vehicle.groundedPosition;
         pigeons.gather(world.chunks.values(), at.x, at.z, time, pigeonGround);
         pigeons.scare({ x: at.x, y: at.y, z: at.z, speed: Math.abs(vehicle.speed), car: !vehicle.walker, airborne: Boolean(vehicle.walker && !vehicle.walker.grounded) }, time, world.chunks.values());
         pigeons.render(world.origin, time);
         applyWeather(dt);
       }
-      // (a helicopter's climbs and dives count as surges too)
-      comfort.update(rendering.camera, vehicle.pilot ? Math.hypot(vehicle.speed, vehicle.pilot.vy) : vehicle.speed, running ? dt : 0, vr.active && running && started);
+      // (a flying machine's climbs and dives count as surges too, and so does a
+      // fall on foot, past the 7 m/s a jump lands at: counting a hop's take-off,
+      // the vignette pulsed with every jump)
+      const walker = vehicle.walker, vy = vehicle.pilot ? vehicle.pilot.vy : walker ? Math.max(0, Math.abs(walker.vy) - 8) : null;
+      comfort.update(rendering.camera, vy === null ? vehicle.speed : Math.hypot(vehicle.speed, vy), running ? dt : 0, vr.active && running && started);
       soundScene.interior = rendering.viewLabel === 'First-person view' && !vehicle.walker;
       soundScene.lightning = weather.flash; soundScene.rain = weather.state.rain; soundScene.wetness = weather.state.wetness;
       soundScene.snow = weather.state.snow; soundScene.night = weather.state.stars;
@@ -1336,7 +1351,9 @@ async function boot() {
     await loadingStage('graphics');
     // (the shop signs are blank until their sheet has loaded)
     await signSheet;
-    await rendering.precompile([...world.warmupObjects(), ...taxiView.warmupObjects(), ...demolitionView.warmupObjects(), ...enterMarker.warmupObjects(), ...bubbles.warmupObjects(), ...pigeons.warmupObjects(), createWalkerModel().figure]);
+    // (someone on foot, and their parachute)
+    const onFootWarmup = createWalkerModel(); onFootWarmup.canopy.visible = true;
+    await rendering.precompile([...world.warmupObjects(), ...taxiView.warmupObjects(), ...demolitionView.warmupObjects(), ...enterMarker.warmupObjects(), ...pigeons.warmupObjects(), onFootWarmup.figure, onFootWarmup.canopy]);
     try { taxiView.navigation.prepare(); } catch { /* The first fare tries again. */ }
     // Soft shading too, where it is on: loaded and drawn once behind the
     // loading screen, since its first frame compiles for ~200 ms.
@@ -1348,7 +1365,7 @@ async function boot() {
     if (import.meta.env.DEV && emulate !== null) (await import('./xr-emulator.js')).installXREmulator(emulate);
     void vr.detect();
     // Development-only inspection surface for automated driving and streaming checks.
-    if (import.meta.env.DEV) window.__citydriver = { seed: SEED, city: CITY, nav: navGraph(), lanePose, roadAt, nearestLanePose, vehicle, onFoot, pigeons, bubbles, traffic, props, nightLighting, weather, autodrive, audio, graphics, vr, vrStatus, cityGuide, taxi, taxiView, beginTaxi, beginFree, demolition, demolitionView, beginDemolition, get gameMode() { return gameMode; }, world, rendering, input, action, chooseCar, applyPaint, get carId() { return carId; }, get paint() { return paint; }, get journey() { return journey; }, get changingJourney() { return changingJourney; }, get paused() { return paused; }, get started() { return started; } };
+    if (import.meta.env.DEV) window.__citydriver = { seed: SEED, city: CITY, nav: navGraph(), lanePose, roadAt, nearestLanePose, vehicle, onFoot, pigeons, traffic, props, nightLighting, weather, autodrive, audio, graphics, vr, vrStatus, cityGuide, taxi, taxiView, beginTaxi, beginFree, demolition, demolitionView, beginDemolition, get gameMode() { return gameMode; }, world, rendering, input, action, chooseCar, applyPaint, get carId() { return carId; }, get paint() { return paint; }, get journey() { return journey; }, get changingJourney() { return changingJourney; }, get paused() { return paused; }, get started() { return started; } };
   } catch (error) { console.error('Could not start Citydriver:', error); $('#loading').classList.add('loaded'); $('#error').hidden = false; }
 }
 boot();

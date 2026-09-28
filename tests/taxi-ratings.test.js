@@ -183,14 +183,27 @@ test('a lone rider may want something of the ride, and it changes the pay', () =
   const calm = pay('nervous');
   assert.equal(calm.event.paid - plain.event.paid, Math.round(calm.fare * MOODS.nervous.smooth));
   assert.match(calm.event.text, /Smooth ride \+\$\d+/);
-  const shaken = pay('nervous', (run, car) => { car.audioTelemetry = { impactSerial: 1, impact: 6 }; run.update(.02, car); });
+  const shaken = pay('nervous', (run, car) => { car.audioTelemetry = { impactSerial: 1, crashSerial: 1, impact: 6 }; run.update(.02, car); });
   assert.equal(shaken.run.shaken, true); assert.doesNotMatch(shaken.event.text, /Smooth ride/);
+  // A scrape or a sideswipe, however loud, is no crash (see CRASH in vehicle.js)
+  const scraped = pay('nervous', (run, car) => { car.audioTelemetry = { impactSerial: 1, crashSerial: 0, impact: 9 }; run.update(.02, car); });
+  assert.equal(scraped.run.shaken, false); assert.match(scraped.event.text, /Smooth ride/);
   // Each counts as satisfied for the goals when their wish is met
   assert.deepEqual([plain, hurry, thrill, calm, shaken].map(ride => ride.run.pleased), [0, 1, 1, 1, 0]);
   assert.equal(thrill.run.stats.pleased, 1);
   // and a rider in a hurry has less time
   const hurried = all.find(offer => offer.mood === 'hurry');
   assert.ok(hurried.stops[0].limit < legLimit(hurried.stops[0].length));
+});
+
+test('only a crash ends the stunt combo, not a scrape or a sideswipe', () => {
+  const run = new TaxiRun(), car = player();
+  run.start(car); board(run, car, run.customers.find(c => c.id !== run.blockedPickup?.id)); run.drainEvents();
+  run.reward('Near miss', TIPS.nearMiss); run.reward('Near miss', TIPS.nearMiss);
+  car.audioTelemetry = { impactSerial: 1, crashSerial: 0, impact: 9 }; run.update(.02, car);
+  assert.equal(run.combo, 3); assert.ok(!run.drainEvents().some(e => e.kind === 'crash'));
+  car.audioTelemetry = { impactSerial: 2, crashSerial: 1, impact: 9 }; run.update(.02, car);
+  assert.equal(run.combo, 1); assert.ok(run.drainEvents().some(e => e.kind === 'crash'));
 });
 
 test('fares waiting where the cab comes back are the same fares, each with legs of its own', () => {

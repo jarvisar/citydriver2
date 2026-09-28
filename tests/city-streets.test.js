@@ -396,7 +396,8 @@ test('traffic turns through junctions without snapping and never leaves the road
       traffic.update(1 / 60, player);
       for (const car of traffic.vehicles) {
         const before = last.get(car);
-        if (before && before.generation === car.generation) {
+        // (on a street both times: the bus going off duty is put out of sight, facing north)
+        if (before && before.generation === car.generation && before.edge && car.edge) {
           fastest = Math.max(fastest, Math.abs(Math.atan2(Math.sin(car.heading - before.heading), Math.cos(car.heading - before.heading))) * 60);
           if (before.edge !== car.edge) turns++;
         }

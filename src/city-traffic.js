@@ -118,12 +118,15 @@ function swerve(speed, out = [0, 0]) {
 }
 // A metre-by-metre step of a lane change (`state`: lane and slope), toward
 // lane `to` over `dm` metres on: steering in as far as it may, and out again
-// in time to arrive square to the lane
+// in time to arrive square to the lane. (The slope it can still take out in
+// steps of `ease` metre by metre, not the smooth curve's: that one arrived
+// still turned a few degrees, and the car snapped straight.)
 function sway(state, to, dm, [most, ease]) {
   const gap = to - state.lane;
-  if (!gap && !state.slope) return;
-  const want = Math.sign(gap) * Math.min(most, Math.sqrt(2 * ease * Math.abs(gap)));
-  state.slope += clamp(want - state.slope, -ease * dm, ease * dm);
+  if ((!gap && !state.slope) || !(dm > 0)) return;
+  const step = ease * dm, steps = (Math.sqrt(1 + 8 * Math.abs(gap) / (step * dm)) - 1) / 2;
+  const want = Math.sign(gap) * Math.min(most, steps * step);
+  state.slope += clamp(want - state.slope, -step, step);
   state.lane += state.slope * dm;
   if (gap && (to - state.lane) * gap <= 0) { state.lane = to; state.slope = 0; }
 }

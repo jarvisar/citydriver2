@@ -282,11 +282,6 @@ export class PedestrianContacts {
     // Residents dive out of the way of a car bearing down on them (see dive).
     // Only in a demolition run, where they are what the player must avoid.
     this.dodge = false;
-    // Told when someone is shoved by the player on foot, `(person, frame)`,
-    // and when someone the player knocked over gets up, `(person, frame,
-    // by)`, `by` 'tackle' (on foot) or 'player' (their car): `frame` places
-    // where they are drawn in the world (see OnFoot.call)
-    this.onShove = null; this.onUp = null;
   }
   // `props` (LooseProps) takes those knocked flying; without it, nobody is
   update(player, traffic, time, props = null) {
@@ -409,8 +404,6 @@ export class PedestrianContacts {
       person.rise = { at: time, from: { p: position.clone(), q: rotation.clone() }, x: body.p.x, z: body.p.z };
       this.props.release(body); person.body = null;
       rejoin?.(person, body.p.x, -body.p.z, time);
-      if (person.floored) this.onUp?.(person, frame, person.floored);
-      person.floored = null;
     }
     const away = this.away(person, matrix, frame, time);
     // Shoved aside by the player on foot, or at a charge bowled over
@@ -437,8 +430,6 @@ export class PedestrianContacts {
     if (player && blow) this.player.strike(blow.x, blow.z, blow.spin, Math.hypot(blow.x, blow.z));
     if (piece && blow) { piece.v.x += blow.x; piece.v.z += blow.z; }
     person.body = body; person.rise = person.back = null;
-    // (who knocked them over, for what they say getting up)
-    person.floored = charged ? 'tackle' : player ? 'player' : null;
     return true;
   }
   // The player on foot against someone drawn by `matrix` (in `frame`): they
@@ -461,7 +452,7 @@ export class PedestrianContacts {
     if (distance < reach && Math.abs(e[13] + f[13] - p.y) < 1.5) {
       const nx = distance > 1e-6 ? dx / distance : 1, nz = distance > 1e-6 ? dz / distance : 0, v = player.velocity, speed = Math.hypot(v.x, v.z);
       if (speed > TACKLE && v.x * nx + v.z * nz > speed * .5) { person.shove = null; return true; }
-      if (!shove) { shove = person.shove = { x: 0, z: 0, time }; this.onShove?.(person, frame); }
+      if (!shove) shove = person.shove = { x: 0, z: 0, time };
       // Out of the way the player is going: back from them, and aside, to
       // whichever side of their path they were on
       let ax = nx, az = nz;

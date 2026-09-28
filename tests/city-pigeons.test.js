@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { Pigeons } from '../src/world/city-pigeons.js';
 
 const GROUND = 24.12;
-// A chunk of benches along x at z = 0, every 6 m, and a building if given
+// A chunk of benches along x at z = 0, and a building if given
 function chunkOf(benches, building = null) {
   const colliders = benches.map(x => ({ x, z: 0, reach: 1.1, heading: 0, halfWidth: .35, halfLength: 1, prop: { pieces: [{ kind: 'bench' }] } }));
   if (building) colliders.push(building);
@@ -17,7 +17,8 @@ const pose = {};
 test('flocks keep to a share of the benches near the player, off the road', () => {
   const pigeons = new Pigeons(new THREE.Scene(), new THREE.MeshStandardMaterial());
   try {
-    const benches = Array.from({ length: 30 }, (_, i) => i * 6 - 90), chunks = [chunkOf(benches)];
+    // (a lot of benches, all near: which ones get a flock depends on the city's seed)
+    const benches = Array.from({ length: 90 }, (_, i) => i * 1.5 - 67), chunks = [chunkOf(benches)];
     pigeons.gather(chunks, 0, 0, 0, ground);
     const share = pigeons.flocks.length / benches.length;
     assert.ok(share > .15 && share < .6, `${pigeons.flocks.length} flocks round ${benches.length} benches`);
@@ -41,10 +42,11 @@ test('flocks keep to a share of the benches near the player, off the road', () =
 test('someone running at a flock puts it up, each bird taking off, looping and landing where it would be, without a jump', () => {
   const pigeons = new Pigeons(new THREE.Scene(), new THREE.MeshStandardMaterial());
   try {
-    // (benches well apart, so only one flock is near)
-    const benches = Array.from({ length: 8 }, (_, i) => i * 20 - 70), chunks = [chunkOf(benches)];
-    pigeons.gather(chunks, 0, 0, 0, ground);
-    const flock = pigeons.flocks[0], bird = flock.birds[0];
+    // (benches well apart, so only one flock is near, moved along until one has a flock)
+    const benches = Array.from({ length: 8 }, (_, i) => i * 20 - 70);
+    let chunks = [], flock = null;
+    for (let shift = 0; shift < 600 && !flock; shift += 6) { chunks = [chunkOf(benches.map(x => x + shift))]; pigeons.gather(chunks, 0, 0, shift, ground); flock = pigeons.flocks[0]; }
+    const bird = flock.birds[0];
     let flights = 0;
     pigeons.onFlight = () => flights++;
     // Walking past slowly, they stay put. Running at them, they go up.
@@ -77,8 +79,10 @@ test('a flock flies its loop clear of the buildings', () => {
   try {
     // A tall building south of a lone bench, running right past it
     const building = { corners: [{ x: -40, z: 3 }, { x: 40, z: 3 }, { x: 40, z: 40 }, { x: -40, z: 40 }], x: 0, z: 21.5, reach: 45, top: 44 };
+    // (and nobody stands in it: the game's ground is the pavement only)
+    const beside = (x, z) => z >= 3 ? NaN : ground(x, z);
     let chunks = [], flock = null;
-    for (let x = 0; x < 600 && !flock; x += 6) { chunks = [chunkOf([x], { ...building, x, corners: building.corners.map(c => ({ x: c.x + x, z: c.z })) })]; pigeons.gather(chunks, x, 0, x, ground); flock = pigeons.flocks[0]; }
+    for (let x = 0; x < 600 && !flock; x += 6) { chunks = [chunkOf([x], { ...building, x, corners: building.corners.map(c => ({ x: c.x + x, z: c.z })) })]; pigeons.gather(chunks, x, 0, x, beside); flock = pigeons.flocks[0]; }
     assert.ok(flock, 'a flock by the building');
     // Scared from the north, their way away is south, into the building: they loop another way
     pigeons.scare({ x: flock.x, z: flock.z - 3, speed: 12, car: true }, 1000, chunks);

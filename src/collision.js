@@ -230,18 +230,52 @@ function lineThrough(solid, x, z, dx, dz, grow) {
   return leave < 0 ? null : [enter, leave];
 }
 // The highest roof under any of `points` ({ x, z }, as the colliders lie) no
-// higher than `below`, or -Infinity: what the helicopter can set down on. A
-// pitched roof counts to its ridge.
-export function roofUnder(chunks, points, below) {
-  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity, best = -Infinity;
+// higher than `below`, or -Infinity: what a flying machine can set down on. A
+// pitched roof counts to its ridge. A machine (`machine`) is held up only by
+// roofs under all its feet, never hanging off an edge, and never by the plant
+// and tanks up there (`clutter`), which someone on foot can climb onto: it
+// perched on water tanks, with no room to get out.
+export function roofUnder(chunks, points, below, machine = false) {
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity, best = -Infinity, held = 0;
   for (const p of points) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z); }
   for (const chunk of chunks) {
     const bounds = chunk?.collisionBounds;
     if (!bounds || maxX < bounds.minX || minX > bounds.maxX || maxZ < bounds.minZ || minZ > bounds.maxZ) continue;
     for (const solid of chunk.features.colliders) {
-      if (solid.top === undefined || solid.x - solid.reach > maxX || solid.x + solid.reach < minX || solid.z - solid.reach > maxZ || solid.z + solid.reach < minZ) continue;
+      if (solid.top === undefined || (machine && solid.clutter) || solid.x - solid.reach > maxX || solid.x + solid.reach < minX || solid.z - solid.reach > maxZ || solid.z + solid.reach < minZ) continue;
       const top = solid.ridge ?? solid.top;
-      if (top > best && top <= below && points.some(p => insideConvex(p, solid.corners))) best = top;
+      if (top > below || (!machine && top <= best)) continue;
+      let inside = 0;
+      for (let i = 0; i < points.length; i++) if (insideConvex(points[i], solid.corners)) inside |= 1 << i;
+      if (inside) { held |= inside; best = Math.max(best, top); }
+    }
+  }
+  return machine && held !== (1 << points.length) - 1 ? -Infinity : best;
+}
+// How high a building's roof is at p ({ x, z }), for someone standing on it:
+// a flat roof at its top, a pitched one on its slope (`pitch`, see roofPitch
+// in city-buildings.js), from its ridge down to its eaves
+export function roofSurface(solid, p) {
+  const pitch = solid.pitch;
+  if (!pitch) return solid.ridge ?? solid.top;
+  const { from: a, to: b, run, eaves, gable } = pitch, dx = b.x - a.x, dz = b.z - a.z, length = dx * dx + dz * dz;
+  const t = length > 1e-9 ? ((p.x - a.x) * dx + (p.z - a.z) * dz) / length : 0;
+  // (across from the ridge's line, and on a hip past its ends: each face is
+  // a plane, and measured straight from the ridge they sank into the hips)
+  const across = Math.hypot(p.x - a.x - dx * t, p.z - a.z - dz * t), past = gable ? 0 : Math.max(0, -t, t - 1) * Math.sqrt(length);
+  return eaves + (solid.ridge - eaves) * Math.max(0, 1 - Math.max(across, past) / run);
+}
+// The roof under someone at p ({ x, z }, as the colliders lie) no higher than
+// `below`, where it is under them, or -Infinity
+export function roofAt(chunks, p, below) {
+  let best = -Infinity;
+  for (const chunk of chunks) {
+    const bounds = chunk?.collisionBounds;
+    if (!bounds || p.x < bounds.minX || p.x > bounds.maxX || p.z < bounds.minZ || p.z > bounds.maxZ) continue;
+    for (const solid of chunk.features.colliders) {
+      if (solid.top === undefined || Math.abs(solid.x - p.x) > solid.reach || Math.abs(solid.z - p.z) > solid.reach || !insideConvex(p, solid.corners)) continue;
+      const top = roofSurface(solid, p);
+      if (top > best && top <= below) best = top;
     }
   }
   return best;
@@ -249,8 +283,9 @@ export function roofUnder(chunks, points, below) {
 // The player's car against the chunks around it. A parked car or a piece of
 // street furniture it touches may be knocked loose (`wake(solid, contact)`,
 // see CityTraffic.wake and LooseProps.hit), and then it is no longer a wall.
-// Whatever the player's machine clears (`passes`: the helicopter, over it)
-// is left alone. Someone on foot is round (`spec.radius`, see Walker).
+// Whatever the player's machine clears (`passes`: a flying machine over it,
+// someone on foot on a roof) is left alone. Someone on foot is round
+// (`spec.radius`, see Walker).
 export function collideScenery(player, chunks, dt, wake = null) {
   const halfWidth = player.spec.width / 2, halfLength = player.spec.length / 2, radius = player.spec.radius, center = Math.floor(player.s / CHUNK_LENGTH);
   const nearby = player.route.grid ? chunks.values() : [chunks.get(center - 1), chunks.get(center), chunks.get(center + 1)];

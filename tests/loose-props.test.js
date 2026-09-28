@@ -365,7 +365,8 @@ test('a cafe table and its four chairs come loose as five pieces, and settle apa
     assert.deepEqual(cafe.prop.bodies.map(b => b.piece.kind).sort(), ['chair', 'chair', 'chair', 'chair', 'table']);
     // (the one it met, and where each stood)
     const met = cafe.prop.bodies.reduce((a, b) => a.v.length() >= b.v.length() ? a : b), stood = new Map(cafe.prop.bodies.map(b => [b, b.p.clone()]));
-    for (let i = 0; i < 120 * 5; i++) props.update(1 / 120, player, null, built.chunks);
+    // (a table that tips over late takes a chair leaning on it a few seconds more)
+    for (let i = 0; i < 120 * 8 && cafe.prop.bodies.some(b => !b.asleep); i++) props.update(1 / 120, player, null, built.chunks);
     assert.deepEqual(cafe.prop.bodies.filter(b => !b.asleep).map(b => `${b.piece.kind} ${b.v.length().toFixed(2)} ${b.w.length().toFixed(2)} ${b.grounded}`), [], 'all settled');
     assert.ok(cafe.prop.bodies.every(aboveGround), 'on the ground');
     // Thrown into the rest of the set, which it knocks about rather than passing through

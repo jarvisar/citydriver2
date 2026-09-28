@@ -147,8 +147,9 @@ export class NightLighting {
       t.scale.set(11, 1, length); t.updateMatrix(); this.beams.setMatrixAt(count, t.matrix);
       this.beams.setColorAt(count++, this.color.setScalar(1 - THREE.MathUtils.smoothstep(distance, 95, RANGE)));
     };
-    // Formula cars have only a rear rain light.
-    if (player.nightLights.length > 1) beam(player.car, player.spec);
+    // Formula cars have only a rear rain light, and up in the air a plane's
+    // landing lights reach no street
+    if (player.nightLights.length > 1 && !player.airborne) beam(player.car, player.spec);
     if (traffic.enabled) for (const car of traffic.vehicles) beam(car.car, car.spec, origin);
     this.beams.count = count;
     for (const mesh of this.group.children) {

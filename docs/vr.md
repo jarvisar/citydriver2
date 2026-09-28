@@ -33,7 +33,7 @@ The page's menus and HUD can't be seen in a headset, so `src/vr-status.js` draws
 ## Comfort
 
 - The camera follows the chase camera's position and heading only. Pitch and roll come from the headset, and there is no camera shake.
-- The comfort vignette darkens the edge of the view when the camera turns faster than about 20° a second, or the car speeds up or slows down sharply. It keeps the middle of the view clear, fades once the turn ends and never shows in menus. The right thumbstick turns the camera round the car or the player, and on foot it also turns as the player walks across its view. The helicopter's climbs and dives count the same as speeding up.
+- The comfort vignette darkens the edge of the view when the camera turns faster than about 20° a second, or the car speeds up or slows down sharply. It keeps the middle of the view clear, fades once the turn ends and never shows in menus. The right thumbstick turns the camera round the car or the player, and on foot it also turns as the player walks across its view. The helicopter's and the plane's climbs and dives count the same as speeding up. In first person the plane's view banks and loops with it on a screen, but stays level in a headset.
 - When the chase camera has to jump in because a building is in the way, the view blinks dark for a moment. The vignette closes in while the camera eases back out.
 - The vignette and the blink can be turned off in the pause menu. The setting is saved.
 

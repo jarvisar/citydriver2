@@ -295,9 +295,9 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   function exitVR() { if (desktopView !== undefined) setView(desktopView); desktopView = undefined; graphics.setHeadset(false); }
   function addCuller(cull) { cullers.add(cull); return () => cullers.delete(cull); }
   // What the chase camera cannot see through (see ThirdPersonCamera.sight),
-  // and the ground it keeps above
+  // the ground it keeps above, and whether a bridge's deck is over a point
   function setSightLine(sight) { thirdPerson.sight = sight; }
-  function setGround(ground) { thirdPerson.ground = ground; }
+  function setGround(ground, decked = null) { thirdPerson.ground = ground; thirdPerson.decked = decked; }
   // The mouse turns the chase camera round the car, or the view through the
   // player's eyes, and the wheel brings the chase camera in or out (see MouseLook)
   const look = (yaw, pitch) => (views[view].firstPerson ? firstPerson : thirdPerson).look(yaw, pitch), zoom = factor => thirdPerson.zoomBy(factor);

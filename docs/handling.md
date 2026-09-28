@@ -44,9 +44,27 @@ The helicopter in the garage flies with the driving controls. Forward and brake 
 - It slows down as it gets close to the ground, so landings are gentle. It can land on streets and roofs. Over the water it hovers just above the surface.
 - It bumps into buildings below their roofs and flies over them above. It meets street furniture like a car does until it is above it. More than 2.5 m up, it passes over traffic and people.
 - It flies up to 120 m above the streets. The chase camera tilts down the higher it goes.
+- Low over the river it fits under the bridges. The piers are solid. A deck a little too low to pass under ducks it down.
+- Close to the ground its downwash kicks up dust, or spray off the water.
+- Pressing E sets it down where it is and lets you out. Over the water it heads for the nearest street first, and under a bridge it flies out from under the deck before that. Left with nobody in it, it does the same and its rotor winds down.
 - Autodrive only works in cars. Changing to a car in the air puts the car in the nearest lane.
 
 The flight code is in [src/helicopter.js](../src/helicopter.js).
+
+## Plane
+
+The plane uses the same controls. On the ground it taxis like a slow car on its nose wheel and brakes with S, then backs up at 4 m/s. Holding W, it lifts off by itself at 25 m/s. Holding Space as well, it lifts off at 19 m/s and climbs.
+
+- In the air it cruises at 34 m/s and holds its height when nothing is pressed. W takes it up to 56 m/s and S down to 17 m/s. Climbs and dives change its speed a little.
+- Steering banks it up to about 57° and turns it at about 55° a second at cruising speed, tighter when slow.
+- If it slows right down in the air, the nose drops until it has flying speed again.
+- It never flies into the ground. Near the floor it can only sink at 1.1 m/s plus 0.75 m/s for every metre of height, so a dive flattens out and holding Shift lands it softly. A landing faster than 4.5 m/s, or with the wings banked over 0.6 rad, bounces.
+- It can land on streets, parks and flat roofs, and says so after a gentle landing or one on a roof. Over the water it skims 1.1 m above it and can't land.
+- Its wings hit buildings as well as its body. It glances off anything it flies into instead of stopping dead in the air.
+- A double tap of a steering direction does a barrel roll that steps it about 5 m to that side. A double tap of climb loops the loop, about 44 m high, if it's flying faster than 24 m/s with 5 m of room below. A press held longer than 0.28 s isn't a tap.
+- Pressing E makes it glide down at 3.2 m/s and land, heading for the nearest street first if it's over the water. Left with nobody in it after a jump, it circles down near where you left it and lands.
+
+The flight code is in [src/plane.js](../src/plane.js), and the model in [src/plane-model.js](../src/plane-model.js).
 
 ## Input Timing
 

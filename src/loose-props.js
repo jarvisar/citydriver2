@@ -423,7 +423,7 @@ export function overlap(a, b) {
 // came in by instead, as against a wall: a person falling onto a bench went
 // more than halfway through a 6.5 cm slat in a step and out underneath.
 const depthIn = { depth: 0, at: new THREE.Vector3(), n: new THREE.Vector3() }, found = { depth: 0, at: new THREE.Vector3(), n: new THREE.Vector3() };
-const into = new THREE.Quaternion(), turned = new THREE.Quaternion(), offset = new THREE.Vector3(), local = new THREE.Vector3(), outerAt = new THREE.Vector3();
+const into = new THREE.Quaternion(), turned = new THREE.Quaternion(), offset = new THREE.Vector3(), local = new THREE.Vector3(), outerAt = new THREE.Vector3(), middle = new THREE.Vector3();
 const wasTurned = new THREE.Quaternion(), wasOffset = new THREE.Vector3(), was = new THREE.Vector3();
 function deepestIn(body, other, entry = false) {
   const parts = other.shape.parts, points = body.shape.points, reach = other.shape.radius ** 2;
@@ -857,11 +857,24 @@ export class LooseProps {
             if (d > out) { out = d; face = k; if (d >= 0) break; }
           }
           if (out >= 0) continue;
-          // (out through the nearest face, along the ground: over a top they have not stepped)
+          // (out along the ground: over a top they have not stepped)
           offset.set(faces[face], faces[face + 1], faces[face + 2]).applyQuaternion(body.q);
-          const flat = Math.hypot(offset.x, offset.z);
-          if (flat < .3 || -out / flat <= depth) continue;
-          depth = -out / flat; best = 0; nx = -offset.x / flat; nz = -offset.z / flat;
+          if (Math.hypot(offset.x, offset.z) < .3) continue;
+          // Out through the side their middle is furthest out of, the least way out for
+          // their whole outline. The side nearest this one point put someone landing
+          // just past a fallen post back over it.
+          middle.set(car.x - body.p.x, car.y + up - body.p.y, car.z - body.p.z).applyQuaternion(into);
+          let clear = -Infinity, sx = 0, sz = 0;
+          for (let k = 0; k < faces.length; k += 4) {
+            offset.set(faces[k], faces[k + 1], faces[k + 2]).applyQuaternion(body.q);
+            const flat = Math.hypot(offset.x, offset.z);
+            if (flat < .3) continue;
+            const d = (faces[k] * middle.x + faces[k + 1] * middle.y + faces[k + 2] * middle.z - faces[k + 3]) / flat;
+            if (d > clear) { clear = d; sx = offset.x / flat; sz = offset.z / flat; }
+          }
+          const way = car.radius - clear;
+          if (!(way > depth) || clear === -Infinity) continue;
+          depth = way; best = 0; nx = -sx; nz = -sz;
           r.set(car.x + x * car.radius - body.p.x, car.y + up - body.p.y, car.z + z * car.radius - body.p.z);
         }
       }
@@ -883,7 +896,9 @@ export class LooseProps {
     if (!round && !roof) this.press(body, car, nx, nz);
     if (firm) {
       const at = { x: body.p.x + r.x, z: body.p.z + r.z }, wall = collisionImpulse(car, { ...at, vx: 0, vz: 0, mass: Infinity }, { x: -nx, z: -nz }, at, PROP_SURFACE);
-      return { x: wall?.a.x ?? 0, z: wall?.a.z ?? 0, spin: wall?.a.spin ?? 0, closing: wall?.closing ?? 0, px, pz };
+      // (moving off it, their closing speed is less than none: taken as none,
+      // the walker took their own speed for the piece's and was knocked flat)
+      return { x: wall?.a.x ?? 0, z: wall?.a.z ?? 0, spin: wall?.a.spin ?? 0, closing: wall?.closing ?? car.vx * nx + car.vz * nz, px, pz };
     }
     // A person met by the nose or tail is swept aside off it, as when first
     // hit, rather than pushed on ahead of the car (anything else is pushed

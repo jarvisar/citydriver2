@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CITY, cityCell, CITY_CELL, cityStyleDistrict } from './city.js';
-import { ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL } from './city-route.js';
+import { ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL, DECK_UNDERSIDE } from './city-route.js';
 import { HarbourBoats } from './city-boats.js';
 import { BusStops } from './bus-stops.js';
 import { cityAssets, cityTrees, CONIFER, looseTree, twinLamp, signalMastPiece, LANTERN_HEIGHT, SIGNAL_LENSES, MAST_HEIGHT, parkedCars, PARKED_PAINTS, boatModels } from './city-assets.js';
@@ -24,7 +24,7 @@ import { signalLens, round } from './city-detail-assets.js';
 import { buildMonument } from './city-monuments.js';
 import { cityPlaces } from '../city-exploration.js';
 import { basinRim, basinWater } from './city-public-space-geometry.js';
-import { buildStreetSurfaces, placeStreetFurniture, findBridges, PARAPET } from './city-streets.js';
+import { buildStreetSurfaces, placeStreetFurniture, findBridges, bridgePiers, PARAPET } from './city-streets.js';
 import { offsetPolygon, calcPolygonArea, averagePoint } from '../mapgen/polygon-util.js';
 
 const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
@@ -462,11 +462,13 @@ export class CityChunk {
   }
   // (always inside rigid, which places it)
   solid(x, s, width, depth) {
-    if (this.distant) return;
-    this.features.colliders.push({
+    if (this.distant) return null;
+    const solid = {
       x: this.east + x, z: -this.start - s,
       heading: 0, halfWidth: width / 2, halfLength: depth / 2, reach: Math.hypot(width, depth) / 2, anchor: this.layoutAnchor, frame: this.layoutPlacement,
-    });
+    };
+    this.features.colliders.push(solid);
+    return solid;
   }
   post(x, s, radius) { if (!this.distant) this.features.colliders.push({ x: this.east + x, z: -this.start - s, reach: radius, anchor: this.layoutAnchor, frame: this.layoutPlacement }); }
   prop(name, x, s, yaw = 0, y = PAVEMENT_LEVEL, scale = [1, 1, 1]) {
@@ -516,6 +518,14 @@ export class CityChunk {
     for (const [index, piece] of this.furniture.entries()) {
       if (index && index % 40 === 0) yield;
       const x = piece.u - this.east, s = piece.s - this.start;
+      // Piers aren't colliders: cars on the deck above would hit them
+      if (piece.kind === 'pier') {
+        if (this.distant) continue;
+        const corners = piece.outline.map(p => ({ x: p.x, z: -p.y }));
+        const reach = Math.max(...corners.map(p => Math.hypot(p.x - piece.u, p.z + piece.s)));
+        (this.features.piers ??= []).push({ corners, x: piece.u, z: -piece.s, reach, top: DECK_UNDERSIDE });
+        continue;
+      }
       if (buildMonument(this, piece, x, s)) continue;
       // Posts, signs, bins, benches and mast signals can be knocked loose,
       // trees and shelters only by a car that breaks them (see LooseProps).
@@ -556,7 +566,8 @@ export class CityChunk {
         const length = piece.length ?? 4;
         // (and a bridge's parapet, drawn with the streets, only stops the car)
         if (!piece.parapet) this.prop('railing', x, s, piece.yaw, piece.y ?? PAVEMENT_LEVEL, [1, 1, length / 4]);
-        this.rigid(x, s, () => this.solid(x, s, piece.parapet ? PARAPET : .24, length), itemFrame(piece.s, piece.u, piece.yaw));
+        // (`base`, what it stands on: a deck's edge is no wall to something flying under the deck)
+        this.rigid(x, s, () => { const solid = this.solid(x, s, piece.parapet ? PARAPET : .24, length); if (solid) solid.base = piece.y ?? PAVEMENT_LEVEL; }, itemFrame(piece.s, piece.u, piece.yaw));
       }
       else if (piece.kind === 'sign') this.standingSign(discoverySignFor(piece.type, piece.variant), x, s, piece.yaw, piece.width ?? 4.2, piece.bottom ?? 1.9);
       else if (piece.kind === 'stop' || piece.kind === 'yield') {
@@ -703,10 +714,7 @@ export class CityChunk {
       // going back to meet them, they face that way. Shoved aside by the
       // player on foot, they look round at them.
       let look = null;
-      // (talking to the player on foot, they face them, or the way to somewhere: see OnFoot.talk)
-      const talking = walker.talking && time < walker.talking.until ? walker.talking.point ?? walker.talking : null;
       if (pace < 0) look = pose.yaw + Math.PI;
-      else if (talking) look = Math.atan2(x - talking.x, z - talking.z);
       else if (walker.shovedBy && time < walker.shovedBy.until) look = Math.atan2(x - walker.shovedBy.x, z - walker.shovedBy.z);
       else if (standing(walker, time) && partner?.drawn && (partner.away || !standing(partner, time))) look = Math.atan2(x - partner.drawn.x, z - partner.drawn.z);
       const bob = .3 + .7 * Math.min(1, Math.abs(pace) / walker.speed);
@@ -877,12 +885,16 @@ export class CitydriverWorld {
   // they fall in.
   placeFurniture() {
     this.furnitureByChunk = new Map(); this.shelters = [];
-    placeStreetFurniture(this.nav, this.bridges, piece => {
+    const add = piece => {
       if (piece.kind === 'shelter') this.shelters.push(piece);
       const key = cityCell(piece.s, piece.u).key;
       if (!this.furnitureByChunk.has(key)) this.furnitureByChunk.set(key, []);
       this.furnitureByChunk.get(key).push(piece);
-    });
+    };
+    placeStreetFurniture(this.nav, this.bridges, add);
+    // (and the bridges' piers, drawn with the streets, which only something
+    // flying under a bridge can meet: see features.piers)
+    for (const { outline } of bridgePiers()) { const centre = averagePoint(outline); add({ kind: 'pier', s: centre.y, u: centre.x, outline }); }
   }
   buildStatic() {
     const ground = new Surface(), roads = new Surface(), paths = new Surface(), water = new Surface(), walls = new Surface();

@@ -12,10 +12,10 @@ export class Input {
     this.xr = new XRInput(onAction); this.xrActive = false;
     this.konami = new KonamiCode();
     this.touchStick = new TouchStick(document.querySelector('#touch-stick'), () => onAction('drive'), document.querySelector('#scene'));
-    // Climb and descend fly the helicopter, on the keys a car uses to drift
-    // and boost (and E / Q), which the helicopter has no use for; on foot
-    // they jump and sprint (see walkingInput)
-    this.codes = { forward: ['KeyW', 'ArrowUp', 'Numpad8'], brake: ['KeyS', 'ArrowDown', 'Numpad2'], left: ['KeyA', 'ArrowLeft', 'Numpad4'], right: ['KeyD', 'ArrowRight', 'Numpad6'], handbrake: ['Space'], boost: ['ShiftLeft', 'ShiftRight'], climb: ['Space', 'KeyE'], descend: ['ShiftLeft', 'ShiftRight', 'KeyQ'], jump: ['Space'], sprint: ['ShiftLeft', 'ShiftRight'] };
+    // Climb and descend fly the helicopter and the plane, on the keys a car
+    // uses to drift and boost, which they have no use for; on foot they jump
+    // and sprint (see walkingInput). E gets out of all of them.
+    this.codes = { forward: ['KeyW', 'ArrowUp', 'Numpad8'], brake: ['KeyS', 'ArrowDown', 'Numpad2'], left: ['KeyA', 'ArrowLeft', 'Numpad4'], right: ['KeyD', 'ArrowRight', 'Numpad6'], handbrake: ['Space'], boost: ['ShiftLeft', 'ShiftRight'], climb: ['Space'], descend: ['ShiftLeft', 'ShiftRight'], jump: ['Space'], sprint: ['ShiftLeft', 'ShiftRight'] };
     this.touchButtons = {};
     // Each touch button presses what its key does: Space's drifts, climbs or jumps, Shift's boosts, descends or sprints
     for (const [key, actions] of [['boost', ['boost', 'descend', 'sprint']], ['handbrake', ['handbrake', 'climb', 'jump']]]) {
@@ -67,7 +67,7 @@ export class Input {
         return;
       }
       if (document.querySelector('dialog[open]')) return;
-      // E gets out of the car and into another (free drive; in the helicopter it climbs)
+      // E gets out of the car and into another (free drive)
       if (e.code === 'KeyE' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) onAction('use');
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Numpad8', 'Numpad2', 'Numpad4', 'Numpad6', 'Space'].includes(e.code)) e.preventDefault();
       this.keys.add(e.code);

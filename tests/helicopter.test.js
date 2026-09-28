@@ -36,7 +36,7 @@ function block(top, z = -60, extra = {}) {
 
 test('the helicopter is in the garage but not the wheeled fleet, and has a model, art and meters', () => {
   assert.ok(GARAGE_IDS.includes('helicopter') && !CAR_IDS.includes('helicopter'));
-  assert.deepEqual(GARAGE_IDS.filter(id => id !== 'helicopter'), CAR_IDS, 'every car is still in the garage, in order');
+  assert.deepEqual(GARAGE_IDS.filter(id => !CARS[id].flies), CAR_IDS, 'every car is still in the garage, in order');
   assert.ok(!CARS.helicopter.taxi, 'free drive only');
   assert.equal(carMeters('helicopter').length, 4);
   assert.match(carArt('helicopter'), /^<svg[^>]*>.*<ellipse/);
@@ -131,6 +131,36 @@ test('over the water it only hovers, and it meets the quay from below as a wall'
     fly(heli, 2, { climb: 1 }); fly(heli, 3, { forward: 1 });
     assert.ok(heli.s < 195, 'over the quay');
   } finally { heli.disposeModel(); }
+});
+
+test('low over the river it goes under a bridge, and its piers are solid', () => {
+  // A deck across the water from s = 240 to 260, and a pier under it at u = 12
+  const deck = (s, u) => s > 240 && s < 260 && Math.abs(u) < 40;
+  const river = {
+    ...flat, grid: true,
+    height: (s, u) => s > 200 && !deck(s, u) ? WATER : GROUND,
+    water: (s, u) => s > 200 && !deck(s, u),
+    under: (s, u) => deck(s, u) ? { lid: GROUND - 1.4, water: WATER } : null,
+  };
+  const pier = { corners: [{ x: 11, z: -245 }, { x: 13, z: -245 }, { x: 13, z: -255 }, { x: 11, z: -255 }], x: 12, z: -250, reach: 5.2, top: GROUND - 1.4 };
+  // (and a railing along the deck's near edge, which it meets nose first)
+  const railing = { x: 0, z: -240.3, heading: Math.PI / 2, halfWidth: .12, halfLength: 30, reach: 30 };
+  const chunks = new Map([[0, { collisionBounds: { minX: -30, maxX: 30, minZ: -255, maxZ: -240 }, features: { colliders: [railing], piers: [pier] } }]]);
+  const run = u => {
+    const heli = new DrivingController(river, { s: 215, u, heading: 0 }, 'helicopter'), events = [];
+    heli.freeDriving = true; heli.scenery = chunks;
+    try {
+      fly(heli, 4, { descend: 1 });
+      for (let i = 0; i < 120 * 5; i++) { heli.update(1 / 120, { forward: 1 }); collideScenery(heli, chunks, 1 / 120); events.push(...heli.pilot.drain().map(event => event.text)); }
+      return { s: heli.s, top: heli.groundedPosition.y + 3, events, hits: heli.audioTelemetry.impactSerial };
+    } finally { heli.disposeModel(); }
+  };
+  const clear = run(0);
+  assert.ok(clear.s > 270 && clear.events.includes('Under the bridge'), `through, to s ${clear.s.toFixed(0)}`);
+  assert.equal(clear.hits, 0, 'the railing on the deck overhead is no wall');
+  assert.ok(clear.top <= GROUND - 1.4 + 1e-6, 'its rotor under the deck');
+  const pierHit = run(12);
+  assert.ok(pierHit.s < 245 && pierHit.hits > 0, `stopped by the pier at s ${pierHit.s.toFixed(1)}`);
 });
 
 test('it sets down on a roof, bounces off walls below one and passes over them above', () => {

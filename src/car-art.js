@@ -1,6 +1,7 @@
 import { carEntry } from './cars.js';
 import { bodyProfile, heightAt, WHEEL, BUS_DOORS } from './traffic-models.js';
 import { taxiChequers } from './car-models.js';
+import { PLANE_PROFILE } from './plane-model.js';
 
 // A side profile drawn from the same numbers the model is built from, so each
 // card shows the car the player will actually be driving.
@@ -30,7 +31,8 @@ function pen({ drop = 0, scale = SCALE, ground = GROUND } = {}) {
 export function carArt(id) {
   const entry = carEntry(id);
   const parts = entry.kind === 'formula' ? formulaParts(entry) : entry.kind === 'special' ? SPECIAL_ART[entry.shape.name](entry.shape)
-    : entry.kind === 'helicopter' ? helicopterParts(entry.shape) : entry.kind === 'classic' ? classicParts(entry) : builtCarParts(entry);
+    : entry.kind === 'helicopter' ? helicopterParts(entry.shape) : entry.kind === 'plane' ? planeParts()
+      : entry.kind === 'classic' ? classicParts(entry) : builtCarParts(entry);
   return `<svg class="chooser-art car-art" viewBox="0 0 280 142" aria-hidden="true">${parts.join('')}</svg>`;
 }
 
@@ -446,5 +448,50 @@ function helicopterParts(shape) {
     shape2d([[-2.36, 1.52], [-2.28, 1.52], [-2, 2.34], [-2.08, 2.34]], PAINT),
     `<ellipse cx="${px(-2.9)}" cy="${py(1.95)}" rx="${size(.34)}" ry="${size(.17)}" fill="#ffffff2e"/>`,
     slab(-2.08, -1.92, .73, .81, '#c4483a', 1),
+  ];
+}
+
+// The plane, from plane-model.js's own tables: the fuselage with its stripe
+// and windows, the wing over the cabin on its V struts, the striped rudder,
+// the tailplane end on, the propeller edge on, and the fat tyres on their
+// legs. The wing is its root section drawn a bit thicker. Its cream tip is
+// left out: seen end on it sits above the root (the dihedral) and made the
+// whole wing look cream.
+function planeParts() {
+  const draw = pen({ scale: 27, ground: 126 }), { px, py, slab, shape2d, disc, shadow } = draw;
+  const { body, windows, wing, lift, struts: { foot: [footX, footY, footZ], reach, spars }, fin, tailplane, elevator, rudder, stripes, hub: [, hubY, hubZ], main, nose } = PLANE_PROFILE;
+  // A member from one point to another, `width` along
+  const member = ([z0, y0], [z1, y1], width, fill) => shape2d([[z0 - width / 2, y0], [z0 + width / 2, y0], [z1 + width / 2, y1], [z1 - width / 2, y1]], fill);
+  // An outline through the fuselage's stations, nose to tail along one edge
+  // of each section and back along another
+  const band = (top, bottom) => [...body.map(station => [station[0], top(station)]), ...[...body].reverse().map(station => [station[0], bottom(station)])];
+  const edge = rudder.map(([y, back]) => [back, y]), foot = [footZ, footY], spar = 2.2 + lift(reach), jury = 2.2 + lift((footX + reach) / 2);
+  return [
+    shadow(3.4),
+    shape2d(fin, PAINT),
+    ...[-.62, .2].map(z => member([z, .86], [main.z, main.y], .06, CARBON)),
+    slab(nose.z - .045, nose.z + .045, .78, .9, HUB, 0), slab(nose.z - .05, nose.z + .05, .635, .685, CARBON, 0), slab(nose.z - .035, nose.z + .035, nose.radius, .66, CARBON, 0),
+    member([-2.62, .9], [-2.42, .78], .06, CARBON),
+    shape2d(band(station => station[5][1], station => station[1][1]), PAINT),
+    shape2d(band(station => station[3][2], station => station[3][1]), CREAM),
+    ...Object.entries(windows).filter(([, faces]) => faces.includes(4)).map(([k]) => {
+      const [a, b] = [body[k], body[+k + 1]];
+      return shape2d([[a[0], a[4][1]], [a[0], a[5][1]], [b[0], b[5][1]], [b[0], b[4][1]]], '#4d737c');
+    }),
+    // Struts from the fuselage's side to both spars, and the jury struts
+    ...spars.flatMap(z => [member(foot, [z, spar], .075, CREAM), member([(z + footZ) / 2, (spar + footY) / 2], [(z + footZ) / 2, jury], .05, CREAM)]),
+    // (outlined, as the helicopter's cabin is, so it stands clear of the cabin's roof)
+    `<polygon points="${wing.map(([z, y]) => `${px(z)},${py(2.18 + (y - 2.18) * 1.5)}`).join(' ')}" fill="${PAINT}" stroke="#0000002e" stroke-width="1.2" stroke-linejoin="round"/>`,
+    shape2d(tailplane, PAINT), shape2d(tailplane.map(([z, y]) => [3.2 - (3.2 - z) * .55, y]), CREAM),
+    shape2d(elevator, PAINT), shape2d(elevator.map(([z, y]) => [3.215 + (z - 3.215) * .65, y]), CREAM),
+    shape2d([[3.215, edge[0][1]], [3.215, edge.at(-1)[1]], ...[...edge].reverse()], PAINT),
+    ...stripes.map(k => shape2d([[3.215, edge[k][1]], [3.215, edge[k + 1][1]], edge[k + 1], edge[k]], CREAM)),
+    slab(3.04, 3.16, 2.715, 2.775, TAIL, 1), slab(.22, .38, .81, .88, TAIL, 1),
+    // The propeller edge on, cream at the tips, through the spinner
+    slab(hubZ - .045, hubZ + .045, hubY - .86, hubY + .86, CARBON, 1),
+    slab(hubZ - .03, hubZ + .03, hubY + .86, hubY + .95, CREAM, 1), slab(hubZ - .03, hubZ + .03, hubY - .95, hubY - .86, CREAM, 1),
+    shape2d([[hubZ + .115, hubY - .24], [hubZ + .115, hubY + .24], [hubZ, hubY + .22], [hubZ - .09, hubY + .14], [hubZ - .15, hubY], [hubZ - .09, hubY - .14], [hubZ, hubY - .22]], CREAM),
+    disc(main.z, main.y, main.radius, TIRE), disc(main.z, main.y, main.radius * .33, CREAM),
+    disc(nose.z, nose.radius, nose.radius, TIRE), disc(nose.z, nose.radius, nose.radius * .33, CREAM),
   ];
 }

@@ -1,5 +1,6 @@
 import { CITY } from './city.js';
 import { medianAt, MEDIAN_KERB } from './city-medians.js';
+import { insideIndexed } from '../mapgen/polygon-util.js';
 export { cityCell, cityDistrict, citySoundscape } from './city.js';
 
 // The route the car drives: a flat plane with s pointing north and u east,
@@ -10,6 +11,18 @@ export { cityCell, cityDistrict, citySoundscape } from './city.js';
 export const ROAD_LEVEL = 24;
 export const PAVEMENT_LEVEL = 24.12;
 export const WATER_LEVEL = 17.8;
+// A bridge's deck: its underside, and the water under it, for something
+// flying low enough to pass under (see `under` below)
+export const DECK_UNDERSIDE = ROAD_LEVEL - 1.4;
+const UNDER_DECK = Object.freeze({ lid: DECK_UNDERSIDE, water: WATER_LEVEL });
+// Whether (s, u) is on the land rather than over the water. Paving off the
+// land is a deck. The water mask's 4 m cells take in a strip of the bank
+// too, where a road is paving with no deck overhead: a tenth of the ground
+// along the shore said there was one.
+function onLandAt(s, u) {
+  const p = { x: u, y: s };
+  return CITY.land.some(piece => insideIndexed(p, piece.outer) && !piece.holes.some(hole => insideIndexed(p, hole)));
+}
 
 // Nearest road by how far inside its surface the point is
 export function roadAt(s, u, radius = 26) {
@@ -92,6 +105,8 @@ export const citydriverRoute = {
   bounds: () => [-Infinity, Infinity],
   looseness: (s, u) => LOOSENESS[surfaceAt(s, u)] ?? 0,
   water: (s, u) => surfaceAt(s, u) === 'water',
+  // (paving over the water is a deck: what is under it, or null)
+  under: (s, u) => waterAt(s, u) && surfaceAt(s, u) !== 'water' && !onLandAt(s, u) ? UNDER_DECK : null,
   surface: surfaceAt,
   nearestLane: nearestLanePose,
 };

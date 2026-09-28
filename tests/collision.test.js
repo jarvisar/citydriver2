@@ -92,6 +92,43 @@ test('a glancing blow slides along a wall instead of stopping against it', () =>
   car.disposeModel();
 });
 
+test('a scrape along a wall is no crash, and a nose into it is', () => {
+  const route = { ...straightRoute, laneAssist: false };
+  const crashes = (speed, degrees) => {
+    // A long wall beside the road, its face at x = 12
+    const chunks = scenery(chunk => solidBox(chunk, 13, -134, 0, 1, 120));
+    const car = new DrivingController(route, { s: 24 });
+    try {
+      const a = degrees * Math.PI / 180;
+      car.heading = a; car.u = 12 - Math.sin(a) * car.spec.length / 2 - Math.cos(a) * car.spec.width / 2 - 1; car.speed = speed; car.update(0, {});
+      for (let i = 0; i < 240; i++) { car.update(1 / 120, {}); collideScenery(car, chunks, 1 / 120); }
+      assert.ok(car.audioTelemetry.impactSerial > 0, `${degrees}° at ${speed} m/s met the wall`);
+      return car.audioTelemetry.crashSerial;
+    } finally { car.disposeModel(); }
+  };
+  // Grazing it at 90 km/h, and nudging it at parking speed, aren't crashes
+  assert.equal(crashes(25, 15), 0); assert.equal(crashes(3, 90), 0);
+  assert.equal(crashes(10, 90), 1); assert.equal(crashes(25, 45), 1);
+  // Trading paint with a car alongside is no crash, being T-boned is
+  const car = new DrivingController(straightRoute, { s: 24 });
+  try {
+    car.speed = 20; car.update(0, {});
+    car.strike(-2, 0, 0, 4); assert.equal(car.audioTelemetry.crashSerial, 0);
+    car.speed = 0; car.update(0, {});
+    car.strike(9.5, 0, 0, 15); assert.equal(car.audioTelemetry.crashSerial, 1);
+    // One hit landing as two blows a couple of frames apart adds up, two separate knocks don't
+    const twice = gap => {
+      car.update(1, {}); const serial = car.audioTelemetry.crashSerial;
+      car.speed = 15; car.knock.x = car.knock.z = car.knock.spin = 0; car.update(0, {});
+      car.strike(0, 5, 0, 10); for (let t = 0; t < gap; t += 1 / 60) car.update(1 / 60, {});
+      car.strike(0, 3, 0, 5);
+      car.update(1, {});
+      return car.audioTelemetry.crashSerial - serial;
+    };
+    assert.equal(twice(1 / 30), 1); assert.equal(twice(.5), 0);
+  } finally { car.disposeModel(); }
+});
+
 test('a tree stops a car that meets it squarely and lets a clipped corner past', () => {
   for (const [offset, passes] of [[0, false], [1.25, true]]) {
     // In the car's own lane, where the lane assist holds it on line.

@@ -10,6 +10,7 @@ import { LOOK_REST, LOOK_MOVING, LOOK_RETURN, settle } from './third-person-came
 // walkingInput). Radians.
 const HEAD_TURN = 2.3, HEAD_DOWN = -.9, HEAD_UP = .6, FOOT_DOWN = -1.3, FOOT_UP = 1.2;
 const wrap = angle => Math.atan2(Math.sin(angle), Math.cos(angle));
+const UP = new THREE.Vector3(0, 1, 0);
 
 export class FirstPersonCamera {
   constructor() {
@@ -17,7 +18,7 @@ export class FirstPersonCamera {
     this.initialized = false;
     this.pitch = 0;
     this.orientation = new THREE.Euler(0, 0, 0, 'YXZ');
-    this.eye = new THREE.Vector3();
+    this.eye = new THREE.Vector3(); this.turn = new THREE.Quaternion(); this.gaze = new THREE.Quaternion();
     // Where the view looks, as a heading (on foot, its own), and how far the
     // mouse has turned and tilted it
     this.heading = 0; this.lookYaw = 0; this.lookPitch = 0; this.rested = 0;
@@ -59,6 +60,14 @@ export class FirstPersonCamera {
     if (car.userData.driverEye) this.eye.copy(car.userData.driverEye);
     else this.eye.set(0, 1.73, -1.01);
     if (!steady) this.eye.y += car.userData.eyeBob ?? 0;
+    // Through a plane's windscreen the view banks and loops with it, as its
+    // body does about its pivot (never in a headset: see `steady`)
+    const body = steady ? null : car.userData.flight?.body;
+    if (body) {
+      this.orientation.set(this.lookPitch, -this.lookYaw, 0);
+      this.camera.quaternion.setFromAxisAngle(UP, car.rotation.y).multiply(this.turn.setFromEuler(body.rotation)).multiply(this.gaze.setFromEuler(this.orientation));
+      this.eye.sub(body.position).applyEuler(body.rotation).add(body.position);
+    }
     // Keep the eye fixed at the windshield as the chassis tilts.
     this.camera.position.copy(this.eye.applyQuaternion(car.quaternion)).add(car.position);
     this.camera.updateMatrixWorld();

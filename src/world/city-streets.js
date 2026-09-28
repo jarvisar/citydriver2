@@ -1,5 +1,5 @@
 import { CITY, SIDEWALK, QUAY, PolygonIndex, cityStyleDistrict } from './city.js';
-import { ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL, waterAt, onRoadAt, surfaceAt } from './city-route.js';
+import { ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL, DECK_UNDERSIDE, waterAt, onRoadAt, surfaceAt } from './city-route.js';
 import { junctionGeometry, CROSSWALK, stopLineDistance } from './junction-geometry.js';
 import { junctionControls } from '../city-junctions.js';
 import { cityMedians, MEDIAN_KERB, slicePolyline } from './city-medians.js';
@@ -649,7 +649,7 @@ const COPING_BOTTOM = PAVEMENT_LEVEL - .2, COPING_WIDTH = .55, COPING_LIP = .06,
 // posts every TRUSS_PANEL or so and braced corner to corner between them)
 export const PARAPET = .45, PARAPET_TOP = PAVEMENT_LEVEL + 1.05, TRUSS_TOP = PAVEMENT_LEVEL + 6.6;
 const TRUSS_PANEL = 11, BLOCK_TOP = PARAPET_TOP + .32, TRUSS_POST = .5, TRUSS_WIDE = .55, CHORD = .46, CHORD_WIDE = .48, BRACE_WIDE = .38, BRACE_DEEP = .3;
-const DECK_BOTTOM = ROAD_LEVEL - 1.4;
+const DECK_BOTTOM = DECK_UNDERSIDE;
 let edges = null;
 export function deckEdges() {
   if (edges?.decks === CITY.decks) return edges.list;

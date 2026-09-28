@@ -368,7 +368,7 @@ export class TaxiRun {
     this.bestStreak = 0; this.bestCombo = 1; this.tipsBanked = 0; this.nearMisses = 0; this.crazyStops = 0; this.drifts = 0;
     this.groups = 0; this.fullCabs = 0; this.longRides = 0; this.pleased = 0; this.goalCash = 0; this.summary = null;
     this.goals = shiftGoals(this.career.shifts, this.career.rank.index);
-    this.lastImpact = player.audioTelemetry?.impactSerial ?? 0; this.makeCustomers(player);
+    this.lastImpact = player.audioTelemetry?.impactSerial ?? 0; this.lastCrash = player.audioTelemetry?.crashSerial ?? 0; this.makeCustomers(player);
     // Starting inside a ring must not choose the first fare for the driver.
     this.blockedPickup = this.customerAt(player);
   }
@@ -477,18 +477,19 @@ export class TaxiRun {
     }
     this.comboTime -= dt; if (this.comboTime <= 0) this.combo = 1;
     this.crashCooldown = Math.max(0, this.crashCooldown - dt);
-    const impact = player.audioTelemetry?.impactSerial ?? 0;
-    const collided = impact !== this.lastImpact;
-    if (collided) {
-      this.lastImpact = impact;
-      if (this.status === 'driving' && (player.audioTelemetry?.impact ?? 0) > 3) {
-        // A crash breaks the stunt chain but keeps the tips already earned, as
-        // in Crazy Taxi. A wall scrape or traffic pileup can report contacts
-        // every tick, so stunts stay suspended until the cab is clear.
-        if (this.crashCooldown === 0 && this.combo > 1) this.events.push({ kind: 'crash', text: `Crash · ×${this.combo} combo lost` });
-        if (this.fare.mood === 'nervous' && !this.shaken) { this.shaken = true; this.events.push({ kind: 'shaken', tone: 'slow', text: 'Crash · no smooth-ride bonus' }); }
-        this.combo = 1; this.comboTime = 0; this.driftTime = 0; this.crashCooldown = .8;
-      }
+    const telemetry = player.audioTelemetry, impact = telemetry?.impactSerial ?? 0, crash = telemetry?.crashSerial ?? 0;
+    const collided = impact !== this.lastImpact, crashed = crash !== this.lastCrash;
+    this.lastImpact = impact; this.lastCrash = crash;
+    // Scrapes and sideswipes aren't crashes (see CRASH in vehicle.js), but they
+    // restart a drift's count, so grinding along a wall earns nothing
+    if (collided) this.driftTime = 0;
+    if (crashed && this.status === 'driving') {
+      // A crash breaks the stunt chain but keeps the tips already earned, as
+      // in Crazy Taxi. A pileup can report crashes every tick, so stunts stay
+      // suspended until the cab is clear.
+      if (this.crashCooldown === 0 && this.combo > 1) this.events.push({ kind: 'crash', text: `Crash · ×${this.combo} combo lost` });
+      if (this.fare.mood === 'nervous' && !this.shaken) { this.shaken = true; this.events.push({ kind: 'shaken', tone: 'slow', text: 'Crash · no smooth-ride bonus' }); }
+      this.combo = 1; this.comboTime = 0; this.driftTime = 0; this.crashCooldown = .8;
     }
     this.lookAhead();
     if (this.status === 'pickup') {

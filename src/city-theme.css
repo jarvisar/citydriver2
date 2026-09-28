@@ -177,6 +177,8 @@ body[data-controller=true] #app #city-map-open::before { content: 'VIEW'; margin
 /* Peripheral states too, rather than the base light/green theme. */
 #app > #toast, #app #vr-error { background: var(--city-panel); color: var(--city-text); border: 1px solid var(--city-line); border-radius: var(--city-control-radius); box-shadow: var(--city-shadow); }
 #app .taxi-task #toast { border: 0; box-shadow: none; }
+/* A stunt in free drive (see Plane) */
+#app > #toast[data-tone=stunt] { color: var(--city-accent-soft); font-weight: 700; }
 #app :is(.error, .loading) { background: var(--city-panel); color: var(--city-text); }
 #app .error button { background: var(--city-accent); color: var(--city-on-accent); border-color: var(--city-accent); border-radius: var(--city-control-radius); }
 /* A big screen draws the HUD and menus larger, the way a game's interface

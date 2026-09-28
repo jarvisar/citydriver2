@@ -92,22 +92,24 @@ body[data-mode=free] .city-hud-copy { flex: 1; }
 body[data-mode=free] #app #city-location { max-width: none; white-space: normal; overflow-wrap: anywhere; }
 
 @media (any-pointer: coarse), (max-width: 760px), (max-height: 560px) {
+  /* Boost and Drift take the corner. A controller hides them but keeps Get
+     out there, so the map stays above it either way (it used to drop into
+     the corner with a controller and cover the button). With its Y badge the
+     button is up to about 90 px tall on a narrow phone. */
   body[data-mode=free] .city-guide {
-    --map-bottom: var(--ui-bottom);
+    --map-bottom: calc(var(--ui-bottom) + 82px);
     top: auto; bottom: var(--map-bottom); left: var(--ui-left); right: auto;
   }
+  body[data-mode=free][data-controller=true] .city-guide { --map-bottom: calc(var(--ui-bottom) + 100px); }
   body[data-mode=free] .city-guide[data-expanded=true] {
-    --map-bottom: var(--ui-bottom);
     display: block;
     width: min(var(--free-map-width, 260px), calc(100% - var(--ui-left) - var(--ui-right) - var(--stick-size) - 16px));
   }
   body[data-mode=free] .city-guide[data-expanded=true] #city-map { width: 100%; }
-  /* Boost and Drift take the corner; a controller hides them. */
-  body[data-mode=free]:not([data-controller=true]) .city-guide { --map-bottom: calc(var(--ui-bottom) + 82px); }
 }
 @media (max-height: 560px) {
-  body[data-mode=free] .city-guide { --free-map-width: min(220px, calc(100svh - var(--ui-top) - var(--ui-bottom) - 84px)); }
-  body[data-mode=free]:not([data-controller=true]) .city-guide { --free-map-width: min(220px, calc(100svh - var(--ui-top) - var(--ui-bottom) - 166px)); }
+  body[data-mode=free] .city-guide { --free-map-width: min(220px, calc(100svh - var(--ui-top) - var(--ui-bottom) - 166px)); }
+  body[data-mode=free][data-controller=true] .city-guide { --free-map-width: min(220px, calc(100svh - var(--ui-top) - var(--ui-bottom) - 184px)); }
 }
 @media (max-width: 360px) {
   body[data-mode=free] .city-guide-header > span { display: none; }

@@ -8,6 +8,7 @@ All sounds are generated with the Web Audio API. There are no audio files.
 
 - The engine follows the car's speed and load through an automatic gearbox. Each car has its own engine sound. Sporty cars crackle when you lift off the throttle.
 - The helicopter has no gears. Its turbine follows the rotor as it speeds up, and the blades beat about 17 times a second.
+- The plane has no gears either. Its engine follows the throttle rather than the speed, and the propeller beats up to 38 times a second.
 - Boost, crashes, kerbs and bridge joints each have their own sound.
 - On foot, footsteps click on pavements, sound duller on the road and knock on bridge decks. They splash on wet streets and crunch in snow, and a landing thuds harder the further you fell. Pigeons flutter when they take off.
 - Traffic is panned in stereo. Cars idle quietly and get louder as they pull away. A driver you hit or hold up will sound the horn.

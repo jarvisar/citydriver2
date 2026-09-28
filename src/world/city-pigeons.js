@@ -22,6 +22,8 @@ const NEAR = 70, SHARE = .36, MOST = 72;
 const SCARE_FOOT = 3.4, SCARE_PACE = 1.4, SCARE_CAR = 7, SCARE_FAST = 3, SETTLE = 2, ABOVE = 8;
 // Seconds a bird takes to take off after the one before (at most), and in the air
 const STAGGER = .4, FLIGHT = [5.5, 8];
+// How far a bird potters from its spot, either way along x and z (see ground)
+const POTTER = .42;
 // The hinge of the right wing on the body, and its sweep folded back along the back
 const HINGE = new THREE.Vector3(.036, .122, -.03), FOLDED = -1.3, DROOP = -.95;
 
@@ -146,7 +148,8 @@ export class Pigeons {
     for (let i = 0; i < count * 3 && birds.length < count; i++) {
       const a = hash(bench.x, bench.z, 10 + i) * Math.PI * 2, r = 1.3 + hash(bench.x, bench.z, 40 + i) * 1.6;
       const x = bench.x + Math.cos(a) * r, z = bench.z + Math.sin(a) * r, y = ground(x, z);
-      if (!Number.isFinite(y)) continue;
+      // (on the pavement all the way round where it potters, not only at its spot)
+      if (!Number.isFinite(y) || ![[-1, -1], [1, -1], [1, 1], [-1, 1]].every(([dx, dz]) => Number.isFinite(ground(x + dx * POTTER, z + dz * POTTER)))) continue;
       const k = i + 1;
       birds.push({ x: x - bench.x, z: z - bench.z, y, a: hash(x, z, 3) * 6.3, b: hash(x, z, 4) * 6.3, c: hash(x, z, 5), delay: hash(x, z, 6) * STAGGER,
         flight: FLIGHT[0] + hash(x, z, 7) * (FLIGHT[1] - FLIGHT[0]), radius: 5.5 + hash(x, z, 8) * 4, height: 4.5 + hash(x, z, 9) * 3.5, lean: (hash(x, z, 11) - .5) * .8, k });
@@ -171,13 +174,15 @@ export class Pigeons {
   // from what scared them whose loop keeps clear of the buildings
   launch(flock, away, time, chunks) {
     const radius = Math.max(...flock.birds.map(bird => bird.radius)), height = flock.birds[0].y, points = [];
+    // (each bird loops from its own spot, up to `spread` from the flock's middle)
+    const spread = Math.max(...flock.birds.map(bird => Math.hypot(bird.x, bird.z))) + POTTER * Math.SQRT2, reach = radius + spread + 1.5;
     let best = null;
     for (let k = 0; k < 12 && !best; k++) {
       const way = away + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * Math.PI / 6;
       for (const spin of [1, -1]) {
         const cx = flock.x + Math.sin(way) * radius, cz = flock.z + Math.cos(way) * radius;
         points.length = 0;
-        for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; points.push({ x: cx + Math.cos(a) * (radius + 1.5), z: cz + Math.sin(a) * (radius + 1.5) }); }
+        for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; points.push({ x: cx + Math.cos(a) * reach, z: cz + Math.sin(a) * reach }); }
         if (!(roofUnder(chunks, points, Infinity) > height + 2)) { best = { way, spin }; break; }
       }
     }

@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { stableShadowDepth } from './world/shadow-depth.js';
 import { clamp } from './world/route.js';
 import { collisionImpulse, leadingPoint, rock, rockFrom, SCENERY_SURFACE } from './impact.js';
-import { roofUnder } from './collision.js';
+import { footprintContact, roofUnder } from './collision.js';
 import { propTop } from './loose-props.js';
 
 // The garage's one machine that leaves the road: a small bubble-canopy
@@ -14,8 +14,10 @@ import { propTop } from './loose-props.js';
 // The footprint (width, length) is the fuselage and tail boom, which is what
 // bumps into buildings and traffic; the rotor passes over them. `rotor` is
 // the main rotor's radius. Like the specials' shapes, `eye` seats the
-// first-person camera and `chaseLift` raises the chase camera over the rotor.
-export const HELICOPTER_SHAPE = { name: 'helicopter', width: 2.3, length: 7.3, eye: [.3, 1.72, -2.5], chaseLift: 1.4, rotor: 4.2 };
+// first-person camera and `chaseLift` raises the chase camera over the rotor,
+// and `door` (metres ahead of the middle) and `seat` (metres up) are where
+// someone climbs in and out (see OnFoot).
+export const HELICOPTER_SHAPE = { name: 'helicopter', width: 2.3, length: 7.3, eye: [.3, 1.72, -2.5], chaseLift: 1.4, rotor: 4.2, door: 1.7, seat: .9 };
 
 // The mast, which the body tilts and banks about: in car space, nose to -z.
 const MAST = new THREE.Vector3(0, 1.6, -1.35);
@@ -24,9 +26,10 @@ const DARK = '#2b3434', CHROME = '#bfc4b9', GLASS = '#4d737c';
 
 // Faceted parts in the road cars' manner, merged by material. Paint takes the
 // garage colour; `details` carry their own. Everything is placed in car space
-// and moved to hang from the mast.
-function partsKit() {
-  const parts = { paint: [], details: [], beacon: [], rotor: [], tail: [] };
+// and moved to hang from `pivot` (the mast here; the plane has its own).
+// A category is a list of parts to merge, started by the first part put in it.
+export function partsKit(pivot = MAST) {
+  const parts = {};
   const add = (geometry, category, color) => {
     geometry.deleteAttribute('uv');
     if (color) {
@@ -34,11 +37,11 @@ function partsKit() {
       for (let i = 0; i < geometry.attributes.position.count; i++) colors.push(tint.r, tint.g, tint.b);
       geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     }
-    parts[category].push(geometry);
+    (parts[category] ??= []).push(geometry);
   };
-  const place = (geometry, [x, y, z], category, color) => { geometry.translate(x - MAST.x, y - MAST.y, z - MAST.z); add(geometry, category, color); };
+  const place = (geometry, [x, y, z], category, color) => { geometry.translate(x - pivot.x, y - pivot.y, z - pivot.z); add(geometry, category, color); };
   return {
-    parts, add,
+    parts, add, place,
     box(size, location, category = 'paint', color) { place(new THREE.BoxGeometry(...size), location, category, color); },
     // A tube from one point to another, thinner at the far end if asked
     rod(from, to, radius, category, color, end = radius) {
@@ -217,9 +220,19 @@ export function createHelicopter(entry) {
 //   WATER            the least it hovers over water
 //   CEILING          its highest, over the road
 //   IDLE             the rotor's share of full speed while it sits on the ground
+//   SETTLE, STILL    setting down by itself (see `land` in update): how fast it comes
+//                    down, and how fast it takes the way off
+//   WASH             how high over the ground its downwash kicks up dust or spray
 const CLIMB = 8, SINK = 9, LIFT = 3, LOW = 1.2, FLARE = 2.2, VERTICAL = 3.5;
 const YAW = 1.9, YAW_FAST = 1.1, YAW_EASE = 5, SIDE = 1.6, HOVER = .45, BACKWARD = 12, SKIDS = 4;
-const STEP = .7, AIRBORNE = 2.5, WATER = 1.2, CEILING = 120, IDLE = .3, SPOOL = 1.5;
+const STEP = .7, AIRBORNE = 2.5, WATER = 1.2, CEILING = 120, IDLE = .3, SPOOL = 1.5, SETTLE = 6.5, STILL = 1.2, WASH = 8;
+// How tall it stands, skids to rotor, for going under a bridge; a deck a
+// little too low to pass under (by no more than DUCK) it ducks under at DUCKING m/s
+const TOP = 3, DUCK = 1.2, DUCKING = 10;
+// Setting down by itself over the water, how high over it it climbs before
+// making for the shore: over the quay, and the lamps and trusses on a bridge
+// (a lamp's head is 14 m over the water)
+const SHORE = 16;
 // Where it stands: the skids' ends (across, along) from the middle of the footprint
 const FEET = [[0, 0], [-1.05, 2.85], [1.05, 2.85], [-1.05, -.55], [1.05, -.55]];
 // A touchdown faster than this (m/s) thumps; one faster than HARD shakes it
@@ -227,6 +240,57 @@ const TOUCHDOWN = .6, HARD = 5;
 const TOUCH = 1;
 
 const wrap = angle => Math.atan2(Math.sin(angle), Math.cos(angle));
+
+// Bridge piers are kept out of the colliders (a car on the deck above would
+// hit them), so the flying machines check them here. `box()` is the
+// footprint, as sceneryContacts takes it.
+export function meetPiers(pilot, box) {
+  const v = pilot.vehicle, p = v.groundedPosition;
+  for (const chunk of v.scenery?.values() ?? []) for (const pier of chunk?.features?.piers ?? []) {
+    if (pilot.y >= pier.top || Math.abs(pier.x - p.x) > pier.reach + 12 || Math.abs(pier.z - p.z) > pier.reach + 12) continue;
+    const contact = footprintContact(box(), pier);
+    if (contact) pilot.resolveSceneryCollision(contact.x, contact.z, contact.depth, contact.point);
+  }
+}
+
+// How far to look for a street from far out at sea (see landward and Walker.ashore)
+export const SEA_REACH = 4000;
+
+// Setting down by itself over the water, a flying machine (`pilot`, with
+// `vehicle` and `time`) makes for the nearest street first: the way to it,
+// looked up again once a second, or null with no street near
+export function landward(pilot) {
+  const v = pilot.vehicle, seek = pilot.seeking ??= { at: -Infinity, heading: null };
+  if (pilot.time - seek.at < 1 && seek.at <= pilot.time) return seek.heading;
+  seek.at = pilot.time;
+  // (far out at sea no street is within the usual reach: look further)
+  let lane = v.route.nearestLane?.(v.s, v.u, v.heading);
+  if (lane && Math.hypot(lane.s - v.s, lane.u - v.u) < 1) lane = v.route.nearestLane(v.s, v.u, v.heading, SEA_REACH);
+  const ds = lane ? lane.s - v.s : 0, du = lane ? lane.u - v.u : 0;
+  seek.heading = Math.hypot(ds, du) > 1 ? Math.atan2(du, ds) : null;
+  return seek.heading;
+}
+
+// Setting down by itself under a bridge, it first flies out from under the
+// deck, the shortest way to open water (the way ashore climbs to clear the
+// quay, and under a deck that pinned it to the deck). Looked up again once a
+// second, null when it is not under one.
+function outFromUnder(pilot) {
+  const v = pilot.vehicle, seek = pilot.unbridging ??= { at: -Infinity, heading: null };
+  if (pilot.time - seek.at < 1 && seek.at <= pilot.time) return seek.heading;
+  seek.at = pilot.time; seek.heading = null;
+  let nearest = Infinity;
+  for (let k = 0; k < 16; k++) {
+    const heading = k / 16 * Math.PI * 2, ds = Math.cos(heading), du = Math.sin(heading);
+    for (let d = 2; d < nearest && d <= 80; d += 2) {
+      const s = v.s + ds * d, u = v.u + du * d;
+      if (v.route.under?.(s, u)) continue;
+      if (v.route.water?.(s, u)) { nearest = d; seek.heading = heading; }
+      break;
+    }
+  }
+  return seek.heading;
+}
 
 // The pilot: DrivingController hands it the controls while the helicopter is
 // the chosen car (see vehicle.js). It keeps the controller's shared state
@@ -241,8 +305,17 @@ export class Helicopter {
     this.blocked = false; this.feet = FEET.map(() => ({ x: 0, z: 0 }));
     // (the street right under it, and whether that is water, as `floor` last found them)
     this.ground = NaN; this.water = false;
+    // Flown by nobody (someone bailed out, see OnFoot): it sets itself down
+    // and, down, its rotor winds to a stop. (When the downwash last kicked
+    // something up, and what it has to tell the player: see drain.)
+    this.unmanned = false; this.time = 0; this.washed = 0; this.events = [];
   }
   get velocity() { return { x: this.vx, z: this.vz }; }
+  // Its height over what is under it
+  get height() { return this.y - this.below; }
+  // Down on its skids with the rotor stopped: left, it is parked
+  get settled() { return this.landed && Math.hypot(this.vx, this.vz) < .3 && this.power < .05; }
+  drain() { const events = this.events; this.events = []; return events; }
   // Stop dead where it is, holding its height
   stop() { this.vx = this.vz = this.vy = 0; }
   // Stop and set down on whatever is under it (a reset)
@@ -256,48 +329,72 @@ export class Helicopter {
   // What it would stand on at (s, u) facing `heading`, no higher than `below`:
   // the street under each skid end, lifted clear of any water, or a roof
   // there. `blocked` says whether the street under a skid is higher than
-  // that: it has run into a quay or a bridge's side from below, a wall.
+  // that: it has run into a quay or a bridge's side, a wall. Low enough
+  // under a bridge's deck, the water is under it and the deck a ceiling
+  // (`ceiling`, the highest it can be; `bridged`, under one now).
   floor(s, u, heading, below) {
     const route = this.vehicle.route, cos = Math.cos(heading), sin = Math.sin(heading), feet = this.feet;
     let floor = -Infinity, centre = 0;
-    this.blocked = false;
+    this.blocked = false; this.ceiling = Infinity;
     for (let i = 0; i < FEET.length; i++) {
       const [across, along] = FEET[i], fs = s - across * sin + along * cos, fu = u + across * cos + along * sin;
-      const height = route.height(fs, fu), water = Boolean(route.water?.(fs, fu)), street = water ? height + WATER : height;
-      if (!i) { centre = street; this.ground = height; this.water = water; }
+      const deck = route.under?.(fs, fu), under = Boolean(deck) && this.y + TOP <= deck.lid + DUCK;
+      const height = under ? deck.water : route.height(fs, fu), water = under || Boolean(route.water?.(fs, fu)), street = water ? height + WATER : height;
+      if (under) this.ceiling = Math.min(this.ceiling, deck.lid - TOP);
+      if (!i) { centre = street; this.ground = height; this.water = water; this.bridged = under; }
       if (street > below) this.blocked = true; else floor = Math.max(floor, street);
       const p = this.vehicle.route.position(fs, fu, 0); feet[i].x = p.x; feet[i].z = p.z;
     }
     const scenery = this.vehicle.scenery;
-    if (scenery) floor = Math.max(floor, roofUnder(scenery.values(), feet, below));
+    if (scenery) floor = Math.max(floor, roofUnder(scenery.values(), feet, below, true));
     // (standing inside the ground, as only a teleport leaves it, it comes up)
     return floor === -Infinity ? centre : floor;
   }
   // Whether it clears a standing thing (see collideScenery): over a
   // building's roof or the top of a piece of furniture (a tree it breaks,
   // like the truck, however high in the crown it meets it), or, for
-  // anything else, high enough over the street
+  // anything else, high enough over the street. Anything standing on a
+  // bridge it is under is over its head (going in, its nose meets the
+  // railing along the deck's edge before its middle is under the deck).
   passes(solid) {
     if (solid.top !== undefined) return this.y >= (solid.ridge ?? solid.top) - STEP;
+    if ((solid.base ?? this.vehicle.route.height(-solid.z, solid.x)) > this.y + TOP) return true;
     if (solid.prop) return this.y >= propTop(solid);
     return this.vehicle.airborne;
   }
   update(dt, input) {
     const v = this.vehicle, stats = v.stats, telemetry = v.audioTelemetry;
     v.copyPose(v.previousPose, v.currentPose);
+    this.time += dt;
     let forward = clamp(Number(input.forward) || 0, 0, 1), back = clamp(Number(input.brake) || 0, 0, 1);
     let steering = clamp((Number(input.right) || 0) - (Number(input.left) || 0), -1, 1);
-    const climb = clamp(Number(input.climb) || 0, 0, 1), descend = clamp(Number(input.descend) || 0, 0, 1);
+    let climb = clamp(Number(input.climb) || 0, 0, 1), descend = clamp(Number(input.descend) || 0, 0, 1);
     // An overhead view's stick points where to go: turn that way, and go once facing it
     const touch = input.touchDrive;
     if (touch) {
       const off = touch.amount ? wrap(touch.heading - v.heading) : 0;
       steering = clamp(off * 2.5, -1, 1); forward = touch.amount * clamp(1 - Math.abs(off) / 1.2, 0, 1); back = 0;
     }
+    // Setting down by itself (see OnFoot's landing, and one left flying):
+    // straight down, taking the way off as it goes, or over the water off to
+    // the nearest street first
+    const landing = Boolean(input.land) || this.unmanned, out = landing && this.bridged ? outFromUnder(this) : null;
+    const seek = landing && this.water && out === null ? landward(this) : null;
+    if (landing) { forward = back = steering = climb = 0; descend = 1; }
+    if (out !== null) {
+      const off = wrap(out - v.heading);
+      steering = clamp(off * 2, -1, 1); forward = clamp(1 - Math.abs(off), 0, 1) * .5; descend = 0;
+    } else if (seek !== null) {
+      const off = wrap(seek - v.heading), clear = this.y - this.ground > SHORE;
+      steering = clamp(off * 2, -1, 1); forward = clear ? clamp(1 - Math.abs(off), 0, 1) * .5 : 0; descend = 0; climb = clear ? 0 : 1;
+    }
     if (!Number.isFinite(this.y)) this.y = this.below = this.floor(v.s, v.u, v.heading, Infinity);
     const active = forward || back || climb || descend || steering;
-    // The rotor idles on the ground and spools up for flight; lift waits on it
-    this.power = dt ? THREE.MathUtils.damp(this.power, this.landed && !active ? IDLE : 1, SPOOL, dt) : this.power;
+    // The rotor idles on the ground and spools up for flight; lift waits on it.
+    // Left down on its own, it winds to a stop.
+    const rotor = this.landed && this.unmanned ? 0 : this.landed && !active ? IDLE : 1;
+    this.power = dt ? THREE.MathUtils.damp(this.power, rotor, SPOOL, dt) : this.power;
+    if (!rotor && this.power < .02) this.power = 0;
     const spooled = clamp((this.power - IDLE) / (1 - IDLE), 0, 1);
     // Turning: brisk at a hover, wider at speed, and eased in and out
     const top = stats.topSpeed, speed = Math.hypot(this.vx, this.vz), share = clamp(speed / top, 0, 1);
@@ -312,19 +409,19 @@ export class Helicopter {
     along += push * dt;
     // The air holds it to its top speed, and with neither pedal it slows to a hover
     along -= Math.sign(along) * stats.acceleration * (along / top) ** 2 * dt;
-    if (!forward && !back) along *= Math.exp(-HOVER * dt);
+    if (!forward && !back) along *= Math.exp(-(landing ? STILL : HOVER) * dt);
     along = clamp(along, -BACKWARD, top);
     // A slide sideways is carried round into the travel, as a banked turn does
     const slid = across;
     across *= Math.exp(-SIDE * dt);
-    if (Math.abs(along) > 2) along = Math.sign(along) * Math.sqrt(along * along + .8 * (slid * slid - across * across));
+    if (Math.abs(along) > 2 && !landing) along = Math.sign(along) * Math.sqrt(along * along + .8 * (slid * slid - across * across));
     if (this.landed) { const grip = Math.exp(-SKIDS * dt); along *= grip; across *= grip; }
     this.vx = along * fx + across * rx; this.vz = along * fz + across * rz;
     // Up and down: held height hands off, a flare near the ground, a ceiling.
     // (the height is over what it stood on at the end of the last step)
     const height = this.y - this.below;
-    let lift = climb > descend ? climb * CLIMB : -descend * SINK;
-    if ((forward || back) && !descend && height < LOW) lift = Math.max(lift, LIFT);
+    let lift = climb > descend ? climb * CLIMB : -descend * (landing ? SETTLE : SINK);
+    if ((forward || back) && !descend && height < LOW && !this.water) lift = Math.max(lift, LIFT);
     if (lift > 0) lift *= spooled * clamp((CEILING - (this.y - this.ground)) / 12, 0, 1);
     this.vy = dt ? THREE.MathUtils.damp(this.vy, lift, VERTICAL, dt) : this.vy;
     this.vy = Math.max(this.vy, -(FLARE * Math.max(0, height) + .8));
@@ -344,6 +441,11 @@ export class Helicopter {
       this.vx *= .5; this.vz *= .5;
     }
     this.below = floor;
+    if (this.water) meetPiers(this, () => ({ x: v.groundedPosition.x, z: v.groundedPosition.z, heading: v.heading, halfWidth: v.spec.width / 2, halfLength: v.spec.length / 2 }));
+    // (under a bridge, no higher than its deck, and out from under it, a word)
+    if (this.y > this.ceiling) { this.y = Math.max(this.ceiling, this.y - DUCKING * dt); this.vy = Math.min(0, this.vy); }
+    if (this.wasBridged && !this.bridged && dt && !this.unmanned) this.events.push({ kind: 'stunt', text: 'Under the bridge' });
+    this.wasBridged = this.bridged;
     // Setting down: on the ground the skids hold it, and a hard landing thumps.
     // Over the water it only hovers.
     const wasLanded = this.landed, water = this.water;
@@ -368,6 +470,9 @@ export class Helicopter {
     const bank = this.landed ? 0 : clamp(v.yawRate * (Math.max(0, after) * .011 + .08), -.4, .4);
     if (dt) { this.tilt = THREE.MathUtils.damp(this.tilt, tilt, 4, dt); this.bank = THREE.MathUtils.damp(this.bank, bank, 4, dt); }
     this.angle += this.power * 26 * dt;
+    // Low down, the downwash blows dust off the street, or spray off the water
+    const wash = this.power > .6 && dt ? (1 - clamp((this.y - this.below) / WASH, 0, 1)) * (this.power - .6) / .4 : 0;
+    if (wash > .05 && this.time - this.washed > .16 - wash * .1) this.downwash(wash);
     // The controller's state, as the rest of the game reads it
     v.speed = after; v.slideHeading = v.heading; v.steer = 0; v.slip = 0;
     v.drifting = false; v.boosting = false; v.driftAmount = 0; v.weight = 0; v.load = 0;
@@ -377,6 +482,8 @@ export class Helicopter {
     // swings back behind once it moves)
     v.car.userData.speedRush = clamp((speed / top - .4) / .6, 0, 1); v.car.userData.speed = speed;
     v.car.userData.chaseDip = clamp((this.y - this.ground - 6) / 40, 0, 1);
+    // (and under a bridge the chase camera keeps under its deck too)
+    v.car.userData.lid = this.bridged ? this.ceiling + TOP : null;
     v.trauma = Math.max(0, v.trauma - dt * 1.4); v.car.userData.trauma = v.trauma;
     telemetry.speed = speed; telemetry.throttle = Math.max(forward, back, climb, descend * .4, Math.abs(steering) * .3);
     telemetry.brake = 0; telemetry.offRoad = 0; telemetry.handbrake = 0; telemetry.boost = 0;
@@ -384,6 +491,16 @@ export class Helicopter {
     telemetry.scrape *= Math.exp(-dt * 14);
     if (dt === 0) telemetry.impact = 0;
     this.pose(dt === 0);
+  }
+  // Dust off the street (spray in the wet), or spray off the water, blown
+  // out in a ring under it
+  downwash(strength) {
+    const v = this.vehicle, props = v.props, p = v.groundedPosition;
+    this.washed = this.time;
+    if (!props?.bits) return;
+    // (off the water itself, not the height it hovers at over it)
+    const kind = this.water ? 'spray' : props.underfoot ?? 'dust', from = this.water ? this.ground : this.below;
+    props.bits.burst(kind, p.x, from + .05, p.z, this.vx * .3, this.vz * .3, kind === 'spray' ? 5 : 2, 1.5 + strength * 2, 2.6);
   }
   // Where it stands now, for the controller's poses and the scene
   pose(teleport = false) {

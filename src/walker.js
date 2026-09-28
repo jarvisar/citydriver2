@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import { clamp } from './world/route.js';
 import { cityWalker, createWalkerMaterial, setWalkerAppearance, setWalkerTurn, walkerDepthMaterial, walkerPose } from './world/city-walkers.js';
+import { stableShadowDepth } from './world/shadow-depth.js';
+import { roofAt, roofSurface } from './collision.js';
+import { propTop } from './loose-props.js';
+import { SEA_REACH } from './helicopter.js';
 
 // The player on foot: one of the city's own residents (see city-walkers.js),
 // walked as a character rather than driven as a car. They go the way the
@@ -40,6 +44,9 @@ export const WALKER_SPEC = { name: 'walker', width: .64, length: .64, radius: .3
 //   LIE, GET_UP     seconds lying still once they come to rest, and getting up
 const JOG = 4.4, SPRINT = 7.4, GRIP = 24, AIR = 5, TURN = 12;
 const STEP = .45, KNOCK = 4, LIE = 1.1, GET_UP = .7;
+// More than AIRBORNE m over the street (on a roof, falling or under a
+// parachute), the traffic and what stands in the street take no notice of them
+const AIRBORNE = 2.5;
 // Jumping as platformers do it (m/s, m/s², s): off the ground at JUMP, slowed
 // by RISE while the button is held on the way up and by LET_GO once it is let
 // go, so a tap hops about half a metre and a held press jumps about a metre,
@@ -50,6 +57,13 @@ const STEP = .45, KNOCK = 4, LIE = 1.1, GET_UP = .7;
 const JUMP = 5.2, FLIP = 4.6, RISE = 13, LET_GO = 34, FALL = 24, BUFFER = .13, COYOTE = .1;
 // A flip is once round, forward, about their middle, over FLIP_TIME s
 const FLIP_TIME = .42, MIDDLE = .95;
+// Falling faster than CHUTE_FALL with more than CHUTE_ROOM to go (off a
+// roof, out of a plane) their pack opens into a parachute over CHUTE_OPEN s.
+// Under it they come down at CHUTE_SINK (faster with sprint held), taking
+// CHUTE_BRAKE to slow to it, and the stick steers them at up to CHUTE_GLIDE,
+// the canopy's drag taking CHUTE_PULL m/s² off whatever else they had. Down,
+// it folds away over CHUTE_FOLD s. The camera frames them at CHUTE_FRAME.
+const CHUTE_FALL = 7, CHUTE_ROOM = 4, CHUTE_OPEN = .45, CHUTE_SINK = 4.2, CHUTE_BRAKE = 3.2, CHUTE_GLIDE = 5.5, CHUTE_PULL = 6, CHUTE_FOLD = .5, CHUTE_FRAME = .8;
 // What a car's stats say, for whatever reads them (the sound's gearing, say)
 export const WALKER_STATS = { topSpeed: SPRINT, acceleration: GRIP, braking: GRIP, grip: 1, offRoad: SPRINT, reverseSpeed: JOG, cruise: SPRINT };
 // Where their eyes are, and how the chase camera frames them: at this share
@@ -71,8 +85,6 @@ const LOOK_MOST = 1.1, LEAD = .8, LEAD_RATE = 18, WATCH = 12, LOOK_RATE = 6;
 // seat, where the car's body hides them. Into a car, the hop to its door
 // takes DOOR of the time and the rest is climbing in.
 const HOP = .35, ALIGHT = .42, SEATED = .55, DOOR = .6;
-// Talking to someone, the chase camera looks over their right shoulder, this far to the side (m)
-const SHOULDER = .9;
 
 const wrap = angle => Math.atan2(Math.sin(angle), Math.cos(angle));
 // A damped spring kept on `s` ({ x, v }), pulled toward `goal`
@@ -105,12 +117,51 @@ export function createWalkerModel(appearance = PLAYER_LOOK) {
   figure.customDepthMaterial = walkerDepthMaterial(posture); figure.userData.posture = posture;
   setWalkerAppearance(figure, 0, appearance);
   body.add(figure);
+  const canopy = createCanopy(); car.add(canopy);
   return {
-    car, body, figure, wheels: [], nightLights: [],
+    car, body, figure, canopy, wheels: [], nightLights: [],
     applyTrim() {}, paintCar() {},
     // (the geometry is the residents', and stays)
-    disposeModel() { figure.dispose(); material.dispose(); figure.customDepthMaterial.dispose(); },
+    disposeModel() { figure.dispose(); material.dispose(); figure.customDepthMaterial.dispose(); canopy.geometry.dispose(); canopy.material.dispose(); },
   };
+}
+
+// The parachute out of their pack (see Walker's `chute`): a round canopy of
+// eight gores in free drive's teal and cream and its lines down to the pack,
+// one mesh, built about the pack so it opens out of it and sways from it.
+// Its material is the vehicles' vertex-coloured trim's, so it needs no
+// program of its own, and the canopy is two skins, facing out and in, to be
+// seen from below as well.
+const CANOPY = { radius: 2.3, rise: 1.1, up: 3.1, pack: new THREE.Vector3(0, 1.28, .14) };
+function createCanopy() {
+  const positions = [], colors = [], teal = new THREE.Color('#5fd0c0'), cream = new THREE.Color('#f2ead8'), cord = new THREE.Color('#3a4446');
+  const dome = new THREE.SphereGeometry(1, 8, 3, 0, Math.PI * 2, 0, Math.PI * .44).toNonIndexed(), p = dome.attributes.position;
+  const rim = Math.cos(Math.PI * .44), lift = CANOPY.up, pack = new THREE.Vector3();
+  const at = i => new THREE.Vector3(p.getX(i) * CANOPY.radius, lift + (p.getY(i) - rim) / (1 - rim) * CANOPY.rise, p.getZ(i) * CANOPY.radius);
+  const face = (a, b, c, color) => { for (const v of [a, b, c]) positions.push(v.x, v.y, v.z); for (let k = 0; k < 3; k++) colors.push(color.r, color.g, color.b); };
+  for (let i = 0; i < p.count; i += 3) {
+    const a = at(i), b = at(i + 1), c = at(i + 2), middle = a.clone().add(b).add(c);
+    const gore = Math.floor(((Math.atan2(middle.x, middle.z) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI / 4)), color = gore % 2 ? teal : cream;
+    face(a, b, c, color);
+    // (the inside, a hair under the outside)
+    face(...[c, b, a].map(v => v.clone().setY(v.y - .02)), color);
+  }
+  dome.dispose();
+  // A line from each seam of the rim down to the pack
+  for (let k = 0; k < 8; k++) {
+    const angle = k * Math.PI / 4, top = new THREE.Vector3(Math.sin(angle) * CANOPY.radius * .98, lift, Math.cos(angle) * CANOPY.radius * .98);
+    const side = new THREE.Vector3(0, 1, 0).cross(top).setLength(.018);
+    const a = pack.clone().sub(side), b = pack.clone().add(side), c = top.clone().add(side), d = top.clone().sub(side);
+    face(a, b, c, cord); face(a, c, d, cord); face(c, b, a, cord); face(d, c, a, cord);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.computeVertexNormals();
+  const canopy = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: .74, flatShading: true, vertexColors: true }));
+  canopy.name = 'walker-canopy'; canopy.visible = false; canopy.castShadow = true; canopy.position.copy(CANOPY.pack);
+  canopy.traverse(stableShadowDepth);
+  return canopy;
 }
 
 export class Walker {
@@ -129,27 +180,46 @@ export class Walker {
     // speeding up (m/s²) and skidding
     this.squash = { x: 0, v: 0 }; this.drop = { x: 0, v: 0 }; this.nod = { x: 0, v: 0 }; this.look = { x: 0, v: 0 };
     this.turnRate = 0; this.accel = 0; this.skid = 0; this.idle = 0;
-    // Something to look at, { x, z } in the world, or null (see
-    // OnFoot.lookAround), and someone to turn to, talking (see OnFoot.talk)
-    this.watch = null; this.faceTo = null; this.chatting = false;
+    // Something to look at, { x, z } in the world, or null (see OnFoot.lookAround)
+    this.watch = null;
     // Knocked over: their body (see LooseProps.person); getting up: from where it lay
     this.down = null; this.rise = null;
     // Hopping into a car (see boardCar), and down out of one (see alightFrom)
     this.board = null; this.alight = null;
-    Object.assign(vehicle.car.userData, { driverEye: EYE, chaseLift: CHASE_LIFT, chaseScale: CHASE_SCALE, overheadScale: OVERHEAD, leash: true, velocity: { x: 0, z: 0 }, eyeBob: 0 });
+    // Under a parachute: when it opened, and when it began to fold away once
+    // they were down ({ at, folding }), and the canopy itself
+    this.chute = null; this.canopy = model.canopy ?? null;
+    Object.assign(vehicle.car.userData, { driverEye: EYE, chaseLift: CHASE_LIFT, chaseScale: CHASE_SCALE, overheadScale: OVERHEAD, leash: true, velocity: { x: 0, z: 0 }, eyeBob: 0, chaseDip: 0 });
   }
   get velocity() { return { x: this.vx, z: this.vz }; }
   // On their feet, not knocked over or getting up
   get standing() { return !this.down && !this.rise; }
   // Stop where they stand
   stop() { this.vx = this.vz = 0; if (this.grounded) this.vy = 0; }
-  // Standing on the ground where the controller is, at rest (stepping out of a car, a reset)
-  takeOver() {
+  // Standing where the controller is, at rest (stepping out of a car, a
+  // reset): at `y`, or on the highest ground or roof there
+  takeOver(y = NaN) {
     const v = this.vehicle;
-    this.stop(); this.vy = 0; this.grounded = true; this.y = v.route.height(v.s, v.u);
+    this.stop(); this.vy = 0; this.grounded = true; this.y = Number.isFinite(y) ? y : this.floorAt(v.s, v.u, Infinity);
     this.jumped = this.flipped = false; this.asked = this.flipAt = -Infinity; this.footing = this.time;
     for (const s of [this.squash, this.drop, this.nod]) s.x = s.v = 0;
-    this.skid = this.turnRate = this.accel = 0; this.board = this.alight = null;
+    this.skid = this.turnRate = this.accel = 0; this.board = this.alight = null; this.chute = null;
+  }
+  // Leaping out of something flying (see OnFoot.jump), from `y` going at
+  // (vx, vy, vz): no flip in this jump, and the parachute opens once they fall
+  leap(y, vx, vy, vz) {
+    this.takeOver(y);
+    this.grounded = false; this.jumped = this.flipped = true; this.footing = -Infinity;
+    this.vx = vx; this.vy = vy; this.vz = vz;
+    this.squash.v += 2; this.nod.v -= 1;
+  }
+  // The highest thing they could stand on at (s, u) no higher than `below`:
+  // the street, or a roof there (on a pitched one, where they are on its slope)
+  floorAt(s, u, below = this.y + STEP) {
+    const v = this.vehicle, ground = v.route.height(s, u);
+    if (!v.scenery) return ground;
+    const p = v.route.position(s, u, 0);
+    return Math.max(ground, roofAt(v.scenery.values(), p, below));
   }
   // Into a car (see OnFoot.board): a hop to its door and in over `duration`
   // s, `doorway()` saying where its door and seat are now ({ x, z, seat, heading }, or null)
@@ -176,8 +246,11 @@ export class Walker {
       telemetry.step = .5; telemetry.stepSerial++; telemetry.landing = 0; telemetry.surface = this.surface();
     }
     const control = !this.down && !this.rise && !this.board && !this.alight, walk = control ? input.walk : null;
-    // The way they want to go, and how fast: the stick's push, a key's all the way
-    const amount = walk ? Math.min(1, Math.hypot(walk.x, walk.z)) : 0, top = input.sprint ? SPRINT : JOG;
+    // (hanging under the parachute, not yet down)
+    const chute = Boolean(this.chute) && !this.chute.folding;
+    // The way they want to go, and how fast: the stick's push, a key's all the
+    // way, and under the parachute the way to steer it
+    const amount = walk ? Math.min(1, Math.hypot(walk.x, walk.z)) : 0, top = chute ? CHUTE_GLIDE : input.sprint ? SPRINT : JOG;
     const wx = amount ? walk.x * top : 0, wz = amount ? walk.z * top : 0;
     if (control && Number.isFinite(input.aim)) v.heading = input.aim;
     const before = v.heading, ahead = { x: Math.sin(before), z: -Math.cos(before) };
@@ -186,30 +259,26 @@ export class Walker {
     const against = this.grounded && amount > .5 && moving > 3 && wx * this.vx + wz * this.vz < -.3 * moving * Math.hypot(wx, wz);
     if (against && this.skid === 0) this.puff(3, 1.4, this.vx * .3, this.vz * .3);
     this.skid = dt ? clamp(this.skid + (against ? 8 : -5) * dt, 0, 1) : this.skid;
-    const dx = wx - this.vx, dz = wz - this.vz, gap = Math.hypot(dx, dz), change = Math.min(gap, (this.grounded ? GRIP : AIR) * dt);
+    const dx = wx - this.vx, dz = wz - this.vz, gap = Math.hypot(dx, dz), change = Math.min(gap, (chute ? CHUTE_PULL : this.grounded ? GRIP : AIR) * dt);
     if (gap > 1e-9) { this.vx += dx / gap * change; this.vz += dz / gap * change; }
     // They turn to face the way they are asked to go (not through their own
-    // eyes, where they face where the view looks and back is a step back)
-    if (control && input.face !== false && amount > .05) v.heading += wrap(Math.atan2(wx, -wz) - v.heading) * (1 - Math.exp(-TURN * dt));
-    // Talking to someone (see OnFoot.talk), they turn to them, until they move off
-    if (amount > .05 || !control) this.faceTo = null;
-    else if (this.faceTo && dt > 0) {
-      const p = v.groundedPosition;
-      v.heading += wrap(Math.atan2(this.faceTo.x - p.x, p.z - this.faceTo.z) - v.heading) * (1 - Math.exp(-TURN * .5 * dt));
-    }
+    // eyes, where they face where the view looks and back is a step back),
+    // and under the parachute the way it carries them
+    if (chute) { if (moving > .8) v.heading += wrap(Math.atan2(this.vx, -this.vz) - v.heading) * (1 - Math.exp(-3 * dt)); }
+    else if (control && input.face !== false && amount > .05) v.heading += wrap(Math.atan2(wx, -wz) - v.heading) * (1 - Math.exp(-TURN * dt));
     v.heading = wrap(v.heading);
     if (dt > 0) {
       this.turnRate = THREE.MathUtils.damp(this.turnRate, wrap(v.heading - before) / dt, 12, dt);
       this.accel = THREE.MathUtils.damp(this.accel, (this.vx * ahead.x + this.vz * ahead.z - forward) / dt, 10, dt);
     }
     // Jumping (see JUMP): a press waits BUFFER for the ground to answer it
-    const pressed = control && Boolean(input.jump) && !this.held;
+    const pressed = control && !chute && Boolean(input.jump) && !this.held;
     this.held = Boolean(input.jump);
     if (pressed) this.asked = this.time;
-    if (control && this.time - this.asked <= BUFFER) {
+    if (control && !chute && this.time - this.asked <= BUFFER) {
       const footing = this.grounded || (!this.jumped && this.time - this.footing <= COYOTE);
       // (in the air, a press the ground will answer in a moment waits for it, rather than flipping)
-      const above = Math.max(0, this.y - v.route.height(v.s, v.u));
+      const above = Math.max(0, this.y - this.floorAt(v.s, v.u));
       const landing = !this.grounded && this.vy <= 0 && (this.vy + Math.sqrt(this.vy * this.vy + 2 * FALL * above)) / FALL < BUFFER;
       if (footing) {
         this.vy = JUMP; this.grounded = false; this.jumped = true; this.asked = -Infinity;
@@ -220,11 +289,12 @@ export class Walker {
       }
     }
     // Along the ground, but never into the water: the half of the move that
-    // stays dry is kept, so they walk along a quay's edge rather than stick
-    const fromS = v.s, fromU = v.u;
+    // stays dry is kept, so they walk along a quay's edge rather than stick.
+    // (in the air they may drift out over it, and be fished out: see ashore)
+    const fromS = v.s, fromU = v.u, fromY = this.y;
     if (!this.down) {
       v.shift(this.vx * dt, this.vz * dt);
-      if (this.wet(v.s, v.u) && !this.wet(fromS, fromU)) {
+      if (this.grounded && this.wet(v.s, v.u) && !this.wet(fromS, fromU)) {
         const toU = v.u;
         v.u = fromU;
         if (this.wet(v.s, v.u)) { v.s = fromS; v.u = toU; }
@@ -234,18 +304,30 @@ export class Walker {
     }
     // Up a kerb or down it in their stride, and off anything higher they
     // fall. Rising with the button held they are slowed least, falling most.
-    const ground = v.route.height(v.s, v.u), wasGrounded = this.grounded;
+    // Under a parachute they come down at its own pace.
+    const ground = this.floorAt(v.s, v.u), wasGrounded = this.grounded;
     const gravity = this.vy > 0 ? (this.held && (this.jumped || this.flipped) ? RISE : LET_GO) : FALL;
     let landed = 0;
     if (this.down) this.y = ground;
     else if (this.grounded && Math.abs(ground - this.y) <= STEP) this.y = ground;
     else {
       if (this.grounded && ground > this.y) { v.s = fromS; v.u = fromU; this.vx = this.vz = 0; }
-      else { this.grounded = false; this.vy -= gravity * dt; this.y += this.vy * dt; }
-      const under = v.route.height(v.s, v.u);
+      else {
+        this.grounded = false;
+        if (chute) this.vy = THREE.MathUtils.damp(this.vy, -CHUTE_SINK * (input.sprint ? 1.8 : 1), CHUTE_BRAKE, dt);
+        else this.vy -= gravity * dt;
+        this.y += this.vy * dt;
+      }
+      const under = this.floorAt(v.s, v.u, fromY + STEP);
       if (this.y <= under) { landed = Math.max(.5, -this.vy); this.y = under; this.vy = 0; this.grounded = true; }
     }
     if (this.grounded) { this.footing = this.time; this.jumped = this.flipped = false; }
+    // Falling from a height, the pack opens into a parachute; down, it folds away
+    if (!this.grounded && !this.chute && !this.down && this.vy < -CHUTE_FALL && this.y - this.floorAt(v.s, v.u, this.y) > CHUTE_ROOM) this.openChute();
+    if (this.grounded && chute) this.chute.folding = this.time;
+    if (this.chute?.folding && this.time - this.chute.folding > CHUTE_FOLD) this.chute = null;
+    // (and down in the water, they are fished out)
+    if (landed && this.wet(v.s, v.u)) { this.ashore(); landed = 0; }
     // Landing: a squash as deep as the fall was fast, the head dipping into
     // it, a thud and a puff. Every step is a footfall (see DriveAudio).
     const speed = Math.hypot(this.vx, this.vz), stepped = this.phase;
@@ -279,19 +361,21 @@ export class Walker {
     }
     // The controller's state, as the rest of the game reads it
     v.speed = speed; v.slideHeading = v.heading; v.steer = 0; v.slip = 0; v.yawRate = 0;
-    v.drifting = false; v.boosting = this.sprinting; v.driftAmount = 0; v.weight = 0; v.load = 0; v.airborne = false;
+    v.drifting = false; v.boosting = this.sprinting; v.driftAmount = 0; v.weight = 0; v.load = 0; v.airborne = this.y - v.route.height(v.s, v.u) > AIRBORNE;
     v.pitch = 0; v.roll = 0; v.wheelSpin = this.phase;
     // Leaning into a run, more as they set off, and back into a skid,
     // swaying with each step, and banking into turns
-    const lean = this.down || this.rise ? 0 : clamp(speed * .022 + this.accel * .004, -.08, .22);
-    const bank = this.down || this.rise ? 0 : clamp(-this.turnRate * speed * .016, -.2, .2);
+    // (hanging under a parachute, they swing a little under it instead)
+    const lean = this.down || this.rise || chute ? 0 : clamp(speed * .022 + this.accel * .004, -.08, .22);
+    const bank = this.down || this.rise ? 0 : chute ? Math.sin(this.time * 2.1) * .05 : clamp(-this.turnRate * speed * .016, -.2, .2);
     v.bodyPitch = -lean + this.skid * .28; v.bodyRoll = Math.sin(this.phase * .5) * .04 * this.stride + bank;
     const data = v.car.userData;
     data.speed = speed; data.velocity.x = this.down ? 0 : this.vx; data.velocity.z = this.down ? 0 : this.vz;
-    // (a sprint opens the chase camera's lens a little, as a car's speed does,
-    // and talking to someone it looks over their shoulder: see ThirdPersonCamera)
+    // (a sprint opens the chase camera's lens a little, as a car's speed does)
     data.speedRush = this.sprinting ? clamp((speed - JOG) / (SPRINT - JOG), 0, 1) * .6 : 0;
-    data.shoulder = this.chatting && control && amount < .05 ? SHOULDER : 0;
+    // (under a parachute it stands back to take in the canopy, and high up looks down past it)
+    data.chaseScale = this.chute ? CHUTE_FRAME : CHASE_SCALE;
+    data.chaseDip = this.chute ? clamp((this.y - ground - 4) / 30, 0, 1) * .45 : 0;
     v.trauma = Math.max(0, v.trauma - dt * 1.4); data.trauma = v.trauma;
     telemetry.speed = speed; telemetry.throttle = 0; telemetry.brake = 0; telemetry.offRoad = 0;
     telemetry.handbrake = 0; telemetry.boost = 0; telemetry.scrape *= Math.exp(-dt * 14);
@@ -319,6 +403,32 @@ export class Walker {
     // (a new whim every couple of seconds: ahead, about them, or right round to one side)
     const beat = Math.floor(this.time / 1.9), whim = Math.abs(Math.sin(beat * 12.9898 + 78.233) * 43758.5453) % 1;
     return whim < .35 ? 0 : whim < .5 ? -.8 : whim < .65 ? .8 : whim < .75 ? -.4 : whim < .85 ? .4 : whim < .93 ? -1.05 : 1.05;
+  }
+  // Whether they clear a standing thing (see collideScenery): a building
+  // whose roof they stand on, or are above, furniture they are over, and
+  // anything else once well off the street (see AIRBORNE)
+  passes(solid) {
+    if (solid.top !== undefined) return this.y >= roofSurface(solid, this.vehicle.groundedPosition) - STEP;
+    // (furniture only once off their feet or up high: a jump clears a bin)
+    if (solid.prop) return (!this.grounded || this.vehicle.airborne) && this.y >= propTop(solid);
+    return this.vehicle.airborne;
+  }
+  // The pack opens (see CHUTE_FALL), with a flutter of cloth
+  openChute() {
+    const v = this.vehicle, p = v.groundedPosition;
+    this.chute = { at: this.time, folding: 0 };
+    v.props?.sounds.push({ kind: 'flutter', strength: 9, x: p.x, z: p.z });
+  }
+  // Down in the water off a parachute: a splash, and they are back at the
+  // kerb, as the harbour gives back anyone knocked into it (see lie)
+  ashore() {
+    const v = this.vehicle, p = v.groundedPosition;
+    v.props?.bits?.burst('splash', p.x, this.y, p.z);
+    let lane = v.route.nearestLane?.(v.s, v.u, v.heading);
+    // (far out at sea no street is within the usual reach, and they were left standing on the water)
+    if (lane && Math.hypot(lane.s - v.s, lane.u - v.u) < 1) lane = v.route.nearestLane(v.s, v.u, v.heading, SEA_REACH);
+    if (lane) { v.s = lane.s; v.u = lane.u; }
+    this.takeOver();
   }
   wet(s, u) { return Boolean(this.vehicle.route.water?.(s, u)); }
   // What they are standing on, for their footsteps: 'pavement', 'road' and so on (see surfaceAt)
@@ -365,6 +475,7 @@ export class Walker {
   // its body lies and on its way up from there
   animate(phase, origin = 0) {
     const v = this.vehicle, figure = this.figure, body = v.body, posture = this.posture;
+    this.drawCanopy();
     if (this.board || this.alighting) { this.hop(origin); return; }
     if (!this.down && !this.rise) {
       // Each step a little hop off one foot onto the other: squashed as it
@@ -407,6 +518,30 @@ export class Walker {
       world.compose(from.p.lerpVectors(rise.from.p, place, k), from.q.slerpQuaternions(rise.from.q, turn.setFromAxisAngle(UP, -v.heading), k), from.s.lerpVectors(rise.from.s, ONE, k));
     }
     world.premultiply(root).decompose(figure.position, figure.quaternion, figure.scale);
+  }
+  // The parachute: opening out of the pack with a little overshoot, trailing
+  // back from the way they drift and swaying, and once they are down folding
+  // back over behind them
+  drawCanopy() {
+    const canopy = this.canopy, chute = this.chute;
+    if (!canopy) return;
+    canopy.visible = Boolean(chute);
+    if (!chute) return;
+    const v = this.vehicle, open = clamp((this.time - chute.at) / CHUTE_OPEN, 0, 1), fold = chute.folding ? clamp((this.time - chute.folding) / CHUTE_FOLD, 0, 1) : 0;
+    const size = Math.max(.05, THREE.MathUtils.smootherstep(open, 0, 1) * (1 + Math.sin(open * Math.PI) * .15));
+    canopy.scale.set(size * (1 + fold * .3), Math.max(.05, size * (1 - fold * .9)), size * (1 + fold * .3));
+    // (the drift in their own frame: ahead and to the right)
+    const cos = Math.cos(v.heading), sin = Math.sin(v.heading), ahead = this.vx * sin - this.vz * cos, right = this.vx * cos + this.vz * sin;
+    const swing = fold ? 0 : Math.sin(this.time * 2.1) * .06;
+    canopy.rotation.set(clamp(ahead * .03, -.25, .25) + fold * 1.2, 0, clamp(right * .03, -.25, .25) + swing);
+  }
+  // The chase camera pulled in by a wall can come up inside the canopy: it
+  // is left out of that frame (`lens` where the camera is, in the scene)
+  clearView(lens) {
+    const canopy = this.canopy;
+    if (!canopy?.visible) return;
+    const p = this.vehicle.car.position, top = p.y + CANOPY.pack.y + CANOPY.up * canopy.scale.y;
+    if (Math.hypot(lens.x - p.x, lens.z - p.z) < CANOPY.radius * canopy.scale.x + .6 && lens.y > top - .8 && lens.y < top + CANOPY.rise * canopy.scale.y + .6) canopy.visible = false;
   }
   // Hopping into a car or down out of one, placed in the world as getting up
   // is. Into it, a hop to its door, then climbing in, shrinking into the
@@ -466,6 +601,7 @@ export class Walker {
     const v = this.vehicle, props = v.props, speed = Math.hypot(vx, vz);
     if (!props || speed < 1e-3) { this.vx += vx; this.vz += vz; return; }
     const p = v.groundedPosition, dx = vx / speed, dz = vz / speed;
+    this.chute = null;
     world.compose(p, turn.setFromAxisAngle(UP, -v.heading), ONE);
     const car = { x: p.x - dx * 2.6, z: p.z - dz * 2.6, heading: Math.atan2(dx, -dz), halfWidth: 1, halfLength: 2.2, vx, vz, spin: 0, mass: 1.7, y: p.y, height: 1.5 };
     this.down = { body: props.person(cityWalker, world, car).body };

@@ -126,8 +126,9 @@ button svg:not(.chooser-art) { stroke-linecap: round; stroke-linejoin: round; }
   #welcome .start-button.menu-secondary { margin-top: 7px; padding-block: 6px; font-size: 13px; }
 }
 /* A short landscape screen sets the name beside the buttons rather than
-   above them, so both fit with the street still in view between them. */
-@media (orientation: landscape) and (max-height: 400px) {
+   above them, so both fit with the street still in view between them. (A
+   big phone on its side is 430 px tall: stacked, Free drive was off screen.) */
+@media (orientation: landscape) and (max-height: 460px) {
   #welcome { top: var(--ui-top); bottom: var(--ui-bottom); flex-direction: row; justify-content: center; align-items: center; gap: clamp(24px, 8vw, 96px); }
   .menu-actions { margin-top: 0; }
 }

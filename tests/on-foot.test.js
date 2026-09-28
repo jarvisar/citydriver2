@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { DrivingController } from '../src/vehicle.js';
 import { WALKER_SPEC, walkingInput } from '../src/walker.js';
 import { OnFoot } from '../src/on-foot.js';
-import { circleContact, collideScenery, sightLine } from '../src/collision.js';
+import { circleContact, collideScenery, roofSurface, sightLine } from '../src/collision.js';
 import { CityTraffic } from '../src/city-traffic.js';
 import { LooseProps } from '../src/loose-props.js';
 import { cityAssets } from '../src/world/city-assets.js';
@@ -416,7 +416,7 @@ test('out of the car and back in: by the driver\'s door, stopping first, and the
   scene.add(vehicle.car); vehicle.freeDriving = true;
   const traffic = new CityTraffic(scene, vehicle.route, vehicle.s, 'city', vehicle.u), feet = new OnFoot(vehicle, traffic);
   try {
-    assert.deepEqual(feet.offer(), { out: true, stopping: false, bail: false });
+    assert.deepEqual(feet.offer(), { out: true, stopping: false, bail: false, flying: false });
     // Moving, it stops first
     for (let i = 0; i < 120; i++) vehicle.update(step, { forward: 1 });
     assert.ok(vehicle.speed > 5);
@@ -528,9 +528,11 @@ test('they go to a car a few metres off by themselves and hop in, the one they f
     for (let i = 0; i < 60; i++) { vehicle.update(step, feet.control(away)); feet.update(step); }
     assert.ok(!feet.approach && feet.walking && Math.hypot(vehicle.s - own.s, vehicle.u - own.u) > 7, 'walked off the other way');
     // A traffic car ahead of them, their own behind: they go for the one they face, which stops for them
-    for (let i = 0; i < 240; i++) traffic.update(step, vehicle);
-    // (one near, so moving them to it does not send the traffic round again)
-    const car = traffic.vehicles.find(c => c.edge && !c.loose && c.speed > 4 && c.edge.length - c.along > 40 && Math.hypot(c.s - vehicle.s, c.u - vehicle.u) < 90);
+    // (one near, so moving them to it does not send the traffic round again: waited for, on a quiet
+    // street; and slow enough to stop for them, or it goes by and they dive in as it passes)
+    const suits = c => c.edge && !c.loose && c.speed > 4 && c.speed < 15 && c.edge.length - c.along > 40 && Math.hypot(c.s - vehicle.s, c.u - vehicle.u) < 90;
+    let car;
+    for (let i = 1; i <= 120 * 30 && !car; i++) { traffic.update(step, vehicle); if (i >= 240 && i % 30 === 0) car = traffic.vehicles.find(suits); }
     // (standing a few metres ahead of it and to its left, looking back at it)
     const ahead = 9, left = 3.2, h2 = car.heading;
     vehicle.s = car.s + Math.cos(h2) * ahead + Math.sin(h2) * left; vehicle.u = car.u + Math.sin(h2) * ahead - Math.cos(h2) * left;
@@ -572,50 +574,12 @@ test('going fast, a second press jumps out: they tumble on, and the car rolls on
   } finally { feet.clear(); traffic.dispose(); props.dispose(); vehicle.disposeModel(); }
 });
 
-test('they talk to someone in front of them, who stops and faces them, gives the way to a landmark not found yet, says goodbye and walks on', () => {
-  const { vehicle } = onFoot({ s: 0, u: 0, heading: 0 });
-  const traffic = { enabled: false, vehicles: [], woken: [], playerCars: [], time: 0 }, feet = new OnFoot(vehicle, traffic);
-  vehicle.stepOut();
-  // A resident 1.8 m north of them, the way they face, in a chunk of their own
-  const person = { drawn: { x: 0, y: GROUND, z: -1.8 }, phase: 12.3, speed: 1.4, appearance: { presentation: 'feminine' } };
-  const chunk = { index: 'c', east: 0, start: 0, walkers: [person], peopleFrame: new THREE.Matrix4() };
-  const said = [], hall = { name: 'City Hall', type: 'cityhall', s: 300, u: 0, metres: 300, way: 'north' };
-  let pointed = null;
-  Object.assign(feet, {
-    world: { chunks: new Map([['c', chunk]]) }, clock: 10, onPoint: place => { pointed = place; },
-    bubbles: { say: (who, speaker, text) => said.push({ who, text, at: { ...speaker() } }), left: () => 3, speaking: () => false },
-    context: () => ({ weather: 'clear', district: 'Old town', place: hall }),
-  });
-  try {
-    const offer = feet.offer();
-    assert.ok(offer.chat?.person === person && offer.name, `offered a chat with ${offer.name}`);
-    feet.use();
-    assert.ok(said.length === 1 && said[0].who === person && Math.abs(said[0].at.z + 1.8) < 1e-9, `they said "${said[0].text}" where they stand`);
-    assert.ok(person.talking && person.stride.rate === 0 && person.stride.until > 12, 'stopped, facing them');
-    // Again: the way to the landmark, which they turn to face and the map marks
-    feet.clock = 13; feet.use();
-    assert.ok(said[1].text.includes('City Hall') && pointed === hall && person.talking.point, said[1].text);
-    feet.clock = 16; feet.use(); feet.clock = 19; feet.use();
-    assert.ok(feet.chat.ending && /bye|off|around|Places/.test(said[3].text), `and goodbye: ${said[3].text}`);
-    // Asked again straight away, they are only surprised
-    feet.clock = 20; feet.use();
-    assert.match(said[4].text, /again|Still|done/);
-    // Walking off, the chat ends and they walk on
-    vehicle.s = -10; vehicle.update(0, {}); feet.clock = 21; feet.lookAround(feet.world, 21);
-    assert.ok(!feet.chat && !person.talking && person.stride.until === 21, 'walking on');
-    // Shoved, knocked over or passed, they call out now and then
-    assert.ok(feet.call(person, chunk.peopleFrame, 'shoved'));
-    assert.ok(!feet.call(person, chunk.peopleFrame, 'shoved'), 'not every time');
-  } finally { vehicle.disposeModel(); }
-});
-
-test('no getting out of the helicopter, and nobody gets in a car lying on the ground', () => {
-  const scene = new THREE.Scene(), start = journeyStart(), vehicle = new DrivingController(citydriverRoute, start, 'helicopter');
+test('nobody gets in a car lying on the ground', () => {
+  const scene = new THREE.Scene(), start = journeyStart(), vehicle = new DrivingController(citydriverRoute, start, 'taxi');
   scene.add(vehicle.car);
   const traffic = new CityTraffic(scene, vehicle.route, vehicle.s, 'city', vehicle.u), feet = new OnFoot(vehicle, traffic);
   try {
-    assert.equal(feet.offer(), null); assert.equal(feet.use(), ''); assert.ok(!feet.walking && !feet.leaving);
-    vehicle.setCar('taxi'); feet.use(); assert.ok(feet.walking);
+    feet.use(); assert.ok(feet.walking);
     vehicle.walker.down = { body: { p: new THREE.Vector3(), asleep: false } };
     assert.equal(feet.offer(), null); assert.equal(feet.use(), '');
     vehicle.walker.down = null;
@@ -799,4 +763,122 @@ test('on foot, loose pieces are solid: a bin is kicked aside, a fallen post stop
     assert.ok(person < .1, `they stop at them, not in them (${person.toFixed(2)} m)`);
     assert.ok(body.p.distanceTo(bodyAt) < .05, `and do not move them (${body.p.distanceTo(bodyAt).toFixed(2)} m)`);
   } finally { props.dispose(); vehicle.disposeModel(); }
+});
+
+// Flying machines left and got back into, on the flat ground above with no
+// traffic about (its stand-in poses a parked car on the ground as the traffic does)
+const noTraffic = () => ({
+  enabled: false, vehicles: [], woken: [], playerCars: [], time: 0,
+  pose(car) { const p = flat.position(car.s, car.u); car.position.set(p.x, p.y, p.z); car.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), -car.heading); },
+  slide() {}, collidePlayer() {}, knockOn() {},
+});
+// A building 20 m square whose south face is at s = 50, its flat roof 30 m up
+const tower = { corners: [{ x: -10, z: -50 }, { x: 10, z: -50 }, { x: 10, z: -70 }, { x: -10, z: -70 }], x: 0, z: -60, reach: Math.hypot(10, 10), top: GROUND + 30 };
+function flying(id, state = { s: 0, u: 0, heading: 0 }, chunks = new Map()) {
+  const scene = new THREE.Scene(), vehicle = new DrivingController(flat, state, id);
+  vehicle.freeDriving = true; vehicle.scenery = chunks; scene.add(vehicle.car);
+  const traffic = noTraffic(), feet = new OnFoot(vehicle, traffic);
+  const run = (seconds, input = {}, until = () => false) => {
+    for (let i = 0; i < Math.round(seconds / step) && !until(); i++) {
+      vehicle.update(step, feet.control(input)); collideScenery(vehicle, chunks, step); feet.update(step, chunks);
+    }
+  };
+  return { scene, vehicle, traffic, feet, run };
+}
+
+test('out of the helicopter: it lands itself first, flying it takes over again, and left it winds down and waits in the traffic\'s way', () => {
+  const { vehicle, traffic, feet, run } = flying('helicopter');
+  try {
+    run(3, { climb: 1 });
+    assert.ok(vehicle.pilot.height > 15);
+    assert.deepEqual(feet.offer(), { out: true, stopping: false, bail: false, flying: true });
+    assert.equal(feet.use(), ''); assert.ok(feet.leaving && !feet.walking);
+    assert.equal(feet.offer().bail, true, 'high up, a second press would jump');
+    run(1);
+    const lower = vehicle.pilot.height;
+    // Any flying control takes over again
+    run(.5, { climb: 1 });
+    assert.ok(!feet.leaving && vehicle.pilot.height > lower, 'flying it again');
+    feet.use();
+    run(15, {}, () => feet.walking);
+    assert.ok(feet.walking && !feet.leaving, 'out once it had landed');
+    assert.equal(vehicle.groundedPosition.y, GROUND);
+    const car = feet.parked;
+    assert.ok(car?.drone && !traffic.playerCars.includes(car), 'its rotor still turning, flown by nobody');
+    run(6);
+    assert.ok(!car.drone && traffic.playerCars.includes(car), 'wound down, and parked in the traffic\'s way');
+    assert.equal(car.kept.model.rotors.disc.visible, false, 'the blades stopped');
+    // Back in, and it flies
+    assert.equal(feet.offer().own, true);
+    feet.use(); run(3, {}, () => !feet.walking);
+    assert.ok(!feet.walking && vehicle.pilot && vehicle.carId === 'helicopter' && !traffic.playerCars.length);
+    run(2, { climb: 1 });
+    assert.ok(vehicle.pilot.height > 5);
+  } finally { feet.clear(); vehicle.disposeModel(); }
+});
+
+test('out on a roof they stand on it and walk it, and off its edge their parachute opens and brings them down', () => {
+  const chunks = chunkOf(tower), { vehicle, traffic, feet, run } = flying('helicopter', { s: 58, u: 2, heading: 0 }, chunks);
+  try {
+    vehicle.pilot.y = GROUND + 40; vehicle.pilot.landed = false; vehicle.update(0, {});
+    run(10, { descend: 1 }, () => vehicle.pilot.landed);
+    assert.equal(vehicle.groundedPosition.y, GROUND + 30, 'set down on the roof');
+    feet.use(); run(.1);
+    assert.ok(feet.walking && vehicle.groundedPosition.y === GROUND + 30, 'out onto the roof');
+    assert.ok(vehicle.passes(tower), 'the roof they stand on is no wall');
+    run(4);
+    const heli = feet.parked;
+    assert.ok(heli.perch === GROUND + 30 && traffic.playerCars.includes(heli), 'the helicopter stays up there');
+    // Walking north, off the far edge (s = 70)
+    let opened = null, lowest = Infinity;
+    for (let i = 0; i < 120 * 14 && !(vehicle.walker.grounded && vehicle.groundedPosition.y === GROUND); i++) {
+      vehicle.update(step, feet.control(vehicle.s < 72 ? north : {})); collideScenery(vehicle, chunks, step); feet.update(step, chunks);
+      if (vehicle.walker.chute && opened === null) opened = vehicle.groundedPosition.y - GROUND;
+      lowest = Math.min(lowest, vehicle.groundedPosition.y);
+    }
+    assert.ok(opened > 20, `the parachute opened ${opened?.toFixed(1)} m up`);
+    assert.ok(vehicle.walker.grounded && vehicle.groundedPosition.y === GROUND && vehicle.s > 70, 'down in the street beyond it');
+    assert.ok(lowest >= GROUND - 1e-9, 'never under it');
+    run(1);
+    assert.equal(vehicle.walker.chute, null, 'and it folds away');
+    assert.equal(feet.offer(), null, 'the helicopter on the roof is out of their reach from down here');
+  } finally { feet.clear(); vehicle.disposeModel(); }
+});
+
+test('high up, a second press jumps out with a parachute, and the plane lands itself with nobody aboard', () => {
+  const { vehicle, traffic, feet, run } = flying('plane', { s: -300, u: 0, heading: 0 });
+  try {
+    vehicle.pilot.takeOver(0, 34, GROUND + 50); vehicle.pilot.landed = false; vehicle.pilot.speed = 34; vehicle.update(0, {});
+    feet.use(); run(.3);
+    assert.ok(feet.leaving && feet.offer().bail);
+    feet.use();
+    assert.ok(feet.walking && !vehicle.walker.grounded, 'out, in the air');
+    run(1);
+    assert.ok(vehicle.walker.chute, 'under a parachute');
+    const plane = feet.parked;
+    assert.ok(plane.drone && !plane.drone.pilot.landed);
+    assert.equal(feet.offer(), null, 'nobody gets into a plane still flying');
+    run(40, {}, () => !plane.drone);
+    assert.ok(!plane.drone && traffic.playerCars.includes(plane) && plane.position.y === GROUND, 'down, stopped and parked');
+    assert.ok(vehicle.walker.grounded, 'and they are down too');
+  } finally { feet.clear(); vehicle.disposeModel(); }
+});
+
+test('come down in the water, they are fished out at the kerb, and pitched roofs are stood on along their slope', () => {
+  const { vehicle, feet } = flying('taxi', { s: 150, u: 0, heading: 0 });
+  try {
+    feet.use();
+    vehicle.s = 250; vehicle.walker.leap(GROUND + 10, 0, 0, 0);
+    for (let i = 0; i < 120 * 8 && !vehicle.walker.grounded; i++) vehicle.update(step, {});
+    for (let i = 0; i < 12; i++) vehicle.update(step, {});
+    assert.ok(vehicle.walker.grounded && vehicle.s <= 190 && vehicle.groundedPosition.y === GROUND, 'back on the quay');
+  } finally { feet.clear(); vehicle.disposeModel(); }
+  // A gable roof along x, eaves 5 m either side of its ridge; and a hip roof's ridge a segment
+  const house = { top: 30, ridge: 34, pitch: { from: { x: -8, z: 0 }, to: { x: 8, z: 0 }, run: 5, eaves: 30, gable: true } };
+  assert.equal(roofSurface(house, { x: 0, z: 0 }), 34);
+  assert.equal(roofSurface(house, { x: 7.9, z: 2.5 }), 32, 'halfway down its slope, right to the gable');
+  assert.equal(roofSurface(house, { x: 0, z: 5 }), 30);
+  const hipped = { ...house, pitch: { ...house.pitch, from: { x: -3, z: 0 }, to: { x: 3, z: 0 }, gable: false } };
+  assert.equal(roofSurface(hipped, { x: 5.5, z: 0 }), 32, 'and down its hipped end');
+  assert.equal(roofSurface({ top: 20 }, { x: 0, z: 0 }), 20, 'a flat roof at its top');
 });

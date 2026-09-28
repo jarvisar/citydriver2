@@ -2,6 +2,7 @@ import { TRAFFIC_MODELS, SPORTS_MODEL, BUS_MODEL, BUS_PAINT } from './traffic-mo
 import { FORMULA_SHAPE } from './formula-model.js';
 import { SPECIAL_SHAPES } from './special-models.js';
 import { HELICOPTER_SHAPE } from './helicopter.js';
+import { PLANE_SHAPE } from './plane-model.js';
 
 // The player's original car. Its collision box is the footprint the game has
 // always used; the extra fields only describe it for the chooser's artwork.
@@ -143,10 +144,18 @@ export const CARS = {
     name: 'Helicopter', mass: 4, kind: 'helicopter', flies: true, paint: '#c9362f', shape: HELICOPTER_SHAPE, breaks: ['tree', 'shelter'],
     stats: { topSpeed: 40, acceleration: 13, braking: 16, grip: 1.2, offRoad: 40 },
   },
+  // A light plane on big soft tyres (see plane.js): it needs a run at it to
+  // take off, and after that it is the quickest thing in the garage. It is
+  // weighed in heavier than it is, as the helicopter is, so a tree it flies
+  // through only costs it a bite of its speed.
+  plane: {
+    name: 'Plane', mass: 2.2, kind: 'plane', flies: true, paint: '#2f6fa8', shape: PLANE_SHAPE, breaks: ['tree', 'shelter'],
+    stats: { topSpeed: 56, acceleration: 12, braking: 14, grip: 1.1, offRoad: 56 },
+  },
 };
 
 // The wheeled fleet, which the handling is built for, and the garage, which
-// has the helicopter too.
+// has the flying machines too.
 export const CAR_IDS = Object.keys(CARS).filter(id => !CARS[id].flies);
 export const GARAGE_IDS = Object.keys(CARS);
 export const DEFAULT_CAR = 'auto';

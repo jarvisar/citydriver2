@@ -17,8 +17,9 @@ const TILT_LOW = -.25, TILT_HIGH = 1.05;
 export const LOOK_REST = 1.5, LOOK_MOVING = 2, LOOK_RETURN = 2.5;
 // The wheel takes it this much nearer or farther, easing there at ZOOM_RATE
 const ZOOM_NEAR = .45, ZOOM_FAR = 2, ZOOM_RATE = 10;
-// However it is turned, it keeps this far over the ground under it
-const GROUND_CLEAR = .6;
+// However it is turned, it keeps this far over the ground under it (and
+// this far under a bridge's deck, see `lid`)
+const GROUND_CLEAR = .6, LID_CLEAR = .5;
 // Someone on foot (see Walker) says how much closer and lower to frame them,
 // as a share of a car's distances (`chaseScale`), which the camera eases to
 // at SCALE_RATE as they get out or in. It follows them on a leash
@@ -32,10 +33,6 @@ const SCALE_RATE = 3;
 // (m) to look over it instead, if that sees them better, easing at
 // CRANE_RATE. It stays up until the low view would be clear by a margin.
 const CRANE = 2.6, CRANE_NEAR = 2.5, CRANE_RATE = 4;
-// Talking to someone (see OnFoot.talk), someone on foot is seen over their
-// shoulder, `shoulder` m to their right, so whoever they talk to is not
-// hidden behind their head. The aim moves across AIM_SHOULDER as far.
-const AIM_SHOULDER = .6;
 // (eases toward a goal, and lands on it exactly, so the camera comes back bit for bit)
 export const settle = (value, goal, rate, dt) => {
   const next = THREE.MathUtils.damp(value, goal, rate, dt);
@@ -60,15 +57,16 @@ export class ThirdPersonCamera {
     this.sight = null;
     this.reach = null;
     this.pivot = new THREE.Vector3();
-    // `ground(x, z)` is the height of the ground under a point
-    this.ground = null;
+    // `ground(x, z)` is the height of the ground under a point, `decked(x, z)`
+    // whether a bridge's deck is over it, and `lid` the deck it keeps under
+    this.ground = null; this.decked = null; this.lid = null;
     // How far the mouse has turned the camera (see `look`) and the wheel's distance (`zoomBy`)
     this.lookYaw = 0; this.lookPitch = 0; this.rested = 0;
     this.zoom = 1; this.zoomTarget = 1;
     this.axis = new THREE.Vector3();
     // How far toward framing someone on foot it has come (see SCALE_RATE),
     // the lift it has come to, and how far it has risen over something low (see CRANE)
-    this.scale = 1; this.lift = 0; this.crane = 0; this.craning = false; this.shoulder = 0;
+    this.scale = 1; this.lift = 0; this.crane = 0; this.craning = false;
     this.raised = new THREE.Vector3();
   }
   // Turns the camera round the car by these many radians: to the right, and
@@ -92,7 +90,7 @@ export class ThirdPersonCamera {
     this.camera.updateProjectionMatrix();
   }
   // (back behind the car, at the distance the player chose)
-  snap() { this.initialized = false; this.rush = 0; this.dip = 0; this.reach = null; this.lookYaw = 0; this.lookPitch = 0; this.crane = 0; this.craning = false; }
+  snap() { this.initialized = false; this.rush = 0; this.dip = 0; this.reach = null; this.lookYaw = 0; this.lookPitch = 0; this.crane = 0; this.craning = false; this.lid = null; }
   update(car, dt) {
     // Past two fifths of the car's top speed the lens opens up and the chase
     // seat slides back, so a boulevard at full throttle feels quick and a
@@ -105,15 +103,14 @@ export class ThirdPersonCamera {
     const framing = car.userData.chaseScale ?? 1, raised = car.userData.chaseLift ?? 0;
     this.scale = this.initialized ? settle(this.scale, framing, SCALE_RATE, dt) : framing;
     this.lift = this.initialized ? settle(this.lift, raised, SCALE_RATE, dt) : raised;
-    const shoulder = car.userData.shoulder ?? 0;
-    this.shoulder = this.initialized ? settle(this.shoulder, shoulder, SCALE_RATE, dt) : shoulder;
     const fov = this.baseFov * (1 + (RUSH_FOV - 1) * this.rush);
     if (Math.abs(fov - this.camera.fov) > .01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
     // Look partly along travel during a slide so the exit stays in view and
     // the player can see the car's angle. The pose supplies interpolated slip.
     const heading = -car.rotation.y - (car.userData.slip ?? 0) * .65;
     // Let the horizon suggest the slope without copying every chassis movement.
-    const pitch = THREE.MathUtils.clamp(car.rotation.x * .45, -.18, .18);
+    // (a plane says how far to lean with its climb or dive: see Plane)
+    const pitch = car.userData.chasePitch ?? THREE.MathUtils.clamp(car.rotation.x * .45, -.18, .18);
     if (!this.initialized) {
       this.heading = heading; this.headingVelocity = 0;
       this.pitch = pitch; this.height = car.position.y; this.zoom = this.zoomTarget; this.initialized = true;
@@ -160,11 +157,6 @@ export class ThirdPersonCamera {
     this.target.copy(car.position).addScaledVector(this.forward, 7 * scale);
     this.target.y = this.height + 2.2 * scale + lift * .35 + Math.sin(this.pitch) * 7 * scale - this.dip * DIP_DROP;
     this.pivot.set(car.position.x, this.height + PIVOT * scale + lift, car.position.z);
-    if (this.shoulder) {
-      // (the camera's right is the forward turned a quarter clockwise, seen from above)
-      this.camera.position.x -= this.forward.z * this.shoulder; this.camera.position.z += this.forward.x * this.shoulder;
-      this.target.x -= this.forward.z * this.shoulder * AIM_SHOULDER; this.target.z += this.forward.x * this.shoulder * AIM_SHOULDER;
-    }
     // The mouse's tilt and the wheel's distance turn and scale the camera and
     // its aim together about the pivot, so the car keeps its place in the
     // frame. (The axis points to the car's left: a positive tilt raises it.)
@@ -197,9 +189,14 @@ export class ThirdPersonCamera {
     // headset's comfort vignette (see ComfortVignette)
     this.camera.userData.jump = Math.max(0, before - this.reach) * line;
     this.camera.userData.glide = dt > 0 ? Math.max(0, this.reach - before) * line / dt : 0;
-    // Nor, turned down low, does it go into the ground
+    // Nor, turned down low, does it go into the ground, nor, following a
+    // flying machine under a bridge, up into the deck (`lid`, its underside),
+    // until it is out from under the deck itself (`decked`): let go as the
+    // machine flew out, it rose through the deck behind it
     const floor = (this.ground?.(this.camera.position.x, this.camera.position.z) ?? -Infinity) + GROUND_CLEAR;
     if (this.camera.position.y < floor) this.camera.position.y = floor;
+    const lid = this.lid = car.userData.lid ?? (this.lid && this.decked?.(this.camera.position.x, this.camera.position.z) ? this.lid : null);
+    if (lid) { this.camera.position.y = Math.min(this.camera.position.y, lid - LID_CLEAR); this.target.y = Math.min(this.target.y, lid - LID_CLEAR); }
     this.camera.lookAt(this.target);
     this.camera.updateMatrixWorld();
   }

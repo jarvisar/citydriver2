@@ -10,7 +10,7 @@ Taxi runs work like Crazy Taxi: a shift clock that fares add time to. The number
 - The drop-off zone is a stretch of the street in front of the destination, and the cab can stop anywhere within 8 m of it. A building's zone covers the middle half of its front. A park or square has no single door, so its zone runs along its side of the street, up to 40 m either way from the gate. Zones stop well short of junctions and never go onto a bridge. Fares are still measured to the entrance, so a long zone can save a few seconds.
 - The timer pill shows the rating the rider would give now and how many seconds are left before it drops. In the last rating it counts down to the rider giving up.
 - Holding a continuous drift for 0.65 seconds earns tips. Separate taps don't add up.
-- A crash resets the stunt combo but keeps the tips already earned. Stunts don't score again until the cab has been clear of impacts for 0.8 seconds.
+- A crash resets the stunt combo but keeps the tips already earned, and stunts don't score again for 0.8 seconds. Only a real hit counts as a crash, a bit like BallisticNG: nosing into a wall, a tree or the back of a car, or getting T-boned. Scraping along a wall or trading paint with traffic isn't a crash, but it does restart the drift count.
 
 ## The Shift Clock
 
