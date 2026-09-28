@@ -3,12 +3,8 @@ import { CITY_PLACES, PLACE_TYPES } from './world/city-places.js';
 import { CityExploration } from './city-exploration.js';
 import { taxiRoute, STOP_RADIUS } from './taxi-run.js';
 import { goalProgress } from './taxi-goals.js';
+import { $, attribute, hide } from './hud-dom.js';
 
-const $ = id => document.getElementById(id);
-// Updates run ten times a second; rewriting an unchanged attribute still
-// invalidates style, so compare first.
-const attribute = (element, name, value) => { if (element.getAttribute(name) !== value) element.setAttribute(name, value); };
-const hide = (element, hidden) => { if (element.hidden !== hidden) element.hidden = hidden; };
 const MAP_SCALE = .36;
 export class CityGuide {
   constructor(notify, position) {

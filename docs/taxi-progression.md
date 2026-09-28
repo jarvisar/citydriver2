@@ -30,7 +30,7 @@ Short fares keep the clock going. Long fares and groups pay more money per minut
 
 If time runs out with riders aboard, the shift carries on until they have all got out or given up. Their fares still pay, but no more time is added. If time runs out with nobody aboard, the shift ends.
 
-Group fares add their route time at the last stop. A group pays about 60% more per metre than single fares, plus a group bonus, and stunt tips are multiplied by the number of riders. It pays nothing if a rider's clock runs out.
+Group fares add their route time at the last stop. A group pays 20% more per metre than a single fare for each rider after the first (60% more for four), plus a group bonus, and stunt tips are multiplied by the number of riders. It pays nothing if a rider's clock runs out.
 
 ## Special Riders
 
@@ -52,7 +52,7 @@ The first shifts show short hints in the task card: how to pick a fare, how to r
 
 A group's stops are picked one at a time from the places near the previous stop. Candidates are ranked by distance plus penalties, in metres:
 
-- 320 for a stop on the same east-west street as the previous one
+- 320 for a stop on the same street as the previous one
 - 140 for a stop straight ahead
 - 200 for a type of place the group is already visiting
 

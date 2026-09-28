@@ -23,7 +23,7 @@ export const SIGNS_BY_USE = Object.fromEntries(SIGN_USES.map(use => [use, BUSINE
 // the same one, and a street of shops is not a bakery beside a bakery. (A
 // private hash leaves the architecture's seeded random sequence untouched.)
 const STRIDES = [13, 37, 49, 73, 97, 109];
-const mix = n => { n = Math.imul(n ^ (n >>> 16), 0x45d9f3b); return (n ^ (n >>> 16)) >>> 0; };
+export const mix = n => { n = Math.imul(n ^ (n >>> 16), 0x45d9f3b); return (n ^ (n >>> 16)) >>> 0; };
 const gcd = (a, b) => b ? gcd(b, a % b) : a;
 export function dealSign(building, use) {
   const signs = SIGNS_BY_USE[use], salt = Math.imul(SIGN_USES.indexOf(use) + 1, 0x632be5ab);
@@ -31,7 +31,6 @@ export function dealSign(building, use) {
   const block = mix(Math.imul(building.shopBlock, 0x9e3779b1) ^ 7411 ^ salt), strides = STRIDES.filter(s => gcd(s, signs.length) === 1);
   return signs[(mix(block) + building.shopSlot * strides[block % strides.length]) % signs.length];
 }
-export const shopSignFor = building => dealSign(building, 'shop');
 export function discoverySignFor(type, variant = 0) {
   return DISCOVERY_SIGNS.find(sign => sign.type === type && sign.variant === variant) ?? DISCOVERY_SIGNS.find(sign => sign.type === type);
 }

@@ -88,7 +88,7 @@ export function junctionControls(nav = navGraph()) {
       // Cars wait behind the crosswalk, which begins where the road leaves the junction
       approaches.set(edge, { kind, axis: axisOf(edge), clear, stopDistance: stopLineDistance(clear), heading: heading.get(edge), link: arm.link, crosswalk });
     }
-    controls.set(node, { approaches, signal, fourWay: rule === 'all', rule, district, radius: shape.radius });
+    controls.set(node, { approaches, signal, district });
   }
   nav.controls = controls;
   return controls;
@@ -100,14 +100,14 @@ function headingInto(nav, edge, node) {
   return nav.pose(edge, edge.length, direction).heading;
 }
 
-// The control on the approach at the end of an edge, with its node and the
-// junction's radius (cached: every driver asks every frame)
+// The control on the approach at the end of an edge, with its node (cached:
+// every driver asks every frame)
 export function approachControl(nav, edge, direction) {
   const cache = nav.approachCache ??= new Map(), key = edge.id * 2 + (direction > 0 ? 1 : 0), known = cache.get(key);
   // (kept as an approach, or null where there is none, never undefined)
   if (known !== undefined) return known;
   const node = nav.endNode(edge, direction), control = junctionControls(nav).get(node);
-  const approach = control ? { node, ...control.approaches.get(edge), radius: control.radius } : null;
+  const approach = control ? { node, ...control.approaches.get(edge) } : null;
   cache.set(key, approach);
   return approach;
 }

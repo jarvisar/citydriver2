@@ -201,8 +201,7 @@ function partyOffer(stop, destination, length, wanted) {
   }
   const passengers = stops.length;
   const fare = Math.round((40 + totalLength * .28) * (1 + (passengers - 1) * GROUP_FARE_SHARE));
-  // Allocate integer dollars once, so the riders split the fare exactly. Each
-  // drop-off banks its own share immediately if the party later runs out.
+  // Allocate integer dollars once, so the riders split the fare exactly.
   let allocated = 0;
   for (const [index, leg] of stops.entries()) {
     leg.fare = index === stops.length - 1 ? fare - allocated : Math.round(fare / passengers);
@@ -542,7 +541,7 @@ export class TaxiRun {
     } else this.driftTime = 0;
     if (Math.abs(player.speed) > 14 && !collided && this.crashCooldown === 0) {
       for (const car of traffic) {
-        const carHeading = car.heading ?? (car.axis === 'east' ? car.direction * Math.PI / 2 : car.direction < 0 ? Math.PI : 0);
+        const carHeading = car.heading;
         if (this.passed.has(car) || Math.abs(player.speed - car.speed * Math.cos(carHeading - player.heading)) < 7) continue;
         const ds = car.s - player.s, du = car.u - player.u;
         const along = ds * Math.cos(player.heading) + du * Math.sin(player.heading);
@@ -599,6 +598,8 @@ export class TaxiRun {
         this.hold = 0; this.driftTime = 0; this.revision++;
         // Preserve the stunt combo, with enough grace to pull away.
         this.comboTime = Math.max(this.comboTime, COMBO_SECONDS);
+        // (a goal can complete on a rider's stop too, and must bank if the group fails later)
+        this.checkGoals();
         return;
       }
       if (this.overtime) { this.checkGoals(); this.finish(); return; }

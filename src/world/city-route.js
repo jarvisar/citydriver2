@@ -93,5 +93,4 @@ export const citydriverRoute = {
   looseness: (s, u) => LOOSENESS[surfaceAt(s, u)] ?? 0,
   water: (s, u) => surfaceAt(s, u) === 'water',
   nearestLane: nearestLanePose,
-  start: journeyStart,
 };

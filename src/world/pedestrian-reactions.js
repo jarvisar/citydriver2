@@ -133,7 +133,7 @@ export const PEDESTRIAN_MEET = 10;
 export function regroupWalkers(walker, partner, time, arrival = 0) {
   if (!partner) { setStride(walker, time, 0, time, walkedAt(walker, time), arrival); return; }
   if (partner.away) { setStride(walker, time, 0, Infinity, walkedAt(walker, time), arrival); return; }
-  const a = walkedAt(walker, time), b = walkedAt(partner, time), gap = around(a, b, walker.loop?.perimeter ?? Infinity);
+  const a = walkedAt(walker, time), b = walkedAt(partner, time), gap = around(a, b, walker.loop.perimeter);
   const [ahead, behind, lead] = gap >= 0 ? [walker, partner, a] : [partner, walker, b], apart = Math.abs(gap);
   const pace = w => w === walker ? arrival : paceAt(w, time), fa = pace(ahead), fb = pace(behind);
   let hurry = Math.min(PEDESTRIAN_HURRY + .4, Math.max(2.4, behind.speed * 2));
@@ -343,7 +343,9 @@ export class PedestrianContacts {
       if (car && person.hopStart === undefined) {
         // (cartwheeling away from the car: the way their right hand points, if it came from their left)
         const side = world.multiplyMatrices(frame, matrix).elements, x = side[0], z = side[2];
-        person.hopStart = time; person.hopSpin = (at.x - car.x) * x + (at.z - car.z) * z > 0 ? -1 : 1;
+        // (a flying piece has no x and z of its own: its body's position)
+        const from = car.body?.p ?? car;
+        person.hopStart = time; person.hopSpin = (at.x - from.x) * x + (at.z - from.z) * z > 0 ? -1 : 1;
       }
       return person.hopStart !== undefined && applyHop(person, matrix, time);
     }
@@ -371,7 +373,7 @@ export class PedestrianContacts {
     // A loose piece that hit them gives up its share of the blow.
     const piece = car.body, player = !piece && car.car === this.player;
     const motion = piece ? this.props.motionOf(piece, car.points[car.hit], car.points[car.hit + 1], car.points[car.hit + 2]) : player ? this.props.carOf(this.player) : this.traffic.motion(car.car);
-    if (!player && !piece) { motion.y = car.y; motion.height = 1.5; }
+    if (!player && !piece) { motion.y = car.y; }
     if (charged) motion.mass = CHARGE;
     const { body, blow } = this.props.person(cityWalker, world, motion);
     this.onKnock?.(piece ? 'piece' : player ? 'player' : car.car.loose || car.car.parked ? 'loose' : 'traffic', { x: at.x, y: at.y, z: at.z });

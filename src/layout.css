@@ -24,7 +24,6 @@ body[data-controller=true] #app :is(.controls, #pause) { display: none !importan
    on plain focus. */
 body[data-controller=true] .pause-overlay button:focus { outline: 2px solid var(--ink); outline-offset: 3px; }
 .brand { min-width: 0; }
-#app:has(.welcome.hidden) .topbar .brand,
 #app:has(#pause-overlay:not([hidden])) .brand { visibility: hidden; }
 
 /* Menus reserve space for their primary action, not for the driving HUD. */
@@ -192,7 +191,6 @@ body[data-journey=city] .chooser-heading { background: #eef1f4; }
 .drive-actions kbd { display: none; }
 .drive-actions .control-label { margin: 0; text-transform: capitalize; }
 #app:has(.welcome:not(.hidden), #pause-overlay:not([hidden])) .drive-actions :is(#view, #reset) { display: none; }
-#app:has(.welcome.hidden) .topbar .brand,
 #app:has(#pause-overlay:not([hidden])) .brand { display: none; }
 #app:has(.welcome.hidden, #pause-overlay:not([hidden])) .topbar { justify-content: flex-end; }
 body[data-controller=true] .drive-actions { display: none; }
@@ -208,8 +206,6 @@ body[data-controller=true] .drive-actions { display: none; }
 @media (max-height: 560px) and (orientation: landscape) {
   .welcome { padding: 12px; }
   .welcome h1 { font-size: 26px; margin: 0 0 8px; }
-  .welcome h1 br { display: none; }
-  .welcome h1 em::before { content: ' '; white-space: pre; }
   .welcome p { margin-bottom: 8px; }
 }
 

@@ -453,13 +453,12 @@ export class CityChunk {
       this.post(px, ps, .1);
     }
   }
-  solid(x, s, width, depth, flexible = false) {
+  // (always inside rigid, which places it)
+  solid(x, s, width, depth) {
     if (this.distant) return;
-    const nx = !this.layoutAnchor && depth < 1 ? Math.ceil(width / 14) : 1;
-    const nz = !this.layoutAnchor && width < 1 ? Math.ceil(depth / 14) : 1;
-    for (let i = 0; i < nx; i++) for (let j = 0; j < nz; j++) this.features.colliders.push({
-      x: this.east + x + (nx === 1 ? 0 : -width / 2 + (i + .5) * width / nx), z: -this.start - s + (nz === 1 ? 0 : depth / 2 - (j + .5) * depth / nz),
-      heading: 0, halfWidth: width / nx / 2, halfLength: depth / nz / 2, reach: Math.hypot(width / nx, depth / nz) / 2, anchor: this.layoutAnchor, frame: this.layoutPlacement, flexible,
+    this.features.colliders.push({
+      x: this.east + x, z: -this.start - s,
+      heading: 0, halfWidth: width / 2, halfLength: depth / 2, reach: Math.hypot(width, depth) / 2, anchor: this.layoutAnchor, frame: this.layoutPlacement,
     });
   }
   post(x, s, radius) { if (!this.distant) this.features.colliders.push({ x: this.east + x, z: -this.start - s, reach: radius, anchor: this.layoutAnchor, frame: this.layoutPlacement }); }
@@ -510,9 +509,9 @@ export class CityChunk {
       if (index && index % 40 === 0) yield;
       const x = piece.u - this.east, s = piece.s - this.start;
       if (buildMonument(this, piece, x, s)) continue;
-      // Posts, signs, bins and benches can be knocked loose; trees and
-      // shelters only by a car that breaks them (see LooseProps); railings
-      // and the mast signals over the road stand firm
+      // Posts, signs, bins, benches and mast signals can be knocked loose,
+      // trees and shelters only by a car that breaks them (see LooseProps).
+      // Railings stand firm
       if (piece.kind === 'lamp') { const lamp = this.prop('lamp', x, s, piece.yaw); this.post(x, s, .25); this.knockable([lamp], [{ kind: 'lamp', geometry: cityAssets.lamp }]); }
       // Two lamps back to back on one column, an arm over each carriageway
       else if (piece.kind === 'median-lamp') {

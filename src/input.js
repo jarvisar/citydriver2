@@ -69,7 +69,6 @@ export class Input {
       if (document.querySelector('dialog[open]')) return;
       // E gets out of the car and into another (free drive; in the helicopter it climbs)
       if (e.code === 'KeyE' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) onAction('use');
-      if (e.target.matches?.('input[type="range"]') && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.code)) return;
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Numpad8', 'Numpad2', 'Numpad4', 'Numpad6', 'Space'].includes(e.code)) e.preventDefault();
       this.keys.add(e.code);
       if (!e.repeat) {

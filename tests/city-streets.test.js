@@ -13,7 +13,7 @@ import { cityIslands } from '../src/world/city-islands.js';
 import { cityParks } from '../src/world/city-parks.js';
 import { turnPath, wayOn, isLink } from '../src/world/lane-paths.js';
 import { planLot } from '../src/world/city-buildings.js';
-import { shopSignFor } from '../src/world/city-signs.js';
+import { dealSign } from '../src/world/city-signs.js';
 import { cityPlaces } from '../src/city-exploration.js';
 import { CityTraffic } from '../src/city-traffic.js';
 import { DrivingController } from '../src/vehicle.js';
@@ -328,7 +328,7 @@ test('buildings stand inside their lots without touching each other, and every v
     if (plan.kind !== 'building') return;
     // No two shops round a block have the same name over the door
     if (plan.shopfront) {
-      const name = shopSignFor(plan).name, names = shops.get(lot.block) ?? new Set();
+      const name = dealSign(plan, 'shop').name, names = shops.get(lot.block) ?? new Set();
       assert.ok(!names.has(name), `two ${name} shops in block ${lot.block}`);
       shops.set(lot.block, names.add(name));
     }

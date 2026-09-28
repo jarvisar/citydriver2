@@ -117,7 +117,7 @@ function loftBody(spec, profile) {
     const next = rings[i + 1];
     if (next) for (let k = 0; k < 6; k++) {
       const quad = [ring[k], ring[(k + 1) % 6], next[(k + 1) % 6], next[k]];
-      const [cx, cy, cz] = [0, 1, 2].map(j => quad.reduce((sum, p) => sum + p[j], 0) / 4);
+      const [cx, cy] = [0, 1].map(j => quad.reduce((sum, p) => sum + p[j], 0) / 4);
       const mid = (ring[0][1] + ring[2][1] + next[0][1] + next[2][1]) / 4;
       face(k === 5 ? under : shell, quad, new THREE.Vector3(cx, cy - mid, 0));
     }

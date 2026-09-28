@@ -189,7 +189,6 @@ export function buildLandmark(c, lot, place) {
     const paving = intersection(region(union(solids([apron, around.map(p => ({ x: p.x, y: p.s }))]))), solids([lotLocal]));
     // (its ten-centimetre edge at the pavement is closed as every thin slab's is, see addSurfacePolygon)
     for (const piece of paving) c.polygon(piece.outer.map(p => [p.x, p.y]), G + .07, .06, PAVING);
-    if (c.distant) return;
     // Where a tree may stand: on the lawn, clear of the lot's edge, the
     // building and the forecourt
     const edge = [...lotLocal, lotLocal[0]];
@@ -204,7 +203,7 @@ export function buildLandmark(c, lot, place) {
       return insidePolygon(p, lotLocal) && distanceToPolyline(p, edge) > 2.6;
     };
     const trees = [];
-    const plant = (p, scale) => { if (trees.some(q => Math.hypot(q.x - p.x, q.y - p.y) < 6.5)) return; trees.push(p); c.tree(p.x, p.y, scale); };
+    const plant = (p, scale) => { if (trees.some(q => Math.hypot(q.x - p.x, q.y - p.y) < 6.5)) return; trees.push(p); if (!c.distant) c.tree(p.x, p.y, scale); };
     const inward = offsetPolygon(lotLocal, -3.4);
     if (inward.length >= 3) {
       const loop = [...inward, inward[0]];
@@ -227,6 +226,9 @@ export function buildLandmark(c, lot, place) {
       plant(p, 7 + random() * 2.5);
       if (trees.length > before) placed++;
     }
+    // The skyline plants no trees but makes the same draws, so what is drawn
+    // next (a tower's floors) matches the detailed building
+    if (c.distant) return;
     if (civic && setback >= 5) {
       for (const side of [-1, 1]) {
         const bed = at(side * (court / 2 + 2), front - setback / 2);
@@ -270,11 +272,13 @@ export function buildLandmark(c, lot, place) {
     const p = at(0, 0);
     // (its eaves a little proud of the walls all round: the vault's edge dips
     // below its base, and flush it would share the top of each wall's face)
-    c.item('roof-vault', vaultGeometry, material, [p.x, base, -p.s], [width / 2 + .15, rise, depth + .3], roofColour, faceYaw(nx, ny));
-    if (material === c.materials.glass) vaultRibs(c, p.x, p.s, width / 2 + .15, rise, depth + .3, base, faceYaw(nx, ny), G + 1);
+    // (a batch takes its first item's material, so glass and stone vaults batch apart)
+    const glass = material === c.materials.glass ? '-glass' : '';
+    c.item(`roof-vault${glass}`, vaultGeometry, material, [p.x, base, -p.s], [width / 2 + .15, rise, depth + .3], roofColour, faceYaw(nx, ny));
+    if (glass) vaultRibs(c, p.x, p.s, width / 2 + .15, rise, depth + .3, base, faceYaw(nx, ny), G + 1);
     for (const end of [-1, 1]) {
       const q = at(0, end * (depth / 2 - .08));
-      c.item(end < 0 ? 'landmark-gable-front' : 'landmark-gable', gable, end < 0 && material === c.materials.solid ? c.materials.glass : material, [q.x, base, -q.s], [width / 2 - .1, rise - .1, 1], end < 0 ? '#8fb3b4' : endColour, end < 0 ? facing : facing + Math.PI);
+      c.item(end < 0 ? 'landmark-gable-front' : `landmark-gable${glass}`, gable, end < 0 && material === c.materials.solid ? c.materials.glass : material, [q.x, base, -q.s], [width / 2 - .1, rise - .1, 1], end < 0 ? '#8fb3b4' : endColour, end < 0 ? facing : facing + Math.PI);
     }
   };
   // A works' north-light roof: a row of sawtooth bays across the front, each

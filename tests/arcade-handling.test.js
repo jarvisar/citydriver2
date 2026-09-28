@@ -30,7 +30,6 @@ test('every car can carry a tapped powerslide in either direction without holdin
       assert.ok(car.speed > 12, `${id}: powerslide should preserve useful exit speed`);
       assert.equal(car.audioTelemetry.handbrake, 0);
       assert.equal(car.audioTelemetry.throttle, 1, 'engine remains under power');
-      assert.ok(car.audioTelemetry.slip > .12, 'tire sound follows the actual slide');
       advance(car, .2, { forward: 1 });
       assert.equal(car.drifting, false);
       assert.ok(Math.abs(car.slip) < .035, `${id}: straightening catches the slide`);

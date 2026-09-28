@@ -9,7 +9,7 @@
    Chrome's fullscreen, 100dvh came out a toolbar taller than the screen and
    the bottom of the HUD went off it. The scene is sized from this box too. */
 #app { position: fixed; inset: 0; width: auto; height: auto; min-height: 0; }
-.touch-hint, .touch-utility-icon, .controller-hint { display: none; }
+.touch-utility-icon, .controller-hint { display: none; }
 button { touch-action: manipulation; }
 .controller-hint { margin-top: 14px; font-size: 12px; line-height: 1.7; }
 [data-control-help] { position: relative; padding-right: 38px; }
@@ -22,7 +22,7 @@ body[data-driving-help-expired=true] :is(.controls, #stick-help) { display: none
 @media (pointer: fine) {
   body[data-control-help-dismissed=true] .controls { display: none !important; }
 }
-body[data-controller=true] :is(.touch-controls, .touch-hint) { display: none; }
+body[data-controller=true] .touch-controls { display: none; }
 body[data-controller=true] .controller-hint { display: block; }
 
 /* Readable panels and comfortable controls on every screen. */
@@ -55,7 +55,6 @@ body[data-controller=true] .controller-hint { display: block; }
   .icon-button, .chooser-heading .icon-button { width: 44px; height: 44px; flex-shrink: 0; }
   .start-button { min-height: 44px; }
   .controls > span, .controls kbd { display: none; }
-  .touch-hint { display: block; margin-top: 14px; font-size: 12px; line-height: 1.6; }
   .controls { gap: 4px; padding: 3px; }
   .controls button { min-width: 64px; min-height: 44px; padding: 0 9px; justify-content: center; gap: 6px; }
   .controls .control-label { font-size: 12px; margin: 0; text-transform: capitalize; }
@@ -125,7 +124,6 @@ body[data-controller=true] .controller-hint { display: block; }
   .welcome h1 { font-size: 32px; margin: 10px 0; }
   .welcome p { font-size: 12px; margin-bottom: 12px; }
   .welcome .start-button { min-height: 44px; }
-  .touch-hint { font-size: 11px; margin-top: 10px; }
   .bottom-bar { bottom: calc(132px + var(--safe-bottom)); left: calc(16px + var(--safe-left)); right: calc(16px + var(--safe-right)); }
   .controls { position: fixed; top: auto; bottom: calc(18px + var(--safe-bottom)); left: 50%; transform: translateX(-50%); margin: 0; }
   .touch-controls { bottom: calc(14px + var(--safe-bottom)); left: calc(16px + var(--safe-left)); right: calc(16px + var(--safe-right)); }

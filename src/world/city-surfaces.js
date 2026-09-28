@@ -14,7 +14,6 @@ compactGeometry(surfaceGeometry);
 export const surfaceTopGeometry = new THREE.BufferGeometry();
 surfaceTopGeometry.setAttribute('position', new THREE.Float32BufferAttribute([0, .5, 0, 1, .5, 0, 0, .5, -1], 3));
 surfaceTopGeometry.computeVertexNormals();
-export const SURFACE_STEP = 14;
 const EPS = 1e-8;
 // How far down a thin slab's edge faces reach: just under the pavement, the
 // lowest ground a lot's surfaces meet
@@ -23,42 +22,6 @@ export const signedArea = points => points.reduce((sum, a, i) => {
   const b = points[(i + 1) % points.length]; return sum + a[0] * b[1] - a[1] * b[0];
 }, 0) / 2;
 
-export function clipPolygon(points, axis, edge, greater) {
-  const result = [];
-  for (let i = 0; i < points.length; i++) {
-    const a = points[i], b = points[(i + 1) % points.length];
-    const insideA = greater ? a[axis] >= edge : a[axis] <= edge;
-    const insideB = greater ? b[axis] >= edge : b[axis] <= edge;
-    if (insideA) result.push(a);
-    if (insideA !== insideB) {
-      const t = (edge - a[axis]) / (b[axis] - a[axis]);
-      const p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; p[axis] = edge; result.push(p);
-    }
-  }
-  return result.filter((p, i) => Math.hypot(p[0] - result[(i + 1) % result.length][0], p[1] - result[(i + 1) % result.length][1]) > EPS);
-}
-export function clipBounds(points, bounds) {
-  let p = points;
-  for (const [axis, edge, greater] of [[0, bounds[0], true], [1, bounds[1], true], [0, bounds[2], false], [1, bounds[3], false]]) p = clipPolygon(p, axis, edge, greater);
-  return p;
-}
-function cuts(low, high) {
-  const values = [low];
-  for (let v = (Math.floor(low / SURFACE_STEP) + 1) * SURFACE_STEP; v < high - EPS; v += SURFACE_STEP) values.push(v);
-  values.push(high); return values;
-}
-// Convex polygons are sufficient for rectangles and each joined ribbon panel.
-// The same global lattice is used on opposite sides of every chunk seam.
-export function surfacePolygons(points) {
-  const xs = cuts(Math.min(...points.map(p => p[0])), Math.max(...points.map(p => p[0])));
-  const ss = cuts(Math.min(...points.map(p => p[1])), Math.max(...points.map(p => p[1])));
-  const pieces = [];
-  for (let i = 1; i < xs.length; i++) for (let j = 1; j < ss.length; j++) {
-    const polygon = clipBounds(points, [xs[i - 1], ss[j - 1], xs[i], ss[j]]);
-    if (polygon.length >= 3 && Math.abs(signedArea(polygon)) > EPS) pieces.push(signedArea(polygon) < 0 ? polygon.reverse() : polygon);
-  }
-  return pieces;
-}
 // A polygon's triangles, anticlockwise: a fan across a convex polygon, and
 // ear clipping for any other, whose fan would reach outside it (an L-shaped
 // lot's lawn laid across the street beside it). An outline that doubles
@@ -75,12 +38,13 @@ function triangles(ring) {
 }
 export function addSurfacePolygon(c, points, y, height, color, kind = 'solid') {
   const flat = height <= .08;
-  const key = kind === 'road' ? kind : `surface-${kind}${flat ? '' : '-volume'}`;
+  const key = `surface-${kind}${flat ? '' : '-volume'}`;
   if (!c.batches.has(key)) c.batches.set(key, { geometry: flat ? surfaceTopGeometry : surfaceGeometry, material: c.materials[kind], items: [] });
   const items = c.batches.get(key).items;
-  // Clip paving after mapping the curved streets: separate tessellations can
-  // overlap slightly even when their logical footprints meet exactly. This is
-  // construction-only work; the resulting pieces use the usual instance batch.
+  // Clip paving against what is already laid at its level: separate
+  // tessellations can overlap slightly even when their logical footprints
+  // meet exactly. This is construction-only work; the resulting pieces use
+  // the usual instance batch.
   c.surfaceLayers ??= new Map();
   const level = (y + height / 2).toFixed(5);
   if (!c.surfaceLayers.has(level)) c.surfaceLayers.set(level, []);
@@ -92,39 +56,29 @@ export function addSurfacePolygon(c, points, y, height, color, kind = 'solid') {
     if (!c.surfacePoints.has(key)) c.surfacePoints.set(key, { s: c.start + s, u: c.east + x });
     return c.surfacePoints.get(key);
   };
-  const x0 = Math.min(...points.map(p => p[0])), x1 = Math.max(...points.map(p => p[0]));
-  const s0 = Math.min(...points.map(p => p[1])), s1 = Math.max(...points.map(p => p[1]));
-  const a = mapped([x0, s0]), b = mapped([x1, s0]), d = mapped([x0, s1]);
-  let affine = true;
-  for (const tx of [0, .5, 1]) for (const ts of [0, .5, 1]) {
-    const p = mapped([x0 + tx * (x1 - x0), s0 + ts * (s1 - s0)]);
-    if (Math.hypot(p.u - a.u - (b.u - a.u) * tx - (d.u - a.u) * ts, p.s - a.s - (b.s - a.s) * tx - (d.s - a.s) * ts) > 1e-8) affine = false;
-  }
-  const pieces = affine ? [signedArea(points) < 0 ? [...points].reverse() : points] : surfacePolygons(points);
-  for (const polygon of pieces) {
-    const world = polygon.map(mapped);
-    for (const [i0, i1, i2] of triangles(world)) {
-      const triangle = [world[i0], world[i1], world[i2]].map(p => [p.u - c.east, p.s - c.start]);
-      if (Math.abs(signedArea(triangle)) < EPS) continue;
-      const bounds = [Math.min(...triangle.map(p => p[0])), Math.min(...triangle.map(p => p[1])),
-        Math.max(...triangle.map(p => p[0])), Math.max(...triangle.map(p => p[1]))];
-      let visible = [triangle];
-      for (let k = 0; k < previousCount; k++) {
-        const previous = layer[k];
-        const b = previous.bounds;
-        if (bounds[0] >= b[2] - EPS || bounds[2] <= b[0] + EPS || bounds[1] >= b[3] - EPS || bounds[3] <= b[1] + EPS) continue;
-        visible = visible.flatMap(p => subtractPolygon(p, previous.points));
-        if (!visible.length) break;
-      }
-      layer.push({ points: triangle, bounds });
-      for (const piece of visible) for (let j = 1; j < piece.length - 1; j++) {
-        const [a, b, d] = [piece[0], piece[j], piece[j + 1]].map(([u, s]) => ({ u: u + c.east, s: s + c.start }));
-        const area = Math.abs((b.u - a.u) * (d.s - a.s) - (b.s - a.s) * (d.u - a.u));
-        // Microscopic clipping slivers add long, nearly coincident prism sides.
-        if (area < 1e-4) continue;
-        items.push({ p: [0, y, 0], scale: [1, height, 1], color, yaw: 0, roll: 0,
-          anchor: { u: c.east, s: c.start }, frame: { u: a.u, s: a.s, eu: b.u - a.u, es: b.s - a.s, nu: d.u - a.u, ns: d.s - a.s } });
-      }
+  const polygon = signedArea(points) < 0 ? [...points].reverse() : points;
+  const world = polygon.map(mapped);
+  for (const [i0, i1, i2] of triangles(world)) {
+    const triangle = [world[i0], world[i1], world[i2]].map(p => [p.u - c.east, p.s - c.start]);
+    if (Math.abs(signedArea(triangle)) < EPS) continue;
+    const bounds = [Math.min(...triangle.map(p => p[0])), Math.min(...triangle.map(p => p[1])),
+      Math.max(...triangle.map(p => p[0])), Math.max(...triangle.map(p => p[1]))];
+    let visible = [triangle];
+    for (let k = 0; k < previousCount; k++) {
+      const previous = layer[k];
+      const b = previous.bounds;
+      if (bounds[0] >= b[2] - EPS || bounds[2] <= b[0] + EPS || bounds[1] >= b[3] - EPS || bounds[3] <= b[1] + EPS) continue;
+      visible = visible.flatMap(p => subtractPolygon(p, previous.points));
+      if (!visible.length) break;
+    }
+    layer.push({ points: triangle, bounds });
+    for (const piece of visible) for (let j = 1; j < piece.length - 1; j++) {
+      const [a, b, d] = [piece[0], piece[j], piece[j + 1]].map(([u, s]) => ({ u: u + c.east, s: s + c.start }));
+      const area = Math.abs((b.u - a.u) * (d.s - a.s) - (b.s - a.s) * (d.u - a.u));
+      // Microscopic clipping slivers add long, nearly coincident prism sides.
+      if (area < 1e-4) continue;
+      items.push({ p: [0, y, 0], scale: [1, height, 1], color, yaw: 0, roll: 0,
+        anchor: { u: c.east, s: c.start }, frame: { u: a.u, s: a.s, eu: b.u - a.u, es: b.s - a.s, nu: d.u - a.u, ns: d.s - a.s } });
     }
   }
   // A thin slab is only its top, and it stands a few centimetres proud of

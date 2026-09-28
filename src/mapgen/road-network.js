@@ -254,8 +254,8 @@ class SegmentGrid {
 // block between them: two carriageways kerb to kerb, or a strip of pavement
 // where the houses should be. Wherever the lesser of two roads runs within
 // their combined half widths of the other, nearly parallel to it, for more
-// than a few metres, or within `crowd` metres of its kerb for more than
-// `crowdRun`, that stretch of it is cut out. The ends left are marked, so
+// than a few metres, or within `crowd.gap` metres of its kerb for more than
+// `crowd.run`, that stretch of it is cut out. The ends left are marked, so
 // the stretch is not carried straight back alongside the other road.
 const CROWD = { gap: 14, angle: .3, run: 30 };
 function unhug(roads, { fixed, halfWidthOf, step = 2, minRun = 8, maxAngle = .45, crowd = CROWD } = {}) {

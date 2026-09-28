@@ -110,7 +110,7 @@ function sweep(a, da, b, db, bend, step) {
 }
 
 export function parkLayout(park, { halfWidthAt, sidewalk = 4.2, junctionNear, streetAt, random, pathHalfWidth = 3.6 }) {
-  const empty = { paths: [], plaza: null, pond: null, lawn: [], loop: null };
+  const empty = { paths: [], plaza: null, pond: null, lawn: [], loop: null, gates: [] };
   let polygon = dedupePolygon(park);
   if (polygon.length < 3) return empty;
   if (signedArea(polygon) < 0) polygon = polygon.slice().reverse();

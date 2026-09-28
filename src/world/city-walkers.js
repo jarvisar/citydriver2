@@ -641,8 +641,8 @@ function gearSlot(gear) {
 
 // Every slot's variants share their topology; the base geometry is the first
 // variant of each. The targets hold each variant's difference from it, zero
-// outside its own slot, so the stock morph path (shadow and AO passes, with
-// one weight per slot) builds exactly the combination the colour pass does.
+// outside its own slot, so the stock morph path (the AO prepass, with one
+// weight per slot) builds exactly the combination the colour pass does.
 function walkerGeometry() {
   const slots = [outfitSlot, hairSlot, faceSlot, gearSlot].map((build, s) => SLOTS[s].map((_, v) => build(v)));
   for (const [s, variants] of slots.entries()) for (const [v, piece] of variants.entries()) {
@@ -1056,7 +1056,7 @@ const packed = (appearance, names) => names.reduce((sum, name) => sum + ((appear
 export function setWalkerAppearance(mesh, index, appearance) {
   const full = { outfit: 0, face: 0, gear: 0, legs: appearance.look % 3, accent: 0, ...appearance };
   // Two whole numbers in the per-instance colour; the one-hot weights (one a
-  // slot) for the renderer's own shadow and AO passes. Both are uploaded
+  // slot) for the renderer's own AO prepass. Both are uploaded
   // only when a resident is made.
   mesh.setColorAt(index, new THREE.Color().setRGB(
     packed(full, ['outfit', 'style', 'face', 'gear', 'look']), packed(full, ['skin', 'hair', 'legs', 'accent']), 0));

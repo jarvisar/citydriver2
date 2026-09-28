@@ -212,7 +212,7 @@ export class OnFoot {
     for (const wheel of model.wheels) if (wheel.front) wheel.pivot.rotation.y = 0;
     for (const light of model.nightLights) light.material.emissiveIntensity = light.day;
     const car = this.parked = {
-      kept, car: model.car, spec, s: pose.s, u: pose.u, heading: pose.heading, speed: 0, handbrake: true, generation: 0, index: -1,
+      kept, car: model.car, spec, profile: spec.profile, s: pose.s, u: pose.u, heading: pose.heading, speed: 0, handbrake: true, generation: 0, index: -1, dazed: 0, moved: false,
       loose: { vx: 0, vz: 0, spin: 0 }, rock: null,
       position: new THREE.Vector3(), previousPosition: new THREE.Vector3(), quaternion: new THREE.Quaternion(), previousQuaternion: new THREE.Quaternion(),
     };

@@ -31,8 +31,8 @@ const RUN = 100, EDGE = 12;
 // except that Skia picks its anti-aliasing from the whole path: a few edge
 // pixels come out a level or two different (about .03% at 2x). That cut a
 // draw's raster from ~2.1 ms to ~1.3 ms.
-// The whole-city paths (`water`, `parks`, `blocks`, `lots`, `roads`), which
-// the city map draws, are built the first time they are asked for.
+// The whole-city paths the city map draws (`water`, `parks`, `lots`, `roads`),
+// and `blocks`, are built the first time they are asked for.
 export class CityMapCache {
   constructor(city = CITY, makePath = () => new Path2D()) {
     this.city = city; this.makePath = makePath;

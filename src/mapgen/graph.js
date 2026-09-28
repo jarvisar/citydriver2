@@ -130,7 +130,7 @@ export default class Graph {
     this.restoreAdjacency();
   }
   static edgeKey(a, b) { return a.id < b.id ? `${a.id}:${b.id}` : `${b.id}:${a.id}`; }
-  // Polygon finding consumes adjacency; call this to walk the graph again
+  // Each node's neighbours as a list, for PolygonFinder
   restoreAdjacency() { for (const n of this.nodes) n.adj = Array.from(n.neighbors); }
   // Remove dead ends so polygon finding is not confused by them
   deleteDanglingNodes(n, index) {

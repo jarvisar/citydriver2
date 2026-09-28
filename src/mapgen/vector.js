@@ -3,17 +3,12 @@
 export default class Vector {
   constructor(x, y) { this.x = x; this.y = y; }
   static zeroVector() { return new Vector(0, 0); }
-  static fromScalar(s) { return new Vector(s, s); }
   // -pi to pi
   static angleBetween(v1, v2) {
     let angle = v1.angle() - v2.angle();
     if (angle > Math.PI) angle -= 2 * Math.PI;
     else if (angle <= -Math.PI) angle += 2 * Math.PI;
     return angle;
-  }
-  static isLeft(linePoint, lineDirection, point) {
-    const perpendicular = new Vector(lineDirection.y, -lineDirection.x);
-    return point.clone().sub(linePoint).dot(perpendicular) < 0;
   }
   add(v) { this.x += v.x; this.y += v.y; return this; }
   angle() { return Math.atan2(this.y, this.x); }
@@ -32,12 +27,6 @@ export default class Vector {
   multiplyScalar(s) { this.x *= s; this.y *= s; return this; }
   negate() { return this.multiplyScalar(-1); }
   normalize() { const l = this.length(); return l === 0 ? this : this.divideScalar(l); }
-  rotateAround(center, angle) {
-    const cos = Math.cos(angle), sin = Math.sin(angle);
-    const x = this.x - center.x, y = this.y - center.y;
-    this.x = x * cos - y * sin + center.x; this.y = x * sin + y * cos + center.y;
-    return this;
-  }
   set(v) { this.x = v.x; this.y = v.y; return this; }
   setX(x) { this.x = x; return this; }
   setY(y) { this.y = y; return this; }

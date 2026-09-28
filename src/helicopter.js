@@ -336,7 +336,7 @@ export class Helicopter {
     v.shift(this.vx * dt, this.vz * dt);
     let floor = this.floor(v.s, v.u, v.heading, limit);
     if (this.blocked) {
-      const toS = v.s, toU = v.u;
+      const toU = v.u;
       v.u = fromU; floor = this.floor(v.s, v.u, v.heading, limit);
       if (this.blocked) { v.s = fromS; v.u = toU; floor = this.floor(v.s, v.u, v.heading, limit); }
       if (this.blocked) { v.u = fromU; floor = this.floor(v.s, v.u, v.heading, limit); }
@@ -379,7 +379,7 @@ export class Helicopter {
     v.car.userData.chaseDip = clamp((this.y - this.ground - 6) / 40, 0, 1);
     v.trauma = Math.max(0, v.trauma - dt * 1.4); v.car.userData.trauma = v.trauma;
     telemetry.speed = speed; telemetry.throttle = Math.max(forward, back, climb, descend * .4, Math.abs(steering) * .3);
-    telemetry.brake = 0; telemetry.offRoad = 0; telemetry.steer = steering; telemetry.handbrake = 0; telemetry.boost = 0; telemetry.slip = 0;
+    telemetry.brake = 0; telemetry.offRoad = 0; telemetry.handbrake = 0; telemetry.boost = 0;
     telemetry.rotor = this.power;
     telemetry.scrape *= Math.exp(-dt * 14);
     if (dt === 0) telemetry.impact = 0;

@@ -8,9 +8,8 @@ export class BasisField {
   constructor(centre, size, decay) { this._centre = centre.clone(); this._size = size; this._decay = decay; }
   get centre() { return this._centre.clone(); }
   // Interpolates between (0 and 1)^decay
-  getTensorWeight(point, smooth) {
+  getTensorWeight(point) {
     const normDistanceToCentre = point.clone().sub(this._centre).length() / this._size;
-    if (smooth) return normDistanceToCentre ** -this._decay;
     // Stop (** 0) turning weight into 1, filling the domain even when outside 'size'
     if (this._decay === 0 && normDistanceToCentre >= 1) return 0;
     return Math.max(0, 1 - normDistanceToCentre) ** this._decay;

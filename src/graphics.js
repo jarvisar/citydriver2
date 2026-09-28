@@ -184,11 +184,6 @@ function displayPixels() {
   return screen.width * screen.height * ratio * ratio;
 }
 
-// A first guess from what the browser will tell us. Deliberately cautious: the
-// controller below raises the level within a few seconds when the device turns
-// out to be quick, which looks better than starting too high and stuttering
-// through the first corner. Desktops are tiered too, so a thin laptop with an
-// integrated chip does not start where a tower with a discrete card does.
 // Phones, tablets and headsets. A coarse primary pointer also catches tablets
 // that report themselves as desktops. A touchscreen laptop keeps a fine primary
 // pointer and is tiered with the other laptops.
@@ -197,6 +192,11 @@ export function mobileDevice(hints = {}) {
   const coarsePointer = hints.coarsePointer ?? Boolean(globalThis.matchMedia?.('(pointer: coarse)').matches);
   return hints.mobile ?? (headsetBrowser(nav) || nav.userAgentData?.mobile === true || coarsePointer);
 }
+// A first guess from what the browser will tell us. Deliberately cautious: the
+// controller below raises the level within a few seconds when the device turns
+// out to be quick, which looks better than starting too high and stuttering
+// through the first corner. Desktops are tiered too, so a thin laptop with an
+// integrated chip does not start where a tower with a discrete card does.
 export function detectLevel(hints = {}) {
   const nav = hints.navigator ?? globalThis.navigator ?? {};
   const mobile = mobileDevice(hints);
@@ -370,8 +370,9 @@ export class Graphics {
     // Without viewport scaling each level is one rung at full scale
     if (!this.scalable) rungs = rungs.filter(([level], i) => rungs.findIndex(([other]) => other === level) === i).map(([level]) => [level, 1]);
     const below = rungs.findIndex(([level]) => level >= this.page.level);
-    this.ladder = rungs; this.ceilingRung = 0;
-    this.setRung(Math.max(this.dedicated ? 0 : 1, below === -1 ? rungs.length - 1 : below));
+    this.ladder = rungs; this.ceilingRung = 0; this.cascade = null;
+    // (a pinned level without viewport scaling is a ladder of one rung)
+    this.setRung(Math.min(rungs.length - 1, Math.max(this.dedicated ? 0 : 1, below === -1 ? rungs.length - 1 : below)));
   }
   setRung(rung) {
     [this.level, this.xrScale] = this.ladder[rung];

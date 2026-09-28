@@ -115,7 +115,7 @@ export class Walker {
     if (!this.down) {
       v.shift(this.vx * dt, this.vz * dt);
       if (this.wet(v.s, v.u) && !this.wet(fromS, fromU)) {
-        const toS = v.s, toU = v.u;
+        const toU = v.u;
         v.u = fromU;
         if (this.wet(v.s, v.u)) { v.s = fromS; v.u = toU; }
         if (this.wet(v.s, v.u)) { v.s = fromS; v.u = fromU; }
@@ -150,8 +150,8 @@ export class Walker {
     const data = v.car.userData;
     data.speed = speed; data.speedRush = 0; data.velocity.x = this.down ? 0 : this.vx; data.velocity.z = this.down ? 0 : this.vz;
     v.trauma = Math.max(0, v.trauma - dt * 1.4); data.trauma = v.trauma;
-    telemetry.speed = speed; telemetry.throttle = 0; telemetry.brake = 0; telemetry.offRoad = 0; telemetry.steer = 0;
-    telemetry.handbrake = 0; telemetry.boost = 0; telemetry.slip = 0; telemetry.scrape *= Math.exp(-dt * 14);
+    telemetry.speed = speed; telemetry.throttle = 0; telemetry.brake = 0; telemetry.offRoad = 0;
+    telemetry.handbrake = 0; telemetry.boost = 0; telemetry.scrape *= Math.exp(-dt * 14);
     if (dt === 0) telemetry.impact = 0;
     this.pose(dt === 0);
   }
@@ -260,8 +260,6 @@ export class Walker {
     const p = v.route.position(v.s, v.u, this.y);
     v.groundedPosition.set(p.x, p.y, p.z); v.currentPose.position.copy(v.groundedPosition);
   }
-  // Only the helicopter clears what it meets (see collideScenery)
-  passes() { return false; }
 }
 
 // What the controls ask of someone on foot, from the input's state (see

@@ -88,8 +88,7 @@ body[data-flying=true] #taxi-buttons span { font-size: 13px; }
 
 body:not([data-mode=free]) :is(.city-hud, .notebook-panel, .controls) { display: none; }
 body:not([data-mode=free]) .topbar { justify-content: flex-end; }
-body:not([data-mode=free]) :is(#city-stamps, .city-guide-stop) { display: none; }
-body[data-mode=taxi] #welcome .start-button:first-child { background: #ffd238; color: #172229; }
+body:not([data-mode=free]) #city-stamps { display: none; }
 /* A controller has its own buttons for these, but is still told it can get in or out */
 body[data-controller=true] #taxi-buttons > :not(#use-car) { display: none; }
 #use-car .pad-hint, body[data-controller=true] #use-car .key-hint { display: none; }

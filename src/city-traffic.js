@@ -186,7 +186,7 @@ export class CityTraffic {
     return car;
   }
   reset(route, s, journey = 'city', u = 0) {
-    this.route = route; this.journey = journey; this.time = 0; this.lastS = s; this.lastU = u;
+    this.route = route; this.time = 0; this.lastS = s; this.lastU = u;
     this.travelS = 0; this.travelU = 0; this.lookAhead = 0;
     this.junctions.reset();
     for (const car of this.woken) this.release(car);

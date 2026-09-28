@@ -1,17 +1,8 @@
 import { demolitionRank, money } from './demolition-run.js';
 import { FloatingLabels } from './floating-labels.js';
+import { $, text, hide, data, attribute, width, compactCash, clock } from './hud-dom.js';
 
-const $ = id => document.getElementById(id);
-const compactCash = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 1 });
 const compact = value => value >= 1000 ? compactCash.format(value) : money(value);
-// As TaxiView's: the HUD refreshes ten times a second, so nothing is written
-// that is already there
-const text = (id, value) => { const element = $(id), next = String(value); if (element.textContent !== next) element.textContent = next; };
-const hide = (element, hidden) => { if (element.hidden !== hidden) element.hidden = hidden; };
-const data = (id, key, value) => { const element = $(id), next = String(value); if (element.dataset[key] !== next) element.dataset[key] = next; };
-const attribute = (element, name, value) => { const next = String(value); if (element.getAttribute(name) !== next) element.setAttribute(name, next); };
-const width = (id, value) => { const style = $(id).style; if (style.width !== value) style.width = value; };
-const clock = seconds => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 const day = date => { const parsed = new Date(`${date}T12:00:00`); return Number.isNaN(parsed.getTime()) ? '' : parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
 
 // What each blow's number looks like as it floats up off the wreckage: the

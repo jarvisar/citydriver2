@@ -31,7 +31,6 @@ import { navGraph } from './world/nav-graph.js';
 import { CityGuide } from './city-guide.js';
 import { WorldMap, DISTRICT_COLORS } from './city-world-map.js';
 import { TaxiRun } from './taxi-run.js';
-import { taxiLicense } from './taxi-license.js';
 import { goalProgress } from './taxi-goals.js';
 import { TaxiView } from './taxi-view.js';
 import { DemolitionRun, DEMOLITION_CAR, DEMOLITION_PAINT } from './demolition-run.js';
@@ -162,7 +161,6 @@ async function boot() {
     vehicle.toggleFreeDriving();
     vehicle.setAppearance(journey);
     vehicle.setLights(weather.state.lightLevel);
-    rendering.setJourney(journey);
     const carDialog = $('#car-dialog'), pauseOverlay = $('#pause-overlay');
     const fleetDialog = $('#taxi-fleet-dialog'), worldMapDialog = $('#world-map-dialog');
     const choosers = [carDialog, fleetDialog, worldMapDialog];
@@ -369,33 +367,41 @@ async function boot() {
     }
     function beginTaxi() {
       if (changingJourney) return;
-      if (freeTraffic === undefined || gameMode === 'free') freeTraffic = traffic.enabled;
-      demolition.stop(); started = true; gameMode = 'taxi'; autodrive.reset(); vehicle.arcade = true;
-      onFoot.clear(); vehicle.setCar(taxi.fleet.selected, { paint: taxi.fleet.liveryColor }); recoverCar(); traffic.setEnabled(true, vehicle);
-      $('#traffic').setAttribute('aria-pressed', 'true'); $('#autodrive').setAttribute('aria-pressed', 'false');
-      taxi.start(vehicle); taxiView.reset(); renderGoals(); $('#taxi-results').hidden = true; $('#demolition-results').hidden = true; $('#welcome').classList.add('hidden');
-      rendering.setView(4); updateViewUi(); setPaused(false); modeUi(); updateHud();
-      taxiView.render(taxi, vehicle, world.origin, time); rendering.update(vehicle.car, 1, world.origin);
+      demolition.stop(); enterRun('taxi', taxi.fleet.selected, taxi.fleet.liveryColor);
+      taxi.start(vehicle); taxiView.reset(); renderGoals();
+      showRun();
     }
     // Demolition: the truck, a minute on the clock, and a city to wreck. The
     // furniture and parked cars a previous go knocked about are put back.
     function beginDemolition() {
       if (changingJourney) return;
+      taxi.stop(); props.reset(); enterRun('demolition', DEMOLITION_CAR, DEMOLITION_PAINT);
+      demolition.start(); demolitionView.reset();
+      showRun();
+      toast('Wreck everything · Mind the pedestrians');
+    }
+    // What either run does first: the player at the wheel of its car, in traffic
+    function enterRun(mode, id, carPaint) {
       if (freeTraffic === undefined || gameMode === 'free') freeTraffic = traffic.enabled;
-      taxi.stop(); started = true; gameMode = 'demolition'; autodrive.reset(); vehicle.arcade = true;
-      props.reset(); onFoot.clear(); vehicle.setCar(DEMOLITION_CAR, { paint: DEMOLITION_PAINT }); recoverCar(); traffic.setEnabled(true, vehicle);
+      started = true; gameMode = mode; vehicle.arcade = true;
+      // (autodrive is free drive's alone)
+      if (autodrive.enabled) { autodrive.toggle(); revealTouchControls(); }
+      autodrive.reset();
+      onFoot.clear(); vehicle.setCar(id, { paint: carPaint }); recoverCar(); traffic.setEnabled(true, vehicle);
+    }
+    // and last, once the run itself has started
+    function showRun() {
       $('#traffic').setAttribute('aria-pressed', 'true'); $('#autodrive').setAttribute('aria-pressed', 'false');
-      demolition.start(); demolitionView.reset(); $('#taxi-results').hidden = true; $('#demolition-results').hidden = true; $('#welcome').classList.add('hidden');
+      $('#taxi-results').hidden = true; $('#demolition-results').hidden = true; $('#welcome').classList.add('hidden');
       rendering.setView(4); updateViewUi(); setPaused(false); modeUi(); updateHud();
       taxiView.render(taxi, vehicle, world.origin, time); rendering.update(vehicle.car, 1, world.origin);
-      toast('Wreck everything · Mind the pedestrians');
     }
     function beginFree({ preserveInput = false } = {}) {
       if (changingJourney) return;
       const wasRun = taxi.status !== 'idle' || demolition.status !== 'idle'; taxi.stop(); demolition.stop(); started = true; gameMode = 'free';
-      autodrive.reset(); vehicle.arcade = false; onFoot.clear(); vehicle.setCar(carId, { paint }); vehicle.speed = 0; vehicle.pilot?.stop(); vehicle.update(0, {});
+      autodrive.reset(); vehicle.arcade = false; onFoot.clear(); vehicle.setCar(carId, { paint }); haltCar();
       if (wasRun && freeTraffic !== undefined) traffic.setEnabled(freeTraffic, vehicle);
-      $('#traffic').setAttribute('aria-pressed', String(traffic.enabled)); $('#autodrive').setAttribute('aria-pressed', 'false');
+      $('#traffic').setAttribute('aria-pressed', String(traffic.enabled)); $('#autodrive').setAttribute('aria-pressed', String(autodrive.enabled));
       $('#taxi-results').hidden = true; $('#demolition-results').hidden = true; $('#welcome').classList.add('hidden');
       rendering.setView(4); updateViewUi();
       taxiView.render(taxi, vehicle, world.origin, time); setPaused(false, { preserveInput }); modeUi(); updateHud();
@@ -623,7 +629,8 @@ async function boot() {
         // D-pad Up also begins the hidden code, so this shortcut must keep its progress.
         if (enabled) input.clear({ preserveKonami: true });
         $('#autodrive').setAttribute('aria-pressed', String(enabled));
-        if (enabled) start();
+        // (from the title the cruising car drives on into free drive, where autodrive belongs)
+        if (enabled && !started) beginFree({ preserveInput: true });
         toast(`Autodrive ${enabled ? 'on' : 'off'}`);
         return;
       }
@@ -702,7 +709,8 @@ async function boot() {
       },
       onVisibility(visible) {
         input.clear(); frameClock.suspend(); audio.setHidden(!visible);
-        if (!visible) { if (changingJourney) journeyWasPaused = true; setPaused(true); }
+        // (the title holds the car still, and has no pause screen to leave behind on exit)
+        if (!visible) { if (changingJourney) journeyWasPaused = true; if (started) setPaused(true); }
         needsRender = true;
       },
       onError(error) {
@@ -1129,19 +1137,20 @@ async function boot() {
             renderGoals(); setTimeout(() => { if (taxi.running && !paused) { toast(event.text, 'goal'); audio.cue('goal'); } }, 1500);
           } else { toast(event.text, event.rating ?? event.tone ?? ''); audio.cue(event.kind, event); taxiView.pop(event, vehicle); }
         }
-        // The shift's last ten seconds tick away
-        const left = Math.ceil(taxi.timeLeft);
-        if (left < shiftTick && left <= 10 && left > 0) audio.cue('tick', { urgent: left <= 5 });
-        shiftTick = left;
+        tickClock(taxi.timeLeft);
       }
       if (started && demolition.running) {
         demolition.update(dt);
         for (const event of demolition.drainEvents()) demolitionEvent(event);
-        const left = Math.ceil(demolition.timeLeft);
-        if (left < shiftTick && left <= 10 && left > 0) audio.cue('tick', { urgent: left <= 5 });
-        shiftTick = left;
+        tickClock(demolition.timeLeft);
       }
     };
+    // A run's last ten seconds tick away
+    function tickClock(timeLeft) {
+      const left = Math.ceil(timeLeft);
+      if (left < shiftTick && left <= 10 && left > 0) audio.cue('tick', { urgent: left <= 5 });
+      shiftTick = left;
+    }
     // What a demolition run has to say: prices float up off the wreckage, and
     // the chain's news, a takedown's time and a fine take the panel's last line
     function demolitionEvent(event) {

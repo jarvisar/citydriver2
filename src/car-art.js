@@ -38,7 +38,7 @@ export function carArt(id) {
 // house and its panes between the pillars, the body over them with dark wheel
 // wells, the roof, bumpers and lamps at the ends, then the wheels.
 function builtCarParts(entry) {
-  const shape = entry.shape, { length: l, cabin: [, ch, cl], cabinZ: cz, drop = 0 } = shape;
+  const shape = entry.shape, { length: l, cabin: [, ch], drop = 0 } = shape;
   const profile = bodyProfile(shape), { body, top, bottom, front, rear, glassRear, roof: [roofFront, roofRear], posts, lamps } = profile;
   const [rf, rr] = body.rake, roofY = 1.22 + ch, radius = WHEEL.radius;
   const draw = pen({ drop }), { slab, shape2d, disc, shadow } = draw;
@@ -67,7 +67,7 @@ function builtCarParts(entry) {
     parts.push(end < 0 ? slab(-l / 2 - .05, -l / 2 + reach, low, low + .18, bumper, 1) : slab(l / 2 - reach, l / 2 + .05, low, low + .18, bumper, 1));
   }
   parts.push(...[-profile.wheelZ, profile.wheelZ].map(z => disc(z, radius + drop, radius, TIRE) + disc(z, radius + drop, radius * .46, HUB)));
-  parts.push(...accessories(entry, { ...draw, l, cz, cabinLength: cl, roofY, radius, profile }));
+  parts.push(...accessories(entry, { ...draw, l, roofY, profile }));
   return parts;
 }
 

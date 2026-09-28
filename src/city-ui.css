@@ -63,18 +63,11 @@
 :is(.city-guide-header > span, .city-guide-actions button) { white-space: nowrap; }
 #city-map { display: block; width: 100%; height: auto; border-radius: 7px; border: 1px solid #b6c7b918; cursor: pointer; }
 #city-map[hidden] { display: none; }
-.city-guide-stop { display: grid; gap: 5px; padding: 13px 1px 11px; }
-body[data-mode=free] .city-guide-stop { display: none; }
-.city-guide-eyebrow { color: #b7c9bd; font-size: 8px; letter-spacing: 1.25px; }
-#city-stop-name { font-family: Georgia, serif; font-size: 21px; font-weight: 400; letter-spacing: -.3px; }
-#city-stop-distance { font-size: 10px; color: #c4d2c8; }
-#city-stop-context { font-size: 10px; line-height: 1.5; color: #becfc4; }
 #app:has(#welcome:not(.hidden), #pause-overlay:not([hidden]), dialog[open]) .city-guide { visibility: hidden; pointer-events: none; }
 #city-notebook-progress { font-size: 12px; line-height: 1.6; margin: 0 0 12px; }
 .notebook-panel { padding: 14px; border: 1px solid var(--ui-line); border-radius: 12px; background: color-mix(in srgb, var(--cream) 90%, transparent); }
 #city-notebook { max-height: 360px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: 2px 8px 2px 2px; }
 .notebook-place:hover { background: color-mix(in srgb, var(--place-color) 18%, transparent); }
-.notebook-place:focus-visible { outline-offset: -2px; }
 .notebook-place { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 0; text-align: left; border: 0; border-bottom: 1px solid var(--ui-line); background: transparent; }
 .notebook-place > span:nth-child(2) { flex: 1; }
 .notebook-place strong { display: block; font-size: 12px; font-weight: 600; }
@@ -88,17 +81,10 @@ body[data-mode=free] .city-guide-stop { display: none; }
   .city-guide-header > span { font-size: 7px; letter-spacing: .7px; }
   .city-guide-header b { margin-left: 3px; }
   :is(#city-map-toggle, #city-map-open) { font-size: 8px; min-height: 28px; padding: 4px 0 4px 4px; }
-  .city-guide-stop { gap: 4px; padding: 10px 0 8px; }
-  .city-guide-eyebrow { font-size: 7px; letter-spacing: .65px; }
-  #city-stop-name { font-size: 17px; }
-  #city-stop-distance { font-size: 9px; }
 }
 @media (max-height: 560px) and (orientation: landscape) {
   .city-guide { top: auto; bottom: var(--ui-bottom); width: 168px; }
   #city-map { max-height: 84px; object-fit: cover; }
-  .city-guide-stop { padding: 7px 0; }
-  .city-guide-eyebrow { display: none; }
-  #city-stop-name { font-size: 16px; }
 }
 
 body[data-mode=free] .city-hud { flex: 1; }

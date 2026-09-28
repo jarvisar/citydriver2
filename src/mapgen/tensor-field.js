@@ -15,7 +15,7 @@ export default class TensorField {
     this.noise2D = createNoise2D(random);
     this.basisFields = [];
     this.parks = []; this.sea = []; this.river = [];
-    this.ignoreRiver = false; this.smooth = false;
+    this.ignoreRiver = false;
     // Rotational noise over some neighbourhoods rather than the whole
     // domain: each { angle, size, share } turns the streets as much as
     // share(point), from 0 to 1, says the point is in them
@@ -37,9 +37,9 @@ export default class TensorField {
     const tensorAcc = Tensor.zero, weights = this.weights;
     let total = 0;
     for (let i = 0; i < this.basisFields.length; i++) {
-      const field = this.basisFields[i], weight = weights[i] = field.getTensorWeight(point, this.smooth);
+      const field = this.basisFields[i], weight = weights[i] = field.getTensorWeight(point);
       total += weight;
-      tensorAcc.add(field.getTensor(point).scale(weight), this.smooth);
+      tensorAcc.add(field.getTensor(point).scale(weight));
     }
     // Add rotational noise for parks - range -pi/2 to pi/2
     if (this.inParks(point)) {

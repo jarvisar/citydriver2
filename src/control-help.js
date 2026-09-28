@@ -14,7 +14,7 @@ export function updateControlHelp(speed) {
 
 export function setupControlHelp() {
   document.body.dataset.controlHelpDismissed = String(dismissed);
-  for (const help of document.querySelectorAll('.touch-hint, .controller-hint, #stick-help, .controls > span:first-child')) {
+  for (const help of document.querySelectorAll('.controller-hint, #stick-help, .controls > span:first-child')) {
     help.setAttribute('data-control-help', '');
     const close = document.createElement('button');
     close.type = 'button'; close.className = 'dismiss-control-help';

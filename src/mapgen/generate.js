@@ -41,8 +41,9 @@ export const DEFAULT_OPTIONS = {
     seaMax: .15 },
   noise: { globalNoise: false, noiseSizePark: 80, noiseAnglePark: 90, noiseSizeGlobal: 150, noiseAngleGlobal: 20 },
   // A big park is a face of the main and major roads no bigger than maxArea,
-  // chosen before the minor roads so their paths wind through it. Small
-  // parks are finished blocks between smallArea[0] and [1], picked last.
+  // chosen before the minor roads, which stop at its edge (park-paths.js lays
+  // out its walks). Small parks are finished blocks between smallArea[0] and
+  // [1], picked last.
   parks: { big: 1, small: 6, clusterBig: false, maxLength: 80, minArea: 2000, maxArea: 280000, bigArea: 110000, smallArea: [4500, 30000], spacing: 320 },
   // Lots in a strip round each block (see lots.js); style(centre, district,
   // downtown) may give each block its own depth and frontages. Thin blocks

@@ -1,16 +1,16 @@
 // The city's business signs, painted on one sheet (sign-sheet.png, 4096 px
 // square, transparent between the designs). Each entry is one design: its
 // name, its rectangle on the sheet (x, y, width, height in pixels) and what
-// it can stand for. The buildings choose from these by use (city-signage.js):
+// it can stand for. The buildings choose from these by use (city-building-signs.js):
 //   shop      a shopfront's business, on its fascia. A squarish one also
 //             hangs from a bracket at the end of the shop.
-//   firm      an office's name, on its lobby canopy or up at its top floor
+//   firm      an office's name, on its lobby canopy or a board on its roof
 //   works     a warehouse's trade, over its loading door
-//   home      a block of flats' name, up at its top floor
+//   home      a block of flats' name, on a board on its roof
 //   upstairs  a business on an upper floor, on a projecting sign
 //   vacant    an empty shop's letting board (fascia) or poster (window)
 //   decal     a sticker or card in a shop window; `size` is its height in metres
-// `letters` marks cut-out lettering with no board, fixed straight to the wall.
+// `letters` marks cut-out lettering with no board behind it.
 // `backing` is a colour painted behind a design whose panel the sheet leaves
 // see-through (black lettering on it would vanish against a dark fascia).
 // Left out: the strip of overprinted opening hours under EET.24, too garbled

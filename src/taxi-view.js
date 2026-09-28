@@ -9,19 +9,10 @@ import { routeDistance } from './world/nav-graph.js';
 import { DestinationArrow } from './destination-arrow.js';
 import { lookYaw, glance } from './world/pedestrian-reactions.js';
 import { FloatingLabels } from './floating-labels.js';
+import { $, text, hide, data, attribute, width, compactCash, clock } from './hud-dom.js';
 
-const $ = id => document.getElementById(id);
 const money = value => `$${Math.round(value ?? 0).toLocaleString('en-US')}`;
 const distanceLabel = meters => meters >= 1000 ? `${(meters / 1000).toFixed(1)} km` : `${Math.round(meters / 10) * 10} m`;
-const compactCash = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 1 });
-const text = (id, value) => { const element = $(id), next = String(value); if (element.textContent !== next) element.textContent = next; };
-// The HUD refreshes ten times a second, mostly with values it already shows.
-// Rewriting an unchanged attribute or style still costs a style recalculation
-// under the HUD's :has() rules, so compare first, as text() does.
-const hide = (element, hidden) => { if (element.hidden !== hidden) element.hidden = hidden; };
-const data = (id, key, value) => { const element = $(id), next = String(value); if (element.dataset[key] !== next) element.dataset[key] = next; };
-const attribute = (element, name, value) => { const next = String(value); if (element.getAttribute(name) !== next) element.setAttribute(name, next); };
-const width = (id, value) => { const style = $(id).style; if (style.width !== value) style.width = value; };
 const passengerFloat = {};
 const markerScale = 1.3;
 // Riders' meshes kept for reuse, of each party size: a pickup window holds
@@ -248,16 +239,13 @@ export class TaxiView {
       if (marker.person) {
         const { person, curb } = marker;
         marker.group.updateMatrix();
-        // Whoever of the party is knocked over, the rest turn to watch until they are back
-        const down = marker.reactions.find(reaction => reaction.drawn && (reaction.body || reaction.rise || reaction.back));
         // (the taxi, where they stand, for them to watch it pull up)
         const taxi = this.watch.set(vehicle.u, 0, -vehicle.s).applyMatrix4(this.unplace.copy(marker.group.matrix).invert());
         for (let i = 0; i < person.count; i++) {
           const motion = walkerFloat(marker.float, time + i * .7, passengerFloat), reaction = marker.reactions[i];
           const along = (i - (person.count - 1) / 2) * 1.35;
-          const look = down && down !== reaction ? Math.atan2(curb - down.drawn.x, along - down.drawn.z) : null;
           this.transform.position.set(curb, PAVEMENT_LEVEL + motion.lift, along);
-          this.transform.rotation.set(0, lookYaw(reaction, Math.PI / 2, look, time), motion.roll);
+          this.transform.rotation.set(0, lookYaw(reaction, Math.PI / 2, null, time), motion.roll);
           this.transform.scale.set(1.25, 1.25 * motion.stretch, 1.25); this.transform.updateMatrix();
           // (a fare only jumps out of the way, and is still there to be picked up)
           contacts?.person(reaction, this.transform.matrix, marker.group.matrix, .35, time, null, true);
@@ -398,7 +386,6 @@ export class TaxiView {
   results(run) {
     const license = taxiLicense(run.cash), best = taxiLicense(run.best);
     const summary = run.summary, career = run.career, beaten = id => Boolean(summary?.beaten.includes(id));
-    const clock = seconds => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
     $('taxi-result-shift').textContent = `Shift ${clock(Math.round(run.elapsed))}`; $('taxi-result-shift').dataset.new = String(beaten('shift'));
     $('taxi-result-cash').textContent = money(run.cash);
     $('taxi-result-license').dataset.license = license.id;

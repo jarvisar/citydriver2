@@ -69,12 +69,6 @@ export class DriveAudio {
     this.model.setProfile(this.profile, cruise || 28); this.graph?.setEngine(this.profile); this.shiftSerial = 0; this.liftSerial = 0;
     this.targets = new WeakMap();
   }
-  reset() {
-    this.model.reset(); this.lastUpdate = -Infinity; this.shiftSerial = 0; this.liftSerial = 0; this.boosting = false; this.deck = null;
-    this.graph?.silenceEvents(); this.director.reset(this.context?.currentTime ?? 0);
-    this.trafficSlots.fill(null);
-    if (this.graph) for (const voice of this.graph.traffic) { this.layer(voice.tone, 0, .04); this.layer(voice.wash, 0, .04); }
-  }
   async toggle() {
     if (this.disposed) return false;
     const revision = ++this.revision;

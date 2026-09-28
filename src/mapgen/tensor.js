@@ -15,12 +15,9 @@ export default class Tensor {
   // The weighted sum of basis fields. (MapGenerator sets r to 2 after each
   // add without smoothing, which doubles everything added before: the first
   // field of five weighed sixteen times the last.)
-  add(tensor, smooth) {
+  add(tensor) {
     this.matrix = this.matrix.map((v, i) => v * this.r + tensor.matrix[i] * tensor.r);
-    if (smooth) {
-      this.r = Math.hypot(...this.matrix);
-      this.matrix = this.matrix.map(v => v / this.r);
-    } else this.r = 1;
+    this.r = 1;
     this.oldTheta = true;
     return this;
   }

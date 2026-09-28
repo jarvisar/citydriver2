@@ -27,11 +27,11 @@ export default class StreamlineGenerator {
       for (const streamline of this.streamlines(major)) {
         // Ignore circles
         if (streamline[0].equals(streamline[streamline.length - 1])) continue;
-        const newStart = this.getBestNextPoint(streamline[0], streamline[4], streamline);
+        const newStart = this.getBestNextPoint(streamline[0], streamline[4]);
         if (newStart !== null) {
           for (const p of this.pointsBetween(streamline[0], newStart, this.params.dstep)) { streamline.unshift(p); this.grid(major).addSample(p); }
         }
-        const newEnd = this.getBestNextPoint(streamline[streamline.length - 1], streamline[streamline.length - 4], streamline);
+        const newEnd = this.getBestNextPoint(streamline[streamline.length - 1], streamline[streamline.length - 4]);
         if (newEnd !== null) {
           for (const p of this.pointsBetween(streamline[streamline.length - 1], newEnd, this.params.dstep)) { streamline.push(p); this.grid(major).addSample(p); }
         }
@@ -52,7 +52,7 @@ export default class StreamlineGenerator {
     return out;
   }
   // Next best point to join a streamline end to; null without a good candidate
-  getBestNextPoint(point, previousPoint, streamline) {
+  getBestNextPoint(point, previousPoint) {
     const nearbyPoints = this.majorGrid.getNearbyPoints(point, this.params.dlookahead);
     nearbyPoints.push(...this.minorGrid.getNearbyPoints(point, this.params.dlookahead));
     const direction = point.clone().sub(previousPoint);
@@ -148,7 +148,7 @@ export default class StreamlineGenerator {
   }
   // Integrating in both directions at once reduces the impact of circles not joining up
   integrateStreamline(seed, major) {
-    let count = 0, pointsEscaped = false;  // True once two integration fronts have moved dlookahead away
+    let count = 0, pointsEscaped = false;  // True once two integration fronts have moved dcirclejoin away
     const collideBoth = this.random() < this.params.collideEarly;
     const d = this.integrator.integrate(seed, major);
     const forwardParams = { seed, originalDir: d, streamline: [seed], previousDirection: d, previousPoint: seed.clone().add(d), valid: true };

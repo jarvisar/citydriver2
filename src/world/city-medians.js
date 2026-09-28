@@ -14,7 +14,7 @@ const NOSE = 1.6;  // Beyond the crosswalk
 const MIN_LENGTH = 8;
 
 // The part of a polyline between two distances along it
-function slice(points, from, to) {
+export function slicePolyline(points, from, to) {
   const out = [];
   let travelled = 0;
   for (let i = 0; i < points.length - 1; i++) {
@@ -56,7 +56,7 @@ export function cityMedians(nav = navGraph()) {
     const end = id => { const clear = geometry.get(id)?.approaches.get(edge)?.clear; return (clear ?? 0) + CROSSWALK + NOSE + profile.median; };
     const from = end(edge.a), to = edge.length - end(edge.b);
     if (to - from < MIN_LENGTH) continue;
-    const points = slice(edge.points, from, to);
+    const points = slicePolyline(edge.points, from, to);
     if (points.length < 2) continue;
     const polygon = roundedStrip(points, profile.median);
     // Grass stops at the abutments; over water the same raised separator is

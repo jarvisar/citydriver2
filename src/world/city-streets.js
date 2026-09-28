@@ -2,7 +2,7 @@ import { CITY, SIDEWALK, QUAY, PolygonIndex, cityStyleDistrict } from './city.js
 import { ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL, waterAt, onRoadAt, surfaceAt } from './city-route.js';
 import { junctionGeometry, CROSSWALK, stopLineDistance } from './junction-geometry.js';
 import { junctionControls } from '../city-junctions.js';
-import { cityMedians, MEDIAN_KERB } from './city-medians.js';
+import { cityMedians, MEDIAN_KERB, slicePolyline } from './city-medians.js';
 import { cityParks, parkClear, pondShore, circle, SQUARE_WALK, BED_COLOURS } from './city-parks.js';
 import { parkSurfaces } from './city-park-surfaces.js';
 import { faceYaw, alongYaw } from './city-layout-render.js';
@@ -95,22 +95,6 @@ function pointAlong(points, distance) {
     travelled += length;
   }
   return null;
-}
-// The part of a polyline between two distances along it
-export function slicePolyline(points, from, to) {
-  const out = [];
-  let travelled = 0;
-  for (let i = 0; i < points.length - 1; i++) {
-    const a = points[i], b = points[i + 1], length = Math.hypot(b.x - a.x, b.y - a.y);
-    if (length > 1e-9 && travelled + length >= from && travelled <= to) {
-      const t0 = Math.max(0, (from - travelled) / length), t1 = Math.min(1, (to - travelled) / length);
-      const p0 = { x: a.x + (b.x - a.x) * t0, y: a.y + (b.y - a.y) * t0 }, p1 = { x: a.x + (b.x - a.x) * t1, y: a.y + (b.y - a.y) * t1 };
-      if (!out.length || Math.hypot(out[out.length - 1].x - p0.x, out[out.length - 1].y - p0.y) > 1e-6) out.push(p0);
-      if (Math.hypot(out[out.length - 1].x - p1.x, out[out.length - 1].y - p1.y) > 1e-6) out.push(p1);
-    }
-    travelled += length;
-  }
-  return out;
 }
 const polylineLength = points => points.slice(1).reduce((sum, p, i) => sum + Math.hypot(p.x - points[i].x, p.y - points[i].y), 0);
 
@@ -469,7 +453,7 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
   // along the top of that the quays' own stone coping, lipped a little over
   // the face (see deckEdges)
   for (const deck of CITY.decks) walls.polygon(deck.outer, DECK_BOTTOM, COLOURS.deckUnder, null, false, deck.holes);
-  for (const { run, line, closed, rail } of deckEdges()) {
+  for (const { run, line, closed } of deckEdges()) {
     walls.wall(closed ? [...run, run[0]] : run, COPING_BOTTOM, DECK_BOTTOM, COLOURS.deck);
     const outer = offsetRun(line, closed, -COPING_LIP), inner = offsetRun(line, closed, COPING_WIDTH), edge = closed ? [...line, line[0]] : line;
     for (let i = 0; i < outer.length - 1; i++) {
@@ -849,8 +833,6 @@ export const yardGround = block => block.style === 'Warehouse district' ? '#9e9b
 // Bridges: the runs of a road over water, with their footways (see city.js)
 export const findBridges = () => CITY.bridges;
 
-// Street furniture for the whole city, as pieces the chunks stand up:
-// { kind, u, s, yaw, ... } with yaw an item yaw (see city-layout-render.js).
 // The boats that move (see city-boats.js) run slow loops off the longest
 // open stretches of sea wall: out along a lane 30 m off the wall, round and
 // back along one 46 m off, the two a boat's length apart everywhere. Every
@@ -884,7 +866,6 @@ export function harbourRoutes() {
       from = i + 1;
     }
     for (const [a, b] of stretches) {
-      if (b - a < 30) continue;
       const middle = (HARBOUR_LANES[0] + HARBOUR_LANES[1]) / 2, turn = (HARBOUR_LANES[1] - HARBOUR_LANES[0]) / 2;
       const ends = [lane(samples[b], middle, turn), lane(samples[a], middle, -turn)];
       if (!ends.every(q => clear(q.x, q.y))) continue;
@@ -923,6 +904,8 @@ export function* lawnSpots(lawn, gate, width = 3.6) {
   }
 }
 
+// Street furniture for the whole city, as pieces the chunks stand up:
+// { kind, u, s, yaw, ... } with yaw an item yaw (see city-layout-render.js).
 export function placeStreetFurniture(nav, bridges, add) {
   const geometry = junctionGeometry(nav), controls = junctionControls(nav);
   // Junction zones: nothing stands on a corner or in a crosswalk's path

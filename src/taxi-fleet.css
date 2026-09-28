@@ -1,4 +1,4 @@
-#taxi-fleet-dialog { width: min(960px, calc(100vw - 32px)); max-height: calc(100% - 32px); box-sizing: border-box; padding: 26px; color: #f5f1de; background: #17262f; border: 1px solid #64716d; border-radius: 18px; overflow-y: auto; }
+#taxi-fleet-dialog { width: min(960px, calc(100% - var(--ui-left) - var(--ui-right))); max-height: calc(100% - 32px); box-sizing: border-box; padding: 26px; color: #f5f1de; background: #17262f; border: 1px solid #64716d; border-radius: 18px; overflow-y: auto; }
 #taxi-fleet-dialog::backdrop { background: #0a141bd9; backdrop-filter: blur(8px); }
 #taxi-fleet-dialog .chooser-heading { display: flex; align-items: center; justify-content: space-between; background: #17262f; z-index: 1; }
 #taxi-fleet-dialog h2 { margin: 4px 0; font-size: 26px; letter-spacing: -.7px; }

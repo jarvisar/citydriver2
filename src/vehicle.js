@@ -243,7 +243,7 @@ export class DrivingController {
     this.pilot = null; this.airborne = false; this.scenery = null; this.walker = null; this.props = null;
     this.setCar(carId, { rebuild: false, paint });
     this.s = state.s ?? 24; this.u = state.u ?? 2.4; this.speed = 0; this.steer = 0; this.heading = state.heading ?? route.frame(this.s).angle;
-    this.distance = state.distance ?? 0; this.pitch = 0; this.roll = 0; this.previousSpeed = 0; this.groundedPosition = new THREE.Vector3();
+    this.distance = state.distance ?? 0; this.pitch = 0; this.roll = 0; this.groundedPosition = new THREE.Vector3();
     this.reverseDelay = 0; this.driftAmount = 0; this.driftDirection = 0; this.drifting = false; this.boosting = false; this.driftReady = true; this.driftArmed = 0; this.slip = 0;
     // Where the car's weight is: -1 over the back under power, +1 over the nose on the brakes.
     this.weight = 0; this.load = 0;
@@ -253,7 +253,7 @@ export class DrivingController {
     this.knock = { x: 0, z: 0, spin: 0 }; this.jolt = { pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 };
     // The turn the driver is making, and how shaken the view is (0 to 1).
     this.yawRate = 0; this.trauma = 0; this.pushing = 0;
-    this.audioTelemetry = { speed: 0, throttle: 0, brake: 0, offRoad: 0, steer: 0, handbrake: 0, slip: 0, impact: 0, impactSerial: 0, scrape: 0, boost: 0, bump: 0, bumpSerial: 0, step: 0, stepSerial: 0 };
+    this.audioTelemetry = { speed: 0, throttle: 0, brake: 0, offRoad: 0, handbrake: 0, impact: 0, impactSerial: 0, scrape: 0, boost: 0, bump: 0, bumpSerial: 0, step: 0, stepSerial: 0 };
     const pose = () => ({ position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), bodyPitch: 0, bodyRoll: 0, wheelSpin: 0, steer: 0, slip: 0 });
     this.previousPose = pose(); this.currentPose = pose();
     this.update(0, {});
@@ -273,6 +273,8 @@ export class DrivingController {
     this.carId = carId; this.model = model;
     Object.assign(this, model);
     const entry = carEntry(carId);
+    // (someone knocked down leaves no body lying in the road for traffic to wait on)
+    if (this.walker?.down) this.props?.release(this.walker.down.body);
     this.pilot = rotors ? new Helicopter(this, rotors) : null; this.walker = null; this.airborne = false;
     const { width, length, cabin, cabinZ, cabinY = 1.22, drop = 0, eye, chaseLift = 0 } = entry.shape;
     // Center the view just in front of the windshield for every body shape.
@@ -291,7 +293,8 @@ export class DrivingController {
     this.setLights(Number(this.night)); this.setAppearance(this.journeyId); this.setPaint(paint);
     if (!rebuild) return;
     this.speed = clamp(this.speed, -this.stats.reverseSpeed, this.stats.topSpeed);
-    this.wheelSpin = 0;
+    // (level, whatever the helicopter's bank or the walker's lean left behind)
+    this.wheelSpin = 0; this.bodyPitch = this.bodyRoll = 0;
     // Into the helicopter it carries on as the car was going; out of it, a
     // car starts at rest in the nearest lane, wherever the helicopter was.
     this.pilot?.takeOver(this.heading, this.speed, this.groundedPosition.y);
@@ -308,6 +311,7 @@ export class DrivingController {
     parent?.add(this.car);
     this.spec = WALKER_SPEC; this.stats = WALKER_STATS; this.walker = new Walker(this, model);
     this.speed = 0; this.knock.x = this.knock.z = this.knock.spin = 0; this.trauma = 0; this.pushing = 0;
+    Object.assign(this.jolt, { pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 });
     this.walker.takeOver(); this.update(0, {});
     return kept;
   }
@@ -652,11 +656,9 @@ export class DrivingController {
     this.audioTelemetry.throttle = parkingBrake ? 0 : touch ? clamp((acceleration + (this.speed > .015 ? drag : 0)) / stats.acceleration, 0, 1) : this.speed < -.3 ? brake : brake ? 0 : forward;
     this.audioTelemetry.brake = parkingBrake ? 1 : touch ? clamp(-acceleration / stats.touchBraking, 0, 1) : this.speed < -.3 ? forward : brake;
     this.audioTelemetry.offRoad = looseness;
-    this.audioTelemetry.steer = this.steer;
     this.audioTelemetry.handbrake = input.handbrake ? 1 : 0;
     this.audioTelemetry.boost = this.boosting ? 1 : 0;
     this.slip = Math.atan2(Math.sin(this.heading - this.slideHeading), Math.cos(this.heading - this.slideHeading));
-    this.audioTelemetry.slip = Math.abs(this.slip);
     // Scraping along a wall or a car sounds only while it goes on.
     this.audioTelemetry.scrape *= Math.exp(-dt * 14);
     if (dt === 0) { this.audioTelemetry.impact = 0; this.reverseDelay = 0; this.drifting = false; }

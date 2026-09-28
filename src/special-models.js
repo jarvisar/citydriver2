@@ -10,11 +10,10 @@ import { bodyMaterial, lampGlow, markedBody } from './traffic-models.js';
 // Each shape carries its own wheels, because none of them wears the road cars'
 // set: `x` is the wheel's centre from the middle of the car, and the collision
 // width is measured to the outside of the widest tyre. `eye` is where the
-// first-person camera sits, `chaseLift` raises the chase camera over a tall roof,
-// and `open` marks a car with no cabin to muffle it.
+// first-person camera sits, and `chaseLift` raises the chase camera over a tall roof.
 export const SPECIAL_SHAPES = {
   buggy: {
-    name: 'buggy', width: 1.96, length: 3.4, eye: [0, 1.38, -.55], open: true,
+    name: 'buggy', width: 1.96, length: 3.4, eye: [0, 1.38, -.55],
     wheels: { front: { radius: .4, width: .26, x: .85, z: -1.15 }, rear: { radius: .52, width: .42, x: .77, z: 1.05 } },
   },
   monster: {
@@ -22,7 +21,7 @@ export const SPECIAL_SHAPES = {
     wheels: { front: { radius: .85, width: .7, x: 1, z: -1.55 }, rear: { radius: .85, width: .7, x: 1, z: 1.55 } },
   },
   hotrod: {
-    name: 'hotrod', width: 2.02, length: 4, eye: [0, 1.4, -.3], open: true,
+    name: 'hotrod', width: 2.02, length: 4, eye: [0, 1.4, -.3],
     wheels: { front: { radius: .36, width: .2, x: .86, z: -1.5 }, rear: { radius: .56, width: .46, x: .78, z: 1.15 } },
   },
   rig: {

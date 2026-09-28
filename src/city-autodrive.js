@@ -63,7 +63,7 @@ export class CityAutodrive {
   toggle() { this.enabled = !this.enabled; this.reset(); return this.enabled; }
   canStart(player) { return Boolean(onRoadAt(player.s, player.u)); }
   update(player, traffic, speedLimit = player.stats.topSpeed, dt = 1 / 60) {
-    const nav = navGraph();
+    const nav = navGraph(), fresh = !this.path;
     if (!this.path) {
       this.path = acquire(nav, player);
       this.next = null;
@@ -88,7 +88,8 @@ export class CityAutodrive {
     }
     // Knocked or pushed well off its way, it finds its street again
     const off = turn && path.along > turn.start ? 0 : travelAlong(path.edge, path.direction, player.u, player.s).off;
-    if (off > Math.max(12, path.edge.profile.halfWidth + 6)) { this.path = null; return this.update(player, traffic, speedLimit, dt); }
+    // (once: a street found this step that is still that far off is driven back to)
+    if (!fresh && off > Math.max(12, path.edge.profile.halfWidth + 6)) { this.path = null; return this.update(player, traffic, speedLimit, dt); }
     const remaining = path.edge.length - path.along;
     if (remaining < 70 && !this.next) {
       const roll = this.random();

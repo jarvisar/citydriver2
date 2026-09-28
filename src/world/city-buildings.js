@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { seededRandom } from './route.js';
 import { PAVEMENT_LEVEL as G } from './city-route.js';
 import { CITY, cityStyleDistrict } from './city.js';
-import { buildingSignage, shopSigns, upstairsSign, crownSign, lobbySign, worksSign } from './city-building-signs.js';
+import { buildingSignage, shopSigns, upstairsSign, crownSign, lobbySign, worksSign, COMMERCIAL } from './city-building-signs.js';
 import { grassArea } from './city-grass.js';
 import { placeForLot, placeForBlock } from '../city-exploration.js';
 import { buildLandmark } from './city-landmarks.js';
@@ -436,7 +436,7 @@ export function planLot(c, lot) {
   const plan = { kind: 'building', lot, district, footprint: local(footprintOut, c), lotLocal: local(polygon, c), court: local(court, c), street, windows, type, floors, area: massedArea, breadth,
     wall: pick(style.walls, random), accent: pick(ACCENTS, random), roof: pick(pitched ? TILES[district] ?? ROOFS : ROOFS, random), roofType: house ? 'hip' : pitched ? 'gable' : stepped ? 'terrace' : 'flat', eaves,
     setbackFloors: stepped ? Math.max(2, Math.floor(floors * .57)) : floors, seed: (lot.seed + 9973) >>> 0, variation: integer(random, 0, 3),
-    ...shopSlot(lot), shopfront, domestic, lawn: insets.lawn, side: insets.side, party: wallKinds.map(kind => kind === 'side'), lotStreet: kinds.map(kind => kind === 'street'), rearWindows: rear > 2.4 || footprintOut !== footprint };
+    ...shopSlot(lot), shopfront, domestic, lawn: insets.lawn, side: insets.side, party: wallKinds.map(kind => kind === 'side'), lotStreet: kinds.map(kind => kind === 'street') };
   // (what it says on it: see city-building-signs.js)
   plan.signs = buildingSignage(plan);
   return plan;
@@ -988,7 +988,6 @@ function gableRoof(c, b, bodies, ring, top, random, solid) {
 // plant on the offices, skylights down a shed, a stair head and chimney stacks
 // on the flats and houses, the odd water tank on old brick and a roof garden
 // on a few blocks of flats.
-const COMMERCIAL = new Set(['office', 'atrium', 'deco']);
 const BASE_STONE = new THREE.Color('#6f6c64');
 const TANK_DISTRICTS = new Set(['Old town', 'Warehouse district', 'Market district']);
 function roofDetails(c, b, deck, top, random, holes = [], keep = []) {
@@ -1122,18 +1121,19 @@ function buildBuilding(c, b) {
   if (b.lawn) {
     const lot = b.lotLocal.map(p => [p.x, p.y]);
     grassArea(c, lot, LAWN, G + .05);
-    if (!c.distant) {
-      // A tree or two in the garden, each no bigger than its room from the house
-      const walls = [...ring, ring[0]], edge = [...b.lotLocal, b.lotLocal[0]], trees = [];
-      const wanted = Math.min(2, 1 + Math.floor((calcPolygonArea(b.lotLocal) - b.area) / 320));
-      for (let i = 0; i < 24 && trees.length < wanted; i++) {
-        const p = insidePoint(b.lotLocal, random);
-        if (!p || insidePolygon(p, ring) || distanceToPolyline(p, edge) < 1.6 || trees.some(t => Math.hypot(t.x - p.x, t.y - p.y) < 5.5)) continue;
-        // (a neighbour's wall may stand on the lot line)
-        const room = Math.min(distanceToPolyline(p, walls), distanceToPolyline(p, edge) + .2);
-        if (room < 2.2) continue;
-        c.tree(p.x, p.y, Math.min(5 + random() * 3, treeRoom(room))); trees.push(p);
-      }
+    // A tree or two in the garden, each no bigger than its room from the house.
+    // The skyline plants none but makes the same draws, so the windows match.
+    const walls = [...ring, ring[0]], edge = [...b.lotLocal, b.lotLocal[0]], trees = [];
+    const wanted = Math.min(2, 1 + Math.floor((calcPolygonArea(b.lotLocal) - b.area) / 320));
+    for (let i = 0; i < 24 && trees.length < wanted; i++) {
+      const p = insidePoint(b.lotLocal, random);
+      if (!p || insidePolygon(p, ring) || distanceToPolyline(p, edge) < 1.6 || trees.some(t => Math.hypot(t.x - p.x, t.y - p.y) < 5.5)) continue;
+      // (a neighbour's wall may stand on the lot line)
+      const room = Math.min(distanceToPolyline(p, walls), distanceToPolyline(p, edge) + .2);
+      if (room < 2.2) continue;
+      const size = Math.min(5 + random() * 3, treeRoom(room));
+      if (!c.distant) c.tree(p.x, p.y, size);
+      trees.push(p);
     }
   }
   // The body and its ground-floor band, and the courtyard inside a big block
@@ -1150,10 +1150,9 @@ function buildBuilding(c, b) {
     if (courtPlinth.length >= 3) bodies.wall(ccw(courtPlinth), G + base, G, baseColour, true);
     const floor = court.map(p => [p.x, p.y]);
     c.polygon(floor, G + .05, .06, LAWN); grassArea(c, floor, LAWN, G + .08);
-    if (!c.distant) {
-      const garden = offsetPolygon(court, -3);
-      for (let i = 0, placed = 0; i < 12 && placed < 2; i++) { const p = insidePoint(garden, random); if (p) { c.tree(p.x, p.y, 5 + random() * 3); placed++; } }
-    }
+    // (the same draws in the skyline, as for the garden's trees)
+    const garden = offsetPolygon(court, -3);
+    for (let i = 0, placed = 0; i < 12 && placed < 2; i++) { const p = insidePoint(garden, random); if (p) { const size = 5 + random() * 3; if (!c.distant) c.tree(p.x, p.y, size); placed++; } }
     let longest = 0;
     for (let i = 1; i < court.length; i++) if (edgeLength(court, i) > edgeLength(court, longest)) longest = i;
     for (let i = 0; i < court.length; i++) {

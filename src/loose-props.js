@@ -15,8 +15,9 @@ import { stableShadowDepth } from './world/shadow-depth.js';
 // meets it again shoves it on. It stays where it lands until the player is
 // well away, then goes back where it stood. The car loses speed by what the
 // piece weighs against it (see impact.js), so a bin barely checks it and a
-// lamp post takes a bite. Trees, railings, shelters and the heavy pieces
-// stand firm (see CityChunk.knockable).
+// lamp post takes a bite. Railings and the heavy pieces stand firm, and
+// trees and shelters give way only to a car that breaks them (see
+// CityChunk.knockable and breaks).
 
 // Each kind: what it weighs in a blow, in tonnes against a car's heft (a lamp
 // post's breakaway foot makes it lighter than it looks); the closing speed
@@ -37,9 +38,10 @@ const KINDS = {
   // A pedestrian a car meets (see person): scooped off their feet, they
   // tumble, land and slide to a stop, then get up (see PedestrianContacts)
   person: { mass: .07, firm: 0, lift: .45, bounce: .1, sound: 'thud' },
-  // Stand firm unless the player drives a car that `breaks` them (see this.breaks)
-  tree: { mass: 1.4, firm: 4, topples: true, lift: .25, bounce: .1, sound: 'wood', bits: 'leaves', only: true },
-  shelter: { mass: .6, firm: 3, lift: .35, bounce: .15, sound: 'metal', bits: 'glass', only: true },
+  // Stand firm unless the player drives a car that `breaks` them (see this.breaks),
+  // and then give way at any speed, so they have no `firm`
+  tree: { mass: 1.4, topples: true, lift: .25, bounce: .1, sound: 'wood', bits: 'leaves', only: true },
+  shelter: { mass: .6, lift: .35, bounce: .15, sound: 'metal', bits: 'glass', only: true },
 };
 // A little heavier than real, so flung furniture does not hang in the air
 const GRAVITY = 13;
@@ -621,7 +623,7 @@ export class LooseProps {
     const shape = scaled ? scaledShape(shapeOf(piece.geometry), scale) : shapeOf(piece.geometry);
     const p = shape.com.clone().applyMatrix4(frame.compose(position, rotation, ONE)), body = {
       piece, kind, shape, p, q: rotation.clone(), v: new THREE.Vector3(), w: new THREE.Vector3(),
-      last: { p: p.clone(), q: rotation.clone() }, rest: { p: p.clone(), q: rotation.clone() }, asleep: false, still: 0, awake: 0, grounded: true, sunk: false, splashed: false, clatter: 0,
+      last: { p: p.clone(), q: rotation.clone() }, rest: { p: p.clone(), q: rotation.clone() }, asleep: false, still: 0, awake: 0, grounded: true, sunk: false, splashed: false, clatter: 0, squeezed: 0,
       // Where each point last looked up the ground (x, z) and what it found
       ground: new Float32Array(shape.points.length).fill(NaN),
       // A turn of its own, either way, for a little variety
@@ -944,7 +946,7 @@ export class LooseProps {
   // deepest of its points inside one is put back out and takes a blow there,
   // so a post falling against a wall slides down it
   walls(body, chunks) {
-    const { p, q, shape } = body, points = shape.points;
+    const { p, shape } = body;
     // (what stands near it, gathered again once it has moved a couple of metres)
     if (!body.near || Math.abs(p.x - body.near.x) > NEAR || Math.abs(p.z - body.near.z) > NEAR) {
       const reach = shape.radius + NEAR, list = [];

@@ -116,8 +116,9 @@ export function createEngineBank(ctx, destination) {
         // Start every band at the same crank phase and effective RPM. Ramping
         // from playbackRate=1 would permanently offset the layers and produce
         // hollow cancellation during a blend.
+        // (not also targeted: that cancels the value just set, from currentTime on)
         if (firstUpdate) voice.source.playbackRate.setValueAtTime(rpm / references[band], ctx.currentTime);
-        target(voice.source.playbackRate, rpm / references[band], .065);
+        else target(voice.source.playbackRate, rpm / references[band], .065);
         target(voice.gain.gain, weights[band] * (i % 2 ? power : coast), .075);
       }
       firstUpdate = false;

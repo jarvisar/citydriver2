@@ -186,13 +186,8 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   // (a new reach shows at once, paused or not)
   graphics.onChange(() => { if (initialized) fitShadow(activeCamera(), previousOrigin); });
   window.addEventListener('resize', onResize); globalThis.ResizeObserver && new ResizeObserver(onResize).observe(canvas); resize();
-  // Called when starting or resetting the city.
-  function setJourney() {
-    weatherFog = null;
-    setWeather(sampleCityWeather(0, 'sunset'), 0);
-    resize();
-  }
-  setJourney();
+  // Golden hour until the game applies the city's weather
+  setWeather(sampleCityWeather(0, 'sunset'), 0);
   function setWeather(state, dt = 0) {
     if (!state) return;
     // Weather already changes gradually with the simulation clock. A short
@@ -307,5 +302,5 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   // player's eyes, and the wheel brings the chase camera in or out (see MouseLook)
   const look = (yaw, pitch) => (views[view].firstPerson ? firstPerson : thirdPerson).look(yaw, pitch), zoom = factor => thirdPerson.zoomBy(factor);
   const stencil = renderer.getContext().getContextAttributes()?.stencil === true;
-  return { renderer, scene, graphics, ambientOcclusion, vrCamera, stencil, render, precompile, addCuller, setSightLine, setGround, look, zoom, enterVR, exitVR, setView, toggleAO() { return graphics.toggleAmbientOcclusion(); }, get camera() { return activeCamera(); }, update, resize, recordFrame, setJourney, setWeather, get viewLabel() { return views[view].label; }, get chaseView() { return Boolean(views[view].thirdPerson); }, get firstPersonView() { return Boolean(views[view].firstPerson); }, toggleView() { return setView((view + 1) % views.length); }, snap() { initialized = false; thirdPerson.snap(); firstPerson.snap(); } };
+  return { renderer, scene, graphics, ambientOcclusion, vrCamera, stencil, render, precompile, addCuller, setSightLine, setGround, look, zoom, enterVR, exitVR, setView, toggleAO() { return graphics.toggleAmbientOcclusion(); }, get camera() { return activeCamera(); }, update, resize, recordFrame, setWeather, get viewLabel() { return views[view].label; }, get chaseView() { return Boolean(views[view].thirdPerson); }, get firstPersonView() { return Boolean(views[view].firstPerson); }, toggleView() { return setView((view + 1) % views.length); }, snap() { initialized = false; thirdPerson.snap(); firstPerson.snap(); } };
 }

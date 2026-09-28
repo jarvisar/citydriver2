@@ -1,5 +1,5 @@
 import { PAVEMENT_LEVEL as G } from './city-route.js';
-import { SIGNS_BY_USE, dealSign } from './city-signs.js';
+import { SIGNS_BY_USE, dealSign, mix } from './city-signs.js';
 
 // Every business says what it is in the way its building allows, with a sign
 // from the sheet (city-sign-sheet.js) chosen for that use:
@@ -16,10 +16,9 @@ import { SIGNS_BY_USE, dealSign } from './city-signs.js';
 // random stream), so a building keeps its signs whatever is built around it.
 const VACANT = .06, UPSTAIRS = { Midtown: .16, 'Market district': .16, 'Old town': .12 }, OTHERWISE = .05;
 const CROWN = .6, WORKS = .75, HOME = .12;
-const COMMERCIAL = new Set(['office', 'atrium', 'deco']);
+export const COMMERCIAL = new Set(['office', 'atrium', 'deco']);
 // (an empty shop's broad letting board for the fascia, and its window poster)
 const BOARD = SIGNS_BY_USE.vacant.find(sign => sign.aspect > 2), POSTER = SIGNS_BY_USE.vacant.find(sign => sign.aspect <= 2);
-const mix = n => { n = Math.imul(n ^ (n >>> 16), 0x45d9f3b); return (n ^ (n >>> 16)) >>> 0; };
 const roll = (b, salt) => mix((b.seed ^ Math.imul(salt, 0x27d4eb2d)) >>> 0) / 2 ** 32;
 // Squarish signs read best hanging over the pavement as well
 export const hangs = sign => sign.aspect < 1.45;
@@ -54,7 +53,7 @@ export function buildingSignage(b) {
 // street tree's crown or a lamp's column stands in front of it there. Then
 // it moves over one of the shop's windows or its door (`centres`), or to one
 // end of the fascia, a little smaller if need be, if far less of it is hidden.
-const IN_FRONT = { lamp: .3, 'median-lamp': .3, lantern: .3, 'street-lantern': .3, signal: .3 };
+const IN_FRONT = { lamp: .3, 'median-lamp': .3, lantern: .3, signal: .3 };
 function obstaclesBefore(c, f) {
   const obstacles = [];
   for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (const piece of c.world?.furnitureByChunk?.get(`${c.ix + dx},${c.iz + dz}`) ?? []) {

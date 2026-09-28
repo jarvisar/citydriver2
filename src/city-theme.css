@@ -173,7 +173,6 @@ body[data-controller=true] #app #city-map-open::before { content: 'VIEW'; margin
 #app .notebook-stamp { color: var(--city-text); border-color: var(--city-line); }
 #app .notebook-place[data-found=true] .notebook-stamp { color: var(--city-on-accent); }
 #app .notebook-check { color: var(--city-gold); }
-#app #city-stop-name { font-family: var(--city-font); font-weight: 700; }
 
 /* Peripheral states too, rather than the base light/green theme. */
 #app > #toast, #app #vr-error { background: var(--city-panel); color: var(--city-text); border: 1px solid var(--city-line); border-radius: var(--city-control-radius); box-shadow: var(--city-shadow); }

@@ -22,14 +22,7 @@
 .chooser-card-title>span { font-size: 18px; font-weight: 400; }
 .chooser-current { display: block; visibility: hidden; font-size: 7px; letter-spacing: 1.8px; margin-top: 14px; font-weight: 700; }
 .chooser-card[aria-current=true] .chooser-current { visibility: visible; }
-body[data-journey=city] { --ink: #263039; --cream: #eef1f4; color: var(--ink); background: #b6bfc7; }
 body[data-journey=city] .vignette { background: linear-gradient(180deg,transparent 82%,#5f6d7a4d); }
-body[data-journey=city] .chooser { background: #eef1f4f7; }
-body[data-journey=city] .chooser::backdrop { background: #2a353d45; }
-body[data-journey=city] .pause-overlay { background: #9ba7af55; }
-body[data-journey=city] .eyebrow>span { background: #4d6c82; }
-body[data-journey=city] .start-button:hover { background: #3b4c58; }
-body[data-journey=city] .touch-controls button.active { background: var(--ink); }
 @media(max-width:600px) {
   .chooser { padding: 18px; }
   .chooser-options { grid-template-columns: 1fr; gap: 10px; }

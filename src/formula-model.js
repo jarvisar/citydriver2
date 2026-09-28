@@ -7,7 +7,7 @@ import { stableShadowDepth } from './world/shadow-depth.js';
 // chooser-only, so the roads keep their ordinary-looking fleet.
 export const FORMULA_SHAPE = {
   name: 'formula', width: 1.9, length: 5.2,
-  // The chooser reads these the way it reads a road car's measurements.
+  // The chooser draws the wheels from `wheelRadius` and `wheelZ`.
   cabin: [.62, .34, 1.1], cabinZ: .12, cabinY: .52, wheelRadius: .38, wheelZ: 1.66,
   // First person sits just ahead of the halo rather than behind a windshield.
   eye: [0, .88, -.76],

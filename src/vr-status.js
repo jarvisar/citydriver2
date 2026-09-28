@@ -122,7 +122,7 @@ class Panel {
 export class VRStatus {
   constructor(camera, anchor = camera) {
     this.camera = camera; this.anchor = anchor;
-    this.model = null; this.hudModel = null; this.entries = []; this.selected = 0; this.pageIndex = 0;
+    this.model = null; this.entries = []; this.selected = 0; this.pageIndex = 0;
     this.signature = ''; this.hudSignature = ''; this.regions = []; this.order = [];
     this.memory = new Map(); this.triggers = new Map(); this.hovers = new Map(); this.selecting = new Set(); this.flash = null;
     this.raycaster = new THREE.Raycaster(); this.transform = new THREE.Matrix4(); this.stretch = new THREE.Matrix4();
@@ -131,7 +131,8 @@ export class VRStatus {
   build() {
     if (this.menu) return;
     this.menuFrame = new THREE.Group(); this.anchor.add(this.menuFrame);
-    this.menu = new Panel(this.menuFrame, MENU, 1024, 1000); this.menu.hang(MENU);
+    // (1280 px tall: free drive's pause menu runs to about 1130)
+    this.menu = new Panel(this.menuFrame, MENU, 1280, 1000); this.menu.hang(MENU);
     this.hudFrame = new THREE.Group(); this.anchor.add(this.hudFrame);
     this.hudPanel = new Panel(this.hudFrame, HUD, 256, 999); this.hudPanel.hang(HUD);
     // A beam from each hand while a menu is up, and a dot where it points.
@@ -367,7 +368,6 @@ export class VRStatus {
   hud(model) {
     const now = performance.now();
     if (this.flash && this.flash.until < now) this.flash = null;
-    this.hudModel = model;
     if (!model) { if (this.hudPanel) this.hudPanel.mesh.visible = false; this.hudSignature = ''; return; }
     this.build();
     const flash = this.flash;

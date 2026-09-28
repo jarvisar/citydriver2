@@ -280,13 +280,6 @@ function bollard() {
   p.cylinder([0, .88, 0], .1, .13, .1, galvanised, 6);
   return p.finish();
 }
-// A round manhole cover in the road.
-function manhole() {
-  const p = new Parts();
-  p.cylinder([0, .015, 0], .52, .52, .03, '#35383b', 10);
-  return p.finish();
-}
-
 function waterTank() {
   const p = new Parts();
   for (const x of [-1.05, 1.05]) for (const z of [-1.05, 1.05]) {
@@ -434,7 +427,7 @@ export function looseTree(index, green) {
   looseTrees.set(key, geometry);
   return geometry;
 }
-export const cityAssets = { lamp: lampPost(), signal: trafficSignal(), stop: stopSign(), yield: yieldSign(), bench: bench(), shelter: busShelter(), railing: railing(), bollard: bollard(), manhole: manhole(), tank: waterTank(), kiosk: kiosk(), bin: litterBin(), 'mooring-line': mooringLine(), lantern: parkLantern(), bandstand: bandstand(), 'signal-head': signalHead(), 'signal-mast': signalMast(), 'parking-sign': parkingSign() };
+export const cityAssets = { lamp: lampPost(), signal: trafficSignal(), stop: stopSign(), yield: yieldSign(), bench: bench(), shelter: busShelter(), railing: railing(), bollard: bollard(), tank: waterTank(), kiosk: kiosk(), bin: litterBin(), 'mooring-line': mooringLine(), lantern: parkLantern(), bandstand: bandstand(), 'signal-head': signalHead(), 'signal-mast': signalMast(), 'parking-sign': parkingSign() };
 // A mast-arm signal as one piece to knock loose: its pole, the arm out along
 // local -x over the lanes and a head at each of `mast`'s distances along it.
 // Made when one is first knocked down, and kept for the next with the same arm.
