@@ -731,6 +731,57 @@ export function walkerShape({ outfit = 0, style = 0, face = 0, gear = 0 } = {}) 
   return out;
 }
 
+// What a person knocked flying lies on (see LooseProps): rings round the peg
+// and the head, each point as far out as the body goes that way, plus the
+// crown. Sampled from the mesh, 7 points held the whole person, and they sank
+// a third of a metre into the road between them. Each ring reaches as far as
+// four in five variants of the coat, hair and face do, so a cap's peak or a
+// ponytail stays out of the road but a sun hat's brim or a puffer's bulk does
+// not lift everyone else off it. Bags are left out. The margin covers the
+// flats between the ring's eight points.
+const CONTACT_RINGS = [.32, .62, .92, 1.12, 1.3, 1.48, 1.66], CONTACT_MARGIN = .03;
+function walkerContact() {
+  const around = 8, reach = CONTACT_RINGS.map(() => new Float32Array(around));
+  let crown = 0;
+  for (const [s, name] of ['outfit', 'style', 'face'].entries()) {
+    const found = CONTACT_RINGS.map(() => Array.from({ length: around }, () => [])), tops = [];
+    for (let v = 0; v < SLOTS[s].length; v++) {
+      const { position: p, slot, index } = walkerShape({ [name]: v });
+      // (only corners of real triangles: a piece a variant lacks is folded to a point somewhere)
+      const used = new Uint8Array(slot.length), a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+      for (let t = 0; t < index.length; t += 3) {
+        a.fromArray(p, index[t] * 3); b.fromArray(p, index[t + 1] * 3); c.fromArray(p, index[t + 2] * 3);
+        if (b.sub(a).cross(c.sub(a)).lengthSq() > 1e-12) used[index[t]] = used[index[t + 1]] = used[index[t + 2]] = 1;
+      }
+      const most = CONTACT_RINGS.map(() => new Float32Array(around));
+      let top = 0;
+      for (let k = 0; k < slot.length; k++) {
+        if (!used[k] || slot[k] !== s) continue;
+        const x = p[k * 3], y = p[k * 3 + 1], z = p[k * 3 + 2];
+        top = Math.max(top, y);
+        CONTACT_RINGS.forEach((h, j) => {
+          if (Math.abs(y - h) < .1) for (let d = 0; d < around; d++) most[j][d] = Math.max(most[j][d], x * Math.cos(d * Math.PI / 4) + z * Math.sin(d * Math.PI / 4));
+        });
+      }
+      most.forEach((row, j) => row.forEach((r, d) => found[j][d].push(r)));
+      tops.push(top);
+    }
+    const most = list => list.sort((x, y) => x - y)[Math.floor(list.length * .8)];
+    found.forEach((row, j) => row.forEach((list, d) => { reach[j][d] = Math.max(reach[j][d], most(list)); }));
+    crown = Math.max(crown, most(tops));
+  }
+  const points = [];
+  CONTACT_RINGS.forEach((h, j) => {
+    for (let d = 0; d < around; d++) {
+      const r = reach[j][d] + CONTACT_MARGIN;
+      points.push(r * Math.cos(d * Math.PI / 4), h, r * Math.sin(d * Math.PI / 4));
+    }
+  });
+  points.push(0, crown + CONTACT_MARGIN, 0);
+  return new Float32Array(points);
+}
+cityWalker.userData.contact = walkerContact();
+
 // -------------------------------------------------------------- materials
 
 const palette = colors => colors.map(color => new THREE.Color(color));

@@ -150,6 +150,7 @@ export function propTop(collider) {
 }
 function shapeOf(geometry) {
   if (shapes.has(geometry)) return shapes.get(geometry);
+  if (geometry.userData.contact) return contactShape(geometry);
   const position = geometry.attributes.position, index = geometry.index?.array, count = index ? index.length : position.count;
   const vertex = i => index ? index[i] : i, a = new THREE.Vector3(), b = new THREE.Vector3(), samples = [];
   for (let t = 0; t + 2 < count; t += 3) for (let e = 0; e < 3; e++) {
@@ -189,6 +190,26 @@ function shapeOf(geometry) {
   shapes.set(geometry, shape);
   return shape;
 }
+// A model that gives its own points to stand on (`userData.contact`, a person:
+// see walkerContact), about their middle, with one solid part round them all
+function contactShape(geometry) {
+  const given = geometry.userData.contact, com = new THREE.Vector3(), a = new THREE.Vector3();
+  const low = new THREE.Vector3(Infinity, Infinity, Infinity), high = low.clone().negate();
+  for (let i = 0; i < given.length; i += 3) { a.fromArray(given, i); com.add(a); low.min(a); high.max(a); }
+  com.divideScalar(given.length / 3);
+  const points = new Float32Array(given.length), corners = [];
+  let radius = 0;
+  for (let i = 0; i < given.length; i += 3) {
+    a.fromArray(given, i).sub(com); a.toArray(points, i); corners.push(a.clone());
+    radius = Math.max(radius, a.length());
+  }
+  const size = high.clone().sub(low), part = hullPart(corners), shape = {
+    points, com, size, radius, height: size.y, parts: part ? [part] : null,
+    inertia: new THREE.Vector3((size.y ** 2 + size.z ** 2) / 12, (size.x ** 2 + size.z ** 2) / 12, (size.x ** 2 + size.y ** 2) / 12),
+  };
+  shapes.set(geometry, shape);
+  return shape;
+}
 // A model's solid parts, for other loose pieces to meet it (see meet). The
 // furniture is built of simple solids (a pole, an arm, a lamp's head, a
 // chair's legs and seat), merged but not joined, so each separate part (its
@@ -217,22 +238,26 @@ function partsOf(geometry, com) {
   corners.forEach((p, k) => { const r = root(k); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(p); });
   const parts = [];
   for (const points of groups.values()) {
-    let hull;
-    try { hull = new ConvexHull().setFromPoints(points); } catch { continue; }
-    if (!hull.faces.length) continue;
-    // (each face once: a box's faces come as pairs of triangles)
-    const planes = [];
-    for (const face of hull.faces) {
-      const { x, y, z } = face.normal, c = face.constant;
-      let same = false;
-      for (let k = 0; k < planes.length && !same; k += 4) same = planes[k] * x + planes[k + 1] * y + planes[k + 2] * z > .9999 && Math.abs(planes[k + 3] - c) < 1e-4;
-      if (!same) planes.push(x, y, z, c);
-    }
-    const middle = new THREE.Box3().setFromPoints(points).getCenter(new THREE.Vector3());
-    const r = Math.sqrt(Math.max(...points.map(p => p.distanceToSquared(middle))));
-    parts.push({ x: middle.x, y: middle.y, z: middle.z, r, planes: new Float32Array(planes) });
+    const part = hullPart(points);
+    if (part) parts.push(part);
   }
   return parts.length ? parts : null;
+}
+function hullPart(points) {
+  let hull;
+  try { hull = new ConvexHull().setFromPoints(points); } catch { return null; }
+  if (!hull.faces.length) return null;
+  // (each face once: a box's faces come as pairs of triangles)
+  const planes = [];
+  for (const face of hull.faces) {
+    const { x, y, z } = face.normal, c = face.constant;
+    let same = false;
+    for (let k = 0; k < planes.length && !same; k += 4) same = planes[k] * x + planes[k + 1] * y + planes[k + 2] * z > .9999 && Math.abs(planes[k + 3] - c) < 1e-4;
+    if (!same) planes.push(x, y, z, c);
+  }
+  const middle = new THREE.Box3().setFromPoints(points).getCenter(new THREE.Vector3());
+  const r = Math.sqrt(Math.max(...points.map(p => p.distanceToSquared(middle))));
+  return { x: middle.x, y: middle.y, z: middle.z, r, planes: new Float32Array(planes) };
 }
 
 // A shape scaled by `s` (a Vector3), for a piece drawn scaled
