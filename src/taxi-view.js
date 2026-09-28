@@ -9,7 +9,7 @@ import { routeDistance } from './world/nav-graph.js';
 import { DestinationArrow } from './destination-arrow.js';
 import { lookYaw, glance } from './world/pedestrian-reactions.js';
 import { FloatingLabels } from './floating-labels.js';
-import { $, text, hide, data, attribute, width, compactCash, clock } from './hud-dom.js';
+import { $, text, hide, data, attribute, width, compactCash, clock, OnceHints } from './hud-dom.js';
 
 const money = value => `$${Math.round(value ?? 0).toLocaleString('en-US')}`;
 const distanceLabel = meters => meters >= 1000 ? `${(meters / 1000).toFixed(1)} km` : `${Math.round(meters / 10) * 10} m`;
@@ -364,20 +364,9 @@ export class TaxiView {
     this.instruction(nearStop ? Math.abs(vehicle.speed) >= 2.5 ? 'Stop to drop off' : 'Dropping off…' : this.hint(!run.overtime && hint));
     data('taxi-task', 'arriving', String(nearStop));
   }
-  // The hint for `key` if it has not been shown before, kept on screen for
-  // HINT_SECONDS
   hint(key) {
-    if (!this.hints) {
-      this.hints = { seen: new Set(), showing: null, until: 0 };
-      try { for (const id of JSON.parse(this.storage?.getItem(HINTS_KEY) ?? '[]')) this.hints.seen.add(id); } catch { /* Optional storage. */ }
-    }
-    const now = performance.now() / 1000, hints = this.hints;
-    if (hints.showing && now < hints.until) return key === hints.showing ? HINTS[key] : '';
-    hints.showing = null;
-    if (!key || !HINTS[key] || hints.seen.has(key)) return '';
-    hints.seen.add(key); hints.showing = key; hints.until = now + HINT_SECONDS;
-    try { this.storage?.setItem(HINTS_KEY, JSON.stringify([...hints.seen])); } catch { /* Optional storage. */ }
-    return HINTS[key];
+    this.hints ??= new OnceHints(HINTS, HINTS_KEY, this.storage, HINT_SECONDS);
+    return this.hints.get(key);
   }
   instruction(text) {
     // Announce state changes, not every HUD refresh or countdown tick.

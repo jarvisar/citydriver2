@@ -234,6 +234,15 @@ const ASIDE = 1, RETURN = 1.1, SHOVED = 2.5, RESIST = 5, TACKLE = 5.5, CHARGE = 
 // at 5), met by any of its points within STANDING (m) of their feet
 const FLUNG = 2, HEFT = .05, STANDING = 1.8;
 const pieceAt = new THREE.Vector3();
+// Dodging (see dive): someone in the path of the player's car, or a car it
+// knocked loose, coming faster than DODGE_SPEED (m/s), notices it DODGE_SEEN
+// (m) off, or DODGE_AHEAD (s) off if that is nearer, and dives aside to
+// clear it by DODGE_CLEAR (m), at most DIVE_MOST, then waits DIVE_HOLD (s)
+// before walking back. The leap takes PEDESTRIAN_HOP, so they get clear of a
+// car up to about 20 m/s (45 mph) coming straight at them, and not of the
+// truck flat out: slowing down near people is what spares them.
+const DODGE_SPEED = 5, DODGE_SEEN = 9, DODGE_AHEAD = 1.2, DODGE_CLEAR = .45, DIVE_MOST = 2.4, DIVE_HOLD = .6;
+const dodge = { x: 0, z: 0 };
 
 // One reusable set of car footprints per rendered frame. Broad bounds reject
 // almost every pedestrian before the swept rectangle test; there are no
@@ -243,10 +252,14 @@ const pieceAt = new THREE.Vector3();
 export class PedestrianContacts {
   constructor() {
     this.history = new WeakMap(); this.cars = []; this.count = 0; this.pieces = []; this.flying = 0; this.props = null; this.player = null; this.traffic = null; this.onFoot = null;
-    // Told of each person knocked flying: `(by, at)`, `by` the player's car,
-    // a loose `piece`, a `loose` car (knocked off its lane or out of its bay)
-    // or ordinary `traffic`, and `at` where they stood (see DemolitionRun)
+    // Told of each person knocked flying: `(by, at, kind)`, `by` the player's
+    // car, a loose `piece` (`kind` its kind: a person, a lamp...), a `loose`
+    // car (knocked off its lane or out of its bay) or ordinary `traffic`, and
+    // `at` where they stood (see DemolitionRun)
     this.onKnock = null;
+    // Residents dive out of the way of a car bearing down on them (see dive).
+    // Only in a demolition run, where they are what the player must avoid.
+    this.dodge = false;
   }
   // `props` (LooseProps) takes those knocked flying; without it, nobody is
   update(player, traffic, time, props = null) {
@@ -295,6 +308,9 @@ export class PedestrianContacts {
       && (p.x - previous.x) ** 2 + (p.z - previous.z) ** 2 < limit * limit;
     const footprint = this.cars[this.count] ?? (this.cars[this.count] = {});
     footprint.car = car;
+    // (the way it is going, for anyone dodging it: the player's car and any knocked loose)
+    footprint.vx = continuous ? (p.x - previous.x) / dt : 0; footprint.vz = continuous ? (p.z - previous.z) / dt : 0;
+    footprint.threat = car === this.player || Boolean(car.loose);
     footprint.x = p.x; footprint.y = p.y; footprint.z = p.z;
     footprint.px = continuous ? previous.x : p.x; footprint.pz = continuous ? previous.z : p.z;
     footprint.cos = Math.cos(car.heading); footprint.sin = Math.sin(car.heading);
@@ -324,7 +340,11 @@ export class PedestrianContacts {
       if (piece.body === person.body || x < piece.minX - reach || x > piece.maxX + reach || z < piece.minZ - reach || z > piece.maxZ + reach || y > piece.maxY || y + STANDING < piece.minY) continue;
       for (let k = 0; k < piece.count; k += 3) {
         if (points[k + 1] < y || points[k + 1] > y + STANDING || (points[k] - x) ** 2 + (points[k + 2] - z) ** 2 > reach * reach) continue;
-        touching = true; moving = piece; piece.hit = k; break;
+        touching = true;
+        // (by the point that meets them: a tree rolling slowly over has a
+        // fast point up in its crown, and knocked people down with its trunk)
+        if (this.props.speedAt(piece.body, points[k], points[k + 1], points[k + 2]) < FLUNG) continue;
+        moving = piece; piece.hit = k; break;
       }
     }
     const start = moving && !person.carTouching ? moving : null;
@@ -366,8 +386,16 @@ export class PedestrianContacts {
     const away = this.away(person, matrix, frame, time);
     // Shoved aside by the player on foot, or at a charge bowled over
     const charged = !away && this.onFoot ? this.shove(person, matrix, frame, radius, time) : false;
+    // Diving out of the way (a dive under way finishes even once dodging stops)
+    if (!away && !charged && (this.dodge || person.dive)) this.dive(person, matrix, frame, radius, time);
     const at = position.setFromMatrixPosition(matrix).applyMatrix4(frame), car = this.props && (charged ? { car: this.player } : this.hit(person, at.x, at.y, at.z, radius));
-    if (!car) return away;
+    if (!car) {
+      // (the dive's leap is drawn once they are known to be clear: it
+      // cartwheels their feet up out of reach of the test)
+      if (person.hopStart !== undefined) applyHop(person, matrix, time);
+      return away;
+    }
+    person.dive = null; delete person.hopStart;
     world.multiplyMatrices(frame, matrix);
     // Knocked flying: whatever they were doing, a body takes their place.
     // A loose piece that hit them gives up its share of the blow.
@@ -376,7 +404,7 @@ export class PedestrianContacts {
     if (!player && !piece) { motion.y = car.y; }
     if (charged) motion.mass = CHARGE;
     const { body, blow } = this.props.person(cityWalker, world, motion);
-    this.onKnock?.(piece ? 'piece' : player ? 'player' : car.car.loose || car.car.parked ? 'loose' : 'traffic', { x: at.x, y: at.y, z: at.z });
+    this.onKnock?.(piece ? 'piece' : player ? 'player' : car.car.loose || car.car.parked ? 'loose' : 'traffic', { x: at.x, y: at.y, z: at.z }, piece?.piece.kind);
     if (player && blow) this.player.strike(blow.x, blow.z, blow.spin, Math.hypot(blow.x, blow.z));
     if (piece && blow) { piece.v.x += blow.x; piece.v.z += blow.z; }
     person.body = body; person.rise = person.back = null;
@@ -420,6 +448,48 @@ export class PedestrianContacts {
     }
     if (shove) { e[12] += shove.x; e[14] += shove.z; }
     return false;
+  }
+  // Someone drawn by `matrix` (in `frame`) in the way of a car bearing down
+  // on them leaps aside with the fares' hop, as Crazy Taxi's pedestrians do,
+  // far enough to clear its side, then drifts back onto their walk as a
+  // shoved one does. Their partner walks on: a dive is no stop. The hit test
+  // is from where the dive has got them, so leaving it late still gets them hit.
+  dive(person, matrix, frame, radius, time) {
+    const e = matrix.elements, f = frame.elements;
+    // (from where their walk has them: they stay out of its way until it has gone by)
+    const threat = this.threat(e[12] + f[12], e[13] + f[13], e[14] + f[14], radius);
+    let dive = person.dive;
+    if (threat) {
+      if (!dive) {
+        dive = person.dive = { at: time, x: threat.x, z: threat.z, until: 0 };
+        // (cartwheeling the way they dive)
+        person.hopStart = time; person.hopSpin = e[0] * dive.x + e[2] * dive.z > 0 ? -1 : 1;
+      }
+      dive.until = time + DIVE_HOLD;
+    }
+    if (!dive) return;
+    const out = smooth(Math.min(1, (time - dive.at) / PEDESTRIAN_HOP)), far = Math.hypot(dive.x, dive.z);
+    const k = out * Math.max(0, 1 - Math.max(0, time - Math.max(dive.until, dive.at + PEDESTRIAN_HOP)) * RETURN / far);
+    if (k <= 0 && out === 1) { person.dive = null; return; }
+    e[12] += dive.x * k; e[14] += dive.z * k;
+  }
+  // The way to dive, as { x, z }, from the first car bearing down on someone
+  // standing at (x, y, z), or alongside them: null if none is
+  threat(x, y, z, radius) {
+    for (let i = 0; i < this.count; i++) {
+      const car = this.cars[i];
+      if (!car.threat) continue;
+      const speed = Math.hypot(car.vx, car.vz);
+      if (speed < DODGE_SPEED || Math.abs(y - car.y) > 2) continue;
+      // Along and across the way it is going, from its middle
+      const ux = car.vx / speed, uz = car.vz / speed, dx = x - car.x, dz = z - car.z, along = dx * ux + dz * uz, across = dz * ux - dx * uz;
+      const lined = Math.abs(ux * car.sin - uz * car.cos) > .7, reach = (lined ? car.length : car.width) + radius, side = (lined ? car.width : car.length) + radius;
+      if (along < -reach || along > reach + Math.min(DODGE_SEEN, speed * DODGE_AHEAD) || Math.abs(across) > side + DODGE_CLEAR) continue;
+      const way = Math.sign(across) || 1, far = Math.max(.5, Math.min(DIVE_MOST, side + DODGE_CLEAR - Math.abs(across)));
+      dodge.x = -uz * way * far; dodge.z = ux * way * far;
+      return dodge;
+    }
+    return null;
   }
   // Getting up, then walking back to where they would be now (where they
   // rejoin their walk, which waits for them, or their own spot), briskly

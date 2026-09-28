@@ -3,6 +3,7 @@ import { CITY_PLACES, PLACE_TYPES } from './world/city-places.js';
 import { CityExploration } from './city-exploration.js';
 import { taxiRoute, STOP_RADIUS } from './taxi-run.js';
 import { goalProgress } from './taxi-goals.js';
+import { contractProgress } from './demolition-run.js';
 import { $, attribute, hide } from './hud-dom.js';
 
 const MAP_SCALE = .36;
@@ -33,7 +34,7 @@ export class CityGuide {
     $('city-map-toggle').setAttribute('aria-expanded', String(expanded));
     $('city-map-toggle').setAttribute('aria-label', expanded ? 'Hide map' : 'Show map');
     $('city-map-toggle').title = expanded ? 'Hide map' : 'Show map';
-    $('taxi-offer').hidden = !expanded || !this.taxi?.running || !$('taxi-offer').textContent;
+    $('taxi-offer').hidden = !expanded || !(this.taxi?.running || this.demolition?.running) || !$('taxi-offer').textContent;
     // Draw immediately so opening the map never exposes an empty canvas.
     if (expanded) {
       this.shown = null;
@@ -62,6 +63,7 @@ export class CityGuide {
       this.refreshNotebook();
     }
     if (this.taxi?.running) { this.updateTaxi(draw); return; }
+    if (this.demolition?.running) { this.updateDemolition(draw); return; }
     attribute(this.canvas, 'title', 'Local street map');
     hide($('taxi-offer'), true);
     attribute(this.canvas, 'aria-label', `Local street map. Your heading is up; the white arrow is ${vehicle.walker ? 'you' : 'your car'}.${this.onFoot?.parked ? ' The car in a teal ring is your own, where you left it.' : ''}`);
@@ -81,6 +83,18 @@ export class CityGuide {
       : 'Local street map. Your heading is up; the white arrow is your car. Gold marks the current drop-off and the stretch of street to stop in; a dashed line leads to the next group stop.');
     if (this.expanded && draw) this.draw(vehicle);
   }
+  // A demolition run's map card keeps its next contract in view, as a taxi
+  // shift's does its next goal, and the map marks what the open contracts
+  // ask for (`targets`, set up in main.js)
+  updateDemolition(draw = true) {
+    const run = this.demolition, vehicle = this.position(), contract = run.contracts.find(each => !each.done);
+    const offer = contract ? `Contract · ${contract.text} · ${contractProgress(contract)}` : '';
+    if ($('taxi-offer').textContent !== offer) $('taxi-offer').textContent = offer;
+    hide($('taxi-offer'), !this.expanded || !offer);
+    attribute(this.canvas, 'title', 'Local street map');
+    attribute(this.canvas, 'aria-label', 'Local street map. Your heading is up; the white arrow is your car. Orange dots mark what your contracts ask for.');
+    if (this.expanded && draw) this.draw(vehicle);
+  }
   draw(vehicle) {
     // Resolve markers on every redraw; exploration and previous fares must not
     // leave destinations behind after the passenger has gone.
@@ -91,8 +105,10 @@ export class CityGuide {
     // Everything the map shows comes from these (the route from the car's
     // position and its drop-off). While none has changed, as when paused or
     // waiting in a ring, the canvas already shows it.
+    // (and a demolition run's contract targets, a fresh list whenever they change)
+    const targets = this.demolition?.running ? this.targets?.() ?? [] : [];
     const shown = [ratio, vehicle.u, vehicle.s, vehicle.heading, run, run?.status, run?.status === 'pickup' ? run.customers : null,
-      target, nextStop, run?.stopIndex, parked, parked?.s, parked?.u];
+      target, nextStop, run?.stopIndex, parked, parked?.s, parked?.u, targets];
     if (this.shown?.length === shown.length && this.shown.every((value, i) => value === shown[i])) return;
     this.shown = shown;
     const places = run?.status === 'pickup' ? run.customers : target ? [{ ...target, color: '#ffd238' }] : [];
@@ -136,6 +152,12 @@ export class CityGuide {
         ctx.save(); ctx.fillStyle = '#17262f'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(place.passengers), x, y); ctx.restore();
       }
       if (selected) { ctx.strokeStyle = '#fff4dc'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.stroke(); }
+    }
+    ctx.fillStyle = '#ff9433'; ctx.strokeStyle = '#17262f'; ctx.lineWidth = 1.5;
+    for (const place of targets) {
+      const [x, y] = point(place);
+      if (x < 4 || y < 4 || x > width - 4 || y > height - 4) continue;
+      ctx.beginPath(); ctx.arc(x, y, 3.2, 0, Math.PI * 2); ctx.stroke(); ctx.fill();
     }
     // The car the player left, or where it is from the edge, pointed at
     if (parked) {

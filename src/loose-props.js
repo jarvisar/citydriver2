@@ -625,6 +625,11 @@ export class LooseProps {
     velocityAt(body, r, pv);
     return { x, z, y: y - BUMPER, heading: Math.atan2(pv.x, -pv.z), halfWidth: .3, halfLength: .3, vx: pv.x, vz: pv.z, spin: 0, mass: body.kind.mass };
   }
+  // How fast a piece's point (x, y, z) is going, m/s
+  speedAt(body, x, y, z) {
+    r.set(x - body.p.x, y - body.p.y, z - body.p.z);
+    return velocityAt(body, r, pv).length();
+  }
   // The player as a body a loose piece meets: their car's body (see
   // inBody), or, on foot, a round one (see Walker) from just over their feet
   // (what is under those they have hopped over) to their head

@@ -1,13 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DemolitionRun, DemolitionRecords, DEMOLITION_RANKS, PRICES, PIECE_NAMES, CAR_PRICES, RUN_SECONDS, CHAIN_SECONDS, CHAIN_STEP,
-  MULTIPLIER_MAX, TAKEDOWN_SECONDS, MAX_SECONDS, FINE, DENT_SPEED, DENT_GAP, WRECK_SPEED, SCORE_SLOTS, SCORES_KEY,
-  chainMultiplier, carDamage, demolitionRank, money } from '../src/demolition-run.js';
+import { DemolitionRun, DemolitionRecords, DEMOLITION_RANKS, PRICES, PIECE_NAMES, CAR_PRICES, PARKED_SHARE, RUN_SECONDS, CHAIN_SECONDS, CHAIN_STEP,
+  MULTIPLIER_MAX, TAKEDOWN_SECONDS, MAX_SECONDS, FINE, FINE_GAP, DENT_SPEED, DENT_GAP, WRECK_SPEED, SCORE_SLOTS, SCORES_KEY,
+  CONTRACTS, CONTRACT_SECONDS, CONTRACTS_PER_RUN, chainMultiplier, chainSeconds, carDamage, demolitionRank, runContracts, money, compactMoney } from '../src/demolition-run.js';
 import { TRAFFIC_MODELS } from '../src/traffic-models.js';
 
 const memory = () => { const data = new Map(); return { getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, String(value)), data }; };
 const car = (name = 'sedan', extra = {}) => ({ spec: { name }, generation: 1, parked: null, position: { x: 0, y: 0, z: 0 }, ...extra });
-const started = storage => { const run = new DemolitionRun(storage); run.start(); return run; };
+// A run with no contracts, unless given some, so the clock only moves as a test means it to
+const started = (storage, contracts = []) => { const run = new DemolitionRun(storage); run.start(); run.contracts = contracts; return run; };
+const contract = (id, target) => { const type = CONTRACTS.find(entry => entry.id === id);
+  return { id, stat: type.stat, tier: 0, target, text: type.text(target), short: type.short, money: Boolean(type.money), progress: 0, done: false }; };
 
 test('everything a car can knock loose has a price and a name, and every traffic model a value', () => {
   for (const kind of ['lamp', 'lantern', 'signal', 'mast', 'sign', 'bench', 'bin', 'table', 'chair', 'stall', 'tree', 'shelter']) {
@@ -36,7 +39,7 @@ test('a chain steps its multiplier every few smashes, then banks its pot once it
   assert.equal(banked.amount, run.score); assert.equal(banked.multiplier, 2);
   assert.equal(banked.rank, null, 'a bank under the first rating lifts nothing');
   // One that carries the score past a rating says so
-  run.damageCar(car('van'), WRECK_SPEED); run.update(CHAIN_SECONDS);
+  run.damageCar(car('van'), WRECK_SPEED); run.damageCar(car('pickup'), WRECK_SPEED); run.update(CHAIN_SECONDS);
   assert.equal(run.drainEvents().find(event => event.kind === 'banked').rank.id, demolitionRank(run.score).id);
   assert.notEqual(run.rank.id, 'none');
 });
@@ -86,16 +89,129 @@ test('wrecking a moving car buys time; a parked one pays but does not, and the c
   assert.equal(run.timeLeft, MAX_SECONDS);
 });
 
-test('a pedestrian costs a fine and the chain\'s pot', () => {
+test('running someone over costs a fine and the chain\'s pot; hitting them with debris only the fine', () => {
   const run = started();
   for (let i = 0; i < CHAIN_STEP * 2; i++) run.smash(['bench']);
   const pending = run.pending;
-  run.pedestrian({ x: 1, y: 2, z: 3 });
+  run.pedestrian({ x: 1, y: 2, z: 3 }, 'player');
   assert.equal(run.chain, 0); assert.equal(run.pot, 0); assert.equal(run.score, -FINE); assert.equal(run.people, 1);
   const penalty = run.drainEvents().find(event => event.kind === 'penalty');
   assert.equal(penalty.lost, pending); assert.equal(penalty.fine, FINE); assert.deepEqual([penalty.x, penalty.y, penalty.z], [1, 2, 3]);
   run.update(CHAIN_SECONDS * 2);
   assert.equal(run.score, -FINE, 'the lost chain never banks');
+  // A flying lamp, or a car the truck knocked loose: the chain goes on
+  for (const by of ['piece', 'loose']) {
+    const other = started();
+    for (let i = 0; i < CHAIN_STEP; i++) other.smash(['bench']);
+    const pot = other.pending;
+    other.pedestrian(null, by, 'lamp');
+    assert.equal(other.pending, pot, by); assert.equal(other.chain, CHAIN_STEP); assert.equal(other.score, -FINE);
+    assert.equal(other.drainEvents().find(event => event.kind === 'penalty').lost, 0);
+    other.update(CHAIN_SECONDS);
+    assert.equal(other.score, pot - FINE, `${by}: the chain banks`);
+  }
+});
+
+test('one mishap is one fine: a pair hit together, or someone a body is thrown into', () => {
+  const run = started();
+  run.pedestrian(null, 'player'); run.pedestrian(null, 'player');
+  assert.equal(run.people, 2); assert.equal(run.score, -FINE);
+  run.update(FINE_GAP);
+  run.pedestrian(null, 'piece', 'person');
+  assert.equal(run.people, 3); assert.equal(run.score, -FINE, 'a thrown body hitting someone is the same mishap'); assert.equal(run.fineCount, 1);
+  run.pedestrian(null, 'piece', 'bin');
+  assert.equal(run.score, -2 * FINE);
+  assert.equal(run.drainEvents().filter(event => event.kind === 'penalty').length, 2);
+});
+
+test('parked cars pay part of their price and no time', () => {
+  const run = started();
+  assert.equal(run.damageCar(car('van', { parked: {} }), WRECK_SPEED), CAR_PRICES.van * PARKED_SHARE);
+  assert.equal(run.damageCar(car('van'), WRECK_SPEED), CAR_PRICES.van);
+  assert.equal(run.timeLeft, RUN_SECONDS + TAKEDOWN_SECONDS);
+});
+
+test('the chain waits less for the next smash as its multiplier climbs', () => {
+  assert.equal(chainSeconds(1), CHAIN_SECONDS);
+  for (let m = 2; m <= MULTIPLIER_MAX; m++) assert.ok(chainSeconds(m) < chainSeconds(m - 1) && chainSeconds(m) > 1.2);
+  const run = started();
+  for (let i = 0; i < CHAIN_STEP * (MULTIPLIER_MAX - 1); i++) run.smash(['bin']);
+  assert.equal(run.multiplier, MULTIPLIER_MAX); assert.equal(run.chainLeft, 1);
+  run.update(chainSeconds(MULTIPLIER_MAX) - .05);
+  assert.equal(run.score, 0);
+  run.update(.1);
+  assert.ok(run.score > 0, 'held too long at the top, it banks');
+});
+
+test('time up mid-chain plays the chain out: no time comes back, and the run ends when it banks', () => {
+  const run = started(null, [contract('trees', 1)]);
+  run.update(RUN_SECONDS - 1);
+  run.smash(['lamp']); run.update(1.5);
+  assert.equal(run.status, 'running'); assert.equal(run.timeLeft, 0); assert.ok(run.overtime);
+  assert.ok(run.drainEvents().some(event => event.kind === 'overtime'));
+  // Smashes still pay, at the chain's multiplier, but a takedown or a contract adds no time
+  run.smash(['tree']); run.damageCar(car('van'), WRECK_SPEED);
+  assert.equal(run.timeLeft, 0); assert.equal(run.contracts[0].done, true); assert.equal(run.takedowns, 1);
+  const events = run.drainEvents();
+  assert.equal(events.find(event => event.kind === 'wreck').seconds, 0); assert.equal(events.find(event => event.kind === 'contract').seconds, 0);
+  run.update(CHAIN_SECONDS);
+  assert.equal(run.status, 'over'); assert.equal(run.score, PRICES.lamp + PRICES.tree + CAR_PRICES.van);
+  // Lost to a pedestrian, the chain ends the run there and then
+  const lost = started();
+  lost.update(RUN_SECONDS - .5); lost.smash(['lamp']); lost.update(1);
+  assert.ok(lost.overtime); lost.pedestrian(null, 'player'); lost.update(.01);
+  assert.equal(lost.status, 'over'); assert.equal(lost.score, -FINE);
+  // With no chain going the clock simply runs out
+  const quiet = started(); quiet.update(RUN_SECONDS);
+  assert.equal(quiet.status, 'over'); assert.equal(quiet.overtime, false);
+});
+
+test('contracts: three a run, drawn by the runs played, harder with a better rating, each worth time when done', () => {
+  const first = runContracts(0), again = runContracts(0), next = runContracts(1);
+  assert.equal(first.length, CONTRACTS_PER_RUN); assert.equal(new Set(first.map(entry => entry.id)).size, CONTRACTS_PER_RUN);
+  assert.deepEqual(first, again, 'a restarted run keeps its contracts');
+  assert.notDeepEqual(first.map(entry => entry.id), next.map(entry => entry.id));
+  const tiers = contracts => contracts.map(entry => entry.tier).sort();
+  assert.deepEqual(tiers(first), [0, 0, 1], 'one is a tier harder');
+  assert.deepEqual(tiers(runContracts(0, DEMOLITION_RANKS.findIndex(rank => rank.id === 'b'))), [1, 1, 2]);
+  // (in the list's order, so the chain ones come last)
+  for (let runs = 0; runs < 20; runs++) {
+    const order = runContracts(runs).map(entry => CONTRACTS.findIndex(type => type.id === entry.id));
+    assert.deepEqual(order, [...order].sort((a, b) => a - b));
+  }
+  for (const type of CONTRACTS) assert.ok(type.targets[0] < type.targets[1] && type.targets[1] < type.targets[2], type.id);
+  // Progress is news as it moves; done, the contract pays its time
+  const run = started(null, [contract('trees', 2), contract('parked', 1), contract('bank', 15000)]);
+  run.smash(['tree']);
+  assert.deepEqual(run.drainEvents().filter(event => event.kind === 'progress').map(event => event.text), ['Trees 1 / 2']);
+  run.smash(['tree']);
+  const done = run.drainEvents().find(event => event.kind === 'contract');
+  assert.equal(done.contract.id, 'trees'); assert.equal(done.seconds, CONTRACT_SECONDS); assert.equal(run.timeLeft, RUN_SECONDS + CONTRACT_SECONDS);
+  run.damageCar(car('hatchback', { parked: {} }), WRECK_SPEED);
+  assert.equal(run.contracts[1].done, true);
+  // A bank contract is done by one chain banking enough, and says nothing on the way
+  assert.equal(run.contracts[2].done, false);
+  run.update(CHAIN_SECONDS);
+  assert.equal(run.contracts[2].done, true); assert.equal(run.contractsDone, 3);
+  assert.equal(run.timeLeft, RUN_SECONDS + 3 * CONTRACT_SECONDS - CHAIN_SECONDS);
+  // Time won stops at the clock's cap
+  const full = started(null, [contract('lamps', 1)]); full.timeLeft = MAX_SECONDS - 2; full.smash(['lamp']);
+  assert.equal(full.timeLeft, MAX_SECONDS);
+  assert.equal(compactMoney(40000), '$40K'); assert.equal(compactMoney(1200000), '$1.2M');
+});
+
+test('passing the best run on the table is news, once', () => {
+  const storage = memory();
+  new DemolitionRecords(storage).record({ score: 10000, smashed: 1, wrecked: 0, bestChain: 1 });
+  const run = started(storage);
+  assert.equal(run.previousBest, 10000);
+  run.damageCar(car('sedan'), WRECK_SPEED); run.update(CHAIN_SECONDS);
+  assert.ok(run.beatBest); assert.equal(run.drainEvents().filter(event => event.kind === 'record').length, 1);
+  run.damageCar(car('van'), WRECK_SPEED); run.update(CHAIN_SECONDS);
+  assert.equal(run.drainEvents().filter(event => event.kind === 'record').length, 0);
+  // (a first run has nothing to beat)
+  const fresh = started(); fresh.damageCar(car('van'), WRECK_SPEED); fresh.update(CHAIN_SECONDS);
+  assert.equal(fresh.beatBest, false);
 });
 
 test('time up banks the last chain, rates the run and keeps it in the high score table', () => {

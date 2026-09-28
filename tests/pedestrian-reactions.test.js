@@ -153,9 +153,10 @@ test('turning to look is a spring: it starts gently and settles without snapping
 });
 // Drive `vehicle` at a person standing at `home` (in `frame`) and follow them
 // until they are back: what they did, frame by frame
-function knockOver(vehicle, home, frame = new THREE.Matrix4(), seconds = 30) {
+function knockOver(vehicle, home, frame = new THREE.Matrix4(), seconds = 30, dodge = false) {
   const props = new LooseProps(new THREE.Scene(), new THREE.MeshBasicMaterial()), contacts = new PedestrianContacts();
   const person = {}, matrix = new THREE.Matrix4(), frames = [], dt = 1 / 120, knocks = [];
+  contacts.dodge = dodge;
   contacts.onKnock = (by, at) => knocks.push({ by, at });
   for (let i = 0; i < seconds / dt; i++) {
     const time = i * dt;
@@ -335,14 +336,46 @@ test('in the city, a pair knocked apart gets back together and walks on', () => 
 });
 const onLoopOf = (walker, time) => { const p = walker.loop.perimeter; return (((walker.phase + walkedAt(walker, time) * walker.direction) % p) + p) % p; };
 
+test('dodging, someone in the way dives clear of a car and drifts back onto their walk, unless it comes too fast', () => {
+  const start = journeyStart(), road = roadAt(start.s, start.u, 40), heading = Math.atan2(road.tx, road.ty);
+  const across = { x: Math.cos(heading), z: Math.sin(heading) };
+  const run = (speed, offset = 0, dodge = true) => {
+    const x = road.x + road.tx * 20 + across.x * offset, z = -(road.y + road.ty * 20) + across.z * offset;
+    const home = new THREE.Matrix4().compose(new THREE.Vector3(x, ROAD_LEVEL, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), heading), new THREE.Vector3(1, 1.05, 1));
+    const result = knockOver(driven(road.x, -road.y, heading, speed), home, new THREE.Matrix4(), 6, dodge);
+    // (their middle: the leap cartwheels about it)
+    const middles = result.frames.map(f => new THREE.Vector3(0, PIVOT, 0).applyMatrix4(f.matrix));
+    return { ...result, home, middles, farthest: Math.max(...middles.map(m => Math.hypot(m.x - x, m.z - z))) };
+  };
+  for (const [speed, offset] of [[8, 0], [15, 0], [20, 0], [20, -.8], [20, .8], [28, .8]]) {
+    const { knocks, frames, home, middles, farthest } = run(speed, offset);
+    assert.equal(knocks.length, 0, `${speed} m/s, ${offset} m off its middle: missed`);
+    // (clear of the car's half width, 1 m, and their own .3)
+    assert.ok(farthest > 1.3 - Math.abs(offset) && farthest < 2.5, `${speed} m/s, ${offset} m: dived ${farthest.toFixed(2)} m`);
+    // (sideways; the leap's crouch, lift and squash are up and down)
+    for (let i = 1; i < middles.length; i++) {
+      const step = Math.hypot(middles[i].x - middles[i - 1].x, middles[i].z - middles[i - 1].z);
+      assert.ok(step < .06, `no jumps (${step.toFixed(3)} m at ${i})`);
+    }
+    frames.at(-1).matrix.elements.forEach((n, k) => close(n, home.elements[k]));
+  }
+  // Too fast to get clear of, or not dodging at all, and they go over
+  assert.deepEqual(run(28).knocks.map(k => k.by), ['player']);
+  assert.deepEqual(run(15, 0, false).knocks.map(k => k.by), ['player']);
+  // A car going past sends nobody diving
+  assert.ok(run(20, 3.5).farthest < 1e-6);
+});
+
 test('loose furniture flung at someone knocks them over, and so does someone already sent flying', async () => {
   const { cityAssets } = await import('../src/world/city-assets.js');
   const start = journeyStart(), road = roadAt(start.s, start.u, 40), heading = Math.atan2(road.tx, road.ty);
   const x = road.x + road.tx * 20, z = -(road.y + road.ty * 20), across = { x: Math.cos(heading), z: Math.sin(heading) };
   const at = (dx, dz) => new THREE.Matrix4().makeTranslation(x + dx, ROAD_LEVEL, z + dz);
   // A bin thrown at a standing person from 6 m off, `height` metres up, at 10 m/s
+  const knocks = [];
   const throwAt = (height, speed = 10, person = {}) => {
     const props = new LooseProps(new THREE.Scene(), new THREE.MeshBasicMaterial()), contacts = new PedestrianContacts();
+    contacts.onKnock = (by, at, kind) => knocks.push({ by, kind });
     const bystander = driven(x + across.x * 40, z + across.z * 40, heading, 0), matrix = new THREE.Matrix4(), frame = new THREE.Matrix4();
     const bin = props.add({ kind: 'bin', geometry: cityAssets.bin }, at(-across.x * 6, -across.z * 6).multiply(new THREE.Matrix4().makeTranslation(0, height, 0)));
     bin.v.set(across.x * speed, height > 1 ? 4 : 0, across.z * speed); props.wake(bin);
@@ -358,6 +391,7 @@ test('loose furniture flung at someone knocks them over, and so does someone alr
   };
   const low = throwAt(.3);
   assert.ok(low.person.body, 'a bin at knee height knocks them over');
+  assert.deepEqual(knocks, [{ by: 'piece', kind: 'bin' }], 'told what hit them');
   assert.ok(low.knocked < 10, `and gives up some of its way (${low.knocked?.toFixed(1)} m/s)`);
   // (thrown up from 3.5 m, it is still over 3 m up as it passes)
   const over = throwAt(3.5);
@@ -367,7 +401,8 @@ test('loose furniture flung at someone knocks them over, and so does someone alr
   // Someone sent flying at another person knocks them over too
   const { cityWalker } = await import('../src/world/city-walkers.js');
   const props = new LooseProps(new THREE.Scene(), new THREE.MeshBasicMaterial()), contacts = new PedestrianContacts();
-  const bystander = driven(x + across.x * 40, z + across.z * 40, heading, 0), other = {}, matrix = new THREE.Matrix4();
+  const bystander = driven(x + across.x * 40, z + across.z * 40, heading, 0), other = {}, matrix = new THREE.Matrix4(), thrown = [];
+  contacts.onKnock = (by, at, kind) => thrown.push(kind);
   const flying = props.add({ kind: 'person', geometry: cityWalker, person: true }, at(-across.x * 4, -across.z * 4).multiply(new THREE.Matrix4().makeTranslation(0, .4, 0)));
   flying.v.set(across.x * 7, 1, across.z * 7); props.wake(flying);
   for (let i = 0; i < 120 && !other.body; i++) {
@@ -376,4 +411,5 @@ test('loose furniture flung at someone knocks them over, and so does someone alr
     contacts.person(other, matrix.copy(at(0, 0)), new THREE.Matrix4(), .3, i / 120);
   }
   assert.ok(other.body, 'they go over too');
+  assert.deepEqual(thrown, ['person']);
 });

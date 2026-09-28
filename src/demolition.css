@@ -18,6 +18,11 @@
 
 /* The clock in hazard stripes, two oranges close enough to keep it legible */
 body[data-mode=demolition] .taxi-clock-box:not(:has([data-urgent=true])) { background: repeating-linear-gradient(-45deg, var(--city-accent) 0 9px, #ffa24d 9px 18px); }
+/* After time up the chain plays on: LAST CHAIN on two lines in the clock's
+   place, so the box keeps its width (on one line it pushed the score under
+   the task card on a phone on its side) */
+body[data-mode=demolition] .taxi-hud[data-overtime=true] #taxi-clock { display: none; }
+body[data-mode=demolition] .taxi-hud[data-overtime=true] .taxi-clock-box > span { max-width: 4.2em; line-height: 1.25; text-align: center; }
 
 /* The chain: its pill and the wait for the next smash in the accent, the pot
    it would bank bright, and the last smash's price with no fare-band dot */

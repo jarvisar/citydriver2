@@ -52,8 +52,8 @@ body[data-controller=true] .pause-settings input:focus { outline: 2px solid var(
 body:not([data-mode=free]) .pause-panel :is(#autodrive, #traffic) { display: none; }
 /* Two groups side by side, then three. Of the two columns, one holds a
    single long group: the discoveries in free drive, the shift goals in a
-   taxi run, the high scores in a demolition run. The other takes the two
-   short ones. */
+   taxi run, the contracts and high scores in a demolition run. The other
+   takes the two short ones. */
 .pause-column { display: contents; }
 @media (min-width: 560px) {
   .pause-header { grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 20px; }
@@ -92,7 +92,7 @@ body:not([data-mode=free]) .pause-panel :is(#autodrive, #traffic) { display: non
 }
 @media (prefers-reduced-motion: reduce) { .graphics-toggle .settings-chevron { transition: none; } }
 
-/* Shift goals sit with the driving settings while a taxi run is paused. */
+/* Shift goals (or a demolition run's contracts) sit with the driving settings while a run is paused. */
 #goals-panel[hidden], #scores-panel[hidden] { display: none; }
 .shift-goals { margin: 0; padding: 0; list-style: none; display: grid; }
 .shift-goals li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--ui-line); font-size: 12px; }

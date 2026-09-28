@@ -12,3 +12,24 @@ export const width = (id, value) => { const style = $(id).style; if (style.width
 export const compactCash = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 1 });
 // Whole seconds as m:ss
 export const clock = seconds => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+// Hints for new players, `texts` by id: each is shown once, for `seconds`,
+// and remembered in `storage` under `key`
+export class OnceHints {
+  constructor(texts, key, storage, seconds = 7) {
+    this.texts = texts; this.key = key; this.storage = storage; this.seconds = seconds; this.seen = null; this.showing = null; this.until = 0;
+  }
+  // The hint for `id` if it has not been shown before (or is showing now), else ''
+  get(id) {
+    if (!this.seen) {
+      this.seen = new Set();
+      try { for (const seen of JSON.parse(this.storage?.getItem(this.key) ?? '[]')) this.seen.add(seen); } catch { /* Optional storage. */ }
+    }
+    const now = performance.now() / 1000;
+    if (this.showing && now < this.until) return id === this.showing ? this.texts[id] : '';
+    this.showing = null;
+    if (!id || !this.texts[id] || this.seen.has(id)) return '';
+    this.seen.add(id); this.showing = id; this.until = now + this.seconds;
+    try { this.storage?.setItem(this.key, JSON.stringify([...this.seen])); } catch { /* Optional storage. */ }
+    return this.texts[id];
+  }
+}

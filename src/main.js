@@ -210,24 +210,43 @@ async function boot() {
     // demolition-run.js). While it runs, everything knocked loose is the
     // truck's doing, directly or through what it sent flying; ordinary
     // traffic knocking someone over is not.
-    const demolition = new DemolitionRun(taxiStorage), demolitionView = new DemolitionView(scene);
+    const demolition = new DemolitionRun(taxiStorage), demolitionView = new DemolitionView(scene, taxiStorage);
     props.onSmash = (kinds, at) => demolition.smash(kinds, at);
     traffic.onDamage = (car, closing) => demolition.damageCar(car, closing);
-    pedestrianContacts.onKnock = (by, at) => { if (by !== 'traffic') demolition.pedestrian(at); };
+    pedestrianContacts.onKnock = (by, at, kind) => { if (by !== 'traffic') demolition.pedestrian(at, by, kind); };
+    // The street map marks what the open contracts ask for where the city
+    // has few of them (trees and lamps are on every street): bus shelters,
+    // traffic lights, parked cars and traffic. A fresh list twice a second.
+    cityGuide.demolition = demolition;
+    let targets = [], targetsAt = -Infinity;
+    cityGuide.targets = () => {
+      if (performance.now() - targetsAt < 500) return targets;
+      targetsAt = performance.now(); targets = [];
+      const open = new Set(demolition.contracts.filter(contract => !contract.done).map(contract => contract.id));
+      const kinds = [...open.has('shelters') ? ['shelter'] : [], ...open.has('signals') ? ['signal', 'mast'] : []];
+      if (kinds.length || open.has('parked')) {
+        for (const chunk of world.chunks.values()) for (const collider of chunk.features?.colliders ?? []) {
+          if (collider.woken) continue;
+          if (collider.prop?.ready ? kinds.includes(collider.prop.pieces[0].kind) : open.has('parked') && collider.parked?.ready) targets.push({ u: collider.x, s: -collider.z });
+        }
+      }
+      if (open.has('takedowns') && traffic.enabled) for (const car of traffic.vehicles) if (car.car.visible && !car.loose) targets.push({ u: car.position.x, s: -car.position.z });
+      return targets;
+    };
     const runOver = () => taxi.status === 'over' || demolition.status === 'over';
     const fleetView = setupTaxiFleet(taxi.fleet, { running: () => taxi.running, career: taxi.career, onChange: () => { needsRender = true; },
       // A livery is only paint, so unlike a cab it can change mid-run.
       onLivery: color => { if (started && gameMode === 'taxi') { vehicle.setPaint(color); vehicle.render(0, world.origin); rendering.update(vehicle.car, 0, world.origin); } } });
-    // The pause screen lists the shift's goals with live progress.
+    // The pause screen lists the shift's goals with live progress (in a
+    // demolition run, its contracts and the high score table).
     function renderGoals() {
+      if (gameMode === 'demolition') { demolitionView.contracts(demolition); demolitionView.scores(demolition); return; }
       const goals = gameMode === 'taxi' && taxi.status !== 'idle' ? taxi.goals : [], stats = taxi.stats;
       $('#shift-goals').innerHTML = goals.map(goal => {
         const progress = goal.done ? goal.target : goalProgress(goal, stats);
         return `<li data-done="${goal.done}"><span class="goal-check" aria-hidden="true">${goal.done ? '✓' : '○'}</span><span class="goal-copy"><strong>${goal.text}</strong><small>${goal.done ? `+$${goal.bonus} banked` : `${progress} / ${goal.target} · $${goal.bonus}`}</small></span></li>`;
       }).join('');
       $('#goals-summary').textContent = goals.length ? `${goals.filter(goal => goal.done).length} of ${goals.length} · Bonuses bank to your fleet` : '';
-      // (and in a demolition run, the high score table)
-      if (gameMode === 'demolition') demolitionView.scores(demolition);
     }
     let fleetReturnFocus;
     function openFleet() {
@@ -343,7 +362,8 @@ async function boot() {
       // and it comes last, well away from Resume)
       $('#restart-run span').textContent = run ? 'Restart run' : 'New city';
       if (run) $('#switch-mode').before($('#restart-run')); else $('#traffic').after($('#restart-run'));
-      $('#goals-panel').hidden = gameMode !== 'taxi';
+      $('#goals-panel').hidden = !run; $('#goals-heading').textContent = gameMode === 'demolition' ? 'Contracts' : 'Shift goals';
+      $('#shift-goals').setAttribute('aria-label', $('#goals-heading').textContent);
       $('#scores-panel').hidden = gameMode !== 'demolition';
       $('#switch-mode span').textContent = run ? 'Free drive' : 'Taxi run';
       $('#other-run span').textContent = gameMode === 'demolition' ? 'Taxi run' : 'Demolition';
@@ -354,7 +374,9 @@ async function boot() {
       vrStatus.setAccent(gameMode);
       // Residents cost a fine in a demolition run: they glow red, through props too
       world.setPeopleAlert(gameMode === 'demolition', rendering.stencil);
-      updateCarUi();
+      // (and dive out of the truck's way)
+      pedestrianContacts.dodge = gameMode === 'demolition';
+      renderGoals(); updateCarUi();
     }
     function recoverCar(penalty = false) {
       const pose = nearestLanePose(vehicle.s, vehicle.u, vehicle.heading);
@@ -1082,10 +1104,13 @@ async function boot() {
       return { taxi: true, clockLabel: read('taxi-clock-label'), clock: read('taxi-clock'), urgent: $('#taxi-clock').dataset.urgent === 'true', cash: read('taxi-cash'), fares: read('taxi-fares'),
         stage: [read('taxi-stage'), read('taxi-fare-status')].filter(Boolean).join(' · '), title: read('taxi-task-title'),
         distance: pickup || $('#taxi-nav').hidden ? '' : read('taxi-nav-distance'),
-        detail: pickup ? [read('taxi-party'), read('taxi-task-detail')].filter(Boolean).join(' · ')
+        // (a pickup's party, or a demolition contract's progress, goes with the instruction)
+        detail: pickup || (demolition.running && !demolition.chain) ? [read('taxi-party'), read('taxi-task-detail')].filter(Boolean).join(' · ')
           : read('taxi-task-detail') || read('taxi-next-stop') || [read('taxi-party'), read('taxi-combo')].filter(Boolean).join(' · '),
         // (to the percent: each change redraws and uploads the HUD's texture)
-        timer: timer.hidden ? null : { text: read('taxi-timer'), tone: timer.dataset.rating, fraction: Math.round(parseFloat($('#taxi-timer-fill').style.width)) / 100 || 0 }, hint };
+        // (a pill with no bar under it, such as a demolition run's contracts done)
+        timer: timer.hidden ? null : { text: read('taxi-timer'), tone: timer.dataset.rating,
+          fraction: $('#taxi-timer-fill').parentElement.hidden ? null : Math.round(parseFloat($('#taxi-timer-fill').style.width)) / 100 || 0 }, hint };
     }
     // (what the controls ask of the player on foot, refilled each step)
     const walking = { walk: { x: 0, z: 0 } };
@@ -1141,7 +1166,7 @@ async function boot() {
       }
       if (started && demolition.running) {
         demolition.update(dt);
-        for (const event of demolition.drainEvents()) demolitionEvent(event);
+        demolitionEvents(demolition.drainEvents());
         tickClock(demolition.timeLeft);
       }
     };
@@ -1152,22 +1177,34 @@ async function boot() {
       shiftTick = left;
     }
     // What a demolition run has to say: prices float up off the wreckage, and
-    // the chain's news, a takedown's time and a fine take the panel's last line
-    function demolitionEvent(event) {
-      if (event.kind === 'smash' || event.kind === 'dent') { demolitionView.pop(event); audio.cue('smash', event); }
-      else if (event.kind === 'wreck') {
-        demolitionView.pop(event); audio.cue('wreck');
-        if (event.seconds) { demolitionView.pop({ ...event, kind: 'bonus' }); toast(`Takedown · +${event.seconds}s`, 'bonus'); audio.cue('bonus'); }
-      } else if (event.kind === 'multiplier') { toast(event.text, 'chain'); audio.cue('multiplier', event); }
-      else if (event.kind === 'banked') {
-        toast(event.text, 'banked'); audio.cue('banked');
-        // (a new rating is its own news, a moment later, as a taxi goal is)
-        if (event.rank) setTimeout(() => { if (demolition.running && !paused) { toast(`Rating · ${event.rank.name}`, 'goal'); audio.cue('goal'); } }, 1300);
-      } else if (event.kind === 'penalty') { demolitionView.pop(event); toast(event.text, 'slow'); audio.cue('penalty'); }
-      else if (event.kind === 'over') {
-        haltCar();
-        setPaused(true); pauseOverlay.hidden = true; demolitionView.hud(demolition, vehicle); demolitionView.results(demolition); $('#demolition-retry').focus();
+    // the step's biggest news takes the panel's last line (a contract done
+    // outranks the multiplier's callout on the same smash)
+    function demolitionEvents(events) {
+      let news = null, later = null;
+      const say = (text, tone, weight) => { if (!news || weight >= news.weight) news = { text, tone, weight }; };
+      for (const event of events) {
+        if (event.kind === 'smash' || event.kind === 'dent') { demolitionView.pop(event); audio.cue('smash', event); }
+        else if (event.kind === 'wreck') {
+          demolitionView.pop(event); audio.cue('wreck');
+          if (event.seconds) { demolitionView.pop({ ...event, kind: 'bonus' }); say(`Takedown · +${event.seconds}s`, 'bonus', 2); audio.cue('bonus'); }
+        } else if (event.kind === 'progress') say(event.text, '', 1);
+        else if (event.kind === 'multiplier') { say(event.text, 'chain', 3); audio.cue('multiplier', event); }
+        else if (event.kind === 'contract') { demolitionView.pop(event); say(event.text, 'goal', 4); audio.cue('goal'); }
+        else if (event.kind === 'banked') {
+          say(event.text, 'banked', 3); audio.cue('banked');
+          // (a new rating is its own news, a moment later, as a taxi goal is)
+          if (event.rank) later = `Rating · ${event.rank.name}`;
+        } else if (event.kind === 'record') later = later ? `${event.text} ${later}` : event.text;
+        else if (event.kind === 'penalty') { demolitionView.pop(event); say(event.text, 'slow', 5); audio.cue('penalty'); }
+        else if (event.kind === 'overtime') { say(event.text, 'slow', 5); audio.cue('overtime'); }
+        else if (event.kind === 'over') {
+          haltCar();
+          setPaused(true); pauseOverlay.hidden = true; demolitionView.hud(demolition, vehicle); demolitionView.results(demolition); $('#demolition-retry').focus();
+          return;
+        }
       }
+      if (news) toast(news.text, news.tone);
+      if (later) setTimeout(() => { if (demolition.running && !paused) { toast(later, 'goal'); audio.cue('goal'); } }, 1300);
     }
     function frame(timestamp, xrFrame) {
       // The page's frame-rate cap (see Graphics.frameCap). A headset sets its own rate.

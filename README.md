@@ -17,7 +17,7 @@ This is the sequel to [Citydriver](https://github.com/jarvisar/citydriver). The 
 - Traffic that changes lanes on the boulevards and drives around crashed and stopped cars
 - Landmarks and shops that passengers can ask to go to
 - Taxi mode with group fares, shift goals, driver ranks and cabs to buy
-- Demolition mode with a truck, damage chains, ratings and high scores
+- Demolition mode with a truck, damage chains, contracts, ratings and high scores
 - Get out and walk around in free drive, and borrow cars from traffic
 - Weather and night driving
 - Keyboard, controller and touch screen support
@@ -28,7 +28,7 @@ This is the sequel to [Citydriver](https://github.com/jarvisar/citydriver). The 
 
 Start a Taxi run to pick up passengers and earn money. Stop in a pickup ring, follow the arrow, then stop in the yellow drop-off zone before the fare clock runs out. Buildings have a short zone outside the entrance. Parks and squares let passengers out anywhere along their side of the street. Some passengers are in a hurry, want stunts or are nervous. An icon on their ring shows which. If time runs out with passengers aboard, the shift ends after the last one gets out. Earnings can be spent on faster cabs in the taxi fleet. See [progression and balance](docs/taxi-progression.md) and [taxi fleet](docs/taxi-fleet.md) for more details.
 
-Demolition puts you in a truck with one minute to cause as much property damage as possible. Lamp posts, benches, signs, trees, bus shelters and cars all have a price, and parked cars are worth the most. Hits in quick succession build a chain. Every fourth hit raises the chain's multiplier, up to ×5, and the chain's damage is added to the total when it ends. Wrecking a moving car adds 3 seconds to the clock. Hitting a pedestrian costs a $5,000 fine and the chain in progress. Each run gets a rating, and the best five runs are kept as high scores. See [demolition](docs/demolition.md) for the prices and ratings.
+Demolition puts you in a truck with one minute to cause as much property damage as possible. Lamp posts, benches, signs, trees, bus shelters and cars all have a price, and cars in traffic are worth the most. Hits in quick succession build a chain. Every fourth hit raises the chain's multiplier, up to ×5, and the chain's damage is added to the total when it ends. Each run has three contracts, like felling five trees, and each one finished adds 10 seconds to the clock. Wrecking a moving car adds 3. If time runs out mid-chain, the chain keeps going until it ends. Pedestrians dive out of the way if you give them the chance. Running one over costs a $10,000 fine and the chain in progress. Each run gets a rating, and the best five runs are kept as high scores. See [demolition](docs/demolition.md) for the prices, contracts and ratings.
 
 Free drive has no timer. All three taxis are available in the garage, and weather settings and city discoveries are in the pause menu. The garage also has a helicopter that can fly over the city and land on roofs. Press forward on the main menu to enter free drive. Press R or select New city in the pause menu to generate a new city.
 

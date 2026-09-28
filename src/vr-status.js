@@ -399,7 +399,7 @@ export class VRStatus {
       };
       if (model.timer) pill(model.timer.text, TONES[model.timer.tone] ?? UI.text);
       if (model.distance) pill(model.distance, UI.text);
-      if (model.timer) {
+      if (model.timer && model.timer.fraction !== null) {
         box(ctx, x + 2, H - 10, w - 4, 8, 4, UI.recessed, null);
         box(ctx, x + 2, H - 10, Math.max(8, (w - 4) * model.timer.fraction), 8, 4, TONES[model.timer.tone] ?? UI.accent, null);
       }
