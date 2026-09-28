@@ -372,7 +372,7 @@ export class TaxiView {
     // Announce state changes, not every HUD refresh or countdown tick.
     if ($('taxi-task-detail').textContent !== text) $('taxi-task-detail').textContent = text;
   }
-  results(run) {
+  results(run, found = []) {
     const license = taxiLicense(run.cash), best = taxiLicense(run.best);
     const summary = run.summary, career = run.career, beaten = id => Boolean(summary?.beaten.includes(id));
     $('taxi-result-shift').textContent = `Shift ${clock(Math.round(run.elapsed))}`; $('taxi-result-shift').dataset.new = String(beaten('shift'));
@@ -405,7 +405,7 @@ export class TaxiView {
       bar.setAttribute('aria-label', `${rank.name} rank, ${money(career.earnings)} career earnings`);
       $('taxi-career-livery').textContent = summary?.liveries.length ? `Livery unlocked · ${summary.liveries.map(livery => livery.name).join(', ')}` : '';
     }
-    $('taxi-result-best').textContent = `Best ${money(run.best)} · ${best.name}`;
+    $('taxi-result-best').textContent = [`Best ${money(run.best)} · ${best.name}`, found.length && `${found.length} new ${found.length > 1 ? 'places' : 'place'} found`].filter(Boolean).join(' · ');
     $('taxi-results').hidden = false;
   }
   dispose() {

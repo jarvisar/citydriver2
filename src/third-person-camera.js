@@ -197,6 +197,12 @@ export class ThirdPersonCamera {
     if (this.camera.position.y < floor) this.camera.position.y = floor;
     const lid = this.lid = car.userData.lid ?? (this.lid && this.decked?.(this.camera.position.x, this.camera.position.z) ? this.lid : null);
     if (lid) { this.camera.position.y = Math.min(this.camera.position.y, lid - LID_CLEAR); this.target.y = Math.min(this.target.y, lid - LID_CLEAR); }
+    // High up, the near plane moves out to a metre: at .1 m a square's lawns
+    // and walks, a centimetre or two apart, striped seen from 100 m up. It
+    // stays within a tenth of the way to the pivot, so the machine itself is
+    // never cut, and a car's never moves.
+    const near = this.dip < .005 ? .1 : .1 + this.dip * Math.max(0, Math.min(.9, this.camera.position.distanceTo(this.pivot) * .1 - .1));
+    if (near === .1 ? this.camera.near !== .1 : Math.abs(near - this.camera.near) > .02) { this.camera.near = near; this.camera.updateProjectionMatrix(); }
     this.camera.lookAt(this.target);
     this.camera.updateMatrixWorld();
   }

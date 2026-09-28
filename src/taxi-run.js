@@ -310,7 +310,19 @@ function partyFor(stop) {
       if (length <= maxLength) { route = { destination, length }; break; }
     }
     route ??= fallback;
-    const destination = route?.destination ?? placeStop(cityPlaces()[0] ?? { s: CITY.downtown.s, u: CITY.downtown.u, name: 'Downtown', type: 'plaza', district: 'Downtown' });
+    if (!route) {
+      // Nothing in range: of the few nearest places, the one whose ride comes
+      // nearest the usual lengths. (It was always the city's first place, the
+      // park, which from the harbour on seed 1 was 3 km and ~$950.)
+      const near = cityPlaces().slice().sort((a, b) => distance(stop, a) - distance(stop, b)).slice(0, 6);
+      let miss = Infinity;
+      for (const place of near) {
+        const destination = { ...placeStop(place), id: place.id }, length = routeDistance(taxiRoute(stop, destination));
+        const off = length < 280 ? 280 - length : Math.max(0, length - 1100);
+        if (off < miss) { route = { destination, length }; miss = off; }
+      }
+    }
+    const destination = route?.destination ?? placeStop({ s: CITY.downtown.s, u: CITY.downtown.u, name: 'Downtown', type: 'plaza', district: 'Downtown' });
     const length = route?.length ?? routeDistance(taxiRoute(stop, destination));
     const party = partyOffer(stop, destination, length, wanted), mood = riderMood(stop.fareSeed, party.passengers);
     if (MOODS[mood]?.clock) party.stops[0].limit = Math.ceil(party.stops[0].limit * MOODS[mood].clock);

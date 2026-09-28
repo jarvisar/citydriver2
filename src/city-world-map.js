@@ -1,9 +1,11 @@
 import { CITY, cityDistrict } from './world/city.js';
 import { CityMapCache, drawParkedCar } from './city-map.js';
+import { CITY_PLACES } from './world/city-places.js';
 
 // The whole city on one page for the pause screen: every block tinted by its
-// district, each neighbourhood named where its blocks are, downtown, and the
-// car. The streets, water and parks come from the street map's cached paths.
+// district, each neighbourhood named where its blocks are, downtown, the
+// places found so far in their notebook colours, and the car. The streets,
+// water, parks and venues' grounds come from the street map's cached paths.
 export const DISTRICT_COLORS = {
   'Old town': '#c9785b', 'Market district': '#d9a441', 'Garden quarter': '#86b35e',
   'Warehouse district': '#9a93ad', 'Civic quarter': '#d9cfae', Midtown: '#6fa2d8',
@@ -60,14 +62,25 @@ export class WorldMap {
     const b = this.bounds, scale = width / (b.maxX - b.minX);
     return { scale, height: (b.maxY - b.minY) * scale, toCanvas: (u, s) => [(u - b.minX) * scale, (b.maxY - s) * scale], toWorld: (x, y) => ({ u: b.minX + x / scale, s: b.maxY - y / scale }) };
   }
+  // The found place under a canvas point, if one's marker is there
+  placeAt(x, y, width, found) {
+    const { toCanvas } = this.frame(width);
+    let best = null, nearest = 11;
+    for (const place of found) {
+      const [px, py] = toCanvas(place.u, place.s), distance = Math.hypot(px - x, py - y);
+      if (distance < nearest) { best = place; nearest = distance; }
+    }
+    return best;
+  }
   // The district under a canvas point, as the HUD would name it there
   districtAt(x, y, width) {
     const { u, s } = this.frame(width).toWorld(x, y), b = this.bounds;
     if (u < b.minX || u > b.maxX || s < b.minY || s > b.maxY || this.city.mask.at(u, s)) return null;
     return cityDistrict(s, u);
   }
-  // (`parked`: the car the player left, { s, u }, if there is one: see OnFoot)
-  draw(canvas, vehicle, parked = null) {
+  // (`parked`: the car the player left, { s, u }, if there is one: see OnFoot;
+  // `found`: the places found)
+  draw(canvas, vehicle, parked = null, found = []) {
     const width = canvas.clientWidth || canvas.width, { scale, height, toCanvas } = this.frame(width);
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
     const pixelWidth = Math.round(width * ratio), pixelHeight = Math.round(height * ratio);
@@ -80,6 +93,7 @@ export class WorldMap {
     for (const [style, path] of this.tints) { ctx.fillStyle = DISTRICT_COLORS[style] ?? '#48626a'; ctx.fill(path); }
     // the lots a shade darker, so the blocks keep their grain
     ctx.fillStyle = '#10202614'; ctx.fill(cache.lots);
+    ctx.fillStyle = '#e4d9ba'; ctx.fill(cache.grounds);
     ctx.fillStyle = '#4e705d'; ctx.fill(cache.parks);
     ctx.fillStyle = '#477e8b'; ctx.fill(cache.water, 'evenodd');
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -88,10 +102,17 @@ export class WorldMap {
       ctx.strokeStyle = '#2b3f47'; ctx.lineWidth = Math.max(key, 1.4 / scale); ctx.stroke(path);
     }
     ctx.restore();
+    // The places found, in their notebook colours, under the names
+    const small = width < 560;
+    for (const place of found) {
+      const [x, y] = toCanvas(place.u, place.s);
+      ctx.beginPath(); ctx.arc(x, y, small ? 4.5 : 6, 0, Math.PI * 2);
+      ctx.fillStyle = CITY_PLACES[place.type]?.color ?? '#f5f4e9'; ctx.strokeStyle = '#17262f'; ctx.lineWidth = small ? 1.5 : 2; ctx.stroke(); ctx.fill();
+    }
     // Names, downtown's first; one that would overlap a name already drawn is
     // left out, as a small map runs out of room
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
-    const small = width < 560, drawn = [];
+    const drawn = [];
     for (const label of [...this.labels].sort((a, b) => Number(Boolean(b.downtown)) - Number(Boolean(a.downtown)))) {
       const [x, y] = toCanvas(label.x, label.y), lines = label.downtown ? ['DOWNTOWN'] : label.name.toUpperCase().split(' ');
       ctx.font = `${label.downtown ? 800 : 700} ${label.downtown ? (small ? 11 : 14) : small ? 10 : 13}px 'Segoe UI', Arial, sans-serif`;

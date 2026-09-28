@@ -29,6 +29,7 @@ import { signSheet } from './world/city-signs.js';
 import { loadingStage } from './loading-status.js';
 import { navGraph } from './world/nav-graph.js';
 import { CityGuide } from './city-guide.js';
+import { CITY_PLACES } from './world/city-places.js';
 import { Pigeons } from './world/city-pigeons.js';
 import { WorldMap, DISTRICT_COLORS } from './city-world-map.js';
 import { TaxiRun } from './taxi-run.js';
@@ -285,7 +286,7 @@ async function boot() {
       const chrome = worldMapDialog.offsetHeight - body.offsetHeight + (below ? key.offsetHeight + parseFloat(getComputedStyle(body).rowGap) : 0);
       const room = Math.max(140, parseFloat(getComputedStyle(worldMapDialog).maxHeight) - chrome - 2);
       worldMapCanvas.style.width = `${Math.floor(Math.min(worldMapCanvas.parentElement.clientWidth, room * worldMap.aspect))}px`;
-      worldMap.draw(worldMapCanvas, vehicle, onFoot.parked);
+      worldMap.draw(worldMapCanvas, vehicle, onFoot.parked, cityGuide.foundPlaces());
     }
     function openWorldMap() {
       if (!holdForChooser()) return;
@@ -297,18 +298,20 @@ async function boot() {
         const total = [...blocks.values()].reduce((sum, n) => sum + n, 0);
         $('#world-map-legend').innerHTML = Object.keys(DISTRICT_COLORS).filter(style => blocks.has(style)).map(style =>
           `<li><span class="world-map-swatch" style="--district-color:${DISTRICT_COLORS[style]}"></span>${style}<small>${Math.round(blocks.get(style) / total * 100)}%</small></li>`).join('')
+          + '<li id="world-map-places"><span class="world-map-place"></span>Places found<small></small></li>'
           + '<li id="world-map-car" hidden><span class="world-map-marker"></span>Your car<small></small></li>';
       }
       // and the player's own car, where they left it, and how far off
       const parked = onFoot.parked;
       $('#world-map-car').hidden = !parked;
+      $('#world-map-places small').textContent = String(cityGuide.foundPlaces().length);
       if (parked) $('#world-map-car small').textContent = `${Math.round(Math.hypot(parked.s - vehicle.s, parked.u - vehicle.u) / 10) * 10} m`;
       worldMapCanvas.style.aspectRatio = String(worldMap.aspect);
       $('#world-map-status').textContent = hereText();
       worldMapDialog.showModal();
       drawWorldMap();
       // (and once more for the headset's panel, which cannot show the page)
-      if (vr?.active) { vrMapCanvas ??= document.createElement('canvas'); vrMapCanvas.width = 940; worldMap.draw(vrMapCanvas, vehicle, onFoot.parked); vrMapKey++; }
+      if (vr?.active) { vrMapCanvas ??= document.createElement('canvas'); vrMapCanvas.width = 940; worldMap.draw(vrMapCanvas, vehicle, onFoot.parked, cityGuide.foundPlaces()); vrMapKey++; }
       $('#close-world-map').focus();
     }
     $('#open-world-map').addEventListener('click', openWorldMap);
@@ -318,8 +321,8 @@ async function boot() {
     $('#close-world-map').addEventListener('click', () => worldMapDialog.close());
     window.addEventListener('resize', drawWorldMap);
     worldMapCanvas.addEventListener('pointermove', event => {
-      const box = worldMapCanvas.getBoundingClientRect();
-      const name = worldMap?.districtAt(event.clientX - box.left, event.clientY - box.top, box.width);
+      const box = worldMapCanvas.getBoundingClientRect(), x = event.clientX - box.left, y = event.clientY - box.top;
+      const place = worldMap?.placeAt(x, y, box.width, cityGuide.foundPlaces()), name = place ? `${place.name} · ${CITY_PLACES[place.type].label}` : worldMap?.districtAt(x, y, box.width);
       $('#world-map-status').textContent = name ?? hereText();
     });
     worldMapCanvas.addEventListener('pointerleave', () => { $('#world-map-status').textContent = hereText(); });
@@ -404,7 +407,7 @@ async function boot() {
     function beginTaxi() {
       if (changingJourney) return;
       demolition.stop(); enterRun('taxi', taxi.fleet.selected, taxi.fleet.liveryColor);
-      taxi.start(vehicle); taxiView.reset(); renderGoals();
+      taxi.start(vehicle); taxiView.reset(); renderGoals(); cityGuide.lately = [];
       showRun();
     }
     // Demolition: the truck, a minute on the clock, and a city to wreck. The
@@ -1201,11 +1204,13 @@ async function boot() {
         for (const event of taxi.drainEvents()) {
           if (event.kind === 'over') {
             haltCar();
-            setPaused(true); pauseOverlay.hidden = true; taxiView.hud(taxi, vehicle); taxiView.results(taxi); fleetView.render(); $('#taxi-retry').focus();
+            setPaused(true); pauseOverlay.hidden = true; taxiView.hud(taxi, vehicle); taxiView.results(taxi, cityGuide.lately); fleetView.render(); $('#taxi-retry').focus();
           } else if (event.kind === 'goal') {
             // A goal usually completes on a payout, whose toast lands first.
             renderGoals(); setTimeout(() => { if (taxi.running && !paused) { toast(event.text, 'goal'); audio.cue('goal'); } }, 1500);
           } else { toast(event.text, event.rating ?? event.tone ?? ''); audio.cue(event.kind, event); taxiView.pop(event, vehicle); }
+          // (a fare's drop-off finds its place, quietly during the shift)
+          if (event.destination) cityGuide.arrive(event.destination.id);
         }
         tickClock(taxi.timeLeft);
       }

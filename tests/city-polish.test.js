@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { wallHasOutlook, edgeFacade, edgeWindows, shopAwning, shopFront, groundFloor, facadeRuns, runJoins, cornice, planLot, cityLot, wallPainting } from '../src/world/city-buildings.js';
+import { wallHasOutlook, edgeFacade, edgeWindows, shopAwning, shopFront, groundFloor, facadeRuns, runJoins, cornice, planLot, cityLot, wallPainting, VENUE_WALLS } from '../src/world/city-buildings.js';
 import { CityChunk } from '../src/world/citydriver-world.js';
 import { seededRandom } from '../src/world/route.js';
 import { Surface } from '../src/world/surface.js';
@@ -10,7 +10,7 @@ import { cityMedians } from '../src/world/city-medians.js';
 import { calcPolygonArea, insidePolygon, distanceToPolyline } from '../src/mapgen/polygon-util.js';
 import { intersection, region } from '../src/mapgen/booleans.js';
 import { buildLandmark } from '../src/world/city-landmarks.js';
-import { cityPlaces } from '../src/city-exploration.js';
+import { cityPlaces, placeForLot } from '../src/city-exploration.js';
 import { cityTrees, parkedCars } from '../src/world/city-assets.js';
 import { buildHedge } from '../src/world/city-detail-assets.js';
 import { daylight } from '../src/world/city-glass.js';
@@ -99,7 +99,8 @@ test('a party wall is painted only on the band clear of the house next door, ove
       const probe = { x: (a.x + q.x) / 2 + (q.y - a.y) / length * 1.2, y: (a.y + q.y) / 2 - (q.x - a.x) / length * 1.2 };
       const other = lots.find(o => o.index !== lot.index && o.block === lot.block && insidePolygon(probe, o.polygon));
       const next = other ? planLot(world, byIndex.get(other.index)) : null;
-      assert.ok(next?.kind !== 'landmark', 'nothing painted over a landmark');
+      // (over a venue next door, only above its walls)
+      if (next?.kind === 'landmark') assert.ok(paint.bottom >= VENUE_WALLS[placeForLot(other.index).type] + .8, `painted below a venue's walls at ${lot.centre.x.toFixed(0)},${lot.centre.y.toFixed(0)}`);
       if (next?.kind === 'building') assert.ok(paint.bottom >= wallTop(next) + .8, `painted below the neighbour's roof at ${lot.centre.x.toFixed(0)},${lot.centre.y.toFixed(0)}`);
       assert.ok(paint.bottom >= (b.domestic ? 3.6 : 5.4) - .7 && paint.ceiling <= top - .9 && paint.ceiling - paint.bottom >= 3.2, 'over the ground floor and under the cornice');
     }
@@ -389,7 +390,7 @@ test('every enclosed venue has a doorway and vehicle bays open onto a paved apro
       const p = { x: site.centre.x + site.tx * along + site.nx * into, y: site.centre.y + site.ty * along + site.ny * into };
       if (insidePolygon(p, place.polygon)) assert.ok(paving.some(ring => insidePolygon(p, ring)), `${place.name}: the outer loading bays need paving too`);
     }
-    const doors = boxes.filter(p => p.kind === 'glass' && p.colour === '#375563' && p.h > 2.5);
+    const doors = boxes.filter(p => p.kind === 'glass' && daylight(p.colour) === '#375563' && p.h > 2.5);
     assert.ok(doors.length, `${place.name} needs a door at ${distant ? 'distant' : 'close'} range`);
     for (const door of doors) {
       const x = door.x - site.centre.x, y = door.s - site.centre.y, into = x * site.nx + y * site.ny;

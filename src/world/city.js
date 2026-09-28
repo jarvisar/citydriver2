@@ -663,8 +663,10 @@ export function citySoundscape(s, u) {
   let park = 0, water = 0, sea = 0;
   for (const [du, ds] of SOUND_RING) {
     const x = u + du, y = s + ds;
-    if (CITY.mask.at(x, y)) { water++; if (!CITY.inRiver({ x, y })) sea++; }
-    else if (CITY.pavement.find(x, y)?.kind === 'park') park++;
+    if (CITY.mask.at(x, y)) { water++; if (!CITY.inRiver({ x, y })) sea++; continue; }
+    // (a square's inside as well as a park's: the squares were silent)
+    const hit = CITY.pavement.find(x, y), block = hit?.kind === 'block' ? CITY.blocks[hit.block] : null;
+    if (hit?.kind === 'park' || (block?.park && insidePolygon({ x, y }, block.inner))) park++;
   }
   const style = cityStyleDistrict(s, u), open = Math.max(park, water) / SOUND_RING.length;
   return {

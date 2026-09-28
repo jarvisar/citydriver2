@@ -1,4 +1,4 @@
-import { CITY } from './city.js';
+import { CITY, cityStyleDistrict } from './city.js';
 import { randomAt, clamp } from './route.js';
 import { deepestPoint } from '../mapgen/park-paths.js';
 import { insidePolygon, distanceToPolyline, offsetPolygon, signedArea, calcPolygonArea, bufferPolyline } from '../mapgen/polygon-util.js';
@@ -50,12 +50,38 @@ function squareWalks(ring, centre, radius, long) {
     const a = ring[i], b = ring[(i + 1) % n];
     if (Math.hypot(b.x - a.x, b.y - a.y) > 70) starts.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
   }
-  const walks = [];
+  const walks = [], angles = [];
   for (const start of starts) {
     const dx = centre.x - start.x, dy = centre.y - start.y, length = Math.hypot(dx, dy);
     if (length < radius + 6) continue;
+    // (the first of two walks that would fan out side by side from one
+    // corner, under 22 degrees apart)
+    const angle = Math.atan2(dy, dx);
+    if (angles.some(other => Math.abs(Math.atan2(Math.sin(other - angle), Math.cos(other - angle))) < .38)) continue;
+    angles.push(angle);
     // From just inside the square's edge to the circle
     walks.push([{ x: start.x + dx / length * .5, y: start.y + dy / length * .5 }, { x: centre.x - dx / length * radius, y: centre.y - dy / length * radius }]);
+  }
+  walks.push([...circle(centre.x, centre.y, radius, 32), circle(centre.x, centre.y, radius, 32)[0]]);
+  return walks;
+}
+
+// A circus's garden is an island in the traffic: a walk in to its paved
+// circle from each street that meets the circus, where the crossings are
+function circusWalks(ring, centre, radius) {
+  const walks = [], angles = [];
+  for (const road of CITY.roads) {
+    if (road.circus || road.kind === 'path') continue;
+    for (const end of [road.points[0], road.points.at(-1)]) {
+      const dx = end.x - centre.x, dy = end.y - centre.y, length = Math.hypot(dx, dy), angle = Math.atan2(dy, dx);
+      if (length > 70 || length < 1 || angles.some(other => Math.abs(Math.atan2(Math.sin(other - angle), Math.cos(other - angle))) < .38)) continue;
+      const ux = dx / length, uy = dy / length;
+      let reach = radius;
+      while (reach < 80 && insidePolygon({ x: centre.x + ux * (reach + .5), y: centre.y + uy * (reach + .5) }, ring)) reach += .5;
+      if (reach < radius + 6) continue;
+      angles.push(angle);
+      walks.push([{ x: centre.x + ux * (reach - .5), y: centre.y + uy * (reach - .5) }, { x: centre.x + ux * radius, y: centre.y + uy * radius }]);
+    }
   }
   walks.push([...circle(centre.x, centre.y, radius, 32), circle(centre.x, centre.y, radius, 32)[0]]);
   return walks;
@@ -109,10 +135,14 @@ function stripWalk(ring, centre, axis) {
 
 // Which square is which: a botanical garden and a market in the two roomiest,
 // a clocktower in a circus (or the square nearest downtown), a sculpture
-// garden, a fountain square, and any more in turn
+// garden, a fountain square, and any more in turn. The garden, the market and
+// the sculptures look first in the districts they belong in (the market
+// landed in the Market district in 4 cities of 63, the garden in the Garden
+// quarter in 9), among the squares with room for them.
 function assignDesigns(entries) {
   const designs = new Map(), free = entries.filter(e => e.deep && e.deep.distance >= 9);
   const downtown = e => Math.hypot(e.centre.x - CITY.downtown.u, e.centre.y - CITY.downtown.s);
+  const home = (list, styles) => { const style = e => cityStyleDistrict(e.centre.y, e.centre.x); return [...list.filter(e => styles.includes(style(e))), ...list.filter(e => !styles.includes(style(e)))]; };
   const roomy = list => list.filter(e => !e.circus).sort((a, b) => b.deep.distance - a.deep.distance);
   const take = (design, choose) => {
     const e = choose(free);
@@ -120,10 +150,13 @@ function assignDesigns(entries) {
     designs.set(e.index, design);
     free.splice(free.indexOf(e), 1);
   };
-  take('garden', list => roomy(list).find(e => e.deep.distance >= 24));
-  take('farmersmarket', list => roomy(list).find(e => e.deep.distance >= 20));
+  take('garden', list => home(roomy(list), ['Garden quarter']).find(e => e.deep.distance >= 24));
+  take('farmersmarket', list => home(roomy(list), ['Market district', 'Old town']).find(e => e.deep.distance >= 20));
   take('clock', list => list.find(e => e.circus) ?? list.slice().sort((a, b) => downtown(a) - downtown(b))[0]);
-  take('art', list => list.find(e => e.circus) ?? list[Math.floor(randomAt(list.length, 7411, CITY.seed) * list.length)]);
+  take('art', list => {
+    const civic = list.filter(e => ['Civic quarter', 'Garden quarter'].includes(cityStyleDistrict(e.centre.y, e.centre.x))), pool = civic.length ? civic : list;
+    return list.find(e => e.circus) ?? pool[Math.floor(randomAt(list.length, 7411, CITY.seed) * pool.length)];
+  });
   take('plaza', list => list.slice().sort((a, b) => downtown(a) - downtown(b))[0]);
   const rest = ['plaza', 'art', 'clock'], turn = Math.floor(randomAt(entries.length, 7412, CITY.seed) * 3);
   free.slice().sort((a, b) => a.index - b.index).forEach((e, i) => designs.set(e.index, e.circus ? 'plaza' : rest[(i + turn) % 3]));
@@ -152,17 +185,18 @@ export function squareLayout(park, design, index) {
   else if (design === 'art') radius = clamp(d * .26, 8, 12);
   else radius = clamp(d * .3, 9, circus ? 11 : 15);
   radius = Math.min(radius, d - 4);
-  const walks = circus ? [] : squareWalks(ring, centre, radius, d > 22);
+  const walks = circus ? circusWalks(ring, centre, radius) : squareWalks(ring, centre, radius, d > 22);
   const inner = radius - SQUARE_WALK;
   if (design === 'plaza') {
-    const basin = Math.min(inner * .55, 7);
+    // A cafe's tables on the paving, on the side away from the busiest walk,
+    // their parasols 3.9 m apart and a metre clear of the fountain's rim
+    const cafes = !circus && inner >= 6.3, basin = Math.min(inner * .55, 7, cafes ? inner - 4.9 : Infinity);
     features.push({ kind: 'fountain', x: centre.x, y: centre.y, size: basin / 3.4, r: basin + .6 });
-    // A cafe's tables on the paving, on the side away from the busiest walk
-    if (!circus) {
-      const turn = axis + Math.PI / 2 + (random(1) < .5 ? 0 : Math.PI);
+    if (cafes) {
+      const turn = axis + Math.PI / 2 + (random(1) < .5 ? 0 : Math.PI), step = Math.max(.42, 3.9 / (inner - 1.5));
       for (let k = -1; k <= 1; k++) {
-        const p = onAxis(centre.x, centre.y, turn + k * .42, inner - 1.5, 0);
-        features.push({ kind: 'cafe', x: p.x, y: p.y, yaw: turn + k * .42, r: 1.8, colour: STALL_COLOURS[(index + k + 3) % STALL_COLOURS.length] });
+        const p = onAxis(centre.x, centre.y, turn + k * step, inner - 1.5, 0);
+        features.push({ kind: 'cafe', x: p.x, y: p.y, yaw: turn + k * step, r: 1.8, colour: STALL_COLOURS[(index + k + 3) % STALL_COLOURS.length] });
       }
     }
   } else if (design === 'clock') {

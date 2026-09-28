@@ -1,5 +1,5 @@
 import { CITY } from './world/city.js';
-import { placeForBlock } from './city-exploration.js';
+import { placeForBlock, placeForLot } from './city-exploration.js';
 import { cityIslands } from './world/city-islands.js';
 
 // The car the player left parked (see OnFoot), on either map: a car in a
@@ -21,8 +21,9 @@ export function drawParkedCar(ctx, x, y, radius = 6.5) {
 const RUN = 100, EDGE = 12;
 
 // The local street map: the generated roads, water, parks and lots drawn
-// from cached Path2D shapes in world coordinates. A venue with a block to
-// itself shows as its grounds rather than the block's lots.
+// from cached Path2D shapes in world coordinates. A venue's grounds, a block
+// to itself or a lot, are a colour of their own (they were park green, so
+// most of the green on the map was museums and stations).
 // The street map shows only ~350 m round the car, so the shapes are also kept
 // in runs of neighbours, in their original order, each with its bounding box.
 // A draw fills only the runs in view, joined into one path, and joins them
@@ -31,19 +32,22 @@ const RUN = 100, EDGE = 12;
 // except that Skia picks its anti-aliasing from the whole path: a few edge
 // pixels come out a level or two different (about .03% at 2x). That cut a
 // draw's raster from ~2.1 ms to ~1.3 ms.
-// The whole-city paths the city map draws (`water`, `parks`, `lots`, `roads`),
-// and `blocks`, are built the first time they are asked for.
+// The whole-city paths the city map draws (`water`, `parks`, `lots`,
+// `grounds`, `roads`), and `blocks`, are built the first time they are asked for.
 export class CityMapCache {
   constructor(city = CITY, makePath = () => new Path2D()) {
     this.city = city; this.makePath = makePath;
-    const shapes = this.shapes = { water: [], parks: [], blocks: [], lots: [] };
+    const shapes = this.shapes = { water: [], parks: [], blocks: [], lots: [], grounds: [] };
     // The sea round the island has the island as a hole: filled even-odd
     for (const piece of [...city.seaWater, ...city.riverWater]) for (const ring of [piece.outer, ...piece.holes]) shapes.water.push(ring);
     for (const park of city.parks) shapes.parks.push(park);
     for (const block of city.blocks) if (block.sidewalk.length) shapes.blocks.push(block.sidewalk);
     const grounds = new Set();
-    city.blocks.forEach((block, index) => { if (city === CITY && placeForBlock(index)) { grounds.add(index); shapes.parks.push(block.inner); } });
-    city.lots.forEach((lot, index) => { if (!grounds.has(city.lotBlocks?.[index])) shapes.lots.push(lot); });
+    city.blocks.forEach((block, index) => { if (city === CITY && placeForBlock(index)) { grounds.add(index); shapes.grounds.push(block.inner); } });
+    city.lots.forEach((lot, index) => {
+      if (grounds.has(city.lotBlocks?.[index])) return;
+      (city === CITY && placeForLot(index) ? shapes.grounds : shapes.lots).push(lot);
+    });
     // and a planted island as green
     if (city === CITY) for (const island of cityIslands()) shapes.parks.push(island.lawn);
     // One line per stroke: park walks, and the streets by their width
@@ -105,8 +109,9 @@ export class CityMapCache {
   get parks() { return this.#parks ??= this.whole(this.shapes.parks, true); }
   get blocks() { return this.#blocks ??= this.whole(this.shapes.blocks, true); }
   get lots() { return this.#lots ??= this.whole(this.shapes.lots, true); }
+  get grounds() { return this.#grounds ??= this.whole(this.shapes.grounds, true); }
   get roads() { return this.#roads ??= new Map([...this.lines].map(([key, lines]) => [key, this.whole(lines, false)])); }
-  #water = null; #parks = null; #blocks = null; #lots = null; #roads = null;
+  #water = null; #parks = null; #blocks = null; #lots = null; #grounds = null; #roads = null;
   draw(ctx, vehicle, scale, width, height) {
     ctx.save();
     ctx.translate(width / 2, height / 2);
@@ -119,6 +124,7 @@ export class CityMapCache {
     const view = (name, runs) => this.within(name, runs, minX, minY, maxX, maxY);
     ctx.fillStyle = '#3a5155'; ctx.fill(view('blocks', this.runs.blocks));
     ctx.fillStyle = '#48626a'; ctx.fill(view('lots', this.runs.lots));
+    ctx.fillStyle = '#6a6751'; ctx.fill(view('grounds', this.runs.grounds));
     ctx.fillStyle = '#4e705d'; ctx.fill(view('parks', this.runs.parks));
     ctx.fillStyle = '#477e8b'; ctx.fill(view('water', this.runs.water), 'evenodd');
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';

@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { CITY, cityCell } from '../src/world/city.js';
-import { cityPlaces, placeForBlock } from '../src/city-exploration.js';
+import { CITY, cityCell, cityStyleDistrict } from '../src/world/city.js';
+import { cityPlaces, placeForBlock, passing, CityExploration } from '../src/city-exploration.js';
 import { PLACE_TYPES } from '../src/world/city-places.js';
 import { cityParks, squareLayout, SQUARE_WALK } from '../src/world/city-parks.js';
 import { placeStreetFurniture, findBridges, lawnSpots } from '../src/world/city-streets.js';
@@ -164,4 +164,61 @@ test('a square too narrow for a circle is a linear garden with a walk down its l
   // A square with no room for a walk at all still has its (empty) layout
   const tiny = squareLayout({ lawn: [at(-6, -3), at(6, -3), at(6, 3), at(-6, 3)], circus: false }, 'art', 4);
   assert.deepEqual([tiny.walks.length, tiny.panels.length, tiny.features.length], [0, 0, 0]);
+});
+
+test('a park or a square is found from every lane of the streets round it, and a fare dropped there finds it too', () => {
+  for (const place of places.filter(place => place.park !== undefined)) {
+    const plan = CITY.parkPlans[place.park], ring = plan.kerb?.length >= 3 ? plan.kerb : plan.polygon, edge = [...ring, ring[0]];
+    const xs = ring.map(p => p.x), ys = ring.map(p => p.y), box = [Math.min(...xs) - 20, Math.max(...xs) + 20, Math.min(...ys) - 20, Math.max(...ys) + 20];
+    let beside = 0, found = 0;
+    for (const road of CITY.roads) {
+      if (road.kind === 'path') continue;
+      for (let i = 1; i < road.points.length; i++) {
+        const a = road.points[i - 1], b = road.points[i], length = Math.hypot(b.x - a.x, b.y - a.y), tx = (b.x - a.x) / length, ty = (b.y - a.y) / length;
+        for (let t = 0; t < length; t += 4) for (const side of [-1, 1]) {
+          const x = a.x + tx * t + ty * road.profile.lane * side, y = a.y + ty * t - tx * road.profile.lane * side;
+          if (x < box[0] || x > box[1] || y < box[2] || y > box[3] || distanceToPolyline({ x, y }, edge) > road.profile.halfWidth + 1) continue;
+          beside++;
+          if (passing(place, y, x)) found++;
+        }
+      }
+    }
+    assert.equal(found, beside, `${place.name}: found from ${found} of ${beside} lane points beside it`);
+  }
+  const exploration = new CityExploration(), venue = venues[0];
+  assert.deepEqual(exploration.arrive(venue.id).map(each => each.place), [venue]);
+  assert.deepEqual(exploration.arrive(venue.id), [], 'a place is found once');
+  assert.ok(exploration.found.has(venue.type) && exploration.seen.has(venue.id));
+});
+
+test('a fountain square is named for what is round it', () => {
+  const near = (place, types) => Math.min(Infinity, ...places.filter(other => types.includes(other.type)).map(other => Math.hypot(other.s - place.s, other.u - place.u)));
+  for (const place of places.filter(place => place.type === 'plaza')) {
+    const style = cityStyleDistrict(place.s, place.u);
+    if (place.name === 'Station Square') assert.ok(near(place, ['station']) < 320, 'Station Square with no station near');
+    if (place.name === 'Market Square') assert.ok(near(place, ['market', 'farmersmarket']) < 320 || style === 'Market district', 'Market Square with no market near');
+    if (place.name === 'Old Town Square') assert.equal(style, 'Old town');
+    if (place.name === 'Harbour Square') assert.equal(place.district, 'Harbour');
+  }
+});
+
+test('a square\'s riders get out at a way in, and a venue faces the busiest street it fits along', () => {
+  const parks = cityParks();
+  for (const place of places.filter(place => place.park !== undefined && parks[place.park].park.square && !parks[place.park].circus)) {
+    const ends = parks[place.park].walks.filter(walk => walk.length === 2).map(walk => walk[0]);
+    if (!ends.length) continue;
+    const mouth = Math.min(...ends.map(p => Math.hypot(p.x - place.entrance.u, p.y - place.entrance.s)));
+    assert.ok(mouth < 45, `${place.name}: its drop-off is ${mouth.toFixed(0)} m from any of its walks`);
+  }
+  // (a side street's rank is 1, a major road's 2, a main or ring road's 3)
+  const RANK = { main: 3, ring: 3, major: 2, coast: 2, riverbank: 2 };
+  const rankAt = (x, y, reach) => { const hit = CITY.roadIndex.nearest(x, y, reach, (segment, distance) => segment.road.kind === 'path' ? Infinity : distance); return hit ? RANK[hit.road.kind] ?? 1 : 0; };
+  const grand = venues.filter(place => place.block !== undefined);
+  const facing = grand.filter(place => {
+    const f = place.footprint, ring = place.polygon;
+    let best = 0;
+    for (let i = 0; i < ring.length; i++) { const a = ring[i], b = ring[(i + 1) % ring.length]; if (a.distanceTo(b) >= 30) best = Math.max(best, rankAt((a.x + b.x) / 2, (a.y + b.y) / 2, 24)); }
+    return rankAt(f.front.x - f.nx * (f.setback + 9), f.front.y - f.ny * (f.setback + 9), 30) >= best;
+  });
+  assert.ok(facing.length >= grand.length * .6, `${facing.length} of ${grand.length} venues with a block face the busiest street along it`);
 });

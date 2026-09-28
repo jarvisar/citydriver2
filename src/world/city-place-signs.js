@@ -99,6 +99,8 @@ export const PLACE_SIGN_DESIGNS = {
     face('rect', 3.3, 'frame', '#e6e3d6', '#344851', '#84969a', { uppercase: true }), // Market Square
     face('rect', 3.5, 'frame', '#e6e3d6', '#344851', '#84969a', { uppercase: true }), // Old Town Square
     face('rect', 3.4, 'frame', '#e6e3d6', '#344851', '#84969a', { uppercase: true }), // Station Square
+    face('rect', 3.5, 'frame', '#e6e3d6', '#344851', '#84969a', { uppercase: true }), // Harbour Square
+    face('rect', 3.5, 'frame', '#e6e3d6', '#344851', '#84969a', { uppercase: true }), // Jubilee Square
   ],
   postoffice: [
     face('rect', 3.5, 'split', '#2d4960', '#eee9dc', '#a6b6bc', { icon: 'post', uppercase: true, lines: ['Central', 'Post Office'] }),

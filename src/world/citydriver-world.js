@@ -25,6 +25,7 @@ import { buildMonument } from './city-monuments.js';
 import { cityPlaces } from '../city-exploration.js';
 import { basinRim, basinWater } from './city-public-space-geometry.js';
 import { buildStreetSurfaces, placeStreetFurniture, findBridges, bridgePiers, PARAPET } from './city-streets.js';
+import { cityParks } from './city-parks.js';
 import { offsetPolygon, calcPolygonArea, averagePoint } from '../mapgen/polygon-util.js';
 
 const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
@@ -851,6 +852,8 @@ export class CitydriverWorld {
   }
   inCity(ix, iz) { return ix >= CITY.ix0 && ix <= CITY.ix1 && iz >= CITY.iz0 && iz <= CITY.iz1; }
   prepareLots() {
+    // (a square's loop has an index of its own, past the blocks', for its walkers' looks)
+    const SQUARE_LOOPS = 1e5;
     this.lotsByChunk = new Map(); this.blocksByChunk = new Map();
     // A walking loop just inside every block's kerb
     CITY.blocks.forEach((block, index) => {
@@ -865,6 +868,17 @@ export class CitydriverWorld {
       if (!this.blocksByChunk.has(key)) this.blocksByChunk.set(key, []);
       this.blocksByChunk.get(key).push({ index, points, cumulative, perimeter });
     });
+    // and round each square's paved circle, past its fountain, tower or
+    // stalls (nobody ever went into the squares)
+    for (const entry of cityParks()) {
+      const ring = entry.park.square && entry.plaza ? entry.walks.at(-1) : null;
+      if (!ring || ring.length < 8 || Math.hypot(ring[0].x - ring.at(-1).x, ring[0].y - ring.at(-1).y) > .01) continue;
+      const points = ring.slice(0, -1), cumulative = [0];
+      for (let i = 0; i < points.length; i++) { const a = points[i], b = points[(i + 1) % points.length]; cumulative.push(cumulative[i] + Math.hypot(b.x - a.x, b.y - a.y)); }
+      const key = cityCell(entry.plaza.y, entry.plaza.x).key;
+      if (!this.blocksByChunk.has(key)) this.blocksByChunk.set(key, []);
+      this.blocksByChunk.get(key).push({ index: SQUARE_LOOPS + entry.index, points, cumulative, perimeter: cumulative[points.length] });
+    }
     CITY.lots.forEach((polygon, index) => {
       const centre = averagePoint(polygon), area = calcPolygonArea(polygon), cell = cityCell(centre.y, centre.x);
       const lot = { polygon, index, block: CITY.lotBlocks?.[index] ?? -1, edges: CITY.lotEdges?.[index] ?? null, depth: CITY.lotDepths?.[index] ?? 0, centre, area, seed: Math.floor(randomAt(Math.round(centre.x), Math.round(centre.y) + 7102, CITY.seed) * 0xffffffff) >>> 0 };

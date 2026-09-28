@@ -8,7 +8,7 @@ import { parkSurfaces } from './city-park-surfaces.js';
 import { faceYaw, alongYaw } from './city-layout-render.js';
 import { randomAt, seededRandom } from './route.js';
 import { offsetPolyline, offsetPolylineClean, offsetPolygon, insidePolygon, polygonBounds, calcPolygonArea, signedArea, distanceToPolyline, averagePoint } from '../mapgen/polygon-util.js';
-import { cityPlaces, placeForBlock } from '../city-exploration.js';
+import { cityPlaces, placeForBlock, dropOffStretch } from '../city-exploration.js';
 import { cityIslands, islandFor } from './city-islands.js';
 import { rectanglePolygon } from './city-surfaces.js';
 import { frontSetback, treeRoom } from './city-buildings.js';
@@ -1062,12 +1062,27 @@ export function placeStreetFurniture(nav, bridges, add) {
     return { ...f, reach, half: service ? (f.width + 1) / 2 : Math.min(3.5, f.width * .12) };
   });
   const approachKinds = new Set(['tree', 'lamp', 'lantern', 'shelter', 'bench', 'bin', 'bollard', 'parking-sign', ...FITTINGS.map(fitting => fitting.kind)]);
+  // and a square's walks meet the pavement: nothing stands across the end of
+  // one either (a park's paths are roads, and kept clear as roads are)
+  const walkEnds = [];
+  for (const { park, walks } of cityParks()) if (park.square) for (const walk of walks) {
+    if (walk.length < 2 || Math.hypot(walk[0].x - walk.at(-1).x, walk[0].y - walk.at(-1).y) < .1) continue;
+    for (const p of [walk[0], walk.at(-1)]) {
+      if (distanceToPolyline(p, [...park.lawn, park.lawn[0]]) > 1.2) continue;
+      const road = CITY.roadIndex.nearest(p.x, p.y, 24, (segment, distance) => segment.road.kind === 'path' ? Infinity : distance);
+      const length = road && Math.hypot(road.x - p.x, road.y - p.y);
+      if (length > 1) walkEnds.push({ x: p.x, y: p.y, ox: (road.x - p.x) / length, oy: (road.y - p.y) / length, reach: length - road.road.profile.halfWidth + .3 });
+    }
+  }
   const acrossEntrance = piece => {
     if (piece.median || !approachKinds.has(piece.kind)) return false;
     const margin = piece.kind === 'tree' ? TREE_CROWN * piece.scale : piece.kind === 'shelter' ? 2.4 : .6;
     return gates.some(f => {
       const dx = piece.u - f.front.x, dy = piece.s - f.front.y, out = -(dx * f.nx + dy * f.ny);
       return out > -margin && out < f.reach && Math.abs(dx * f.tx + dy * f.ty) < f.half + margin;
+    }) || walkEnds.some(w => {
+      const dx = piece.u - w.x, dy = piece.s - w.y, out = dx * w.ox + dy * w.oy;
+      return out > -margin && out < w.reach && Math.abs(dx * w.oy - dy * w.ox) < SQUARE_WALK / 2 + margin;
     });
   };
   const put = (piece, radius = 1.5) => {
@@ -1147,6 +1162,11 @@ export function placeStreetFurniture(nav, bridges, add) {
   // clear of the junctions. The ring of a kerb runs anticlockwise, so the road
   // is on the right and the pavement on the left.
   const kerbs = [...CITY.blocks.map(block => ({ ring: block.kerb, block })), ...CITY.parkPlans.filter(park => !park.square).map(park => ({ ring: park.kerb, park }))];
+  // No bus stops in the middle of a circus, nor where a place's riders get
+  // out (a big park's gate is on its busiest street, usually a bus road)
+  const islands = new Set(CITY.parkPlans.filter(park => park.circus).map(park => park.block));
+  const dropOffs = places.flatMap(place => dropOffStretch(place));
+  const onDropOff = (x, y) => dropOffs.some(p => Math.abs(p.u - x) < 14 && Math.abs(p.s - y) < 14 && Math.hypot(p.u - x, p.s - y) < 14);
   for (const { ring, block, park } of kerbs) {
     if (ring.length < 3) continue;
     const loop = [...ring, ring[0]], perimeter = polylineLength(loop);
@@ -1161,7 +1181,7 @@ export function placeStreetFurniture(nav, bridges, add) {
       sinceShelter += 30;
       const nx = -p.ty, ny = p.tx, x = p.x + nx * 1.7, y = p.y + ny * 1.7;
       const road = CITY.roadIndex.nearest(p.x, p.y, 16);
-      if (sinceShelter < 240 || !road || !BUS_ROADS.has(road.road.kind) || inZone(x, y)) continue;
+      if (sinceShelter < 240 || !road || !BUS_ROADS.has(road.road.kind) || inZone(x, y) || islands.has(block?.index) || onDropOff(x, y)) continue;
       if (!put({ kind: 'shelter', u: x, s: y, yaw: alongYaw(nx, ny) }, 6)) continue;
       sinceShelter = 0; stops.push({ x, y });
       // (with a bin beside it, just past one end)
@@ -1361,7 +1381,7 @@ export function placeStreetFurniture(nav, bridges, add) {
       if (plaza.kind === 'bandstand') put({ kind: 'bandstand', u: plaza.x, s: plaza.y, yaw: random() * Math.PI * 2 }, 7);
       else put({ kind: 'fountain', u: plaza.x, s: plaza.y, size: Math.max(.8, Math.min(1.5, (plaza.radius - 1) / 3.4)) }, 7);
     }
-    if (plaza && !entry.circus) {
+    if (plaza) {
       // Benches facing in round the outside of the plaza's walk, where no walk leaves it
       const reach = park.square ? plaza.radius + SQUARE_WALK * 2 + .2 : plaza.radius + 4.9;
       for (const p of circle(plaza.x, plaza.y, reach, Math.max(6, Math.round(reach * Math.PI * 2 / 7)))) {

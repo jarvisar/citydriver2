@@ -1,6 +1,6 @@
 import { CityMapCache, drawParkedCar } from './city-map.js';
 import { CITY_PLACES, PLACE_TYPES } from './world/city-places.js';
-import { CityExploration } from './city-exploration.js';
+import { CityExploration, cityPlaces } from './city-exploration.js';
 import { taxiRoute, STOP_RADIUS } from './taxi-run.js';
 import { goalProgress } from './taxi-goals.js';
 import { contractProgress } from './demolition-run.js';
@@ -12,6 +12,8 @@ export class CityGuide {
     // Discoveries last only for the visit: clear any an older build saved
     try { localStorage.removeItem('citydriver-city-notebook-v1'); } catch { /* Optional storage. */ }
     this.exploration = new CityExploration(); this.notify = notify; this.position = position;
+    // (the places found since a run began, for its results)
+    this.lately = [];
     this.mapCache = new CityMapCache();
     this.canvas = $('city-map'); this.ctx = this.canvas.getContext('2d');
     // A restored context starts blank, so the next update draws again
@@ -21,7 +23,7 @@ export class CityGuide {
     this.compactQuery.addEventListener('change', () => {
       if (!this.mapPreferenceSet) this.setExpanded(!this.compactQuery.matches);
     });
-    $('city-notebook').innerHTML = PLACE_TYPES.map(type => `<div class="notebook-place" data-place-type="${type}" title="${CITY_PLACES[type].description}" style="--place-color:${CITY_PLACES[type].color}"><span class="notebook-stamp">${CITY_PLACES[type].symbol}</span><span><strong>${CITY_PLACES[type].name}</strong><small>${CITY_PLACES[type].short}</small></span><span class="notebook-check" aria-hidden="true">○</span></div>`).join('');
+    $('city-notebook').innerHTML = PLACE_TYPES.map(type => { const kind = CITY_PLACES[type]; return `<div class="notebook-place" data-place-type="${type}" title="${kind.description}" style="--place-color:${kind.color}"><span class="notebook-stamp">${kind.symbol}</span><span><strong>${kind.label}</strong><small>${kind.short}</small></span><span class="notebook-check" aria-hidden="true">○</span></div>`; }).join('');
     $('city-map-toggle').addEventListener('click', () => {
       this.mapPreferenceSet = true;
       this.setExpanded(!this.expanded);
@@ -42,16 +44,42 @@ export class CityGuide {
       else this.draw(this.position());
     }
   }
+  // A kind's row names the places of that kind found so far, and says so
+  // when the city has another still to find
   refreshNotebook() {
-    const found = this.exploration.found;
-    $('city-stamps').textContent = `${found.size} / ${PLACE_TYPES.length}`;
-    $('city-notebook-progress').textContent = `${found.size} / ${PLACE_TYPES.length} visited`;
-    for (const button of document.querySelectorAll('[data-place-type]')) {
-      const collected = found.has(button.dataset.placeType);
-      button.dataset.found = String(collected);
-      button.querySelector('.notebook-check').textContent = collected ? '✓' : '○';
-      button.setAttribute('aria-label', `${CITY_PLACES[button.dataset.placeType].name}, ${collected ? 'discovered' : 'undiscovered'}`);
+    const e = this.exploration, total = PLACE_TYPES.length;
+    $('city-stamps').textContent = `${e.found.size} / ${total}`;
+    $('city-notebook-progress').textContent = e.found.size === total ? `All ${total} found.` : `${e.found.size} / ${total} found. Drive past a place, or drop a fare there, to stamp it.`;
+    for (const row of document.querySelectorAll('[data-place-type]')) {
+      const kind = CITY_PLACES[row.dataset.placeType], all = cityPlaces().filter(place => place.type === row.dataset.placeType);
+      const names = all.filter(place => e.seen.has(place.id)).map(place => place.name), more = all.length - names.length;
+      row.dataset.found = String(names.length > 0);
+      row.querySelector('small').textContent = names.length ? [...names, more && `${names.length} of ${all.length}`].filter(Boolean).join(' · ') : kind.short;
+      row.querySelector('.notebook-check').textContent = names.length ? '✓' : '○';
+      row.setAttribute('aria-label', `${kind.label}, ${names.length ? `found: ${names.join(' and ')}${more ? `, ${more} more in the city` : ''}` : 'not found yet'}`);
     }
+  }
+  // Every new place is news: the first of a kind stamps the notebook, and
+  // another of a kind says how many there are
+  announce(found) {
+    const e = this.exploration, total = PLACE_TYPES.length, names = found.map(({ place }) => place.name);
+    const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0];
+    const one = found.length === 1 ? found[0].place : null, label = one && CITY_PLACES[one.type].label;
+    // (no label where the name already says it: Maple Library, Station Square)
+    const kind = label && !one.name.toLowerCase().includes(label.split(' ').at(-1).toLowerCase()) ? label : '';
+    let count = '';
+    if (found.some(each => each.first)) count = e.found.size === total ? `all ${total} found` : `${e.found.size} / ${total}`;
+    else if (one) { const all = cityPlaces().filter(place => place.type === one.type); count = `${all.filter(place => e.seen.has(place.id)).length} of ${all.length}`; }
+    this.notify(['Found ' + list, kind, count].filter(Boolean).join(' · '));
+    this.lately.push(...found.map(({ place }) => place));
+    this.refreshNotebook();
+  }
+  // The places found so far, for the maps
+  foundPlaces() { return cityPlaces().filter(place => this.exploration.seen.has(place.id)); }
+  // A fare dropped at a place finds it, wherever the cab stopped
+  arrive(id) {
+    const found = this.exploration.arrive(id);
+    if (found.length) this.announce(found);
   }
   // `draw: false` skips the canvas for when nobody can see the page, as in a
   // headset. Discoveries and the map card's text still update.
@@ -59,15 +87,12 @@ export class CityGuide {
     const vehicle = this.position(), e = this.exploration;
     // (on foot, or seen from the air, a landmark counts from anywhere near it)
     const found = e.update(vehicle.s, vehicle.u, active, Boolean(vehicle.walker || vehicle.airborne));
-    if (found.length) {
-      this.notify(e.found.size === PLACE_TYPES.length ? 'All landmarks visited' : `${found[0].name} · ${e.found.size} / ${PLACE_TYPES.length}`);
-      this.refreshNotebook();
-    }
+    if (found.length) this.announce(found);
     if (this.taxi?.running) { this.updateTaxi(draw); return; }
     if (this.demolition?.running) { this.updateDemolition(draw); return; }
     attribute(this.canvas, 'title', 'Local street map');
     hide($('taxi-offer'), true);
-    attribute(this.canvas, 'aria-label', `Local street map. Your heading is up; the white arrow is ${vehicle.walker ? 'you' : 'your car'}.${this.onFoot?.parked ? ' The car in a teal ring is your own, where you left it.' : ''}`);
+    attribute(this.canvas, 'aria-label', `Local street map. Your heading is up; the white arrow is ${vehicle.walker ? 'you' : 'your car'}. Coloured dots are places you have found.${this.onFoot?.parked ? ' The car in a teal ring is your own, where you left it.' : ''}`);
     if (this.expanded && draw) this.draw(vehicle);
   }
   updateTaxi(draw = true) {
@@ -108,8 +133,10 @@ export class CityGuide {
     // waiting in a ring, the canvas already shows it.
     // (and a demolition run's contract targets, a fresh list whenever they change)
     const targets = this.demolition?.running ? this.targets?.() ?? [] : [];
+    // (in free drive, the places found so far)
+    const known = run?.running || this.demolition?.running ? [] : this.foundPlaces();
     const shown = [ratio, vehicle.u, vehicle.s, vehicle.heading, run, run?.status, run?.status === 'pickup' ? run.customers : null,
-      target, nextStop, run?.stopIndex, parked, parked?.s, parked?.u, targets];
+      target, nextStop, run?.stopIndex, parked, parked?.s, parked?.u, targets, known.length];
     if (this.shown?.length === shown.length && this.shown.every((value, i) => value === shown[i])) return;
     this.shown = shown;
     const places = run?.status === 'pickup' ? run.customers : target ? [{ ...target, color: '#ffd238' }] : [];
@@ -153,6 +180,13 @@ export class CityGuide {
         ctx.save(); ctx.fillStyle = '#17262f'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(place.passengers), x, y); ctx.restore();
       }
       if (selected) { ctx.strokeStyle = '#fff4dc'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.stroke(); }
+    }
+    ctx.strokeStyle = '#17262f'; ctx.lineWidth = 1.5;
+    for (const place of known) {
+      const [x, y] = point(place);
+      if (x < 4 || y < 4 || x > width - 4 || y > height - 4) continue;
+      ctx.fillStyle = CITY_PLACES[place.type].color;
+      ctx.beginPath(); ctx.arc(x, y, 3.4, 0, Math.PI * 2); ctx.stroke(); ctx.fill();
     }
     ctx.fillStyle = '#ff9433'; ctx.strokeStyle = '#17262f'; ctx.lineWidth = 1.5;
     for (const place of targets) {

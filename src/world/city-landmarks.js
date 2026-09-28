@@ -5,13 +5,17 @@ import { edgeFacade, edgeWindows, shopAwning, cornice, convexHull, exitDistance 
 import { landmarkSite, venueFootprint } from './landmark-site.js';
 import { discoverySignFor, signCore } from './city-signs.js';
 import { round, clock, fireEngine } from './city-detail-assets.js';
+import { Parts } from './city-assets.js';
 import { roofWedge, vaultGeometry, vaultRibs } from './city-roofs.js';
 import { basinRim, basinWater } from './city-public-space-geometry.js';
 import { balancingBeam, standingBeam, STANDING_BEAM } from './city-sculptures.js';
 import { grassArea } from './city-grass.js';
 import { faceYaw, alongYaw, itemFrame } from './city-layout-render.js';
+import { cityStyleDistrict } from './city.js';
 import { buildMonument } from './city-monuments.js';
 import { BED_COLOURS } from './city-parks.js';
+import { nightLit } from './city-glass.js';
+import { planGrounds, buildGrounds } from './landmark-grounds.js';
 import { intersection, region, solids, union } from '../mapgen/booleans.js';
 import { offsetPolygon, calcPolygonArea, insidePolygon, distanceToPolyline } from '../mapgen/polygon-util.js';
 
@@ -55,6 +59,16 @@ const icing = donutShell(true), dough = donutShell(false);
 const gable = new THREE.CircleGeometry(1, 14, 0, Math.PI);
 const frontGlazing = new THREE.PlaneGeometry(1, 1);
 const STONE = '#e3d7bd', TRIM = '#efe4c9', COPPER = '#62958b', GLASS = '#5e8a9a', LAWN = '#7f9a5e', PAVING = '#c9bfa9';
+// This week's films in the cinema's poster cases
+const POSTERS = ['#c9463d', '#e8b64a', '#3f6f9c', '#6b4c8a', '#2f8f83', '#e07b39'];
+// The observatory's telescope out through its dome, in a unit dome, aimed
+// along the street so that its tube shows side on
+const telescope = (() => {
+  const p = new Parts();
+  p.beam([-.2, .42, -.05], [.72, 1.1, .2], .075, '#d8d2c2', 8);
+  p.beam([.66, 1.06, .18], [.8, 1.16, .22], .095, '#3d4246', 8);
+  return p.finish();
+})();
 
 const KIND = {
   cityhall: 'hall', museum: 'hall', library: 'hall', postoffice: 'hall', bathhouse: 'hall', hospital: 'hall',
@@ -129,13 +143,23 @@ export function buildLandmark(c, lot, place) {
       if (f.span >= 3) edgeWindows(c, { type, variation: 1, accent: colour }, f, bottom, floors, random);
     }
   };
+  // Glazing that is lit after dark (see nightLit), and its light on the
+  // paving in front (see NightLighting), one patch to a doorway or front
+  const glow = (u, wall, width, light) => {
+    if (c.distant || !c.features?.shopLights) return;
+    const p = at(u, wall - 1.9), x = c.east + p.x, z = -(c.start + p.s);
+    if (c.features.shopLights.some(patch => Math.hypot(patch.x - x, patch.z - z) < 4)) return;
+    c.features.shopLights.push({ x, z, yaw: Math.atan2(ty, tx), width, light });
+  };
   // A way in beneath the canopy or portico. Reserve it before the window
   // pass so that no sill or pilaster runs across the doorway. The same few
-  // pieces serve a glazed pair of public doors or a single staff door.
+  // pieces serve a glazed pair of public doors or a single staff door. The
+  // public doors are lit at night, a staff door dimly.
   const entrance = (u = 0, wall = front, w = 2.8, h = 3.1, level = .1) => {
     keepClear(wall, w / 2 + .35, G + level, G + level + h + .3, u);
     box(u, G + level + h / 2, wall - .12, w + .3, h + .24, .16, TRIM);
-    box(u, G + level + h / 2, wall - .23, w, h, .08, '#375563', 'glass');
+    box(u, G + level + h / 2, wall - .23, w, h, .08, nightLit('#375563', w > 1.6 ? 0 : 2), 'glass');
+    if (w > 1.6) glow(u, wall, w + 2, 0);
     if (w > 1.6) box(u, G + level + h / 2, wall - .3, .1, h, .08, TRIM);
     if (!c.distant) for (const side of w > 1.6 ? [-1, 1] : [1]) box(u + side * (w > 1.6 ? .18 : w * .32), G + level + 1.25, wall - .36, .06, .42, .08, '#cfb88a');
   };
@@ -164,15 +188,30 @@ export function buildLandmark(c, lot, place) {
       const u = side * (porch / 2 + 3.9);
       if ([-2.6, 2.6].every(du => [-.5, .5].every(dv => onLot(u + du, front - 1.4 + dv)))) return { u, into: front - 1.4, side: 0 };
     }
-    return { u: -(court / 2 - 3.2), into: front - Math.max(1.6, setback * .55), side: 0 };
+    // (and failing both, the name goes across the portico instead: a plinth
+    // at the forecourt's edge stood among the columns on a shallow site)
+    return null;
   })();
-  // The grounds: the site laid to lawn, the forecourt from the street to the
-  // door and a path round the building, clipped to the lot; trees along the
-  // lot's edges and in its open lawn, clear of both and of the name's plinth;
-  // and for a civic hall flower beds either side of the forecourt and its flags
+  // What else the grounds hold, by the kind of place (see landmark-grounds.js).
+  // The depot's tracks run out of its workshop doors (see the shed below).
+  const doors = place.type === 'depot' ? (() => { const width = Math.min(6.5, (W * .55 - 3) / 2); return [-1.5 - width / 2, 1.5 + width / 2]; })() : [];
+  const onLot = (u, v) => { const p = at(u, v); return insidePolygon({ x: p.x, y: p.s }, lotLocal); };
+  // (a civic hall's beds either side of its forecourt, drawn below with its flags)
+  const beds = civic && setback >= 5 ? [-1, 1].filter(side => onLot(side * (court / 2 + 2), front - setback / 2) && plinthAt?.side !== side) : [];
+  const taken = beds.map(side => ({ u: side * (court / 2 + 2), v: front - setback / 2, w: 2.2, d: Math.min(setback - 1.5, 9) }));
+  const layout = { c, at, box, localRing, onLot, type: place.type, variant: place.variant, W, D, setback, front, court, plinth: plinthAt, doors, along, facing, taken, paved: Boolean(site.paved) };
+  const plan = planGrounds(layout);
+  // The grounds: the site laid to lawn (or paved, for a works, a station or a
+  // market), the forecourt from the street to the door and a path round the
+  // building, clipped to the lot; trees along the lot's edges and in its open
+  // lawn, clear of both, the name's plinth and whatever the grounds hold; and
+  // for a civic hall flower beds either side of the forecourt and its flags
   const grounds = () => {
-    c.polygon(lotLocal.map(p => [p.x, p.y]), G + .05, .06, LAWN);
-    grassArea(c, lotLocal.map(p => [p.x, p.y]), LAWN, G + .08);
+    if (plan.cover) c.polygon(lotLocal.map(p => [p.x, p.y]), G + .05, .06, plan.cover);
+    else {
+      c.polygon(lotLocal.map(p => [p.x, p.y]), G + .05, .06, LAWN);
+      grassArea(c, lotLocal.map(p => [p.x, p.y]), LAWN, G + .08);
+    }
     // Rectangle fitting can put the site well behind an irregular street
     // edge. Reach the actual lot boundary, not just its nominal setback;
     // clipping below keeps the forecourt wholly within the grounds.
@@ -198,12 +237,21 @@ export function buildLandmark(c, lot, place) {
       if (Math.abs(q.along) < W / 2 + margin && Math.abs(q.into) < D / 2 + margin) return false;
       if (q.along > -halfW - out.left - 1 && q.along < halfW + out.right + 1 && q.into > -halfD - out.front - 1 && q.into < halfD + out.back + 1) return false;
       if (Math.abs(q.along) < court / 2 + 2.5 && q.into < front + 1) return false;
-      // (nor on the name's plinth, or between it and the street)
+      // (nor on the name's plinth, or between it and the street, nor on what the grounds hold)
       if (plinthAt && Math.abs(q.along - plinthAt.u) < 3.2 + margin && q.into < plinthAt.into + .8 + margin) return false;
+      if (plan.held.some(r => Math.abs(q.along - r.u) < r.w / 2 + margin - 1.5 && Math.abs(q.into - r.v) < r.d / 2 + margin - 1.5)) return false;
       return insidePolygon(p, lotLocal) && distanceToPolyline(p, edge) > 2.6;
     };
     const trees = [];
-    const plant = (p, scale) => { if (trees.some(q => Math.hypot(q.x - p.x, q.y - p.y) < 6.5)) return; trees.push(p); if (!c.distant) c.tree(p.x, p.y, scale); };
+    // (on paving, each in a pit of soil)
+    const pit = (p, size = 1.5) => c.polygon([[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => [p.x + (tx * a + nx * b) * size / 2, p.y + (ty * a + ny * b) * size / 2]), G + .065, .03, '#5b4a3a');
+    const plant = (p, scale) => {
+      if (trees.some(q => Math.hypot(q.x - p.x, q.y - p.y) < 6.5)) return;
+      trees.push(p);
+      if (c.distant) return;
+      c.tree(p.x, p.y, scale);
+      if (plan.cover) pit(p);
+    };
     const inward = offsetPolygon(lotLocal, -3.4);
     if (inward.length >= 3) {
       const loop = [...inward, inward[0]];
@@ -217,8 +265,9 @@ export function buildLandmark(c, lot, place) {
         travelled -= length;
       }
     }
-    // A few more in the open lawn, in loose groups
-    const area = calcPolygonArea(lotLocal), wanted = Math.floor(area / 520);
+    // A few more in the open lawn, in loose groups (a yard, or formal
+    // grounds, keep theirs to the edges)
+    const area = calcPolygonArea(lotLocal), wanted = plan.edge ? 0 : Math.floor(area / 520);
     for (let k = 0, placed = 0; k < wanted * 6 && placed < wanted; k++) {
       const q = at((random() - .5) * (W + 40), (random() - .5) * (D + 40)), p = { x: q.x, y: q.s };
       if (!clear(p, 6)) continue;
@@ -226,6 +275,7 @@ export function buildLandmark(c, lot, place) {
       plant(p, 7 + random() * 2.5);
       if (trees.length > before) placed++;
     }
+    buildGrounds(layout, plan);
     // The skyline plants no trees but makes the same draws, so what is drawn
     // next (a tower's floors) matches the detailed building
     if (c.distant) return;
@@ -267,8 +317,9 @@ export function buildLandmark(c, lot, place) {
     c.item('landmark-dome', dome, c.materials.solid, [p.x, y + drum, -p.s], [radius, radius * .9, radius], COPPER);
     round(c, p.x, y + drum + radius * .9 + .6, p.s, .5, 1.4, .5, TRIM);
   };
-  // A barrel vault along the depth of the building, closed at both ends
-  const vault = (width, rise, depth, base, roofColour, material = c.materials.solid, endColour = STONE) => {
+  // A barrel vault along the depth of the building, closed at both ends: a
+  // glazed gable to the street (a station's, a market's), or `endColour` all round
+  const vault = (width, rise, depth, base, roofColour, material = c.materials.solid, endColour = STONE, glazed = true) => {
     const p = at(0, 0);
     // (its eaves a little proud of the walls all round: the vault's edge dips
     // below its base, and flush it would share the top of each wall's face)
@@ -277,8 +328,8 @@ export function buildLandmark(c, lot, place) {
     c.item(`roof-vault${glass}`, vaultGeometry, material, [p.x, base, -p.s], [width / 2 + .15, rise, depth + .3], roofColour, faceYaw(nx, ny));
     if (glass) vaultRibs(c, p.x, p.s, width / 2 + .15, rise, depth + .3, base, faceYaw(nx, ny), G + 1);
     for (const end of [-1, 1]) {
-      const q = at(0, end * (depth / 2 - .08));
-      c.item(end < 0 ? 'landmark-gable-front' : `landmark-gable${glass}`, gable, end < 0 && material === c.materials.solid ? c.materials.glass : material, [q.x, base, -q.s], [width / 2 - .1, rise - .1, 1], end < 0 ? '#8fb3b4' : endColour, end < 0 ? facing : facing + Math.PI);
+      const q = at(0, end * (depth / 2 - .08)), street = end < 0 && glazed;
+      c.item(street ? 'landmark-gable-front' : `landmark-gable${glass}`, gable, street && material === c.materials.solid ? c.materials.glass : material, [q.x, base, -q.s], [width / 2 - .1, rise - .1, 1], street ? '#8fb3b4' : endColour, end < 0 ? facing : facing + Math.PI);
     }
   };
   // A works' north-light roof: a row of sawtooth bays across the front, each
@@ -332,7 +383,8 @@ export function buildLandmark(c, lot, place) {
       nameBoard(G + 5.8, G + 9.4, W * .6);
     } else if (place.type === 'bathhouse') {
       // A terracotta vault over the pools
-      vault(W - 1.2, Math.min(5, W * .2), D - 1.2, G + H, '#c07a55', c.materials.solid, '#d8b48f');
+      // (its gable terracotta to the street too: glazed, it read from the road as a dark hump)
+      vault(W - 1.2, Math.min(5, W * .2), D - 1.2, G + H, '#c07a55', c.materials.solid, '#d8b48f', false);
       // A tiled arcade across the front, turquoise piers under a terracotta band
       const bays = Math.max(3, Math.round(porch / 3.4));
       entrance(bays % 2 ? 0 : porch / bays / 2, front, Math.min(2.5, porch / bays - 1.1));
@@ -344,14 +396,56 @@ export function buildLandmark(c, lot, place) {
     } else {
       portico(porch, H - 3.2);
       entrance(0, front, Math.min(2.8, porch / Math.max(4, Math.round(porch / 6.4) * 2) - 1.2), 3.6, .8);
-      forecourtSign();
+      if (plinthAt) forecourtSign();
+      else nameBoard(G + H - 3.15, G + H - 2.05, porch, front - 3.72);
     }
-    if (place.type === 'cityhall' || place.type === 'museum') domeOn(G + H + .5, Math.min(W, D) * .2);
-    if (place.type === 'library') { const p = localRing(Math.min(W, D) * .4, Math.min(W, D) * .4); bodies.prism(p, G + H, G + H + 4.5, GLASS); bodies.polygon(p, G + H + 4.5, TRIM); }
-    if (place.type === 'cityhall' || place.type === 'postoffice') clockTower(0, D / 2 - 4, G + H, 11);
+    // What stands on the roof tells the halls apart: City Hall's dome and
+    // clock tower; a museum's dome, a raised top-lit court or a glazed
+    // gallery vault; a library's glass reading drum or lantern (the two of a
+    // kind in a city have neighbouring variants, so they differ)
+    const side = Math.min(W, D);
+    if (place.type === 'cityhall' || (place.type === 'museum' && place.variant === 0)) domeOn(G + H + .5, side * .2);
+    if (place.type === 'museum' && place.variant === 1) {
+      const court = localRing(W * .5, D * .5, D * .05);
+      bodies.prism(court, G + H, G + H + 2.4, GLASS); bodies.polygon(court, G + H + 2.4, TRIM);
+      cornice(bodies, court, G + H + 2.4, TRIM, '#8d9a92', STONE, .5, []);
+    }
+    if (place.type === 'museum' && place.variant === 2) vault(W * .42, Math.min(W * .21, 4.2), D - 5, G + H, '#8fb9b5', c.materials.glass, '#8fb9b5');
+    if (place.type === 'library' && place.variant !== 1) {
+      // (lit warm after dark, as a reading room would be)
+      const p = at(0, 0), drum = side * (place.variant === 2 ? .3 : .38), tall = place.variant === 2 ? 7 : 5;
+      round(c, p.x, G + H + .4, p.s, drum + 1, .8, drum + 1, STONE);
+      round(c, p.x, G + H + .8 + tall / 2, p.s, drum, tall, drum, nightLit(GLASS, 0), 'y', 'glass');
+      round(c, p.x, G + H + .95 + tall, p.s, drum + .8, .3, drum + .8, TRIM);
+      if (place.variant === 2) c.item('landmark-dome', dome, c.materials.solid, [p.x, G + H + 1.1 + tall, -p.s], [drum / 2 + .2, drum * .35, drum / 2 + .2], COPPER);
+    }
+    if (place.type === 'library' && place.variant === 1) { const p = localRing(side * .4, side * .4); bodies.prism(p, G + H, G + H + 4.5, GLASS); bodies.polygon(p, G + H + 4.5, TRIM); }
+    if (place.type === 'cityhall') clockTower(0, D / 2 - 4, G + H, 11);
+    if (place.type === 'postoffice') {
+      // The post's clock over its door, on a stone attic above the portico
+      // (City Hall keeps the clock tower)
+      box(0, G + H + 2.3, front + .8, 6.4, 4.6, 1.6, STONE);
+      box(0, G + H + 4.75, front + .8, 7, .3, 2.2, TRIM);
+      if (!c.distant) { const q = at(0, front - .06); clock(c, q.x, G + H + 2.9, q.s, 2.5, facing); }
+      // Roof lights over the sorting hall
+      for (const v of [-D / 2 + 5.5, -D / 2 + 9.5]) if (v + 1.2 < D / 2 - 1.5) {
+        const light = localRing(W * .55, 2.4, v);
+        bodies.prism(light, G + H, G + H + 1.5, GLASS); bodies.polygon(light, G + H + 1.5, TRIM);
+      }
+      // and the post's envelope in the pediment, on a red crest
+      if (!c.distant) {
+        const rise = Math.min(3.2, porch * .14), y = G + H - 3.2 + 1.2 + rise * .4, v = front - 3.72;
+        box(0, y, v, 2.1, 1.45, .08, '#b8453a');
+        box(0, y, v - .06, 1.7, 1.08, .06, '#f2ead6');
+        for (const side of [-1, 1]) { const p = at(side * .42, v - .1); c.box(p.x, y + .2, p.s, .98, .07, .04, '#9c3a31', 'solid', along, side * .6); }
+      }
+    }
     top = G + H + 12;
   } else if (kind === 'tower') {
-    const podium = localRing(W, D), H1 = 9, floors = 11 + Math.floor(random() * 6), tower = localRing(W - 6, D - 6, 1.5), H2 = H1 + floors * 3.6;
+    // (a tower in Midtown; anywhere else, a few floors over its podium, not
+    // 50 or 60 metres over houses of two or three)
+    const tall = cityStyleDistrict(place.s, place.u) === 'Midtown', draw = random();
+    const podium = localRing(W, D), H1 = 9, floors = tall ? 11 + Math.floor(draw * 6) : 3 + Math.floor(draw * 3), tower = localRing(W - 6, D - 6, 1.5), H2 = H1 + floors * 3.6;
     bodies.prism(podium, G, G + H1, wall);
     cornice(bodies, podium, G + H1, TRIM, '#8a9189', wall, .8, []);
     bodies.prism(tower, G + H1, G + H2, '#cdb892');
@@ -382,14 +476,16 @@ export function buildLandmark(c, lot, place) {
         const u = side * offset;
         box(u, G + 2.55, front - .08, width + .3, 4.9, .12, TRIM);
         box(u, G + 2.5, front - .2, width, 4.8, .1, '#6d807c');
-        box(u, G + 3.65, front - .28, width - .5, .7, .06, '#375563', 'glass');
+        box(u, G + 3.65, front - .28, width - .5, .7, .06, nightLit('#375563', 2), 'glass');
         if (!c.distant) for (const height of [1.1, 2.2, 4.25]) box(u, G + height, front - .28, width - .15, .055, .06, '#acb5a9');
       }
       entrance(0, front, 1.4, 3.1);
     } else {
       // Station and market front glazing, framed with mullions and a transom.
       box(0, G + 3.2, front - .08, glazed + .3, 5.3, .12, TRIM);
-      box(0, G + 3.2, front - .2, glazed, 5, .1, GLASS, 'glass');
+      // (a station's concourse lit cool white after dark, a market's warm)
+      box(0, G + 3.2, front - .2, glazed, 5, .1, nightLit(GLASS, place.type === 'station' ? 1 : 0), 'glass');
+      glow(0, front, glazed, place.type === 'station' ? 1 : 0);
       const doorHeight = market ? 2.65 : 3.5, transom = doorHeight + .35;
       box(0, G + transom, front - .3, glazed, .16, .14, TRIM);
       const bays = Math.max(1, Math.round((glazed / 2 - 1.85) / 3));
@@ -417,14 +513,36 @@ export function buildLandmark(c, lot, place) {
     }
     top = G + H + (place.type === 'depot' ? 3.4 : rise);
   } else if (kind === 'marquee') {
-    const H = 13, body = localRing(W, D);
-    bodies.prism(body, G, G + H, place.type === 'music' ? '#4b4f72' : '#b6604f');
-    cornice(bodies, body, G + H, TRIM, '#6f6d77', place.type === 'music' ? '#4b4f72' : '#b6604f', .8, []);
+    const H = 13, body = localRing(W, D), music = place.type === 'music', paint = music ? '#4b4f72' : '#b6604f';
+    bodies.prism(body, G, G + H, paint);
+    cornice(bodies, body, G + H, TRIM, '#6f6d77', paint, .8, []);
     windows(body, G + 4.8, 2);
     // The marquee: a lit canopy and a sign above it
     box(0, G + 4.3, front - 2, Math.min(W * .8, 18), 1, 4, '#2c2c34');
     if (!c.distant) box(0, G + 4.3, front - 4.05, Math.min(W * .8, 18), .5, .1, '#ffd98a', 'lit');
-    nameBoard(G + 6.2, G + H - 1.4, W * .75);
+    if (music) {
+      // The club's keyboard across its front over the canopy, and neon up its
+      // corners and under its cornice (dark tubes by day)
+      const span = W - 1.6, keys = Math.max(7, Math.round(span / .42)), key = span / keys;
+      keepClear(front, W / 2, G + 4.85, G + 6.35);
+      box(0, G + 5.6, front - .08, span + .16, 1.2, .12, '#f4efe2');
+      if (!c.distant) {
+        for (let k = 1; k < keys; k++) box(-span / 2 + k * key, G + 5.45, front - .15, .03, .9, .04, '#8f8a80');
+        for (let k = 0; k < keys - 1; k++) if ([0, 1, 3, 4, 5].includes(k % 7)) box(-span / 2 + (k + 1) * key, G + 5.85, front - .17, key * .56, .7, .08, '#1c1d24');
+        for (const side of [-1, 1]) box(side * (W / 2 - .35), G + (6.5 + H - .9) / 2, front - .1, .12, H - .9 - 6.5, .12, '#ff5fa8', 'lit');
+        box(0, G + H - .75, front - .1, W - .7, .12, .12, '#5fd8ff', 'lit');
+      }
+      nameBoard(G + 6.7, G + H - 1.4, W * .75);
+    } else {
+      nameBoard(G + 6.2, G + H - 1.4, W * .75);
+      // Poster cases either side of the doors
+      if (!c.distant) for (const side of [-1, 1]) for (let k = 0; k < 2; k++) {
+        const u = side * (4.1 + k * 1.75);
+        if (Math.abs(u) + .8 > W / 2 - .5) continue;
+        box(u, G + 1.75, front - .08, 1.4, 2.1, .12, '#2c2c34');
+        box(u, G + 1.75, front - .16, 1.1, 1.75, .04, POSTERS[(k * 2 + (side > 0 ? 1 : 0) + place.variant) % POSTERS.length]);
+      }
+    }
     for (const side of [-1, 1]) entrance(side * 1.65, front, 2.6, 3.2);
     top = G + H;
   } else if (kind === 'observatory') {
@@ -433,6 +551,8 @@ export function buildLandmark(c, lot, place) {
     cornice(bodies, body, G + H, TRIM, '#8d9a92', STONE, .6, []);
     windows(body, G + .8, 1);
     domeOn(G + H, radius, 6, 0, D * .1);
+    const scope = at(0, D * .1);
+    c.item('observatory-telescope', telescope, c.materials.props, [scope.x, G + H + 6, -scope.s], [radius, radius, radius], '#ffffff', facing);
     nameBoard(G + 3.8, G + H - .4, W * .6, front + D * .1);
     entrance(0, front + D * .1, 2.6);
     top = G + H + 6 + radius;
@@ -472,13 +592,22 @@ export function buildLandmark(c, lot, place) {
     bodies.prism(body, G, G + H, wall);
     cornice(bodies, body, G + H, TRIM, '#7e7a74', wall, .8, []);
     windows(body, G + 5, 1, 'brick');
-    const doors = Math.max(2, Math.min(3, Math.floor(W / 7)));
+    // The heritage engine stands out on the forecourt where there is room,
+    // and otherwise backs out of an open bay, its cab to the street
+    const doors = Math.max(2, Math.min(3, Math.floor(W / 7))), open = setback >= 4 ? -1 : Math.floor(doors / 2);
     for (let k = 0; k < doors; k++) {
       const u = (k - (doors - 1) / 2) * W / (doors + .5);
       box(u, G + 2.35, front - .08, 4.7, 4.7, .12, TRIM);
+      if (k === open) { box(u, G + 2.3, front - .2, 4.4, 4.6, .1, '#1f2427'); continue; }
       box(u, G + 2.3, front - .2, 4.4, 4.6, .1, '#b8453a');
-      box(u, G + 3.25, front - .28, 3.7, .65, .06, '#375563', 'glass');
+      box(u, G + 3.25, front - .28, 3.7, .65, .06, nightLit('#375563', 2), 'glass');
       if (!c.distant) for (const height of [1.2, 2.2]) box(u, G + height, front - .28, 4.2, .06, .06, '#a26b59');
+    }
+    const engine = open < 0 ? { u: 0, v: front - 3.2, yaw: faceYaw(tx, ty), w: 6.8, d: 3.1 } : { u: (open - (doors - 1) / 2) * W / (doors + .5), v: front - 1.4, yaw: faceYaw(nx, ny), w: 3.1, d: 6.8 };
+    if (!c.distant) {
+      const q = at(engine.u, engine.v);
+      c.item('detail-fire-engine', fireEngine, c.materials.props, [q.x, G + .07, -q.s], [.55, .55, .55], '#ffffff', engine.yaw);
+      c.rigid(q.x, q.s, () => c.solid(q.x, q.s, engine.w, engine.d), itemFrame(c.start + q.s, c.east + q.x, along));
     }
     entrance(W / 2 - 1.1, front, 1.2, 2.6);
     // The hose tower
@@ -486,14 +615,13 @@ export function buildLandmark(c, lot, place) {
     c.box(p.x, G + 8.5, p.s, 4, 17, 4, wall, 'solid', along);
     c.box(p.x, G + 17.3, p.s, 4.6, .6, 4.6, TRIM, 'solid', along);
     nameBoard(G + 5.1, G + H - .6, W * .6);
-    // The heritage engine out on the forecourt, if there is room for it
-    if (!c.distant && setback >= 4) { const q = at(0, front - 3.2); c.item('detail-fire-engine', fireEngine, c.materials.props, [q.x, G, -q.s], [.55, .55, .55], '#ffffff', faceYaw(tx, ty)); }
     top = G + 17.6;
   } else if (kind === 'diner') {
     const H = 5, body = localRing(W * .9, Math.min(D, 18), -D / 2 + Math.min(D, 18) / 2);
     bodies.prism(body, G, G + H, wall);
     cornice(bodies, body, G + H, '#f5eee0', '#e2a3b5', wall, .6, []);
-    box(0, G + 2.1, -D / 2 - .15, W * .7, 2.4, .2, GLASS, 'glass');
+    box(0, G + 2.1, -D / 2 - .15, W * .7, 2.4, .2, nightLit(GLASS, 0), 'glass');
+    glow(0, -D / 2, W * .7, 0);
     entrance(0, front - .2, 2.4);
     // The roof sign: the name on a board standing on legs just behind the
     // parapet, clear over it, and the giant donut on its posts behind and

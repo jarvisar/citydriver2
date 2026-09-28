@@ -43,7 +43,7 @@ test('the street map draws every shape that reaches its view, in the city order,
   const cache = new CityMapCache(CITY, makePath), drawn = [];
   const ctx = { save() {}, restore() {}, translate() {}, rotate() {}, scale() {}, fill(path) { drawn.push(path); }, stroke(path) { drawn.push(path); } };
   // (in the order they are drawn)
-  const layers = [...['blocks', 'lots', 'parks', 'water'].map(name => [cache.shapes[name], 0]), ...[...cache.lines].map(([width, lines]) => [lines, (width === 'path' ? 6 : width) / 2])];
+  const layers = [...['blocks', 'lots', 'grounds', 'parks', 'water'].map(name => [cache.shapes[name], 0]), ...[...cache.lines].map(([width, lines]) => [lines, (width === 'path' ? 6 : width) / 2])];
   const reach = Math.hypot(208, 144) / 2 / .36;
   for (const [s, u] of [[0, 0], [400, -700], [-600, 900], [CITY.height / 2, 0], [0, -CITY.width / 2]]) for (const heading of [0, 1.1, -2.6]) {
     drawn.length = 0;

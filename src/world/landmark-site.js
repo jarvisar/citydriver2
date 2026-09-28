@@ -3,16 +3,18 @@ import { offsetPolygon, dedupePolygon, signedArea, calcPolygonArea, fitRectangle
 // Where a landmark stands on its lot: square to the lot's longest street edge,
 // behind a forecourt. Shared by the builder and by the places, whose drop-off
 // is on the street the landmark faces.
-// The site: the lot's main street edge and a rectangle square to it
-export function landmarkSite(lot) {
+// The site: the lot's main street edge and a rectangle square to it. The
+// main edge is the longest street edge, or the one `front(a, b)` scores
+// highest.
+export function landmarkSite(lot, front = null) {
   let polygon = dedupePolygon(lot.polygon), kinds = lot.edges?.length === polygon.length ? lot.edges : null;
   if (signedArea(polygon) < 0) { polygon = polygon.slice().reverse(); kinds = null; }
   const n = polygon.length;
   kinds ??= polygon.map(() => 'street');
-  let best = -1;
+  let best = -1, bestScore = -Infinity;
   for (let j = 0; j < n; j++) {
-    const length = polygon[j].distanceTo(polygon[(j + 1) % n]);
-    if (kinds[j] === 'street' && (best < 0 || length > polygon[best].distanceTo(polygon[(best + 1) % n]))) best = j;
+    const a = polygon[j], b = polygon[(j + 1) % n], score = front ? front(a, b) : a.distanceTo(b);
+    if (kinds[j] === 'street' && score > bestScore) { best = j; bestScore = score; }
   }
   if (best < 0) best = 0;
   const a = polygon[best], b = polygon[(best + 1) % n], length = a.distanceTo(b) || 1;
@@ -38,19 +40,24 @@ export const VENUE_SIZE = {
   donut: [14, 12, 22, 20], clock: [16, 16, 30, 30], art: [16, 16, 32, 32], garden: [18, 16, 34, 26],
 };
 const FORECOURT = { cityhall: 9, museum: 8, library: 7, postoffice: 6, hospital: 7, bathhouse: 6, station: 8, hotel: 5, observatory: 5, firehouse: 7 };
+// The districts whose lots have no lawns (see INSETS in city-buildings.js).
+// A venue on a lot there has paved grounds, and a cinema, club or hotel
+// stands nearer its street, closer to the building line either side of it.
+export const PAVED_DISTRICTS = new Set(['Old town', 'Market district', 'Midtown', 'Warehouse district']);
+const TIGHT_FORECOURT = { cinema: 1, music: 1, hotel: 2.5 };
 export const venueFits = (site, type) => Boolean(site) && site.width >= (VENUE_SIZE[type]?.[0] ?? 14) && site.depth >= (VENUE_SIZE[type]?.[1] ?? 12);
 // The building's rectangle on its site: centred on it along the street, set
 // back behind the forecourt, in the site's axes. `setback` is how far its
 // front stands behind the site's front, which is itself a few metres in from
 // the lot's street edge. A venue with a whole block to itself stands in its
 // grounds, a wider forecourt before it.
-export function venueFootprint(site, type, whole = false) {
+export function venueFootprint(site, type, whole = false, paved = false) {
   if (!venueFits(site, type)) return null;
   const [, minD, maxW, maxD] = VENUE_SIZE[type] ?? [14, 12, 30, 30];
-  const court = whole ? Math.max(FORECOURT[type] ?? 6, Math.min(16, (site.depth - maxD) * .45)) : FORECOURT[type] ?? 3;
+  const court = whole ? Math.max(FORECOURT[type] ?? 6, Math.min(16, (site.depth - maxD) * .45)) : (paved ? TIGHT_FORECOURT[type] : undefined) ?? FORECOURT[type] ?? 3;
   const width = Math.min(site.width, maxW), setback = Math.max(0, Math.min(court, site.depth - minD));
   const depth = Math.min(site.depth - setback, maxD), into = -site.depth / 2 + setback + depth / 2;
   const centre = { x: site.centre.x + site.nx * into, y: site.centre.y + site.ny * into };
-  return { centre, width, depth, setback, tx: site.tx, ty: site.ty, nx: site.nx, ny: site.ny,
+  return { centre, width, depth, setback, tx: site.tx, ty: site.ty, nx: site.nx, ny: site.ny, paved,
     front: { x: centre.x - site.nx * depth / 2, y: centre.y - site.ny * depth / 2 } };
 }

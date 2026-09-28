@@ -1173,12 +1173,15 @@ function roofDetails(c, b, deck, top, random, holes = [], keep = []) {
 // stands on the party wall), nothing for a garden, and no limit for a
 // landmark, whose walls nothing is painted over. Worked out once a lot.
 let lotTops = null;
+export const VENUE_WALLS = { cinema: 13, music: 13, hotel: 9, firehouse: 9, postoffice: 12.5, donut: 5 };
 function lotTop(index) {
   if (!lotTops || lotTops.city !== CITY.lots) { lotTops = new Map(); lotTops.city = CITY.lots; }
   let top = lotTops.get(index);
   if (top === undefined) {
     const b = planLot({ east: 0, start: 0 }, cityLot(index));
-    top = b.kind === 'landmark' ? Infinity : b.kind !== 'building' ? 0
+    // (a venue next door: the height of its walls, so a wall standing over
+    // its grounds may be painted too; they were all left blank)
+    top = b.kind === 'landmark' ? VENUE_WALLS[placeForLot(index)?.type] ?? Infinity : b.kind !== 'building' ? 0
       : baseHeight(b) + (b.roofType === 'terrace' ? b.floors : b.setbackFloors) * 3.6 + ({ gable: 5.8, hip: 4.4 }[b.roofType] ?? 1.4);
     lotTops.set(index, top);
   }

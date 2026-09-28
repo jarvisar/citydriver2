@@ -136,9 +136,9 @@
           </div>
         </div>
       </section>
-      <aside id="city-guide" class="city-guide" aria-label="Landmarks">
-        <div class="city-guide-header"><span>MAP <b id="city-stamps">0 / 5</b></span><div class="city-guide-actions"><button type="button" id="city-map-open" aria-haspopup="dialog" title="City map (M / View / Share)"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m3 6 6-2 6 2 6-2v14l-6 2-6-2-6 2V6Zm6-2v14m6-12v14" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg><span>City map</span></button><button type="button" id="city-map-toggle" aria-expanded="true" aria-controls="city-map" aria-label="Hide map" title="Hide map"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 10 5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></div>
-        <canvas id="city-map" width="208" height="144" role="img" aria-label="Local street map. Your heading is up; the white arrow is your car, gold marks your route, and colored dots mark landmarks."></canvas>
+      <aside id="city-guide" class="city-guide" aria-label="Street map">
+        <div class="city-guide-header"><span>PLACES <b id="city-stamps" title="Kinds of place found">0 / 22</b></span><div class="city-guide-actions"><button type="button" id="city-map-open" aria-haspopup="dialog" title="City map (M / View / Share)"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m3 6 6-2 6 2 6-2v14l-6 2-6-2-6 2V6Zm6-2v14m6-12v14" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg><span>City map</span></button><button type="button" id="city-map-toggle" aria-expanded="true" aria-controls="city-map" aria-label="Hide map" title="Hide map"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 10 5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></div>
+        <canvas id="city-map" width="208" height="144" role="img" aria-label="Local street map. Your heading is up; the white arrow is your car. Coloured dots are places you have found."></canvas>
         <p id="taxi-offer" hidden></p>
       </aside>
       <p id="vr-error" role="status" hidden></p>
@@ -193,10 +193,10 @@
                 <label class="weather-setting" for="city-weather"><span>Weather &amp; light</span><select id="city-weather"><option value="auto" selected>Auto</option><option value="clear">Day</option><option value="overcast">Overcast</option><option value="rain">Rain</option><option value="storm">Storm</option><option value="snow">Snow</option><option value="sunset">Golden hour</option><option value="night">Night</option></select></label>
               </section>
               <section class="pause-panel notebook-panel" aria-labelledby="notebook-heading">
-                <h3 id="notebook-heading">City discoveries</h3>
-                <p id="city-notebook-progress">Pass landmarks to mark them visited.</p>
-                <div id="city-notebook" aria-label="Landmark discoveries"></div>
-                <p class="weather-note">Collect stamps in free drive or while taking fares.</p>
+                <h3 id="notebook-heading">Places</h3>
+                <p id="city-notebook-progress">Drive past a place, or drop a fare there, to stamp it.</p>
+                <div id="city-notebook" aria-label="Places found"></div>
+                <p class="weather-note">Found places last until you load a new city.</p>
               </section>
             </div>
             <div class="pause-column">
@@ -244,11 +244,11 @@
       <dialog id="world-map-dialog" class="chooser world-map-dialog" aria-labelledby="world-map-heading">
         <div class="chooser-heading"><h2 id="world-map-heading" class="garage-title">City map</h2><button type="button" id="close-world-map" class="icon-button" aria-label="Close city map"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
         <div class="world-map-body">
-          <div class="world-map-frame"><canvas id="world-map" role="img" aria-label="Map of the whole city, north up. Each district is its own colour and each neighbourhood is named; the white arrow is you, and a car in a teal ring is your own car where you left it."></canvas></div>
+          <div class="world-map-frame"><canvas id="world-map" role="img" aria-label="Map of the whole city, north up. Each district is its own colour and each neighbourhood is named; sand is the grounds of the city's venues, coloured dots are places you have found, the white arrow is you, and a car in a teal ring is your own car where you left it."></canvas></div>
           <div class="world-map-key">
             <p id="world-map-status" class="world-map-status" role="status"></p>
             <ul id="world-map-legend" class="world-map-legend" aria-label="Districts"></ul>
-            <p class="world-map-note">Point at the map to name a district. Each district's share of the city's blocks; Midtown includes downtown.</p>
+            <p class="world-map-note">Point at the map to name a district, or a place you have found. Each district's share of the city's blocks; Midtown includes downtown.</p>
           </div>
         </div>
         <span class="controller-hint">B / Circle or View / Share: close</span>
