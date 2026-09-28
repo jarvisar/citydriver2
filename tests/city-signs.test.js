@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { SHEET_SIGNS, SIGN_SHEET_SIZE } from '../src/world/city-sign-sheet.js';
 import { SIGN_CATALOG, SIGN_ATLAS, SIGN_USES, SIGNS_BY_USE, BUSINESS_SIGNS, DISCOVERY_SIGNS, dealSign, createSignMaterials } from '../src/world/city-signs.js';
 import { CitydriverWorld } from '../src/world/citydriver-world.js';
+import { createGlassMaterial } from '../src/world/city-glass.js';
 import * as THREE from 'three';
 import { hangs, crownSign, upstairsSign } from '../src/world/city-building-signs.js';
 import { planLot, edgeFacade, edgeWindows, windowBays, shopFront } from '../src/world/city-buildings.js';
@@ -211,10 +212,12 @@ test('signs are lit like the paint round them, light up after dark, and stay in 
   // (a face beats its board, and the board the wall, however far the depth
   // buffer's steps have grown)
   assert.ok(signs.polygonOffsetUnits < edges.polygonOffsetUnits && signs.polygonOffsetFactor < edges.polygonOffsetFactor);
-  // The windows' night light lights the signs too
-  const world = { materials: { lit: new THREE.MeshBasicMaterial(), signs } };
+  // The windows' night light lights the signs too, and the shop windows
+  const glass = createGlassMaterial(), world = { materials: { lit: new THREE.MeshBasicMaterial(), signs, glass } };
   CitydriverWorld.prototype.setWindowGlow.call(world, 1);
   assert.ok(signs.userData.glow.value > .5, 'aglow at night');
+  assert.ok(glass.userData.shopGlow.value > .5, 'shop windows lit at night');
   CitydriverWorld.prototype.setWindowGlow.call(world, 0);
   assert.equal(signs.userData.glow.value, 0, 'plain paint by day');
+  assert.equal(glass.userData.shopGlow.value, 0, 'plain glass by day');
 });

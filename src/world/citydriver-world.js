@@ -3,7 +3,7 @@ import { CITY, cityCell, CITY_CELL, cityStyleDistrict } from './city.js';
 import { ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL } from './city-route.js';
 import { HarbourBoats } from './city-boats.js';
 import { BusStops } from './bus-stops.js';
-import { cityAssets, cityTrees, looseTree, twinLamp, signalMastPiece, LANTERN_HEIGHT, SIGNAL_LENSES, MAST_HEIGHT, parkedCars, PARKED_PAINTS, boatModels } from './city-assets.js';
+import { cityAssets, cityTrees, CONIFER, looseTree, twinLamp, signalMastPiece, LANTERN_HEIGHT, SIGNAL_LENSES, MAST_HEIGHT, parkedCars, PARKED_PAINTS, boatModels } from './city-assets.js';
 import { TRAFFIC_MODELS } from '../traffic-models.js';
 import { seededRandom, randomAt } from './route.js';
 import { residentWindow } from './resident.js';
@@ -13,6 +13,7 @@ import { cityItemMatrix, cityRigidFrame, cityAffinePoint, itemFrame } from './ci
 import { addSurfacePolygon, faceSlabEdges } from './city-surfaces.js';
 import { buildGrassFringeSteps, grassGeometry, MAX_LAWN_TUFTS } from './city-grass.js';
 import { createWaterMaterial } from './city-water.js';
+import { createGlassMaterial } from './city-glass.js';
 import { Surface, setColor } from './surface.js';
 import { cityWalker, walkerFloat, WALKER_COLORS, createWalkerMaterial, createWalkerAlert, addWalkerAlert, walkerAppearance, setWalkerAppearance, setWalkerTurn, pairWalkers, offsetWalkerPose } from './city-life.js';
 import { walkedAt, paceAt, standing, rejoinWalk, stopWalkers, regroupWalkers, lookYaw, lean, glance, walkPose } from './pedestrian-reactions.js';
@@ -79,6 +80,8 @@ function chunkBounds(group) {
 
 // How much of its own colour a sign gives off at full night
 const SIGN_GLOW = .85;
+// and a lit shop window (see city-glass.js)
+const SHOP_GLOW = .8;
 // Window panes never cast, they lie flat on their walls. In a skyline chunk only
 // buildings cast. It's at least a cell from the car, and a tree's shadow (30 m at
 // the lowest sun) can't reach the area the sun's map covers (140 m at most),
@@ -106,9 +109,12 @@ function batchFlags(key, material, distant = false) {
 // only that much of it (`shadowFrom`: its instances, or a merged mesh's
 // indices), so no split costs another draw; one with nothing before that
 // point stops casting.
-const SMALL_CASTERS = new Set(['residents', 'lantern', 'bin', 'bollard', 'railing', 'signal', 'signal-head', 'stop', 'yield', 'parking-sign', 'mooring-line']);
+const SMALL_CASTERS = new Set(['residents', 'lantern', 'bin', 'bollard', 'railing', 'signal', 'signal-head', 'stop', 'yield', 'parking-sign', 'mooring-line',
+  'hydrant', 'post-box', 'cabinet', 'news-boxes', 'bike-rack']);
 const smallCaster = key => SMALL_CASTERS.has(key) || key.startsWith('square-flowers-');
 const facadeTrim = ({ scale: [x, y, z] }) => Math.min(x, y, z) < .3 && Math.min(x, z) < .6;
+// A kerbside fitting's collider: a post's radius, or a box across and along the kerb
+const FITTINGS = { hydrant: [.2], 'post-box': [.3], cabinet: [.5, .9], 'news-boxes': [.5, 1.65], 'bike-rack': [.8, 1.3] };
 function castFirst() {
   if (!this.userData.lowShadow) return;
   if (this.isInstancedMesh) { this.userData.drawn = this.count; this.count = Math.min(this.count, this.userData.shadowFrom); }
@@ -148,8 +154,9 @@ function finishBatchMesh(mesh, { castShadow, receiveShadow, ambientOcclusion }, 
 // with each instance's transform and colour baked into the vertices; big
 // batches stay instanced. A chunk bakes at most this many vertices in all:
 // the cheapest groups merge first, so the draws saved come cheap and a busy
-// street corner stays instanced.
-const MERGE_INSTANCE_LIMIT = 32, MERGE_VERTEX_LIMIT = 6000, MERGE_CHUNK_VERTICES = 18000;
+// street corner stays instanced. (21000 since the kerbside fittings: at
+// 18000 they took the room the bins and lamps had merged in.)
+const MERGE_INSTANCE_LIMIT = 32, MERGE_VERTEX_LIMIT = 6000, MERGE_CHUNK_VERTICES = 21000;
 const LIVE_BATCHES = new Set(['residents', 'signal-lens', 'water']);
 const mergedMaterials = new WeakMap(), unitColors = new WeakMap();
 function inUnitRange(color) {
@@ -322,8 +329,9 @@ function resources() {
   const standard = options => new THREE.MeshStandardMaterial({ roughness: .9, flatShading: true, ...options });
   const result = {
     solid: standard({ color: '#ffffff' }),
-    road: standard({ color: '#666c70', roughness: .6 }),
-    glass: standard({ color: '#ffffff', roughness: .2, metalness: .25 }),
+    // (the asphalt is drawn white, what is set in it in shades of that: see roadFittings)
+    road: standard({ color: '#666c70', roughness: .6, vertexColors: true }),
+    glass: createGlassMaterial(),
     lit: new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false }),
     lens: new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false }),
     clock: new THREE.MeshBasicMaterial({ color: '#ffffff', vertexColors: true, toneMapped: false }),
@@ -354,7 +362,7 @@ export class CityChunk {
     this.index = `${ix},${iz}`; this.materials = world.materials; this.distant = distant;
     this.plan = { seed: Math.floor(randomAt(ix, iz + 7102, CITY.seed) * 0xffffffff) >>> 0, kind: 'blocks', ix, iz };
     this.group = new THREE.Group(); this.group.name = `citydriver-block-${this.index}`; this.group.updateMatrixWorld = settledMatrixWorld;
-    this.features = { colliders: [], bridges: [], buildings: [], discoveries: [], medians: [], junctions: [], signals: [], lamps: [] };
+    this.features = { colliders: [], bridges: [], buildings: [], discoveries: [], medians: [], junctions: [], signals: [], lamps: [], shopLights: [] };
     this.batches = new Map(); this.bodies = new Surface();
     this.lots = world.lotsByChunk.get(this.index) ?? [];
     this.furniture = world.furnitureByChunk.get(this.index) ?? [];
@@ -484,11 +492,12 @@ export class CityChunk {
       hide(hidden = true) { for (const item of items) hideItem(item, hidden); world.lampRevision++; },
     };
   }
-  tree(x, s, scale = 7) {
+  tree(x, s, scale = 7, species = null) {
     // An address owns its tree: extra garden trees in a detailed chunk must
     // not change the street trees when the distant model hands over to it.
+    // (`species` picks the model, a grove's conifer, and the draw is made anyway)
     const random = seededRandom(Math.floor(randomAt(Math.round((this.east + x) * 10), Math.round((this.start + s) * 10), CITY.seed) * 0xffffffff));
-    const index = random() < .28 ? 1 : 0, variant = cityTrees[index], p = [x, PAVEMENT_LEVEL, -s];
+    const drawn = random() < .28 ? 1 : 0, index = species === 'conifer' ? CONIFER : drawn, variant = cityTrees[index], p = [x, PAVEMENT_LEVEL, -s];
     const width = scale * (.82 + random() * .24), size = [width, scale, width], colour = pick(GREENS, random), yaw = random() * Math.PI * 2;
     if (this.distant) this.box(x, PAVEMENT_LEVEL + scale * .24, s, width * .085, scale * .48, width * .085, '#625548', 'solid', yaw);
     const trunk = this.distant ? null : this.item(`tree-trunks-${index}`, variant.bark, this.materials.bark, p, size, '#ffffff', yaw);
@@ -518,7 +527,7 @@ export class CityChunk {
         this.post(x, s, .25); this.knockable(lamps, [{ kind: 'lamp', geometry: twinLamp }]);
       }
       else if (piece.kind === 'tree') {
-        this.tree(x, s, piece.scale);
+        this.tree(x, s, piece.scale, piece.species);
         if (piece.pit && !this.distant) {
           const rim = piece.pit.map(p => ({ x: p.x - this.east, y: p.y - this.start })), soil = offsetPolygon(rim, -.12);
           if (soil.length >= 3) {
@@ -535,6 +544,13 @@ export class CityChunk {
       }
       else if (piece.kind === 'bin') { const bin = this.prop('bin', x, s); this.post(x, s, .36); this.knockable([bin], [{ kind: 'bin', geometry: cityAssets.bin }]); }
       else if (piece.kind === 'bollard') { this.prop('bollard', x, s); this.post(x, s, .16); }
+      // The kerbside fittings (see placeStreetFurniture), round or a box along the kerb
+      else if (FITTINGS[piece.kind]) {
+        const item = this.prop(piece.kind, x, s, piece.yaw), [width, length] = FITTINGS[piece.kind];
+        if (length) this.rigid(x, s, () => this.solid(x, s, width, length), itemFrame(piece.s, piece.u, piece.yaw));
+        else this.post(x, s, width);
+        this.knockable([item], [{ kind: piece.kind, geometry: cityAssets[piece.kind] }]);
+      }
       else if (piece.kind === 'railing') {
         // (a quay's lengths are all four metres; a bridge's are fitted between its posts)
         const length = piece.length ?? 4;
@@ -1062,8 +1078,9 @@ export class CitydriverWorld {
     if (glow === this.windowGlow) return;
     this.windowGlow = glow;
     this.materials.lit.color.copy(dayWindow).lerp(nightWindow, glow * glow);
-    // (and the signs light up as the windows do)
+    // (and the signs and shop windows light up as the windows do)
     this.materials.signs.userData.glow.value = glow * glow * SIGN_GLOW;
+    this.materials.glass.userData.shopGlow.value = glow * glow * SHOP_GLOW;
   }
   // A demolition run warns of the residents, whose every knock is a fine:
   // they glow red, and show through anything but buildings when `ghosts`

@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { CITY, SIDEWALK, roundCorners } from '../src/world/city.js';
 import { yardDrive } from '../src/world/city-yards.js';
-import { surfaceAt, onRoadAt, citydriverRoute, journeyStart, PAVEMENT_LEVEL } from '../src/world/city-route.js';
+import { surfaceAt, onRoadAt, citydriverRoute, journeyStart, PAVEMENT_LEVEL, ROAD_LEVEL } from '../src/world/city-route.js';
 import { navGraph } from '../src/world/nav-graph.js';
 import { junctionGeometry, stopLineDistance, CROSSWALK } from '../src/world/junction-geometry.js';
 import { difference, intersection, region, solids } from '../src/mapgen/booleans.js';
 import { junctionControls } from '../src/city-junctions.js';
-import { placeStreetFurniture, findBridges, cityCrosswalks, convexOverlap, parkingGaps, clearParkingMark, harbourRoutes } from '../src/world/city-streets.js';
+import { placeStreetFurniture, findBridges, cityCrosswalks, convexOverlap, parkingGaps, clearParkingMark, harbourRoutes, buildStreetSurfaces } from '../src/world/city-streets.js';
+import { Surface } from '../src/world/surface.js';
 import { cityIslands } from '../src/world/city-islands.js';
 import { cityParks } from '../src/world/city-parks.js';
 import { turnPath, wayOn, isLink } from '../src/world/lane-paths.js';
@@ -17,7 +18,7 @@ import { dealSign } from '../src/world/city-signs.js';
 import { cityPlaces } from '../src/city-exploration.js';
 import { CityTraffic } from '../src/city-traffic.js';
 import { DrivingController } from '../src/vehicle.js';
-import { averagePoint, calcPolygonArea, insidePolygon, polygonBounds, bufferPolyline } from '../src/mapgen/polygon-util.js';
+import { averagePoint, calcPolygonArea, insidePolygon, polygonBounds, bufferPolyline, distanceToPolyline } from '../src/mapgen/polygon-util.js';
 
 const furniture = (() => { const pieces = []; placeStreetFurniture(navGraph(), findBridges(), piece => pieces.push(piece)); return pieces; })();
 // Where an item's modelled front (+z) and its +x point on the map (see city-layout-render.js)
@@ -144,6 +145,36 @@ test('lamps, trees, signs and signals stand on the pavement, never on a carriage
       assert.ok(Math.hypot(piece.u - shape.node.x, piece.s - shape.node.y) > radius - .5, `${piece.kind} in the junction at ${shape.node.x.toFixed(0)},${shape.node.y.toFixed(0)}`);
     }
   }
+});
+
+test('kerbside fittings stand on the lamps\' line, clear of the rest and of the bus stops, placed after everything else', () => {
+  const fittings = ['hydrant', 'post-box', 'cabinet', 'news-boxes', 'bike-rack'], placed = furniture.filter(piece => fittings.includes(piece.kind));
+  for (const kind of fittings) assert.ok(placed.some(piece => piece.kind === kind), `${kind} placed`);
+  // (last, so every other piece stands where it did before they came)
+  assert.ok(furniture.findIndex(piece => fittings.includes(piece.kind)) > furniture.findLastIndex(piece => !fittings.includes(piece.kind) && piece.kind !== 'grass'), 'placed last');
+  const kerbs = CITY.blocks.map(block => [...block.kerb, block.kerb[0]]);
+  const shelters = furniture.filter(piece => piece.kind === 'shelter'), others = furniture.filter(piece => !['grass', 'rim', 'railing', 'parked', 'boat', 'mooring'].includes(piece.kind));
+  for (const piece of placed) {
+    const p = { x: piece.u, y: piece.s }, at = `${piece.kind} at ${piece.u.toFixed(1)},${piece.s.toFixed(1)}`;
+    // (the residents walk 1.5 m in from the kerb, clear of them)
+    assert.ok(kerbs.some(kerb => Math.abs(distanceToPolyline(p, kerb) - .65) < .05), `${at} off the kerb line`);
+    assert.ok(shelters.every(stop => Math.hypot(stop.u - p.x, stop.s - p.y) > 4.9), `${at} at a bus stop`);
+    for (const other of others) if (other !== piece) assert.ok(Math.hypot(other.u - p.x, other.s - p.y) > 1.15, `${at} on a ${other.kind}`);
+  }
+});
+
+test('gratings, manhole covers and mended patches are set in the asphalt, clear of the crosswalks', () => {
+  const surfaces = { ground: new Surface(), roads: new Surface(), paths: new Surface(), water: new Surface(), walls: new Surface() };
+  buildStreetSurfaces(surfaces, navGraph(), findBridges());
+  const p = surfaces.roads.positions, c = surfaces.roads.colors, walks = cityCrosswalks(navGraph()), marks = [];
+  for (let i = 0; i < p.length; i += 9) {
+    // (the asphalt is white, which the road material colours: what is set in it is a shade of that)
+    if (c[i] > .999 && c[i + 1] > .999 && c[i + 2] > .999) continue;
+    marks.push({ x: (p[i] + p[i + 3] + p[i + 6]) / 3, y: -(p[i + 2] + p[i + 5] + p[i + 8]) / 3, height: p[i + 1] });
+  }
+  assert.ok(marks.length > 5000, `${marks.length} faces set in the asphalt`);
+  assert.ok(marks.every(mark => mark.height > ROAD_LEVEL + .005 && mark.height < ROAD_LEVEL + .03), 'just proud of the asphalt');
+  for (const mark of marks) assert.ok(!walks.some(walk => insidePolygon(mark, walk.outline)), `on a crosswalk at ${mark.x.toFixed(1)},${mark.y.toFixed(1)}`);
 });
 
 test('signs and signals face the drivers they are for, lamps lean over the road', () => {

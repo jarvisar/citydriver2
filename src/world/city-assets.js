@@ -311,6 +311,55 @@ function kiosk() {
   return p.finish();
 }
 
+// Kerbside fittings. Each stands on the lamps' line at the kerb (the
+// residents walk further in), local -x toward the road.
+// A fire hydrant: a red barrel with a nozzle each side and a pale cap
+function hydrant() {
+  const p = new Parts(), red = '#b8352c';
+  p.cylinder([0, .3, 0], .12, .16, .6, red, 6);
+  p.cone([0, .66, 0], .14, .14, '#d8d4c8', 6);
+  p.box([-.03, .4, 0], [.14, .1, .38], '#d8d4c8');
+  return p.finish();
+}
+// A pillar box for the post, red with a black foot and a slot to the road
+function postBox() {
+  const p = new Parts(), red = '#b3302b';
+  p.cylinder([0, .66, 0], .24, .27, 1.32, red, 8);
+  p.cone([0, 1.41, 0], .26, .18, red, 8);
+  p.box([-.23, 1.08, 0], [.06, .05, .22], '#1e2224');
+  p.box([0, .07, 0], [.56, .14, .56], '#2b2f31');
+  return p.finish();
+}
+// A utility cabinet, the kind that holds a junction's signal gear or a street's cables
+// (paler than a litter bin, with a vent on its road face)
+function cabinet() {
+  const p = new Parts();
+  p.box([0, .6, 0], [.42, 1.2, .82], '#8f9c93');
+  p.box([0, 1.23, 0], [.48, .06, .88], '#6f7c74');
+  p.box([-.215, .95, 0], [.02, .16, .5], '#56625b');
+  return p.finish();
+}
+// Newspaper boxes in a row of three colours, their windows to the road
+function newsBoxes() {
+  const p = new Parts();
+  p.box([0, .06, 0], [.34, .12, 1.56], '#2b2f31');
+  p.box([0, .96, 0], [.46, .08, 1.62], '#2b2f31');
+  [['#2f5f9a', -.54], ['#b8413a', 0], ['#d9a93a', .54]].forEach(([paint, z]) => {
+    p.box([0, .54, z], [.42, .76, .5], paint);
+    p.box([-.215, .66, z], [.02, .28, .36], '#e4e0d0');
+  });
+  return p.finish();
+}
+// Steel hoops to lock a bike to, along the kerb
+function bikeRack() {
+  const p = new Parts();
+  for (const z of [-.6, .6]) {
+    for (const x of [-.34, .34]) p.box([x, .42, z], [.05, .84, .05], galvanised);
+    p.box([0, .84, z], [.73, .05, .05], galvanised);
+  }
+  return p.finish();
+}
+
 function litterBin() {
   const p = new Parts();
   p.cylinder([0, .45, 0], .34, .29, .9, '#465450', 8);
@@ -375,7 +424,12 @@ function foliageLobe(radius, phase) {
 function streetTree(variant) {
   const trunk = new Parts(), crown = new Parts();
   trunk.beam([0, -.04, 0], [.025, .66, 0], .048, '#ffffff', 5);
-  for (const side of [-1, 1]) trunk.beam([.02, .32, 0], [side * .22, .61, .06], .028, '#ffffff', 5);
+  // (the upright crown has no lobe on its right: that branch stops well inside
+  // the main one, where at full length its end poked out through a facet)
+  for (const side of [-1, 1]) {
+    const short = variant && side > 0;
+    trunk.beam([.02, .32, 0], [side * (short ? .13 : .22), .61, short ? .03 : .06], .028, '#ffffff', 5);
+  }
   const clusters = variant ? [[0, .79, 0, .3, 1.55], [-.12, .54, .025, .23, 1.1]]
     : [[0, .77, 0, .37, 1.05], [-.22, .62, .025, .27, 1], [.22, .62, -.07, .27, .95]];
   for (const [x, y, z, radius, stretch] of clusters) {
@@ -403,7 +457,21 @@ function parkingSign() {
   return p.finish();
 }
 
-export const cityTrees = [streetTree(0), streetTree(1)];
+// A conifer for the parks' and gardens' groves: three cones on a short
+// trunk, in a cooler green, inside the same clearance and height as the others
+function conifer() {
+  const trunk = new Parts(), crown = new Parts();
+  trunk.beam([0, -.04, 0], [0, .5, 0], .045, '#ffffff', 5);
+  [[.28, .44, .4, 0], [.52, .46, .31, .45], [.78, .46, .21, .9]].forEach(([bottom, height, radius, turn]) => {
+    const cone = new THREE.ConeGeometry(radius, height, 7);
+    cone.rotateY(turn); crown.add(cone, [0, bottom + height / 2, 0], '#b3cabd');
+  });
+  const bark = trunk.finish(), leaves = crown.finish();
+  return { bark, leaves, radius: .4 };
+}
+export const cityTrees = [streetTree(0), streetTree(1), conifer()];
+// (the conifer's index in cityTrees)
+export const CONIFER = 2;
 // A street tree as one piece to knock loose: its trunk and crown in one
 // model, their colours baked in (bark, and the crown's `green`), made when
 // first needed
@@ -427,7 +495,8 @@ export function looseTree(index, green) {
   looseTrees.set(key, geometry);
   return geometry;
 }
-export const cityAssets = { lamp: lampPost(), signal: trafficSignal(), stop: stopSign(), yield: yieldSign(), bench: bench(), shelter: busShelter(), railing: railing(), bollard: bollard(), tank: waterTank(), kiosk: kiosk(), bin: litterBin(), 'mooring-line': mooringLine(), lantern: parkLantern(), bandstand: bandstand(), 'signal-head': signalHead(), 'signal-mast': signalMast(), 'parking-sign': parkingSign() };
+export const cityAssets = { lamp: lampPost(), signal: trafficSignal(), stop: stopSign(), yield: yieldSign(), bench: bench(), shelter: busShelter(), railing: railing(), bollard: bollard(), tank: waterTank(), kiosk: kiosk(), bin: litterBin(), 'mooring-line': mooringLine(), lantern: parkLantern(), bandstand: bandstand(), 'signal-head': signalHead(), 'signal-mast': signalMast(), 'parking-sign': parkingSign(),
+  hydrant: hydrant(), 'post-box': postBox(), cabinet: cabinet(), 'news-boxes': newsBoxes(), 'bike-rack': bikeRack() };
 // A mast-arm signal as one piece to knock loose: its pole, the arm out along
 // local -x over the lanes and a head at each of `mast`'s distances along it.
 // Made when one is first knocked down, and kept for the next with the same arm.

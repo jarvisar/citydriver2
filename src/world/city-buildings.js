@@ -1,8 +1,9 @@
 import * as THREE from 'three';
-import { seededRandom } from './route.js';
+import { seededRandom, randomAt } from './route.js';
 import { PAVEMENT_LEVEL as G } from './city-route.js';
 import { CITY, cityStyleDistrict } from './city.js';
 import { buildingSignage, shopSigns, upstairsSign, crownSign, lobbySign, worksSign, COMMERCIAL } from './city-building-signs.js';
+import { SIGNS_BY_USE } from './city-signs.js';
 import { grassArea } from './city-grass.js';
 import { placeForLot, placeForBlock } from '../city-exploration.js';
 import { buildLandmark } from './city-landmarks.js';
@@ -12,6 +13,7 @@ import { simplify } from '../mapgen/simplify.js';
 import { itemFrame } from './city-layout-render.js';
 import { lotWithoutDrive } from './city-yards.js';
 import { buildHedge } from './city-detail-assets.js';
+import { nightLit } from './city-glass.js';
 
 // Buildings follow their lots. A lot is one plot of a block's frontage strip
 // (see mapgen/lots.js) and knows which of its edges face the street, which
@@ -311,8 +313,15 @@ export function wallHasOutlook(ring, i, neighbours) {
     return !intersection([strip], [polygon]).some(piece => calcPolygonArea(piece.outer) > .01);
   });
 }
+// A lot as the world builds it, by its index in CITY.lots
+export function cityLot(index) {
+  const polygon = CITY.lots[index], centre = averagePoint(polygon);
+  return { polygon, index, block: CITY.lotBlocks?.[index] ?? -1, edges: CITY.lotEdges?.[index] ?? null, depth: CITY.lotDepths?.[index] ?? 0, centre, area: calcPolygonArea(polygon),
+    seed: Math.floor(randomAt(Math.round(centre.x), Math.round(centre.y) + 7102, CITY.seed) * 0xffffffff) >>> 0 };
+}
 let plotsByBlock = null;
-function neighboursOf(lot) {
+// A block's lots: each one's polygon and index
+function blockPlots(block) {
   if (!plotsByBlock) {
     plotsByBlock = new Map();
     CITY.lots.forEach((polygon, index) => {
@@ -321,7 +330,10 @@ function neighboursOf(lot) {
       plotsByBlock.get(block).push({ polygon, index });
     });
   }
-  return (plotsByBlock.get(lot.block) ?? []).filter(p => p.index !== lot.index).map(p => p.polygon);
+  return plotsByBlock.get(block) ?? [];
+}
+function neighboursOf(lot) {
+  return blockPlots(lot.block).filter(p => p.index !== lot.index).map(p => p.polygon);
 }
 
 // What stands on a lot: a building shaped like the lot, or a garden where
@@ -424,7 +436,9 @@ export function planLot(c, lot) {
   const shed = type === 'warehouse' || type === 'pavilion';
   const eaves = !house && !stepped && !court.length && floors <= 6 && PITCHED_TYPES.has(type) ? pitchedEaves(footprintOut, street, shed) : -1;
   const pitched = eaves >= 0 && random() < (PITCHED[district] ?? 0) * (shed || district !== 'Warehouse district' ? 1 : .35);
-  const shopfront = type !== 'warehouse' && type !== 'pavilion' && random() < style.shops;
+  // (a shop needs a front for its window: 4 m of straight wall, or 5 m round a
+  // curve. Without one its tall base stood bare, with a door and no shop.)
+  const shopfront = type !== 'warehouse' && type !== 'pavilion' && random() < style.shops && shopRoom(footprintOut, street);
   // A house or a terrace of houses has an ordinary ground floor in its own
   // walls, not the tall stone base of a block over shops
   const domestic = !shopfront && (house || type === 'townhouse' || (type === 'pavilion' && insets.lawn));
@@ -475,6 +489,8 @@ function bayLayout(f, target, width = 0) {
 // between them (see bayLayout), by the kind of building, and how far out
 // from the wall the pilasters or fins on its piers come (`pierFront`)
 const PIER_PILASTERS = { deco: [.18, .38, .4], atrium: [.4, .25, .85], pavilion: [.4, .25, .85] };
+const FIN_RENDER = new THREE.Color('#efe6d3'), fins = new Map();
+const paleFin = wall => { let colour = fins.get(wall); if (!colour) fins.set(wall, colour = `#${new THREE.Color(wall).lerp(FIN_RENDER, .5).getHexString()}`); return colour; };
 export function windowBays(b, f) {
   const modern = b.type === 'office' || b.type === 'atrium', loft = b.type === 'warehouse' || b.type === 'loft';
   const target = modern ? 4.4 : loft ? 6.5 : b.variation === 1 ? 5.6 : 4.8, { spacing } = bayLayout(f, target);
@@ -485,17 +501,29 @@ export function windowBays(b, f) {
 export function edgeWindows(c, b, f, bottom, floors, random) {
   const modern = b.type === 'office' || b.type === 'atrium', loft = b.type === 'warehouse' || b.type === 'loft', span = f.span;
   if (span < 3.2 && !f.run) return;
-  const { windowWidth, windows, piers } = windowBays(b, f);
+  const bays = windowBays(b, f), { windows, piers } = bays;
+  // (a window on a curved front is no wider than its own short wall, so it
+  // never reaches over a bend and stands off the next wall)
+  const windowWidth = f.run ? Math.min(bays.windowWidth, span - .35) : bays.windowWidth, edge = Math.max(0, span / 2 - (windowWidth + .25) / 2 - .02);
+  // On a curved front a window's frame stays on its own wall, clear of the
+  // bend, and of two windows nudged onto one short wall the first is kept
+  const kept = [], shown = windows.map(({ offset }) => {
+    if (!f.run) return offset;
+    const at = Math.max(-edge, Math.min(edge, offset));
+    if (kept.some(other => Math.abs(other - at) < windowWidth + .3)) return null;
+    kept.push(at); return at;
+  });
   const h = loft ? 2.45 : modern ? 2.75 : 2.2, frame = b.type === 'brick' || b.type === 'townhouse' ? '#e0ccab' : '#b3c5bc';
   for (let floor = 0; floor < floors; floor++) {
     const y = bottom + 1.7 + floor * 3.6;
     if (modern) f.add(0, y - 1.42, .1, span + .1, .28, .3, '#b6c9c8', 'solid', true);
     if (b.type === 'deco' && floor === floors - 1) f.add(0, y + 1.55, .2, span + .4, .35, .5, '#ded2b8', 'solid', true);
-    for (const { bay, offset } of windows) {
-      const occupancy = random(), lit = occupancy < .1;
+    for (const [k, { bay }] of windows.entries()) {
+      const offset = shown[k], occupancy = random(), lit = occupancy < .1;
+      if (offset === null || windowWidth < .6) continue;
       // Balconies stack over one another, with a glazed door down to the
       // deck. The other bays keep their ordinary windows and sills.
-      const balcony = b.type === 'apartment' && f.street && bay % 3 === b.variation % 3;
+      const balcony = b.type === 'apartment' && f.street && bay % 3 === b.variation % 3 && span >= windowWidth + 1.7;
       const height = balcony ? 2.58 : h, centre = balcony ? y - .19 : y;
       // (no window, sill or balcony behind a sign)
       if (f.clear.length && f.blocked(offset, y - .3, windowWidth + 1.2, h + 1.2)) continue;
@@ -541,17 +569,28 @@ export function edgeWindows(c, b, f, bottom, floors, random) {
   if (b.type === 'loft' || b.type === 'townhouse') for (let floor = 1; floor < floors; floor++) {
     f.add(0, bottom + floor * 3.6 - .12, .16, span + .2, b.type === 'loft' ? .4 : .22, .3, '#d6c1a0', 'solid', true);
   }
+  // (a pavilion's fins are its own wall in a paler render: a fixed timber
+  // brown stood out as stripes on blue and green walls)
+  const fin = b.type === 'pavilion' ? paleFin(b.wall) : '#d5d9bd';
   if (b.type === 'atrium' || b.type === 'pavilion') for (const pier of piers) {
-    f.add(pier, bottom + rise / 2, pilaster[0], pilaster[1], rise, pilaster[2], b.type === 'pavilion' ? '#bf976c' : '#d5d9bd', 'solid', true);
+    f.add(pier, bottom + rise / 2, pilaster[0], pilaster[1], rise, pilaster[2], fin, 'solid', true);
   }
 }
 
+// A shop takes a street wall of 4 m or more, or every wall of a curved front
+// (see facadeRuns) 5 m round, however short: a street's curve is drawn in
+// 2 m chords, so a shop on a bend is all short walls.
+const shopWall = (b, span, run) => b.shopfront && (span >= 4 || run?.length >= 5);
+function shopRoom(ring, street) {
+  const runs = facadeRuns(ring, k => street[k], k => street[k]);
+  return ring.some((p, i) => street[i] && (edgeLength(ring, i) >= 4 || runs[i]?.length >= 5));
+}
 // How a street wall is entered: the whole of a shopfront, an office's lobby
 // door, a warehouse's loading door, or a front door, in the middle of the
 // main front and to one side of a long secondary one. Null for a wall with no
 // way in. `offset` runs along the wall from its middle.
-function entrance(b, span, primary) {
-  if (b.shopfront && span >= 5) return { shop: true, offset: 0, width: span };
+function entrance(b, span, primary, run = null) {
+  if (shopWall(b, span, run)) return { shop: true, offset: 0, width: span };
   if (b.type === 'office' || b.type === 'atrium') return primary ? { offset: 0, width: 3.2 } : null;
   if (b.type === 'warehouse') return { offset: 0, width: Math.min(8, span * .5) + 1 };
   if (primary) return { offset: 0, width: 1.6 };
@@ -580,59 +619,82 @@ export function shopAwning(c, f, offset, width, accent, variation) {
   }
 }
 
+// Most shops are lit after dark (see city-glass.js), never one to let: by
+// the building's seed, warm, cool white or dimmer, or -1 for a dark one
+const shopLight = b => b.signs?.vacant || (b.seed >>> 3) % 8 === 0 ? -1 : [0, 0, 0, 1, 1, 2][(b.seed >>> 6) % 6];
+
 // One business per frontage, with display bays and a single shop door. A
 // broad mixed-use front also has a separate way up to the flats or offices.
 export function shopFront(c, b, facade, base, primary) {
-  const side = b.variation % 2 ? -1 : 1;
+  const side = b.variation % 2 ? -1 : 1, light = shopLight(b), glazed = light < 0 ? colour => colour : colour => nightLit(colour, light);
   const lobby = primary && facade.span >= 12 && !['shop', 'warehouse', 'pavilion'].includes(b.type) ? 2.8 : 0;
   if (lobby) {
     const at = side * (facade.span / 2 - lobby / 2);
     // (its frame, as every doorway's, stands on the ground: the glass stops at a kick plate)
     facade.add(at, G + 1.6, .075, 1.7, 3.2, .11, creamTrim, 'solid', true);
-    facade.add(at, G + 1.43, .17, 1.35, 2.66, .1, '#344e58', 'glass');
-    facade.add(at, G + 2.97, .17, 1.35, .36, .1, '#63818a', 'glass');
+    facade.add(at, G + 1.43, .17, 1.35, 2.66, .1, glazed('#344e58'), 'glass');
+    facade.add(at, G + 2.97, .17, 1.35, .36, .1, glazed('#63818a'), 'glass');
     facade.add(at + side * .43, G + 1.35, .29, .06, .4, .08, '#d7c3a0');
     facade.add(at, G + 3.3, .22, 1.95, .16, .5, creamTrim, 'solid', true);
   }
   // Work in the shop's own span so its fascia, sign and awnings all end at
   // the lobby pier. The obstruction lookup uses these coordinates too.
   const shift = -side * lobby / 2, span = facade.span - lobby;
+  // (and its light on the pavement after dark, see NightLighting)
+  if (light >= 0 && !c.distant && c.features?.shopLights) {
+    const p = facade.position(shift, G, 1.9);
+    c.features.shopLights.push({ x: p[0] + c.east, z: p[2] - c.start, yaw: facade.yaw, width: span, light });
+  }
   const f = { ...facade, span,
     add: (offset, ...args) => facade.add(offset + shift, ...args),
     position: (offset, ...args) => facade.position(offset + shift, ...args),
     local(x, s) { const p = facade.local(x, s); return { ...p, offset: p.offset - shift }; } };
+  // A shop round a curve (see facadeRuns) carries on over each bend: its
+  // fascia meets the next wall's and its bays run up to the bend. A free end
+  // keeps a pier, narrower on a short front, and so does the lobby's side.
+  const joins = facade.joins ?? [null, null];
+  const open = [joins[0] !== null && !(lobby && side < 0), joins[1] !== null && !(lobby && side > 0)];
+  const pier = span < 5 ? .35 : .8, inset = open.map(o => o ? .12 : pier);
+  // (over a bend the fascia runs on as far as its depth takes to close the outside of the turn)
+  const reach = k => open[k] ? -(.3 * Math.tan(joins[k] / 2) + .02) : .25, from = -span / 2 + reach(0), to = span / 2 - reach(1);
   const signBottom = 3.65, signTop = base - .18, signY = (signBottom + signTop) / 2;
-  f.add(0, G + signY, .13, span - .5, signTop - signBottom, .28, b.accent, 'solid', true);
-  const units = Math.max(1, Math.round((span - 1.6) / 5.5)), spacing = (span - 1.6) / units;
-  const doorBay = side > 0 ? units - 1 : 0, panes = [];
+  f.add((from + to) / 2, G + signY, .13, to - from, signTop - signBottom, .28, b.accent, 'solid', true);
+  const usable = span - inset[0] - inset[1], units = usable < .8 ? 0 : Math.max(1, Math.round(usable / 5.5)), spacing = usable / Math.max(1, units);
+  const doorBay = side > 0 ? units - 1 : 0, panes = [], centres = [];
   let doorAt = side * span / 2;
   for (let i = 0; i < units; i++) {
-    const offset = (i - (units - 1) / 2) * spacing;
-    const width = spacing - .45, door = i === doorBay && (primary || facade.shopSign) ? Math.min(1.25, width * .32) : 0;
-    const gap = door ? .16 : 0, doorOffset = offset + side * (width - door) / 2;
+    const offset = -span / 2 + inset[0] + (i + .5) * spacing, width = spacing - .45;
+    // (a unit too narrow for a window beside its door is all door)
+    let door = i === doorBay && (primary || facade.shopSign) ? Math.min(1.25, Math.max(width * .32, Math.min(.95, width - .6))) : 0;
+    if (door && width - door - .16 < .5) door = width;
+    const gap = door && door < width ? .16 : 0, doorOffset = offset + side * (width - door) / 2;
     const display = width - door - gap, displayOffset = offset - side * (door + gap) / 2;
-    panes.push({ offset: displayOffset, width: display, mullion: display > 3.1 });
+    centres.push(offset, offset + spacing * .25);
+    if (display > 0) panes.push({ offset: displayOffset, width: display, mullion: display > 3.1 });
     if (door) doorAt = doorOffset;
     // (the bay's frame reaches the ground, below the lot's own, as the wall does)
     f.add(offset, G + 1.705, .075, width + .24, 3.41, .11, b.accent);
-    f.add(displayOffset, G + 1.69, .17, display, 2.03, .1, '#456971', 'glass');
-    f.add(displayOffset, G + 3.04, .17, display, .57, .1, '#729299', 'glass');
-    // A sill and the occasional mullion give large panes a readable scale.
-    f.add(displayOffset, G + .6, .22, display + .14, .12, .32, b.accent);
-    if (display > 3.1) f.add(displayOffset, G + 1.69, .24, .08, 2.03, .08, b.accent);
+    if (display > 0) {
+      f.add(displayOffset, G + 1.69, .17, display, 2.03, .1, glazed('#456971'), 'glass');
+      f.add(displayOffset, G + 3.04, .17, display, .57, .1, glazed('#729299'), 'glass');
+      // A sill and the occasional mullion give large panes a readable scale.
+      f.add(displayOffset, G + .6, .22, display + .14, .12, .32, b.accent);
+      if (display > 3.1) f.add(displayOffset, G + 1.69, .24, .08, 2.03, .08, b.accent);
+    }
     if (door) {
-      f.add(doorOffset, G + 1.73, .17, door, 3.1, .1, '#345660', 'glass');
-      f.add(doorOffset - side * door * .32, G + 1.35, .3, .06, .4, .08, '#e5d0a0');
+      f.add(doorOffset, G + 1.73, .17, door, 3.1, .1, glazed('#345660'), 'glass');
+      f.add(doorOffset - side * Math.min(door * .32, .4), G + 1.35, .3, .06, .4, .08, '#e5d0a0');
     }
     f.add(offset, G + 2.75, .24, width + .1, .1, .1, '#bbd2c8');
-    if ((b.variation + i) % 3 !== 0 && b.type !== 'office') {
+    // (round a curve's short walls two bays in three have their awning, by where they stand on the run)
+    const bay = facade.run && span < 5.5 ? Math.round((facade.run.from + inset[0] + (i + .5) * spacing) / 5.5) : i;
+    if ((b.variation + bay) % 3 !== 0 && b.type !== 'office') {
       shopAwning(c, f, offset, spacing - .3, b.accent, b.variation);
     }
   }
   // The shop's name on its fascia board, over one of its windows or its door
   // if a tree stands in front of the middle, and its other signs
-  if (primary || facade.shopSign) {
-    const centres = Array.from({ length: units }, (_, i) => (i - (units - 1) / 2) * spacing).flatMap(offset => [offset, offset + spacing * .25]);
+  if ((primary || facade.shopSign) && units) {
     shopSigns(c, b, f, { bottom: signBottom, top: signTop, centres, panes, door: doorAt, primary });
   }
 }
@@ -661,7 +723,7 @@ function frontDoor(c, b, f, offset, head) {
 // loading bay, or a front door with windows either side.
 export function groundFloor(c, b, f, base, primary, random) {
   const { span } = f;
-  const entry = entrance(b, span, primary), canopy = Math.min(9, span * .55);
+  const entry = entrance(b, span, primary, f.run), canopy = Math.min(9, span * .55);
   const staffSide = b.variation % 2 ? 1 : -1;
   const staff = b.type === 'warehouse' && primary && span / 2 - canopy / 2 > 3 ? staffSide * (canopy / 2 + 1.5) : null;
   // The projecting base course must stop at the threshold. Shopfronts have
@@ -675,18 +737,22 @@ export function groundFloor(c, b, f, base, primary, random) {
     // the front as far as the gap to a neighbour's, so a terrace's plinths meet)
     footing.add(0, G + .32, .06, span + .2, .32, .16, '#939b98', 'solid', true);
   }
-  if (b.shopfront && span >= 5) shopFront(c, b, f, base, primary);
+  if (entry?.shop) shopFront(c, b, f, base, primary);
   else if (b.type === 'office' || b.type === 'atrium') {
+    // (a sliver of a curved front is only the pier between its neighbours' glazing)
+    if (span < .9) return;
     // The lobby's double door interrupts the glazing and its mullions.
     // Keeping glass beside/above the opening avoids two overlapping panes
     // and a full-height mullion running through the middle of the doorway.
     const bays = Math.max(1, Math.floor((span - 1.2) / 3.2)), spacing = (span - 1.2) / bays;
     const lobby = primary ? { ...f, clear: [...f.clear, { from: -1.34, to: 1.34, bottom: G - 1, top: G + 2.75 }] } : f;
-    lobby.add(0, G + base / 2 + .1, .1, span - .3, base - .6, .12, '#5e8a9a', 'glass');
+    // (three lobbies in five are lit after dark)
+    const glazed = (b.seed >>> 5) % 5 < 3 ? colour => nightLit(colour, 1) : colour => colour;
+    lobby.add(0, G + base / 2 + .1, .1, span - .3, base - .6, .12, glazed('#5e8a9a'), 'glass');
     for (let i = 0; i <= bays; i++) lobby.add(-(span - 1.2) / 2 + i * spacing, G + base / 2 + .1, .2, .14, base - .6, .12, '#b6c9c8');
     if (primary) {
       for (const side of [-1, 1]) {
-        f.add(side * .605, G + 1.3, .17, 1.11, 2.6, .1, '#2f4b55', 'glass');
+        f.add(side * .605, G + 1.3, .17, 1.11, 2.6, .1, glazed('#2f4b55'), 'glass');
         f.add(side * 1.25, G + 1.3, .24, .18, 2.6, .14, '#b6c9c8', c.distant ? 'inlay' : 'solid');
         f.add(side * .22, G + 1.28, .29, .065, .48, .08, '#d8dbd2');
         f.add(side * .605, G + .12, .24, 1.11, .24, 0, '#7c9698', 'inlay');
@@ -747,13 +813,17 @@ export function groundFloor(c, b, f, base, primary, random) {
     const width = tall ? Math.min(loft ? Math.min(3.7, spacing - 1) : b.variation === 2 ? 2.25 : 1.65, spacing - .5) : 1.4;
     let offsets = bayLayout(f, target, (tall ? width : 1.4) + .25).windows.map(w => w.offset).filter(offset => !door || Math.abs(offset - doorOffset) >= width / 2 + 1.3);
     if (!offsets.length && !f.run) offsets = [-span * .3, span * .3].filter(offset => !door || Math.abs(offset - doorOffset) > 1.9);
-    if (span > 5.5) for (const offset of offsets) {
+    // (as on the floors above: a short wall and each wall of a curved front
+    // too, where the ground floor used to stand blank under windowed floors)
+    if (span >= 3.2 || f.run) for (const offset of offsets) {
       if (!tall) {
+        if (f.run && span < 1.9) continue;
         f.add(offset, G + 2, .075, 1.65, 2.05, .11, '#e0ccab');
         f.add(offset, G + 2, .17, 1.4, 1.8, .08, '#435b65', 'glass');
         continue;
       }
-      const w = Math.min(width, span * .3), y = G + 2.5, h = 3.2;
+      const w = Math.min(width, f.run ? span - .35 : span * .3), y = G + 2.5, h = 3.2;
+      if (w < .6) continue;
       f.add(offset, y, .075, w + .25, h + .25, .11, frame);
       f.add(offset, y, .17, w, h, .08, '#435b65', 'glass');
       f.add(offset, G + head + .06, .23, w, .1, .08, frame);
@@ -848,13 +918,13 @@ export function exitDistance(p, dx, dy, polygon) {
 // low stone wall) with a gap where each path comes through, so no door opens
 // onto the lawn and the gardens have an edge to the street.
 const PATH = '#c4baa3', HEDGES = ['#4e7545', '#57804a', '#476c40'];
-function frontGarden(c, b, ring, primary, random) {
-  const lot = b.lotLocal, n = ring.length, gaps = [];
+function frontGarden(c, b, ring, primary, random, runs = []) {
+  const lot = b.lotLocal, n = ring.length, gaps = [], strips = [];
   let open = false;
   for (let i = 0; i < n; i++) {
     const a = ring[i], q = ring[(i + 1) % n], span = edgeLength(ring, i);
-    if (!b.street[i] || span < 2.5) continue;
-    const door = entrance(b, span, i === primary);
+    if (!b.street[i] || (span < 2.5 && !runs[i])) continue;
+    const door = entrance(b, span, i === primary, runs[i]);
     if (!door) continue;
     open ||= door.shop;
     const tx = (q.x - a.x) / span, ty = (q.y - a.y) / span, nx = ty, ny = -tx;
@@ -867,10 +937,11 @@ function frontGarden(c, b, ring, primary, random) {
     // the next shop's meets it: as wide as the front only, a sliver of lawn
     // showed between the two)
     const half = door.width / 2 + (door.shop ? 3 : 0);
-    const strip = [at(door.offset - half, 0), at(door.offset + half, 0), at(door.offset + half, reach + 1), at(door.offset - half, reach + 1)];
-    for (const piece of intersection([strip], [lot])) c.polygon(piece.outer.map(p => [p.x, p.y]), G + .06, .06, PATH);
+    strips.push([at(door.offset - half, 0), at(door.offset + half, 0), at(door.offset + half, reach + 1), at(door.offset - half, reach + 1)]);
     if (!door.shop) gaps.push({ ...at(door.offset, reach), half: door.width / 2 + .45 });
   }
+  // (one paving: the strips of a shop round a curve overlap at its bends)
+  if (strips.length) for (const piece of intersection(union(strips).map(p => p.outer), [lot])) c.polygon(piece.outer.map(p => [p.x, p.y]), G + .06, .06, PATH);
   if (open || !b.lotStreet) return;
   // The hedge, just inside the lot along each of its street edges
   const civic = b.district === 'Civic quarter', height = civic ? .55 : .8 + random() * .25, depth = civic ? .4 : .7;
@@ -1079,6 +1150,123 @@ function roofDetails(c, b, deck, top, random, holes = [], keep = []) {
   } else if (b.type === 'shop' && random() < .5) plant(1.1 + random() * .5);
 }
 
+// How high whatever stands on a lot reaches beside its party walls, above
+// the pavement: a building's walls and its roof (a pitched roof's gable
+// stands on the party wall), nothing for a garden, and no limit for a
+// landmark, whose walls nothing is painted over. Worked out once a lot.
+let lotTops = null;
+function lotTop(index) {
+  if (!lotTops || lotTops.city !== CITY.lots) { lotTops = new Map(); lotTops.city = CITY.lots; }
+  let top = lotTops.get(index);
+  if (top === undefined) {
+    const b = planLot({ east: 0, start: 0 }, cityLot(index));
+    top = b.kind === 'landmark' ? Infinity : b.kind !== 'building' ? 0
+      : baseHeight(b) + (b.roofType === 'terrace' ? b.floors : b.setbackFloors) * 3.6 + ({ gable: 5.8, hip: 4.4 }[b.roofType] ?? 1.4);
+    lotTops.set(index, top);
+  }
+  return top;
+}
+// A party wall that stands well clear of the building next door is painted
+// as city firewalls are, with an advert for one of the city's businesses on
+// a panel of flat paint, or a mural of low-poly triangles in one palette's
+// shades. Which walls, and what, by a hash of the building, never a stream.
+// Only on the band of wall between the top of the neighbour's roof and the
+// cornice, and only close to: the signs are not drawn far off either.
+const MURALS = [['#f3c47a', '#e0735b', '#6d4d86'], ['#a6dcd6', '#5fa0bf', '#355d8c'], ['#c3d98a', '#6fa25c', '#33614c'], ['#f6cbd8', '#c98ec7', '#6f69ad'], ['#f1e2a6', '#e39c4b', '#a8483f']];
+const AD_PAINT = ['#e9e0c9', '#d8e0dc', '#e8d3c2', '#2f3f4a'];
+const AD_SIGNS = [...new Set([...SIGNS_BY_USE.shop, ...SIGNS_BY_USE.works])].filter(sign => sign.aspect > 1.3 && sign.aspect < 6 && !sign.letters);
+// Whether a party wall is painted, and the band it may have: { ad, bottom,
+// ceiling } in metres above the pavement, or null
+export function wallPainting(c, b, ring, i, top) {
+  const a = ring[i], q = ring[(i + 1) % ring.length], span = edgeLength(ring, i);
+  if (span < 7) return null;
+  const pick = randomAt(b.seed >>> 8, 7460 + i, CITY.seed);
+  if (pick > .5) return null;
+  // (the lot the wall looks onto, a pace out from its middle)
+  const nx = (q.y - a.y) / span, ny = -(q.x - a.x) / span, probe = { x: c.east + (a.x + q.x) / 2 + nx * 1.2, y: c.start + (a.y + q.y) / 2 + ny * 1.2 };
+  const across = blockPlots(b.lot.block).find(plot => plot.index !== b.lot.index && insidePolygon(probe, plot.polygon));
+  // (and above the ground floor, whose stone base stands out from the wall)
+  const bottom = Math.max((across ? lotTop(across.index) : 0) + .8, baseHeight(b) + .5), ceiling = top - .9;
+  return ceiling - bottom < 3.2 ? null : { ad: pick < .3, bottom, ceiling, pick };
+}
+function paintWall(c, b, ring, i, top) {
+  const paint = wallPainting(c, b, ring, i, top);
+  if (!paint) return;
+  const a = ring[i], q = ring[(i + 1) % ring.length], span = edgeLength(ring, i), { bottom, ceiling, pick } = paint;
+  const f = edgeFacade(c, a, q), mid = (bottom + ceiling) / 2, room = ceiling - bottom, wide = span - 1.8;
+  if (paint.ad) {
+    const sign = AD_SIGNS[Math.floor(randomAt(b.seed >>> 4, 7461 + i, CITY.seed) * AD_SIGNS.length)];
+    const h = Math.min(room - 1, 5.5, (wide - .9) / sign.aspect), w = h * sign.aspect;
+    if (h < 1.5 || w < 4) return;
+    f.add(0, G + mid, .03, w + .9, h + .9, .06, AD_PAINT[Math.floor(pick * 40) % AD_PAINT.length]);
+    const p = f.position(0, G + mid, .075);
+    c.signFace('shop-signs', sign, p[0], p[1], -p[2], f.yaw, w, h, null);
+    return;
+  }
+  // A mural: a grid of triangles over a panel, its inner corners jittered,
+  // coloured along a slant from one end of the palette to the other, in a frame
+  const w = Math.min(wide, room * 2.4), h = Math.min(room - .4, w * .9), columns = Math.max(3, Math.round(w / 1.6)), rows = Math.max(2, Math.round(h / 1.6));
+  const palette = MURALS[Math.floor(randomAt(b.seed >>> 4, 7462 + i, CITY.seed) * MURALS.length)].map(colour => new THREE.Color(colour));
+  const slant = randomAt(b.seed >>> 4, 7463 + i, CITY.seed) * Math.PI, sx = Math.cos(slant), sy = Math.sin(slant), jitter = (k, salt) => randomAt(b.seed >>> 4, 7470 + k * 7 + salt + i * 1013, CITY.seed) - .5;
+  const corner = (col, row) => {
+    const inner = col > 0 && col < columns && row > 0 && row < rows, k = col * (rows + 1) + row;
+    return { o: -w / 2 + (col + (inner ? jitter(k, 1) * .6 : 0)) * w / columns, y: mid - h / 2 + (row + (inner ? jitter(k, 2) * .6 : 0)) * h / rows };
+  };
+  const shade = new THREE.Color(), at = p => f.position(p.o, G + p.y, .06);
+  const tri = (p, r, s, k) => {
+    const cx = (p.o + r.o + s.o) / 3 / w, cy = (p.y + r.y + s.y - 3 * mid) / 3 / h, t = Math.max(0, Math.min(1, .5 + (cx * sx + cy * sy) * .95 + jitter(k, 3) * .18));
+    if (t < .5) shade.copy(palette[0]).lerp(palette[1], t * 2); else shade.copy(palette[1]).lerp(palette[2], t * 2 - 1);
+    shade.multiplyScalar(.94 + jitter(k, 4) * .12);
+    const [pa, pb, pc] = [p, r, s].map(at);
+    c.bodies.face(...pa, ...pb, ...pc, `#${shade.getHexString()}`);
+  };
+  for (let col = 0; col < columns; col++) for (let row = 0; row < rows; row++) {
+    const p00 = corner(col, row), p10 = corner(col + 1, row), p11 = corner(col + 1, row + 1), p01 = corner(col, row + 1), k = col * rows + row;
+    if ((col + row) % 2) { tri(p00, p10, p11, k * 2); tri(p00, p11, p01, k * 2 + 1); }
+    else { tri(p00, p10, p01, k * 2); tri(p10, p11, p01, k * 2 + 1); }
+  }
+  const frame = '#e4dccb';
+  for (const side of [-1, 1]) {
+    f.add(side * (w / 2 + .06), G + mid, .04, .12, h + .24, .08, frame);
+    f.add(0, G + mid + side * (h / 2 + .06), .04, w + .24, .12, .08, frame);
+  }
+}
+
+// An iron fire escape down the front of some older brick blocks and lofts:
+// a railed landing under each floor's window at the end of the front away
+// from the door, a flight of steps between each landing and the next, and
+// a ladder drawn up under the lowest. Close to only, as the other trim is
+// far off, and chosen by a hash of the building, never a stream.
+const ESCAPE_DISTRICTS = new Set(['Old town', 'Warehouse district', 'Market district']), IRON = '#33383a';
+function fireEscape(c, b, f, bottom, floors) {
+  if (c.distant || floors < 3 || f.span < 8 || !['brick', 'loft'].includes(b.type) || !ESCAPE_DISTRICTS.has(b.district)) return;
+  if (randomAt(b.seed >>> 6, 7490, CITY.seed) > .35) return;
+  const { windows, spacing } = windowBays(b, f);
+  if (windows.length < 2) return;
+  // (the end of the front away from the door, the lobby or the upstairs sign)
+  const end = b.variation % 2 ? 1 : -1, bay = windows.reduce((best, w) => end * w.offset > end * best.offset ? w : best);
+  const width = Math.min(spacing - .3, 3.8), h = b.type === 'loft' ? 2.45 : 2.2, at = bay.offset;
+  const levels = Array.from({ length: floors }, (_, k) => bottom + 1.7 + k * 3.6 - h / 2 - .3);
+  if (levels.some(y => f.blocked(at, y + .6, width + .2, 1.4))) return;
+  const stair = (o0, y0, o1, y1) => {
+    const p = f.position((o0 + o1) / 2, (y0 + y1) / 2, .5), run = o1 - o0, rise = y1 - y0;
+    c.box(p[0], p[1], -p[2], Math.hypot(run, rise), .07, .7, IRON, 'solid', f.yaw, Math.atan2(rise, run));
+  };
+  levels.forEach((y, k) => {
+    f.add(at, y, .6, width, .1, 1.1, IRON);
+    for (const rail of [.55, 1]) f.add(at, y + rail, 1.12, width, .045, .045, IRON);
+    for (const side of [-1, 1]) {
+      f.add(at + side * (width / 2 - .025), y + .5, 1.12, .05, 1, .05, IRON);
+      f.add(at + side * (width / 2 - .025), y + 1, .6, .05, .045, 1.1, IRON);
+    }
+    // (up to the next landing, from one end to the other and back)
+    const up = k % 2 ? -1 : 1;
+    if (k < floors - 1) stair(at - up * (width / 2 - .25), y + .05, at + up * (width / 2 - .25), levels[k + 1] + .05);
+  });
+  // the ladder, drawn up under the lowest landing
+  f.add(at + end * (width / 2 - .45), levels[0] - 1.05, .95, .45, 2, .05, IRON);
+}
+
 // The runs of walls round a ring that turn less than 30 degrees where they
 // meet: for each wall in a run of two or more, where along the run it
 // starts, how long the run is, and its walls in groups for bayLayout (each
@@ -1112,9 +1300,27 @@ export function facadeRuns(ring, facade, kind) {
   return runs;
 }
 
+// For each wall of a run, how far the ring turns where it meets the wall
+// before it and the one after it in the run: [start, end], null at an end of
+// the run (and null for a wall in none)
+export function runJoins(ring, runs) {
+  const n = ring.length, turn = k => {
+    const p = ring[(k - 1 + n) % n], q = ring[k % n], r = ring[(k + 1) % n];
+    return Math.abs(Math.atan2((q.x - p.x) * (r.y - q.y) - (q.y - p.y) * (r.x - q.x), (q.x - p.x) * (r.x - q.x) + (q.y - p.y) * (r.y - q.y)));
+  };
+  return ring.map((p, i) => {
+    const run = runs[i];
+    return run ? [run.from > 1e-6 ? turn(i) : null, run.from + edgeLength(ring, i) < run.length - 1e-6 ? turn(i + 1) : null] : null;
+  });
+}
+
+// How tall a building's ground floor is: a shed's loading bay, a house's
+// storey, or a block's tall shop or lobby floor
+const baseHeight = b => b.type === 'warehouse' ? 4.8 : b.domestic ? 3.6 : 5.4;
+
 function buildBuilding(c, b) {
   const random = seededRandom(b.seed ^ 0x3c6ef372), bodies = c.bodies, ring = b.footprint, n = ring.length;
-  const base = b.type === 'warehouse' ? 4.8 : b.domestic ? 3.6 : 5.4, height = base + b.floors * 3.6, lower = b.setbackFloors, lowerTop = G + base + lower * 3.6;
+  const base = baseHeight(b), height = base + b.floors * 3.6, lower = b.setbackFloors, lowerTop = G + base + lower * 3.6;
   const centre = averagePoint(ring);
   c.features.buildings.push({ x: c.east + centre.x, s: c.start + centre.y, area: b.area, height, type: b.type, floors: b.floors, roofType: b.roofType, wall: b.wall });
   const solid = c.polygonSolid(convexHull(ring).map(p => [p.x, p.y]), G + height);
@@ -1180,16 +1386,19 @@ function buildBuilding(c, b) {
   }
   // Windowed walls of the same kind that meet at gentle bends, the segments
   // of a curved front, share one run of bays (see bayLayout)
-  const runs = facadeRuns(ring, k => b.windows[k] && edgeLength(ring, k) >= 2.5, k => b.street[k]);
+  // (however short: a street's curve is drawn in 2 m chords, and a curved
+  // corner of a tower left out as short walls stood blank all the way up)
+  const runs = facadeRuns(ring, k => b.windows[k], k => b.street[k]), joins = runJoins(ring, runs);
   // (what a sign standing out from a wall has to keep clear of)
   const plots = c.distant ? [] : [ring, ...(b.lot?.index === undefined ? [] : neighboursOf(b.lot).map(plot => local(plot, c)))];
   for (let i = 0; i < n; i++) {
-    const f = edgeFacade(c, ring[i], ring[(i + 1) % n]);
+    const f = edgeFacade(c, ring[i], ring[(i + 1) % n]), run = runs[i];
     f.plots = plots;
     f.street = b.street[i];
-    f.run = runs[i];
+    f.run = run;
+    f.joins = joins[i];
     f.shopSign = i === secondary;
-    if (f.span < 2.5) continue;
+    if (f.span < 2.5 && !run) continue;
     if (f.street) groundFloor(c, b, f, base, i === primary, random);
     else if (b.windows[i] && (b.type === 'office' || b.type === 'atrium')) groundFloor(c, { ...b, shopfront: false }, f, base, false, random);
     if (i === primary && b.signs?.upstairs && b.windows[i]) upstairsSign(c, f, b.signs.upstairs, windowBays(b, f), b.variation % 2 ? -1 : 1, G + base, lowerTop);
@@ -1197,8 +1406,11 @@ function buildBuilding(c, b) {
     // round its garden)
     const garden = b.domestic && b.lawn && !f.street;
     if (b.windows[i]) edgeWindows(c, b, f, garden ? G : G + base, garden ? lower + 1 : lower, random);
+    if (i === primary && b.windows[i]) fireEscape(c, b, f, G + base, lower);
   }
-  if (b.lawn && !c.distant) frontGarden(c, b, ring, primary, random);
+  if (b.lawn && !c.distant) frontGarden(c, b, ring, primary, random, runs);
+  // (a party wall standing clear of the house next door: see paintWall)
+  if (!c.distant && b.lot?.index !== undefined) for (let i = 0; i < n; i++) if (!b.street[i] && !b.windows[i]) paintWall(c, b, ring, i, lowerTop - G);
   if (b.roofType === 'hip') { hipRoof(c, b, bodies, ring, lowerTop, solid); return; }
   if (b.roofType === 'gable') { gableRoof(c, b, bodies, ring, lowerTop, random, solid); return; }
   const trim = b.type === 'office' ? '#b8cccd' : '#d6c9b1';

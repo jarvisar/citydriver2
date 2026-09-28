@@ -89,7 +89,7 @@ Nothing here has been measured on a real headset yet. The numbers come from Meta
 
 ## Night Lighting
 
-Streetlamps and headlights light the ground with textured patches instead of real lights. There are four instanced draws (lamp pools, headlight beams, lamp lenses and glowing halos) using three 64x64 masks. They're limited to 96 lamps and 25 headlights within 145 m. The patches fade with the weather and are hidden in daylight.
+Streetlamps and headlights light the ground with textured patches instead of real lights. There are four instanced draws (lamp pools, headlight beams, lamp lenses and glowing halos) using three 64x64 masks. They're limited to 96 lamps and 25 headlights within 145 m. The lamp pools also carry the light from up to 40 lit shop windows within 90 m, in the same draw. The patches fade with the weather and are hidden in daylight.
 
 They only light flat ground, so there's no lighting on walls, no occlusion and no extra shadows. They're left out of the ambient occlusion pass.
 

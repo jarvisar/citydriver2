@@ -13,7 +13,7 @@ const contract = (id, target) => { const type = CONTRACTS.find(entry => entry.id
   return { id, stat: type.stat, tier: 0, target, text: type.text(target), short: type.short, money: Boolean(type.money), progress: 0, done: false }; };
 
 test('everything a car can knock loose has a price and a name, and every traffic model a value', () => {
-  for (const kind of ['lamp', 'lantern', 'signal', 'mast', 'sign', 'bench', 'bin', 'table', 'chair', 'stall', 'tree', 'shelter']) {
+  for (const kind of ['lamp', 'lantern', 'signal', 'mast', 'sign', 'bench', 'bin', 'table', 'chair', 'stall', 'tree', 'shelter', 'hydrant', 'post-box', 'cabinet', 'news-boxes', 'bike-rack']) {
     assert.ok(PRICES[kind] > 0 && PIECE_NAMES[kind], kind);
   }
   for (const model of [...TRAFFIC_MODELS, BUS_MODEL]) assert.ok(CAR_PRICES[model.name] > 0, model.name);

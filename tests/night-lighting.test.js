@@ -16,9 +16,11 @@ test('night lighting has a fixed budget, switches off by day, and survives rebas
     world.update(player.s, player.u); player.render(0, world.origin); traffic.render(1, world.origin);
     lighting.update(world, player, traffic, 1);
     assert.equal(lighting.group.children.length, 4);
-    assert.ok(lighting.pools.count > 0 && lighting.pools.count <= 96);
+    // (the pools: the lamps' and after them up to 40 lit shop windows' on the pavement)
+    assert.ok(lighting.halos.count > 0 && lighting.halos.count <= 96);
+    assert.ok(lighting.pools.count >= lighting.halos.count && lighting.pools.count <= lighting.halos.count + 40);
     assert.ok(lighting.beams.count > 0 && lighting.beams.count <= 25);
-    assert.equal(lighting.halos.count, lighting.pools.count);
+    assert.equal(lighting.lenses.count, lighting.halos.count);
     assert.equal(lighting.halos.material.depthTest, true, 'walls occlude lamp glows');
     lighting.group.traverse(object => {
       assert.ok(!object.isLight); assert.ok(!object.castShadow);

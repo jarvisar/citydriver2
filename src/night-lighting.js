@@ -2,6 +2,11 @@ import * as THREE from 'three';
 import { PAVEMENT_LEVEL } from './world/city-route.js';
 
 const STREET_LIMIT = 96, HEADLIGHT_LIMIT = 25, RANGE = 145;
+// A lit shop window's light on the pavement in front of it: up to this many,
+// within this range, drawn with the street lamps' pools (see shopFront)
+const SHOP_LIMIT = 40, SHOP_RANGE = 90;
+// (warm, cool white and dimmer shop lights, times the pools' own colour)
+const SHOP_TINTS = [new THREE.Color(.8, .76, .68), new THREE.Color(.58, .72, 1.05), new THREE.Color(.5, .47, .42)];
 const up = new THREE.Vector3(0, 1, 0), lensColor = new THREE.Color('#fff1c8');
 
 // Small CPU-generated masks, shared by every instance. No lights, render
@@ -37,7 +42,7 @@ export class NightLighting {
     this.group.visible = false; scene.add(this.group);
     this.transform = new THREE.Object3D(); this.color = new THREE.Color();
     this.forward = new THREE.Vector3(); this.position = new THREE.Vector3();
-    this.selected = []; this.lastX = Infinity; this.lastZ = Infinity;
+    this.selected = []; this.shops = []; this.lastX = Infinity; this.lastZ = Infinity;
     const plane = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
     const make = (name, geometry, material, count) => {
       const mesh = new THREE.InstancedMesh(geometry, material, count);
@@ -51,7 +56,7 @@ export class NightLighting {
       transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
       toneMapped: false, opacity: 0,
     });
-    this.pools = make('street-light-pools', plane, patch('street'), STREET_LIMIT);
+    this.pools = make('street-light-pools', plane, patch('street'), STREET_LIMIT + SHOP_LIMIT);
     this.beams = make('headlight-pools', plane, patch('headlight'), HEADLIGHT_LIMIT);
     this.lenses = make('street-light-lenses', new THREE.BoxGeometry(.72, .065, .30),
       new THREE.MeshBasicMaterial({ color: '#ffe9b1', toneMapped: false }), STREET_LIMIT);
@@ -90,6 +95,12 @@ export class NightLighting {
       }
       candidates.sort((a, b) => a.distance - b.distance);
       this.selected = candidates.slice(0, STREET_LIMIT);
+      const shops = [];
+      for (const chunk of world.chunks.values()) for (const shop of chunk.features.shopLights ?? []) {
+        const distance = Math.hypot(shop.x - x, shop.z - z);
+        if (distance < SHOP_RANGE) shops.push({ shop, distance });
+      }
+      this.shops = shops.sort((a, b) => a.distance - b.distance).slice(0, SHOP_LIMIT);
     }
     this.pools.material.opacity = .40 * strength;
     this.beams.material.opacity = .56 * strength;
@@ -113,7 +124,14 @@ export class NightLighting {
       t.scale.setScalar(lantern ? 2.4 : 3.6); t.updateMatrix();
       this.halos.setMatrixAt(i, t.matrix); this.halos.setColorAt(i, this.color.setScalar(fade));
     }
-    this.pools.count = this.lenses.count = this.halos.count = this.selected.length;
+    // (the shops' light after the lamps', in the same draw)
+    if (uploadStreet) this.shops.forEach(({ shop }, k) => {
+      const fade = 1 - THREE.MathUtils.smoothstep(Math.hypot(shop.x - x, shop.z - z), 60, SHOP_RANGE);
+      t.position.set(shop.x, PAVEMENT_LEVEL + .03, shop.z + origin); t.rotation.set(0, shop.yaw, 0); t.scale.set(shop.width, 1, 3.6); t.updateMatrix();
+      this.pools.setMatrixAt(this.selected.length + k, t.matrix); this.pools.setColorAt(this.selected.length + k, this.color.copy(SHOP_TINTS[shop.light]).multiplyScalar(fade));
+    });
+    this.lenses.count = this.halos.count = this.selected.length;
+    this.pools.count = this.selected.length + this.shops.length;
     let count = 0;
     const beam = (car, spec, offset = 0) => {
       if (count >= HEADLIGHT_LIMIT) return;

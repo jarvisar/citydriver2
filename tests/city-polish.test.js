@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { wallHasOutlook, edgeFacade, edgeWindows, shopAwning, shopFront, groundFloor, facadeRuns, cornice } from '../src/world/city-buildings.js';
+import { wallHasOutlook, edgeFacade, edgeWindows, shopAwning, shopFront, groundFloor, facadeRuns, runJoins, cornice, planLot, cityLot, wallPainting } from '../src/world/city-buildings.js';
 import { CityChunk } from '../src/world/citydriver-world.js';
 import { seededRandom } from '../src/world/route.js';
 import { Surface } from '../src/world/surface.js';
@@ -13,6 +13,7 @@ import { buildLandmark } from '../src/world/city-landmarks.js';
 import { cityPlaces } from '../src/city-exploration.js';
 import { cityTrees, parkedCars } from '../src/world/city-assets.js';
 import { buildHedge } from '../src/world/city-detail-assets.js';
+import { daylight } from '../src/world/city-glass.js';
 
 const rectangle = (x, y, w, h) => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
 
@@ -43,6 +44,67 @@ test('a curved front keeps its bays between its bends, with one pilaster at each
     // (no pane runs round a bend)
     for (const w of floor) assert.ok(Math.abs(w.f.local(w.x, w.s).offset) + w.w / 2 <= w.f.span / 2 + 1e-6, `${type}: a window across a bend`);
   }
+});
+
+test('a front round a street\'s curve, drawn in 2 m chords, has its shop or its windows on every chord', () => {
+  // (seed 2024: towers on a curved corner stood blank all the way up, each 2 m
+  // wall too short for windows, and on seed 2 shops on Old town's winding streets,
+  // no wall of them 5 m long, stood on a bare base with a door and no shop)
+  const arc = Array.from({ length: 11 }, (_, k) => { const a = -.5 + k * .1; return { x: Math.sin(a) * 20, y: Math.cos(a) * 20 }; });
+  const ring = [...arc, { x: arc[10].x, y: -8 }, { x: arc[0].x, y: -8 }], n = ring.length, street = ring.map((p, i) => i < 10);
+  const runs = facadeRuns(ring, k => street[k], k => street[k]), joins = runJoins(ring, runs);
+  assert.ok(runs.slice(0, 10).every(Boolean), 'the chords make one run');
+  for (const shopfront of [true, false]) {
+    const fascias = new Map(), glass = [];
+    for (let i = 0; i < 10; i++) {
+      const c = { distant: false, bodies: new Surface(), materials: {}, item() {},
+        box(x, y, s, w, h, d, colour, kind) {
+          if (kind === 'glass') glass.push({ i, y, w, span: f.span });
+          else if (colour === '#386f73' && Math.abs(h - 1.57) < .01) fascias.set(i, w);
+        } };
+      const f = edgeFacade(c, ring[i], ring[(i + 1) % n]);
+      f.street = true; f.run = runs[i]; f.joins = joins[i];
+      groundFloor(c, { type: 'brick', variation: 0, accent: '#386f73', shopfront }, f, 5.4, false, seededRandom(i));
+    }
+    if (shopfront) {
+      for (let i = 0; i < 10; i++) {
+        assert.ok(fascias.has(i), `no fascia over chord ${i}`);
+        assert.ok(glass.some(g => g.i === i), `no shop window on chord ${i}`);
+      }
+      // (over each bend the fascia runs on to meet the next chord's)
+      for (let i = 1; i < 9; i++) assert.ok(fascias.get(i) > 2, `the fascia over chord ${i} stops short of its bends`);
+    } else {
+      const ground = glass.filter(g => g.y < PAVEMENT_LEVEL + 4);
+      // (a bay every 5 m or so, as on the floors above)
+      assert.ok(ground.length >= 4, `${ground.length} ground-floor windows round 20 m of curve`);
+      for (const g of ground) assert.ok(g.w <= g.span, 'a window wider than its chord');
+    }
+  }
+});
+
+test('a party wall is painted only on the band clear of the house next door, over its ground floor and under its cornice', () => {
+  const world = { east: 0, start: 0 }, lots = CITY.lots.map((polygon, index) => cityLot(index));
+  const byIndex = new Map(lots.map(lot => [lot.index, lot])), wallTop = b => (b.type === 'warehouse' ? 4.8 : b.domestic ? 3.6 : 5.4) + b.setbackFloors * 3.6;
+  let painted = 0, ads = 0;
+  for (const lot of lots.filter((lot, k) => k % 3 === 0)) {
+    const b = planLot(world, lot);
+    if (b.kind !== 'building') continue;
+    const ring = b.footprint, top = wallTop(b);
+    for (let i = 0; i < ring.length; i++) {
+      if (b.street[i] || b.windows[i]) continue;
+      const paint = wallPainting(world, b, ring, i, top);
+      if (!paint) continue;
+      painted++; ads += paint.ad;
+      const a = ring[i], q = ring[(i + 1) % ring.length], length = Math.hypot(q.x - a.x, q.y - a.y);
+      const probe = { x: (a.x + q.x) / 2 + (q.y - a.y) / length * 1.2, y: (a.y + q.y) / 2 - (q.x - a.x) / length * 1.2 };
+      const other = lots.find(o => o.index !== lot.index && o.block === lot.block && insidePolygon(probe, o.polygon));
+      const next = other ? planLot(world, byIndex.get(other.index)) : null;
+      assert.ok(next?.kind !== 'landmark', 'nothing painted over a landmark');
+      if (next?.kind === 'building') assert.ok(paint.bottom >= wallTop(next) + .8, `painted below the neighbour's roof at ${lot.centre.x.toFixed(0)},${lot.centre.y.toFixed(0)}`);
+      assert.ok(paint.bottom >= (b.domestic ? 3.6 : 5.4) - .7 && paint.ceiling <= top - .9 && paint.ceiling - paint.bottom >= 3.2, 'over the ground floor and under the cornice');
+    }
+  }
+  assert.ok(painted > 50 && ads > 15 && painted - ads > 15, `${painted} walls painted, ${ads} with adverts`);
 });
 
 test('a cornice never reaches past its lot, where the neighbour\'s is', () => {
@@ -109,9 +171,10 @@ test('metal loading shutters fill their opening once, down to the pavement at bo
 
 test('office lobby glazing leaves a real opening for two framed door leaves', () => {
   for (const distant of [false, true]) for (const span of [12, 20, 27]) for (const primary of [false, true]) {
+    // (a lobby lit after dark marks its panes' colours: see city-glass.js)
     const pieces = [], panes = [], c = { distant, bodies: new Surface(), materials: {},
-      box(x, y, s, w, h, d, colour, kind) { pieces.push({ x, y, w, h, colour }); if (kind === 'glass') panes.push({ x, y, w, h, colour }); },
-      item(key, geometry, material, p, scale, colour) { if (key === 'distant-glass') panes.push({ x: p[0], y: p[1], w: scale[0], h: scale[1], colour }); } };
+      box(x, y, s, w, h, d, colour, kind) { pieces.push({ x, y, w, h, colour }); if (kind === 'glass') panes.push({ x, y, w, h, colour: daylight(colour) }); },
+      item(key, geometry, material, p, scale, colour) { if (key === 'distant-glass') panes.push({ x: p[0], y: p[1], w: scale[0], h: scale[1], colour: daylight(colour) }); } };
     groundFloor(c, { type: 'office', variation: 0 }, edgeFacade(c, { x: 0, y: 0 }, { x: span, y: 0 }), 5.4, primary, seededRandom(1));
     const doors = panes.filter(p => p.colour === '#2f4b55');
     assert.equal(doors.length, primary ? 2 : 0, 'only the main frontage has an entrance');

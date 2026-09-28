@@ -63,16 +63,17 @@ function aboveGround(body) {
   return true;
 }
 // A car driven along the nearest road into `target`, its side over it by .6 m
-// (or its middle, `headOn`), for `seconds` (braking half a second after it,
-// with `brake`), told of each step (`onStep(props, car)`): its speed just
-// before the knock and just after, and the loose pieces
-function drive(target, id = 'taxi', speed = 20, seconds = 4, brake = false, city = world(), onSmash = null, { onStep = null, headOn = false } = {}) {
+// (or its middle, `headOn`), its nose `run` metres short of it, for
+// `seconds` (braking half a second after it, with `brake`), told of each step
+// (`onStep(props, car)`): its speed just before the knock and just after, and
+// the loose pieces
+function drive(target, id = 'taxi', speed = 20, seconds = 4, brake = false, city = world(), onSmash = null, { onStep = null, headOn = false, run = 6 } = {}) {
   const { scene, world: built } = city, props = new LooseProps(scene, built.materials.props), car = new DrivingController(citydriverRoute, journeyStart(), id);
   props.onSmash = onSmash;
   car.toggleFreeDriving();
   const road = roadAt(-target.z, target.x, 40), heading = Math.atan2(road.tx, road.ty);
   let du = road.x - target.x, ds = road.y + target.z;
-  const l = Math.hypot(du, ds) || 1, lateral = headOn ? 0 : car.spec.width / 2 - .6, back = 6 + car.spec.length / 2;
+  const l = Math.hypot(du, ds) || 1, lateral = headOn ? 0 : car.spec.width / 2 - .6, back = run + car.spec.length / 2;
   du /= l; ds /= l;
   car.u = target.x + du * lateral - Math.sin(heading) * back; car.s = -target.z + ds * lateral - Math.cos(heading) * back;
   car.heading = car.slideHeading = heading; car.speed = speed; car.update(0, {});
@@ -227,7 +228,8 @@ test('a bin rolled over a kerb comes to rest on the pavement, not sunk into it',
 
 test('a post stands firm against a slow nudge, as a wall would', () => {
   const lamp = nearest('lamp');
-  const { props, car } = drive(lamp, 'taxi', 3, 2);
+  // (from a metre off: from six, a car rolling at 3 m/s can stop short of it)
+  const { props, car } = drive(lamp, 'taxi', 3, 2, false, world(), null, { run: 1 });
   try {
     assert.ok(!lamp.woken, 'still standing');
     assert.equal(props.bodies.length, 0);
@@ -273,11 +275,38 @@ test('loose pieces go back where they stood once the player has driven well away
   } finally { props.reset(); props.dispose(); car.disposeModel(); }
 });
 
-test('buildings stand firm, and trees and shelters do against all but the cars that break them; lamps, signals, signs, bins and benches can be knocked loose', () => {
+test('a hydrant knocked off its stump sprays a jet of water a while, no more than two at once', () => {
+  const hydrant = colliders().find(c => c.prop?.pieces[0].kind === 'hydrant' && c.prop.ready);
+  assert.ok(hydrant, 'a hydrant near the start');
+  const car = new DrivingController(citydriverRoute, journeyStart(), 'taxi'), props = new LooseProps(new THREE.Scene(), new THREE.MeshBasicMaterial());
+  try {
+    // (the player's own car well out of the way)
+    car.groundedPosition.set(hydrant.x + 60, ROAD_LEVEL, hydrant.z); car.u = hydrant.x + 60; car.s = -hydrant.z;
+    const motion = { ...props.carOf(car), x: hydrant.x - 3, z: hydrant.z, vx: 12, vz: 0 };
+    assert.ok(props.knock(hydrant, { x: -1, z: 0, point: { x: hydrant.x - .2, z: hydrant.z } }, motion), 'knocked loose');
+    assert.equal(props.spouts.length, 1, 'spraying');
+    let highest = 0;
+    for (let t = 0; t < 1.5; t += 1 / 60) {
+      props.update(1 / 60, car);
+      for (const bit of props.bits.list) if (bit.style.streak) highest = Math.max(highest, bit.y - hydrant.prop.bodies[0].rest.p.y);
+    }
+    assert.ok(highest > 3, `the jet rises ${highest.toFixed(1)} m`);
+    for (let t = 0; t < 7; t += 1 / 60) props.update(1 / 60, car);
+    assert.equal(props.spouts.length, 0, 'dry again');
+    // Three at once: the oldest stops
+    for (let k = 0; k < 3; k++) props.spout(hydrant.x + k * 5, hydrant.z);
+    assert.equal(props.spouts.length, 2);
+    props.reset();
+    assert.equal(props.spouts.length, 0, 'a reset stops them');
+  } finally { props.dispose(); car.disposeModel(); }
+});
+
+test('buildings stand firm, and trees and shelters do against all but the cars that break them; lamps, signals, signs, bins, benches and the kerbside fittings can be knocked loose', () => {
   const all = colliders(), loose = all.filter(c => c.prop);
   const kinds = new Set(loose.map(c => c.prop.pieces[0].kind));
-  for (const kind of ['lamp', 'lantern', 'sign', 'bin', 'bench', 'tree']) assert.ok(kinds.has(kind), `${kind} can be knocked loose`);
-  for (const kind of kinds) assert.ok(['lamp', 'lantern', 'signal', 'mast', 'sign', 'bin', 'bench', 'table', 'stall', 'tree', 'shelter'].includes(kind), `nothing else: ${kind}`);
+  for (const kind of ['lamp', 'lantern', 'sign', 'bin', 'bench', 'tree', 'hydrant']) assert.ok(kinds.has(kind), `${kind} can be knocked loose`);
+  const fittings = ['hydrant', 'post-box', 'cabinet', 'news-boxes', 'bike-rack'];
+  for (const kind of kinds) assert.ok(['lamp', 'lantern', 'signal', 'mast', 'sign', 'bin', 'bench', 'table', 'stall', 'tree', 'shelter', ...fittings].includes(kind), `nothing else: ${kind}`);
   let trees = 0;
   for (const chunk of world().world.chunks.values()) for (const tree of chunk.features.trees ?? []) {
     const at = { x: chunk.east + tree.x, z: -(chunk.start + tree.s) }, post = all.find(c => c.reach === .28 && Math.hypot(c.x - at.x, c.z - at.z) < .01);

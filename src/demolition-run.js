@@ -36,10 +36,12 @@ export const SMASH_BOOST = .06, WRECK_BOOST = .2;
 export const PRICES = {
   bin: 250, chair: 120, table: 350, sign: 450, bench: 1100, lantern: 1400, stall: 2400,
   lamp: 3200, tree: 4500, signal: 6500, shelter: 9000, mast: 18000,
+  'news-boxes': 300, 'bike-rack': 400, 'post-box': 900, cabinet: 1600, hydrant: 2200,
 };
 export const PIECE_NAMES = {
   bin: 'Litter bin', chair: 'Cafe chair', table: 'Cafe table', sign: 'Street sign', bench: 'Bench', lantern: 'Park lantern',
   stall: 'Market stall', lamp: 'Lamp post', tree: 'Tree', signal: 'Traffic light', shelter: 'Bus shelter', mast: 'Signal gantry',
+  'news-boxes': 'News stand', 'bike-rack': 'Bike rack', 'post-box': 'Post box', cabinet: 'Utility box', hydrant: 'Fire hydrant',
 };
 // Cars by model: what it costs to write one off. A parked car pays
 // PARKED_SHARE of that: they stand in rows, and a truck ploughing a row of

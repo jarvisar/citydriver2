@@ -35,6 +35,14 @@ const KINDS = {
   table: { mass: .05, firm: 0, lift: .3, bounce: .3, sound: 'light' },
   chair: { mass: .01, firm: 0, lift: .5, bounce: .3, sound: 'light' },
   stall: { mass: .35, firm: 2, lift: .15, bounce: .15, sound: 'wood', bits: 'fruit' },
+  // The kerbside fittings (see placeStreetFurniture). A hydrant snapped off
+  // its stump sprays a jet of water a while (see spout)
+  hydrant: { mass: .12, firm: 6, topples: true, lift: .2, bounce: .15, sound: 'metal', bits: 'splash' },
+  // (a post box spills its letters as it goes: `spill` bursts the bits at the knock, as for what does not topple)
+  'post-box': { mass: .16, firm: 5, topples: true, lift: .2, bounce: .15, sound: 'metal', bits: 'litter', spill: true },
+  cabinet: { mass: .12, firm: 3, topples: true, lift: .25, bounce: .2, sound: 'metal', bits: 'litter' },
+  'news-boxes': { mass: .06, firm: 0, lift: .4, bounce: .3, sound: 'bin', bits: 'litter' },
+  'bike-rack': { mass: .06, firm: 2, lift: .3, bounce: .25, sound: 'light' },
   // A pedestrian a car meets (see person): scooped off their feet, they
   // tumble, land and slide to a stop, then get up (see PedestrianContacts)
   person: { mass: .07, firm: 0, lift: .45, bounce: .1, sound: 'thud' },
@@ -49,6 +57,8 @@ const GRAVITY = 13;
 // the parked cars do (see CityTraffic), and no car stands there; and no more
 // than this many are loose at once, the furthest going back first
 const RETURN = 150, MOST = 80;
+// A broken hydrant sprays this long (s), this many drops a second, and no more than this many at once
+const SPOUT = 7, SPRAY = 40, SPOUTS = 2;
 // A pedestrian's body nobody has drawn for this long (their fare taken, or
 // their block streamed out) is put away, so nothing unseen lies in the road
 const UNSEEN = 4;
@@ -469,6 +479,9 @@ const BITS = {
   litter: { colours: ['#ebe5d3', '#cfc9b8', '#7fa06f', '#d9b24a', '#b8574a'], size: [.08, .13], shape: [1, .08, .8], count: 12, speed: 3.5, up: 4, life: 3, drag: 2.5 },
   fruit: { colours: ['#c96246', '#d8af51', '#819d4e', '#d58c43'], size: [.1, .13], shape: [1, .9, 1], count: 22, speed: 4.5, up: 3.5, life: 4.5, rolls: true },
   splash: { colours: ['#e3f1f2', '#b4d6d9', '#ffffff'], size: [.07, .14], shape: [1, 1, 1], count: 16, speed: 1.6, up: 5, life: 1.1 },
+  // (a broken hydrant's jet, a drop at a time: see spout. A `streak` stays
+  // upright and unturned, and is gone where it lands)
+  jet: { colours: ['#e3f1f2', '#b4d6d9', '#ffffff', '#cfe6ea'], size: [.1, .17], shape: [.55, 2.6, .55], count: 1, speed: .45, up: 11, life: 1.6, streak: true },
   leaves: { colours: ['#63924d', '#80a85c', '#4f8054', '#93ab65', '#6b5a48'], size: [.1, .18], shape: [1, .12, .7], count: 20, speed: 3, up: 3.5, life: 2.6, drag: 2.2 },
   // Kicked up underfoot (see Walker.puff): dust, or a wet street's spray.
   // A `puff` hangs in the air, swelling as it goes, rather than falling.
@@ -503,7 +516,7 @@ class Bits {
       const a = this.random() * Math.PI * 2, out = style.speed * spread * (.4 + this.random() * .6), size = style.size[0] + this.random() * (style.size[1] - style.size[0]);
       this.list.push({
         style, x: x + Math.cos(a) * ring, y, z: z + Math.sin(a) * ring, floor, vx: vx + Math.cos(a) * out, vy: style.up * (.5 + this.random() * .7), vz: vz + Math.sin(a) * out,
-        rx: this.random() * 6, ry: this.random() * 6, rz: this.random() * 6, turn: (this.random() - .5) * 16,
+        rx: this.random() * 6, ry: this.random() * 6, rz: this.random() * 6, turn: style.streak ? 0 : (this.random() - .5) * 16,
         size, age: 0, life: style.life * (.7 + this.random() * .5), colour: style.colours[Math.floor(this.random() * style.colours.length)],
       });
     }
@@ -519,6 +532,7 @@ class Bits {
       if (style.drag) { const drag = Math.exp(-dt * style.drag); bit.vx *= drag; bit.vz *= drag; bit.vy = Math.max(bit.vy, -2.5); }
       bit.x += bit.vx * dt; bit.y += bit.vy * dt; bit.z += bit.vz * dt;
       bit.rx += bit.turn * dt; bit.rz += bit.turn * .7 * dt;
+      if (bit.y < bit.floor && style.streak) { this.list[i] = this.list.at(-1); this.list.pop(); continue; }
       if (bit.y < bit.floor) {
         bit.y = bit.floor;
         bit.vy = bit.vy < -1.5 ? -bit.vy * .3 : 0;
@@ -536,7 +550,8 @@ class Bits {
       // (a puff swells as it goes, then shrinks away, turning only a little)
       const size = bit.size * fade * (puff ? .5 + Math.min(1, bit.age / bit.life * 2) * .7 : 1);
       position.set(bit.x, bit.y + size * sy * .5, bit.z);
-      rotation.setFromEuler(this.euler.set(puff ? bit.rx * .2 : bit.rx, bit.ry, puff ? bit.rz * .2 : bit.rz));
+      if (bit.style.streak) rotation.identity();
+      else rotation.setFromEuler(this.euler.set(puff ? bit.rx * .2 : bit.rx, bit.ry, puff ? bit.rz * .2 : bit.rz));
       const target = puff ? puffs : mesh, i = puff ? puffed++ : bits++;
       target.setMatrixAt(i, matrix.compose(position, rotation, scale.set(size * sx, size * sy, size * sz)));
       target.setColorAt(i, this.colour.set(bit.colour));
@@ -564,6 +579,8 @@ export class LooseProps {
     // Told of each piece of furniture knocked loose, by whatever car:
     // `(kinds, point)`, its pieces' kinds and where it was met (see DemolitionRun)
     this.onSmash = null;
+    // Hydrants knocked off their stumps, spraying: { x, y, z, left, due }
+    this.spouts = [];
   }
   // A car running into standing furniture (`contact` as sceneryContacts
   // gives it, `car` as motion() gives it plus its ground height `y`): null if
@@ -580,7 +597,8 @@ export class LooseProps {
     const point = contact.point ?? { x: collider.x, z: collider.z }, bodies = this.loosen(collider);
     const hit = bodies.reduce((a, b) => Math.hypot(a.p.x - point.x, a.p.z - point.z) <= Math.hypot(b.p.x - point.x, b.p.z - point.z) ? a : b), kind = hit.kind;
     const blow = kind.topples ? this.topple(hit, car, contact, point) : this.fling(hit, car, contact, point);
-    if (kind.bits && !kind.topples) this.bits.burst(kind.bits, hit.p.x, hit.p.y, hit.p.z, hit.v.x * .4, hit.v.z * .4);
+    if (kind.bits && (!kind.topples || kind.spill)) this.bits.burst(kind.bits, hit.p.x, hit.p.y, hit.p.z, hit.v.x * .4, hit.v.z * .4);
+    if (piece === 'hydrant') this.spout(collider.x, collider.z);
     this.sound(kind.sound, closing, point.x, point.z);
     this.onSmash?.(prop.pieces.map(each => each.kind), { x: point.x, y: car.y ?? hit.p.y, z: point.z });
     return blow ?? { x: 0, z: 0, spin: 0, closing };
@@ -670,6 +688,14 @@ export class LooseProps {
     this.breaks = player.spec.breaks ?? [];
     return car;
   }
+  // A jet of water up out of a hydrant's stump for SPOUT seconds, at most
+  // SPOUTS at once (the oldest stops first), SPRAY drops a second
+  spout(x, z) {
+    const y = level(x, z);
+    if (Number.isNaN(y)) return;
+    if (this.spouts.length >= SPOUTS) this.spouts.shift();
+    this.spouts.push({ x, y: y + .3, z, left: SPOUT, due: 0 });
+  }
   // Its bodies take the furniture's place
   loosen(collider) {
     const prop = collider.prop, base = prop.matrix(new THREE.Matrix4());
@@ -687,7 +713,7 @@ export class LooseProps {
   reset() {
     while (this.loose.length) this.restore(this.loose[0]);
     while (this.people.length) this.release(this.people[0]);
-    this.bits.clear(); this.sounds = [];
+    this.bits.clear(); this.sounds = []; this.spouts = [];
   }
   add(piece, base) {
     const kind = KINDS[piece.kind];
@@ -1223,6 +1249,12 @@ export class LooseProps {
       }
       this.meetAll();
       this.squeeze();
+    }
+    for (let i = this.spouts.length - 1; i >= 0; i--) {
+      const spout = this.spouts[i];
+      spout.left -= dt; spout.due += dt * SPRAY;
+      for (; spout.due >= 1; spout.due--) this.bits.burst('jet', spout.x, spout.y, spout.z);
+      if (spout.left <= 0) this.spouts.splice(i, 1);
     }
     this.bits.update(dt);
   }
