@@ -132,7 +132,7 @@ To try VR without a headset, add `?xr` to the dev server's URL. This emulates a 
 
 ## Deployment
 
-Pushes to `main` are tested and deployed to GitHub Pages by GitHub Actions, using `/citydriver2/` as the base path. When setting up a fork, open the repository's Pages settings and set `Source` to `GitHub Actions`.
+Pushes to `main` are tested and deployed to GitHub Pages at `citydriver2.ajarvis.co` by GitHub Actions, served from the root. A fork served from `<user>.github.io/citydriver2/` needs `--base=/citydriver2/` added to the build step in `main.yml`. When setting up a fork, open the repository's Pages settings and set `Source` to `GitHub Actions`.
 
 ## Documentation
 
