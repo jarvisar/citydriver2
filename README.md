@@ -2,7 +2,7 @@
 
 Taxi driving game built with [Three.js](https://threejs.org/). Uses a port of [MapGenerator](https://github.com/ProbableTrain/MapGenerator) to generate a new island city every time the game loads.
 
-Visit the [GitHub Pages site](https://citydriver2.ajarvis.co/) to access the latest deployment. Desktop builds for Windows, Linux and macOS are available under [Releases](https://github.com/jarvisar/citydriver2/releases).
+Visit the [GitHub Pages site](https://citydriver2.jarvisar.com/) to access the latest deployment. Desktop builds for Windows, Linux and macOS are available under [Releases](https://github.com/jarvisar/citydriver2/releases).
 
 This is the sequel to [Citydriver](https://github.com/jarvisar/citydriver). The endless grid from the first game is replaced by a generated city. The driving, cars, garage, weather, audio and taxi mode carry over from Citydriver.
 
@@ -137,7 +137,7 @@ To try VR without a headset, add `?xr` to the dev server's URL. This emulates a 
 
 ## Deployment
 
-Pushes to `main` are tested and deployed to GitHub Pages at `citydriver2.ajarvis.co` by GitHub Actions, served from the root. A fork served from `<user>.github.io/citydriver2/` needs `--base=/citydriver2/` added to the build step in `main.yml`. When setting up a fork, open the repository's Pages settings and set `Source` to `GitHub Actions`.
+Pushes to `main` are tested and deployed to GitHub Pages at `citydriver2.jarvisar.com` by GitHub Actions, served from the root. A fork served from `<user>.github.io/citydriver2/` needs `--base=/citydriver2/` added to the build step in `main.yml`. When setting up a fork, open the repository's Pages settings and set `Source` to `GitHub Actions`.
 
 ## Documentation
 
