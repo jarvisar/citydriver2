@@ -191,20 +191,20 @@ function shapeOf(geometry) {
   return shape;
 }
 // A model that gives its own points to stand on (`userData.contact`, a person:
-// see walkerContact), about their middle, with one solid part round them all
+// see walkerContact), about their middle
 function contactShape(geometry) {
   const given = geometry.userData.contact, com = new THREE.Vector3(), a = new THREE.Vector3();
   const low = new THREE.Vector3(Infinity, Infinity, Infinity), high = low.clone().negate();
   for (let i = 0; i < given.length; i += 3) { a.fromArray(given, i); com.add(a); low.min(a); high.max(a); }
   com.divideScalar(given.length / 3);
-  const points = new Float32Array(given.length), corners = [];
+  const points = new Float32Array(given.length);
   let radius = 0;
   for (let i = 0; i < given.length; i += 3) {
-    a.fromArray(given, i).sub(com); a.toArray(points, i); corners.push(a.clone());
+    a.fromArray(given, i).sub(com); a.toArray(points, i);
     radius = Math.max(radius, a.length());
   }
-  const size = high.clone().sub(low), part = hullPart(corners), shape = {
-    points, com, size, radius, height: size.y, parts: part ? [part] : null,
+  const size = high.clone().sub(low), shape = {
+    points, com, size, radius, height: size.y, parts: partsOf(geometry, com),
     inertia: new THREE.Vector3((size.y ** 2 + size.z ** 2) / 12, (size.x ** 2 + size.z ** 2) / 12, (size.x ** 2 + size.y ** 2) / 12),
   };
   shapes.set(geometry, shape);
@@ -238,26 +238,22 @@ function partsOf(geometry, com) {
   corners.forEach((p, k) => { const r = root(k); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(p); });
   const parts = [];
   for (const points of groups.values()) {
-    const part = hullPart(points);
-    if (part) parts.push(part);
+    let hull;
+    try { hull = new ConvexHull().setFromPoints(points); } catch { continue; }
+    if (!hull.faces.length) continue;
+    // (each face once: a box's faces come as pairs of triangles)
+    const planes = [];
+    for (const face of hull.faces) {
+      const { x, y, z } = face.normal, c = face.constant;
+      let same = false;
+      for (let k = 0; k < planes.length && !same; k += 4) same = planes[k] * x + planes[k + 1] * y + planes[k + 2] * z > .9999 && Math.abs(planes[k + 3] - c) < 1e-4;
+      if (!same) planes.push(x, y, z, c);
+    }
+    const middle = new THREE.Box3().setFromPoints(points).getCenter(new THREE.Vector3());
+    const r = Math.sqrt(Math.max(...points.map(p => p.distanceToSquared(middle))));
+    parts.push({ x: middle.x, y: middle.y, z: middle.z, r, planes: new Float32Array(planes) });
   }
   return parts.length ? parts : null;
-}
-function hullPart(points) {
-  let hull;
-  try { hull = new ConvexHull().setFromPoints(points); } catch { return null; }
-  if (!hull.faces.length) return null;
-  // (each face once: a box's faces come as pairs of triangles)
-  const planes = [];
-  for (const face of hull.faces) {
-    const { x, y, z } = face.normal, c = face.constant;
-    let same = false;
-    for (let k = 0; k < planes.length && !same; k += 4) same = planes[k] * x + planes[k + 1] * y + planes[k + 2] * z > .9999 && Math.abs(planes[k + 3] - c) < 1e-4;
-    if (!same) planes.push(x, y, z, c);
-  }
-  const middle = new THREE.Box3().setFromPoints(points).getCenter(new THREE.Vector3());
-  const r = Math.sqrt(Math.max(...points.map(p => p.distanceToSquared(middle))));
-  return { x: middle.x, y: middle.y, z: middle.z, r, planes: new Float32Array(planes) };
 }
 
 // A shape scaled by `s` (a Vector3), for a piece drawn scaled
@@ -412,13 +408,21 @@ export function overlap(a, b) {
 }
 // The deepest of `body`'s points inside one of `other`'s parts (see
 // partsOf): `depth` (0 if none is), the point (from body's centre, in the
-// world) `at`, and the way out through that part's nearest face (in the world) `n`
+// world) `at`, and the way out through that part's nearest face (in the world) `n`.
+// With `entry`, a point that was outside a step ago goes back out the face it
+// came in by instead, as against a wall: a person falling onto a bench went
+// more than halfway through a 6.5 cm slat in a step and out underneath.
 const depthIn = { depth: 0, at: new THREE.Vector3(), n: new THREE.Vector3() }, found = { depth: 0, at: new THREE.Vector3(), n: new THREE.Vector3() };
 const into = new THREE.Quaternion(), turned = new THREE.Quaternion(), offset = new THREE.Vector3(), local = new THREE.Vector3(), outerAt = new THREE.Vector3();
-function deepestIn(body, other) {
+const wasTurned = new THREE.Quaternion(), wasOffset = new THREE.Vector3(), was = new THREE.Vector3();
+function deepestIn(body, other, entry = false) {
   const parts = other.shape.parts, points = body.shape.points, reach = other.shape.radius ** 2;
   into.copy(other.q).invert(); turned.copy(into).multiply(body.q);
   offset.copy(body.p).sub(other.p).applyQuaternion(into);
+  if (entry) {
+    into.copy(other.last.q).invert(); wasTurned.copy(into).multiply(body.last.q);
+    wasOffset.copy(body.last.p).sub(other.last.p).applyQuaternion(into);
+  }
   let deepest = 0, best = -1, planes = null, face = -1;
   for (let i = 0; i < points.length; i += 3) {
     local.set(points[i], points[i + 1], points[i + 2]).applyQuaternion(turned).add(offset);
@@ -431,7 +435,19 @@ function deepestIn(body, other) {
         const d = faces[k] * local.x + faces[k + 1] * local.y + faces[k + 2] * local.z - faces[k + 3];
         if (d > out) { out = d; nearest = k; if (d >= 0) break; }
       }
-      if (out >= 0 || -out <= deepest) continue;
+      if (out >= 0) continue;
+      if (entry) {
+        // (the face its path crossed last on the way in)
+        was.set(points[i], points[i + 1], points[i + 2]).applyQuaternion(wasTurned).add(wasOffset);
+        let latest = -1;
+        for (let k = 0; k < faces.length; k += 4) {
+          const before = faces[k] * was.x + faces[k + 1] * was.y + faces[k + 2] * was.z - faces[k + 3];
+          if (before <= 0) continue;
+          const now = faces[k] * local.x + faces[k + 1] * local.y + faces[k + 2] * local.z - faces[k + 3], t = before / (before - now);
+          if (t > latest) { latest = t; out = now; nearest = k; }
+        }
+      }
+      if (-out <= deepest) continue;
       deepest = -out; best = i; planes = faces; face = nearest;
     }
   }
@@ -1056,10 +1072,10 @@ export class LooseProps {
   // is a wall to one that comes to rest on it, and is only woken by a real knock.
   meet(a, b) {
     let inner = a, outer = b;
-    const first = deepestIn(a, b);
+    const first = deepestIn(a, b, true);
     let depth = first.depth;
     if (first.depth) { found.depth = first.depth; found.at.copy(first.at); found.n.copy(first.n); }
-    const second = deepestIn(b, a);
+    const second = deepestIn(b, a, true);
     if (second.depth > depth) { inner = b; outer = a; depth = second.depth; found.at.copy(second.at); found.n.copy(second.n); }
     if (!depth) return;
     const n = found.n, ri = found.at, ro = outerAt.copy(ri).add(inner.p).sub(outer.p);

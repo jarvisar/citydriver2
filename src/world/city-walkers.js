@@ -733,8 +733,8 @@ export function walkerShape({ outfit = 0, style = 0, face = 0, gear = 0 } = {}) 
 
 // What a person knocked flying lies on (see LooseProps): rings round the peg
 // and the head, each point as far out as the body goes that way, plus the
-// crown and the middle of the hem. Sampled from the mesh, 7 points held the whole person, and they sank
-// a third of a metre into the road between them. Each ring reaches as far as
+// crown and the middle of the hem. Sampled from the mesh, 7 points held the
+// whole person, and they sank a third of a metre into the road between them. Each ring reaches as far as
 // four in five variants of the coat, hair and face do, so a cap's peak or a
 // ponytail stays out of the road but a sun hat's brim or a puffer's bulk does
 // not lift everyone else off it. Bags are left out. The margin covers the
