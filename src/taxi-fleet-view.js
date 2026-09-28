@@ -32,7 +32,7 @@ export function setupTaxiFleet(fleet, { running, onChange, career = null, onLive
       </article>`;
     }).join('');
     renderCareer();
-    document.querySelector('#taxi-result-bank').textContent = `Fleet ${fleetMoney(fleet.balance)}`;
+    document.querySelector('#taxi-result-bank').textContent = `Fleet bank ${fleetMoney(fleet.balance)}`;
   }
   // Liveries come with rank, so the row doubles as the career's progress bar:
   // every locked swatch names the rank that opens it.

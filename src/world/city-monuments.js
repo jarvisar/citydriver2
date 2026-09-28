@@ -7,6 +7,7 @@ import { vaultGeometry, vaultRibs } from './city-roofs.js';
 import { basinRim, basinWater } from './city-public-space-geometry.js';
 import { balancingBeam, standingBeam, STANDING_BEAM } from './city-sculptures.js';
 import { itemFrame } from './city-layout-render.js';
+import { STALL_COLOURS, BED_COLOURS } from './city-parks.js';
 
 // What stands in the city's squares (see city-parks.js): a clocktower on its
 // steps, a glasshouse, sculptures on plinths, a market's stalls, a cafe's
@@ -156,6 +157,12 @@ function sculpture(form) {
   }
   return p.finish();
 }
+// Build every square template up front, about 30 ms at load. Built on first
+// use, a market's stalls took 3-9 ms each, up to 35 ms in one build step.
+for (const colour of STALL_COLOURS) { template(`stall-${colour}`, () => stall(colour)); template(`cafe-${colour}`, () => cafe(colour)); }
+template('cafe-#f1e6cc', () => cafe('#f1e6cc'));
+for (const colour of BED_COLOURS) template(`flowers-${colour}`, () => flowers(colour));
+for (const form of [1, 2, 3]) template(`sculpture-${form}`, () => sculpture(form));
 
 // A square's piece, at (x, s) in the chunk; false if it is no square's
 export function buildMonument(c, piece, x, s) {

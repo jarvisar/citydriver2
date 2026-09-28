@@ -57,13 +57,11 @@ export class Rainfall {
   }
   update(time, anchor, origin) {
     this.points.position.set(anchor.x, anchor.y, anchor.z + origin);
-    const positions = this.geometry.attributes.position;
-    for (let i = 0; i < COUNT; i++) {
-      const n = i * 4;
-      positions.setXYZ(i,
-        wrap(this.seeds[n] - anchor.x, WIDTH),
-        wrap(this.seeds[n + 1] - time * this.seeds[n + 3] - anchor.y, HEIGHT),
-        wrap(this.seeds[n + 2] - anchor.z, DEPTH));
+    const positions = this.geometry.attributes.position, array = positions.array, seeds = this.seeds;
+    for (let i = 0, n = 0; i < COUNT; i++, n += 4) {
+      array[i * 3] = wrap(seeds[n] - anchor.x, WIDTH);
+      array[i * 3 + 1] = wrap(seeds[n + 1] - time * seeds[n + 3] - anchor.y, HEIGHT);
+      array[i * 3 + 2] = wrap(seeds[n + 2] - anchor.z, DEPTH);
     }
     positions.needsUpdate = true;
   }

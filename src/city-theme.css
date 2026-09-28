@@ -139,14 +139,14 @@ body[data-controller=true] #app #city-map-open::before { content: 'VIEW'; margin
 #app .audio-presets button { color: var(--city-muted); }
 #app .audio-presets button:hover { background: var(--city-hover); }
 #app .audio-presets button[aria-pressed=true]:hover { color: var(--city-on-accent); background: var(--city-accent-hover); }
-#app :is(#pixel-density, progress) { accent-color: var(--city-accent); }
+#app :is(.graphics-slider, progress) { accent-color: var(--city-accent); }
 #app .audio-channel input { --control-level: var(--audio-level, 0%); }
-#app :is(.audio-channel input, #pixel-density) { --control-track: #afc9d138; appearance: none; background: transparent; cursor: pointer; }
-#app :is(.audio-channel input, #pixel-density)::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--city-accent) var(--control-level), var(--control-track) var(--control-level)); }
-#app :is(.audio-channel input, #pixel-density)::-webkit-slider-thumb { appearance: none; width: 16px; height: 16px; margin-top: -6px; border: 2px solid var(--city-recessed); border-radius: 50%; background: var(--city-accent); box-shadow: 0 0 0 1px var(--city-line); }
-#app :is(.audio-channel input, #pixel-density)::-moz-range-track { height: 4px; border-radius: 2px; background: var(--control-track); }
-#app :is(.audio-channel input, #pixel-density)::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--city-accent); }
-#app :is(.audio-channel input, #pixel-density)::-moz-range-thumb { box-sizing: border-box; width: 16px; height: 16px; border: 2px solid var(--city-recessed); border-radius: 50%; background: var(--city-accent); }
+#app :is(.audio-channel input, .graphics-slider) { --control-track: #afc9d138; appearance: none; background: transparent; cursor: pointer; }
+#app :is(.audio-channel input, .graphics-slider)::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--city-accent) var(--control-level), var(--control-track) var(--control-level)); }
+#app :is(.audio-channel input, .graphics-slider)::-webkit-slider-thumb { appearance: none; width: 16px; height: 16px; margin-top: -6px; border: 2px solid var(--city-recessed); border-radius: 50%; background: var(--city-accent); box-shadow: 0 0 0 1px var(--city-line); }
+#app :is(.audio-channel input, .graphics-slider)::-moz-range-track { height: 4px; border-radius: 2px; background: var(--control-track); }
+#app :is(.audio-channel input, .graphics-slider)::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--city-accent); }
+#app :is(.audio-channel input, .graphics-slider)::-moz-range-thumb { box-sizing: border-box; width: 16px; height: 16px; border: 2px solid var(--city-recessed); border-radius: 50%; background: var(--city-accent); }
 
 /* Shared primary and secondary actions; no cream gradients or pill buttons. */
 #app :is(.start-button, .taxi-result-card button), #app #welcome .start-button {
@@ -193,5 +193,5 @@ body[data-controller=true] #app #city-map-open::before { content: 'VIEW'; margin
 @media (min-width: 2200px) and (min-height: 1300px) { :root { --ui-scale: 1.35; } }
 @media (min-width: 3000px) and (min-height: 1800px) { :root { --ui-scale: 1.7; } }
 @media (forced-colors: active) {
-  #app :is(.audio-channel input, #pixel-density) { appearance: auto; accent-color: auto; }
+  #app :is(.audio-channel input, .graphics-slider) { appearance: auto; accent-color: auto; }
 }

@@ -31,15 +31,17 @@ test('every car builds a solid, steerable model', () => {
     assert.equal(model.wheels.length, id === 'rig' ? 6 : 4, `${id} needs its full set of wheels`);
     assert.equal(model.wheels.filter(wheel => wheel.front).length, 2, `${id} needs two steered wheels`);
     assert.equal(model.nightLights.length, id === 'formula' ? 1 : 2, `${id} needs its running lamps`);
-    let meshes = 0;
+    let meshes = 0, triangles = 0;
     model.car.traverse(object => {
       if (!object.isMesh) return;
       meshes++;
       const position = object.geometry.attributes.position;
+      triangles += (object.geometry.index?.count ?? position.count) / 3;
       assert.ok(position.count > 0, `${id} has an empty mesh`);
       assert.ok([...position.array].every(Number.isFinite), `${id} has a broken mesh`);
     });
-    assert.ok(meshes >= 8, `${id} is missing bodywork`);
+    // (a body, which may be one merged mesh, and a mesh for each wheel)
+    assert.ok(meshes > model.wheels.length && triangles >= 400, `${id} is missing bodywork: ${meshes} meshes, ${triangles} triangles`);
     const box = new THREE.Box3().setFromObject(model.car);
     assert.ok(Math.abs(box.min.y) < .05, `${id} floats or sinks: ${box.min.y}`);
     model.disposeModel();

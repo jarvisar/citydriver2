@@ -49,7 +49,7 @@
       </header>
       <div id="fps-counter" hidden>FPS: …</div>
       <div id="taxi-hud" class="taxi-hud" hidden>
-        <div class="taxi-clock-box"><span id="taxi-clock-label">SHIFT</span><strong id="taxi-clock" aria-label="Shift seconds remaining">90</strong></div>
+        <div class="taxi-clock-box"><span id="taxi-clock-label">TIME</span><strong id="taxi-clock" aria-label="Shift seconds remaining">90</strong></div>
         <div class="taxi-score"><strong id="taxi-cash">$0</strong><span id="taxi-fares">0 fares</span></div>
       </div>
       <section id="taxi-task" class="taxi-task" hidden aria-label="Current taxi task">
@@ -183,7 +183,11 @@
                   </div>
                   <div class="pixel-density-control">
                     <label for="pixel-density">Pixel density <output id="pixel-density-value" for="pixel-density">100% · Native</output></label>
-                    <input type="range" id="pixel-density" min="50" max="100" step="1" value="100">
+                    <input type="range" id="pixel-density" class="graphics-slider" min="50" max="100" step="1" value="100">
+                  </div>
+                  <div class="pixel-density-control">
+                    <label for="frame-cap">Frame rate <output id="frame-cap-value" for="frame-cap">Auto</output></label>
+                    <input type="range" id="frame-cap" class="graphics-slider" min="0" max="7" step="1" value="0">
                   </div>
                   <button type="button" id="soft-shading" class="panel-toggle" aria-pressed="true">Soft shading<span class="panel-switch" aria-hidden="true"></span></button>
                   <p id="graphics-status" class="graphics-status" role="status"></p>

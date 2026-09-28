@@ -17,6 +17,7 @@ export const GOALS = [
   { id: 'crazyStop', stat: 'crazyStops', targets: [1, 3, 6], bonus: [150, 300, 500], text: n => `${n} Crazy stop${n > 1 ? 's' : ''}` },
   { id: 'long', stat: 'longRides', targets: [1, 2, 3], bonus: [200, 350, 600], text: n => `Complete ${n} long ride${n > 1 ? 's' : ''} (green ring)` },
   { id: 'fullCab', stat: 'fullCabs', targets: [1, 1, 2], bonus: [300, 300, 600], text: n => n > 1 ? `Deliver ${n} full cabs of four` : 'Deliver a full cab of four' },
+  { id: 'pleased', stat: 'pleased', targets: [1, 2, 4], bonus: [200, 350, 600], text: n => `Satisfy ${n} special rider${n > 1 ? 's' : ''}` },
 ];
 export const GOALS_PER_SHIFT = 3;
 export const goalTier = rankIndex => Math.min(2, Math.floor(rankIndex / 2));

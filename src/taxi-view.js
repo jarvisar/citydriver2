@@ -2,12 +2,13 @@ import * as THREE from 'three';
 import { cityWalker, walkerFloat, createWalkerMaterial, walkerAppearance, setWalkerAppearance, setWalkerTurn, taxiGroupAppearance } from './world/city-life.js';
 import { ROAD_LEVEL, PAVEMENT_LEVEL, roadAt } from './world/city-route.js';
 import { profileOf } from './world/city.js';
-import { STOP_RADIUS, STOP_SECONDS, RATINGS, taxiRoute, fareBand, arrivalRating } from './taxi-run.js';
+import { STOP_RADIUS, STOP_SECONDS, RATINGS, MOODS, taxiRoute, fareBand, arrivalRating, insideStop } from './taxi-run.js';
 import { taxiLicense } from './taxi-license.js';
 import { goalProgress } from './taxi-goals.js';
 import { routeDistance } from './world/nav-graph.js';
 import { DestinationArrow } from './destination-arrow.js';
 import { lookYaw, glance } from './world/pedestrian-reactions.js';
+import { FloatingLabels } from './floating-labels.js';
 
 const $ = id => document.getElementById(id);
 const money = value => `$${Math.round(value ?? 0).toLocaleString('en-US')}`;
@@ -23,8 +24,78 @@ const attribute = (element, name, value) => { const next = String(value); if (el
 const width = (id, value) => { const style = $(id).style; if (style.width !== value) style.width = value; };
 const passengerFloat = {};
 const markerScale = 1.3;
+// Riders' meshes kept for reuse, of each party size: a pickup window holds
+// about sixty fares, half of them lone riders
+const SPARE_RIDERS = 48;
+// Hints for new drivers, each shown once in the instruction line and saved
+export const HINTS = {
+  rings: 'Stop in any ring for a fare · green rings pay most',
+  drive: 'Follow the arrow · arrive while the pill is green',
+  group: 'Each rider has a stop · the group pays at the last',
+  tips: 'Drifts and near misses earn tips · a crash ends the combo',
+};
+const HINT_SECONDS = 7, HINTS_KEY = 'citydriver-taxi-hints';
+// Rating colours, as in taxi.css
+const RATING_COLOURS = { speedy: '#7ce787', normal: '#ffd238', slow: '#ff8a7a' };
+// The ring's outline round a drop-off stretch, in the marker's frame (local -z
+// is the stop's heading). Each end is a half ring, so a one-point stretch
+// gives the plain ring.
+export function stretchOutline(stop, radius, cap = 20) {
+  const line = stop.stretch?.length ? stop.stretch : [stop], n = line.length - 1, out = [];
+  const cos = Math.cos(stop.heading ?? 0), sin = Math.sin(stop.heading ?? 0);
+  const put = (p, du, ds) => {
+    const x = p.u + du - stop.u, z = -(p.s + ds - stop.s);
+    out.push(x * cos + z * sin, -x * sin + z * cos);
+  };
+  // Direction along the stretch at each point
+  const along = line.map((p, i) => {
+    const a = line[Math.max(0, i - 1)], b = line[Math.min(n, i + 1)], du = b.u - a.u, ds = b.s - a.s, length = Math.hypot(du, ds);
+    return length > 1e-6 ? { u: du / length, s: ds / length } : { u: sin, s: cos };
+  });
+  const turn = (p, t, from) => {
+    for (let k = 1; k < cap; k++) {
+      const angle = k / cap * Math.PI, c = Math.cos(angle) * from, s = Math.sin(angle) * from;
+      put(p, (t.s * c + t.u * s) * radius, (-t.u * c + t.s * s) * radius);
+    }
+  };
+  for (let i = 0; i <= n; i++) put(line[i], along[i].s * radius, -along[i].u * radius);
+  turn(line[n], along[n], 1);
+  for (let i = n; i >= 0; i--) put(line[i], -along[i].s * radius, along[i].u * radius);
+  turn(line[0], along[0], -1);
+  return out;
+}
+function stretchShape(stop) {
+  const inner = stretchOutline(stop, 6 * markerScale), outer = stretchOutline(stop, 6.5 * markerScale), middle = stretchOutline(stop, 6.3 * markerScale);
+  const count = inner.length / 2, band = [], wall = [], index = [];
+  for (let k = 0; k < count; k++) {
+    band.push(inner[k * 2], 0, inner[k * 2 + 1], outer[k * 2], 0, outer[k * 2 + 1]);
+    wall.push(middle[k * 2], -2.5, middle[k * 2 + 1], middle[k * 2], 2.5, middle[k * 2 + 1]);
+    const a = k * 2, b = (k + 1) % count * 2;
+    index.push(a, b, a + 1, a + 1, b, b + 1);
+  }
+  const geometry = positions => {
+    const shape = new THREE.BufferGeometry();
+    shape.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3)); shape.setIndex(index);
+    shape.computeBoundingSphere();
+    return shape;
+  };
+  return { band: geometry(band), wall: geometry(wall) };
+}
+// A special rider's icon, about 32 px, centred on (x, y)
+function moodIcon(ctx, mood, x, y) {
+  ctx.save(); ctx.translate(x, y); ctx.fillStyle = '#fff8e7'; ctx.beginPath();
+  if (mood === 'hurry') [[4, -16], [-9, 2], [-1, 2], [-4, 16], [9, -2], [1, -2]].forEach(([px, py], i) => i ? ctx.lineTo(px, py) : ctx.moveTo(px, py));
+  else if (mood === 'thrill') for (let i = 0; i < 10; i++) {
+    const r = i % 2 ? 6.5 : 15, a = -Math.PI / 2 + i * Math.PI / 5;
+    ctx[i ? 'lineTo' : 'moveTo'](Math.cos(a) * r, Math.sin(a) * r + 1);
+  } else {
+    ctx.moveTo(0, 13); ctx.bezierCurveTo(-16, 2, -12, -14, 0, -6); ctx.bezierCurveTo(12, -14, 16, 2, 0, 13);
+  }
+  ctx.closePath(); ctx.fill(); ctx.restore();
+}
 export class TaxiView {
-  constructor(scene) {
+  constructor(scene, storage = null) {
+    this.storage = storage;
     this.navigation = new DestinationArrow(globalThis.document ? $('taxi-arrow') : null);
     scene.add(this.navigation.headset);
     this.measureTask = () => {
@@ -40,7 +111,7 @@ export class TaxiView {
     this.cone = new THREE.ConeGeometry(1, 2, 4); this.cone.rotateZ(Math.PI);
     this.people = createWalkerMaterial();
     this.partyBadges = new Map();
-    this.revision = -1; this.markers = []; this.palette = new Map();
+    this.revision = -1; this.markers = []; this.palette = new Map(); this.spares = new Map();
     this.skidGeometry = new THREE.PlaneGeometry(.22, 1.2); this.skidGeometry.rotateX(-Math.PI / 2);
     this.skidMaterial = new THREE.MeshBasicMaterial({ color: '#202526', transparent: true, opacity: .52, depthWrite: false });
     this.skids = new THREE.InstancedMesh(this.skidGeometry, this.skidMaterial, 160); this.skids.count = 0;
@@ -48,11 +119,23 @@ export class TaxiView {
     this.skids.frustumCulled = false; this.skids.userData.ambientOcclusion = false;
     this.group.add(this.skids); this.trails = []; this.trailIndex = 0; this.lastTrail = 0; this.transform = new THREE.Object3D();
     this.watch = new THREE.Vector3(); this.unplace = new THREE.Matrix4();
+    this.labels = new FloatingLabels(scene, 'taxi-labels'); this.shownCash = 0;
   }
-  // Every waiting fare gets a badge: a dollar sign in the ring's distance
-  // colour, as in Crazy Taxi, plus a white ×N when a group shares the ride.
-  badge(count, color) {
-    const key = `${count}${color}`;
+  // Labels over the cab for pay, time and tips
+  pop(event, vehicle) {
+    const at = { x: vehicle.u, y: ROAD_LEVEL + 1, z: -vehicle.s };
+    const tip = (amount, stunt) => this.labels.pop({ ...at, amount: `+$${amount}`, caption: stunt.toUpperCase(), colour: '#ffe07a', size: 1.9 });
+    if (event.kind === 'tip') tip(event.tip, `${event.trick}${event.combo > 1 ? ` ×${event.combo}` : ''}`);
+    if (event.stunt > 0) tip(event.stunt, 'Crazy stop');
+    if (event.paid) this.labels.pop({ ...at, amount: `+$${event.paid.toLocaleString('en-US')}`, caption: RATINGS.find(rating => rating.id === event.rating)?.label.toUpperCase() ?? '', colour: RATING_COLOURS[event.rating] ?? '#fff8e7', size: 3.2 });
+    else if (event.kind === 'dropoff') this.labels.pop({ ...at, amount: RATINGS.find(rating => rating.id === event.rating)?.label ?? '', colour: RATING_COLOURS[event.rating] ?? '#fff8e7', size: 2.4 });
+    if (event.seconds > 0) this.labels.pop({ ...at, amount: `+${event.seconds}s`, colour: '#8ff0b0', size: 2.2 });
+  }
+  // Every waiting fare gets a badge: a dollar sign in the ring's colour, as in
+  // Crazy Taxi, plus ×N for a group or an icon for a special rider (bolt for
+  // a hurry, star for a thrill seeker, heart for nervous).
+  badge(count, color, mood = null) {
+    const key = `${count}${color}${mood ?? ''}`;
     if (!this.partyBadges.has(key) && globalThis.document) {
       const canvas = document.createElement('canvas'); canvas.width = 128; canvas.height = 64;
       const ctx = canvas.getContext('2d');
@@ -60,10 +143,11 @@ export class TaxiView {
       ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.stroke();
       const suffix = count > 1 ? `×${count}` : '';
       ctx.font = 'bold 42px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-      const dollar = ctx.measureText('$').width, tail = suffix ? ctx.measureText(suffix).width : 0;
+      const dollar = ctx.measureText('$').width, tail = suffix ? ctx.measureText(suffix).width : mood ? 36 : 0;
       const left = 64 - (dollar + tail) / 2;
       ctx.fillStyle = color; ctx.fillText('$', left, 34);
       if (suffix) { ctx.fillStyle = '#fff8e7'; ctx.fillText(suffix, left + dollar, 34); }
+      else if (mood) moodIcon(ctx, mood, left + dollar + 20, 32);
       const map = new THREE.CanvasTexture(canvas); map.colorSpace = THREE.SRGBColorSpace;
       this.partyBadges.set(key, new THREE.SpriteMaterial({ map, depthTest: false, depthWrite: false }));
     }
@@ -83,53 +167,77 @@ export class TaxiView {
   // fare appears. They are never drawn.
   warmupObjects() {
     const { solid, glow } = this.markerMaterials('#ffd240'), badge = this.badge(1, '#ffd240');
-    return [new THREE.Mesh(this.ring, solid), new THREE.Mesh(this.beam, glow), new THREE.Mesh(this.navigation.geometry, this.navigation.material), ...(badge ? [new THREE.Sprite(badge)] : [])];
+    return [new THREE.Mesh(this.ring, solid), new THREE.Mesh(this.beam, glow), new THREE.Mesh(this.navigation.geometry, this.navigation.material), ...(badge ? [new THREE.Sprite(badge)] : []), ...this.labels.warmupObjects()];
   }
+  // A fare still waiting keeps its marker through a refresh. A marker depends
+  // only on its stop, apart from its bob, which follows its place in the list.
+  // New markers reuse the riders' meshes of markers that went (the last
+  // pickup's, after a drop-off), so their GPU buffers are not freed and made again.
   rebuild(run) {
     const previousReactions = new Map(this.markers.map(marker => [marker.stop.id, marker.reactions]));
-    for (const marker of this.markers) { marker.person?.dispose(); this.group.remove(marker.group); }
-    this.markers = []; this.revision = run.revision;
     const stops = run.status === 'pickup' ? run.customers : run.status === 'driving' ? [{ ...run.target, color: '#ffd240' }] : [];
+    const waiting = new Set(stops), kept = new Map();
+    for (const marker of this.markers) {
+      this.group.remove(marker.group);
+      if (marker.status === run.status && waiting.has(marker.stop)) { kept.set(marker.stop, marker); continue; }
+      marker.shape?.band.dispose(); marker.shape?.wall.dispose();
+      if (marker.person) this.spare(marker.person);
+    }
+    this.markers = []; this.revision = run.revision;
     for (const stop of stops) {
-      const street = stop.profile ?? roadAt(stop.s, stop.u, 60)?.road.profile ?? profileOf('minor');
-      const group = new THREE.Group(), { solid, glow } = this.markerMaterials(stop.color);
-      // Local -z is the way the stop faces; riders wait on the kerb to its right.
-      group.rotation.y = -(stop.heading ?? 0);
-      // Keep the full radius across the street and visible over the adjacent curb.
-      const ring = new THREE.Mesh(this.ring, solid); ring.position.y = PAVEMENT_LEVEL + .07; group.add(ring);
-      const beam = new THREE.Mesh(this.beam, glow); beam.position.y = ROAD_LEVEL + 2.5; group.add(beam);
-      const arrow = new THREE.Mesh(this.cone, solid); arrow.position.y = ROAD_LEVEL + 7; group.add(arrow);
-      const badgeMaterial = run.status === 'pickup' && this.badge(stop.passengers, stop.color);
-      if (badgeMaterial) {
-        const badge = new THREE.Sprite(badgeMaterial); badge.position.y = ROAD_LEVEL + 9;
-        badge.scale.set(3.6, 1.8, 1); badge.renderOrder = 1; group.add(badge);
-      }
-      let person = null;
-      const float = { phase: this.markers.length * 2.4, speed: .2 };
-      if (run.status === 'pickup') {
-        person = new THREE.InstancedMesh(cityWalker, this.people, stop.passengers);
-        const seed = Math.imul(Math.round(stop.s * 10), 73856093) ^ Math.imul(Math.round(stop.u * 10), 19349663);
-        for (let i = 0; i < stop.passengers; i++) {
-          setWalkerAppearance(person, i, stop.passengers > 1 ? taxiGroupAppearance(seed, i) : walkerAppearance(seed));
-        }
-        person.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-        // All riders share a draw call and stay in a compact line on the curb.
-        const curb = street.halfWidth - street.lane + 2;
-        // (wide enough for one knocked flying, see PedestrianContacts)
-        person.boundingSphere = new THREE.Sphere(new THREE.Vector3(curb, PAVEMENT_LEVEL + 1.5, 0), 40);
-        group.add(person);
-      }
-      group.traverse(object => { object.userData.ambientOcclusion = false; });
-      const previous = previousReactions.get(stop.id), count = person?.count ?? 0;
-      const reactions = previous?.length === count ? previous : Array.from({ length: count }, (_, i) => previous?.[i] ?? {});
-      this.markers.push({ group, stop, arrow, ring, beam, person, float, reactions, curb: street.halfWidth - street.lane + 2 }); this.group.add(group);
+      const marker = kept.get(stop) ?? this.marker(stop, run.status);
+      marker.float.phase = this.markers.length * 2.4;
+      const previous = previousReactions.get(stop.id), count = marker.person?.count ?? 0;
+      marker.reactions = previous?.length === count ? previous : Array.from({ length: count }, (_, i) => previous?.[i] ?? {});
+      this.markers.push(marker); this.group.add(marker.group);
     }
   }
+  marker(stop, status) {
+    const street = stop.profile ?? roadAt(stop.s, stop.u, 60)?.road.profile ?? profileOf('minor');
+    const group = new THREE.Group(), { solid, glow } = this.markerMaterials(stop.color);
+    // Local -z is the way the stop faces; riders wait on the kerb to its right.
+    group.rotation.y = -(stop.heading ?? 0);
+    // A drop-off with a stretch gets its own ring shape
+    const shape = status === 'driving' && stop.stretch?.length > 1 ? stretchShape(stop) : null;
+    // Keep the full radius across the street and visible over the adjacent curb.
+    const ring = new THREE.Mesh(shape?.band ?? this.ring, solid); ring.position.y = PAVEMENT_LEVEL + .07; group.add(ring);
+    const beam = new THREE.Mesh(shape?.wall ?? this.beam, glow); beam.position.y = ROAD_LEVEL + 2.5; group.add(beam);
+    const arrow = new THREE.Mesh(this.cone, solid); arrow.position.y = ROAD_LEVEL + 7; group.add(arrow);
+    const badgeMaterial = status === 'pickup' && this.badge(stop.passengers, stop.color, stop.mood);
+    if (badgeMaterial) {
+      const badge = new THREE.Sprite(badgeMaterial); badge.position.y = ROAD_LEVEL + 9;
+      badge.scale.set(3.6, 1.8, 1); badge.renderOrder = 1; group.add(badge);
+    }
+    let person = null;
+    if (status === 'pickup') {
+      person = this.spares.get(stop.passengers)?.pop() ?? new THREE.InstancedMesh(cityWalker, this.people, stop.passengers);
+      const seed = Math.imul(Math.round(stop.s * 10), 73856093) ^ Math.imul(Math.round(stop.u * 10), 19349663);
+      for (let i = 0; i < stop.passengers; i++) {
+        setWalkerAppearance(person, i, stop.passengers > 1 ? taxiGroupAppearance(seed, i) : walkerAppearance(seed));
+      }
+      person.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      // All riders share a draw call and stay in a compact line on the curb.
+      const curb = street.halfWidth - street.lane + 2;
+      // (wide enough for one knocked flying, see PedestrianContacts)
+      person.boundingSphere = new THREE.Sphere(new THREE.Vector3(curb, PAVEMENT_LEVEL + 1.5, 0), 40);
+      group.add(person);
+    }
+    group.traverse(object => { object.userData.ambientOcclusion = false; });
+    return { group, stop, status, arrow, ring, beam, person, float: { phase: 0, speed: .2 }, reactions: null, shape, curb: street.halfWidth - street.lane + 2 };
+  }
+  // Kept for the next party of the same size. Each rider's look is set again
+  // when it is taken, and their pose every frame.
+  spare(person) {
+    if (!this.spares.has(person.count)) this.spares.set(person.count, []);
+    const spares = this.spares.get(person.count);
+    if (spares.length < SPARE_RIDERS) spares.push(person); else person.dispose();
+  }
   reset() {
-    this.trails = []; this.trailIndex = 0; this.lastTrail = 0; this.skids.count = 0; this.revision = -1;
+    this.trails = []; this.trailIndex = 0; this.lastTrail = 0; this.skids.count = 0; this.revision = -1; this.labels.reset(); this.shownCash = 0;
     for (const marker of this.markers) marker.reactions = null;
   }
-  render(run, vehicle, origin, time, contacts = null) {
+  render(run, vehicle, origin, time, contacts = null, camera = null) {
+    this.labels.render(origin, time, camera);
     this.group.visible = run.running;
     if (!run.running) return;
     if (this.revision !== run.revision) this.rebuild(run);
@@ -163,7 +271,8 @@ export class TaxiView {
       marker.arrow.position.y = ROAD_LEVEL + 7 + Math.sin(time * 3) * .35;
       marker.arrow.scale.setScalar(selected ? 1 : .65);
       marker.beam.visible = selected;
-      const pulse = selected ? 1 + Math.sin(time * 4) * .035 : 1;
+      // Only plain rings pulse
+      const pulse = selected && !marker.shape ? 1 + Math.sin(time * 4) * .035 : 1;
       marker.ring.scale.set(pulse, 1, pulse);
     }
     if (vehicle.drifting && time - this.lastTrail > .065) {
@@ -197,8 +306,12 @@ export class TaxiView {
       data('taxi-buttons', 'drifting', String(vehicle.drifting));
       return;
     }
+    text('taxi-clock-label', run.overtime ? 'LAST RIDE' : 'TIME');
     text('taxi-clock', Math.ceil(run.timeLeft)); data('taxi-clock', 'urgent', String(run.timeLeft <= 15));
-    text('taxi-cash', run.cash >= 1000 ? compactCash.format(run.cash) : money(run.cash));
+    // Count the total up to new earnings
+    this.shownCash = run.cash < this.shownCash ? run.cash : Math.min(run.cash, this.shownCash + Math.max(25, (run.cash - this.shownCash) * .35));
+    const shown = Math.round(this.shownCash);
+    text('taxi-cash', shown >= 1000 ? compactCash.format(shown) : money(shown));
     attribute($('taxi-cash'), 'aria-label', `Total earned ${money(run.cash)}`);
     text('taxi-fares', `${run.delivered} fare${run.delivered === 1 ? '' : 's'}`);
     text('taxi-speed', Math.round(Math.abs(vehicle.speed) * 2.23694));
@@ -210,58 +323,73 @@ export class TaxiView {
     data('taxi-buttons', 'drifting', String(vehicle.drifting));
     const stop = run.target;
     const pickup = run.status === 'pickup';
-    text('taxi-stage', pickup ? 'Pick up' : run.fare.stops.length > 1 ? `Stop ${run.stopIndex + 1} of ${run.fare.stops.length}` : 'Drop off');
+    text('taxi-stage', pickup ? 'Pick up' : run.overtime ? 'Last ride' : run.fare.stops.length > 1 ? `Stop ${run.stopIndex + 1} of ${run.fare.stops.length}` : 'Drop off');
     data('taxi-task', 'stage', run.status);
     // Pulse in the last seconds before the riders give up.
     data('taxi-task', 'urgent', String(!pickup && run.fareLeft <= 10));
-    // Tips multiply by the combo and by every rider aboard.
-    text('taxi-combo', !pickup && run.tipMultiplier > 1 ? `Tips ×${run.tipMultiplier}` : '');
+    // The stunt combo
+    text('taxi-combo', !pickup && run.combo > 1 ? `Combo ×${run.combo}` : '');
     const track = $('taxi-stop-progress').parentElement;
     hide(track, run.hold <= 0);
     attribute(track, 'aria-label', pickup ? 'Passenger boarding' : 'Passenger drop-off');
     attribute(track, 'aria-valuenow', String(Math.round(Math.min(1, run.hold / STOP_SECONDS) * 100)));
+    width('taxi-stop-progress', `${Math.min(1, run.hold / STOP_SECONDS) * 100}%`);
     if (!stop) {
-      const nearby = run.boarding ?? run.customers.reduce((best, customer) => {
-        const d = Math.hypot(customer.s - vehicle.s, customer.u - vehicle.u);
-        return d < 32 && (!best || d < Math.hypot(best.s - vehicle.s, best.u - vehicle.u)) ? customer : best;
-      }, null);
+      const near = customer => Math.hypot(customer.s - vehicle.s, customer.u - vehicle.u);
+      const nearby = run.boarding ?? run.customers.reduce((best, customer) => near(customer) < 32 && (!best || near(customer) < near(best)) ? customer : best, null);
       data('taxi-task', 'arriving', String(Boolean(run.boarding)));
-      text('taxi-task-title', nearby ? nearby.destination.name : 'Find a passenger');
-      const band = nearby && fareBand(nearby.length);
-      text('taxi-party', band ? `${band.label} · ${distanceLabel(nearby.length)}` : '');
+      // Preview the nearest fare: destination, rider and pay
+      text('taxi-task-title', nearby ? `To ${nearby.destination.name}` : 'Find a passenger');
+      const band = nearby && fareBand(nearby.length), mood = MOODS[nearby?.mood];
+      text('taxi-party', band ? `${nearby.passengers > 1 ? `${nearby.passengers} riders` : nearby.name} · ${band.label} · ${distanceLabel(nearby.length)}` : '');
       data('taxi-party', 'band', band?.id ?? '');
-      text('taxi-next-stop', nearby?.passengers > 1 ? `${nearby.passengers} riders · ${nearby.stops.length} stops` : '');
+      text('taxi-next-stop', mood ? `${mood.label} · ${mood.rule}` : nearby?.passengers > 1 ? `${nearby.stops.length} stops · paid at the last` : '');
+      data('taxi-next-stop', 'mood', nearby?.mood ?? '');
       hide($('taxi-timer'), true); hide($('taxi-timer-fill').parentElement, true);
-      const risky = Boolean(nearby) && !run.boarding && run.shiftAfter(nearby) < 0;
-      data('taxi-task', 'risky', String(risky));
-      this.instruction(run.boarding ? 'Boarding…' : risky ? 'Risky · the shift may end first' : '');
-      text('taxi-fare-status', nearby ? money(nearby.fare + nearby.groupBonus) : '');
-      width('taxi-stop-progress', `${Math.min(1, run.hold / STOP_SECONDS) * 100}%`);
+      const inRing = nearby && nearby.id !== run.blockedPickup?.id && near(nearby) < STOP_RADIUS;
+      this.instruction(run.boarding ? 'Boarding…' : inRing ? 'Stop to pick up' : this.hint(!nearby && 'rings'));
+      text('taxi-fare-status', nearby ? `Fare ${money(nearby.fare + nearby.groupBonus)}` : '');
       return;
     }
-    data('taxi-task', 'risky', 'false');
-    const length = routeDistance(taxiRoute(vehicle, stop));
-    const nearStop = Math.hypot(stop.s - vehicle.s, stop.u - vehicle.u) < STOP_RADIUS;
+    const length = routeDistance(taxiRoute(vehicle, run.approach(vehicle)));
+    const nearStop = insideStop(stop, vehicle);
     text('taxi-nav-distance', nearStop ? 'Here' : `${Math.max(10, Math.round(length / 10) * 10)} m`);
     attribute($('taxi-nav'), 'aria-label', `Drop-off ${Math.round(length)} meters by road; the green arrow points directly to the destination`);
     text('taxi-task-title', stop.name);
-    // The pill counts down to the riders giving up; its colour and the bar
-    // show this rider's own window, so they always say what stopping now earns.
-    const remaining = run.legRemaining, rating = arrivalRating(remaining);
+    // The pill shows the current rating and the seconds until it drops, or
+    // until the riders give up. The bar shows this rider's own time.
+    const remaining = run.legRemaining, rating = arrivalRating(remaining), seconds = Math.ceil(run.ratingSeconds);
     hide($('taxi-timer'), false); hide($('taxi-timer-fill').parentElement, false);
-    text('taxi-timer', `${Math.ceil(run.fareLeft)}s ${rating.label}`);
+    text('taxi-timer', `${rating.label} ${seconds}s`);
     data('taxi-timer', 'rating', rating.id); data('taxi-timer-fill', 'rating', rating.id);
-    attribute($('taxi-timer'), 'aria-label', `${Math.ceil(run.fareLeft)} seconds left; arriving now rates ${rating.label}`);
+    attribute($('taxi-timer'), 'aria-label', rating.remaining > 0 ? `Arrive within ${seconds} seconds for ${rating.label}` : `${seconds} seconds before the riders give up`);
     width('taxi-timer-fill', `${remaining * 100}%`);
-    text('taxi-fare-status', money(run.remainingFare + run.tips));
+    // Fares still to pay, plus tips
+    text('taxi-fare-status', `Meter ${money(run.remainingFare + run.tips)}`);
     data('taxi-party', 'band', '');
-    text('taxi-party', run.fare.passengers > 1 ? `${run.onboard} aboard` : '');
+    const mood = MOODS[run.fare.mood];
+    text('taxi-party', run.fare.passengers > 1 ? `${run.onboard} aboard` : mood ? run.shaken ? `${mood.label} · no bonus now` : `${mood.label} · ${mood.rule}` : '');
+    data('taxi-next-stop', 'mood', '');
     const next = run.fare.stops[run.stopIndex + 1];
     text('taxi-next-stop', next ? `Next · ${next.destination.name} · ${Math.round(next.length / 10) * 10} m` : run.fare.passengers > 1 ? 'Last stop' : '');
-    const instruction = nearStop ? Math.abs(vehicle.speed) >= 2.5 ? 'Stop to drop off' : 'Dropping off…' : '';
-    this.instruction(instruction);
+    const hint = run.tips > 0 ? 'tips' : run.fare.passengers > 1 ? 'group' : 'drive';
+    this.instruction(nearStop ? Math.abs(vehicle.speed) >= 2.5 ? 'Stop to drop off' : 'Dropping off…' : this.hint(!run.overtime && hint));
     data('taxi-task', 'arriving', String(nearStop));
-    width('taxi-stop-progress', `${Math.min(1, run.hold / STOP_SECONDS) * 100}%`);
+  }
+  // The hint for `key` if it has not been shown before, kept on screen for
+  // HINT_SECONDS
+  hint(key) {
+    if (!this.hints) {
+      this.hints = { seen: new Set(), showing: null, until: 0 };
+      try { for (const id of JSON.parse(this.storage?.getItem(HINTS_KEY) ?? '[]')) this.hints.seen.add(id); } catch { /* Optional storage. */ }
+    }
+    const now = performance.now() / 1000, hints = this.hints;
+    if (hints.showing && now < hints.until) return key === hints.showing ? HINTS[key] : '';
+    hints.showing = null;
+    if (!key || !HINTS[key] || hints.seen.has(key)) return '';
+    hints.seen.add(key); hints.showing = key; hints.until = now + HINT_SECONDS;
+    try { this.storage?.setItem(HINTS_KEY, JSON.stringify([...hints.seen])); } catch { /* Optional storage. */ }
+    return HINTS[key];
   }
   instruction(text) {
     // Announce state changes, not every HUD refresh or countdown tick.
@@ -271,7 +399,7 @@ export class TaxiView {
     const license = taxiLicense(run.cash), best = taxiLicense(run.best);
     const summary = run.summary, career = run.career, beaten = id => Boolean(summary?.beaten.includes(id));
     const clock = seconds => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
-    $('taxi-result-shift').textContent = clock(Math.round(run.elapsed)); $('taxi-result-shift').dataset.new = String(beaten('shift'));
+    $('taxi-result-shift').textContent = `Shift ${clock(Math.round(run.elapsed))}`; $('taxi-result-shift').dataset.new = String(beaten('shift'));
     $('taxi-result-cash').textContent = money(run.cash);
     $('taxi-result-license').dataset.license = license.id;
     $('taxi-license-badge').textContent = license.badge;
@@ -309,8 +437,10 @@ export class TaxiView {
     this.taskObserver?.disconnect(); globalThis.window?.removeEventListener('resize', this.measureTask);
     for (const { solid, glow } of this.palette.values()) { solid.dispose(); glow.dispose(); }
     for (const material of this.partyBadges.values()) { material.map.dispose(); material.dispose(); }
-    for (const marker of this.markers) marker.person?.dispose();
+    for (const marker of this.markers) { marker.person?.dispose(); marker.shape?.band.dispose(); marker.shape?.wall.dispose(); }
+    for (const spares of this.spares.values()) for (const person of spares) person.dispose();
     for (const resource of [this.ring, this.beam, this.cone, this.people, this.skidGeometry, this.skidMaterial]) resource.dispose();
+    this.labels.dispose();
     this.skids.dispose(); this.group.removeFromParent();
   }
 }

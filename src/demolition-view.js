@@ -1,5 +1,5 @@
-import * as THREE from 'three';
 import { demolitionRank, money } from './demolition-run.js';
+import { FloatingLabels } from './floating-labels.js';
 
 const $ = id => document.getElementById(id);
 const compactCash = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 1 });
@@ -22,74 +22,25 @@ const LABEL_STYLES = {
   wreck: { colour: '#ff8a2a', size: 3.3, caption: 'WRECKED' }, penalty: { colour: '#ff6d5e', size: 3, caption: 'PEDESTRIAN' },
   bonus: { colour: '#8ff0b0', size: 2.6 },
 };
-// A small pool, drawn over everything like the fares' badges; the oldest is
-// taken again when a pile-up needs more. One close to the camera is drawn no
-// wider than NEAR times its distance (about a quarter of the screen), or a
-// wreck in front of the truck hid the road.
-const LABELS = 12, LABEL_LIFE = 1.3, LABEL_RISE = 2.6, LABEL_HEIGHT = 2.4, NEAR = .3;
-const eye = new THREE.Vector3();
-
 export class DemolitionView {
   constructor(scene) {
-    this.group = new THREE.Group(); this.group.name = 'demolition-labels'; scene.add(this.group);
-    this.labels = globalThis.document ? Array.from({ length: LABELS }, () => {
-      const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 160;
-      const map = new THREE.CanvasTexture(canvas); map.colorSpace = THREE.SRGBColorSpace;
-      const material = new THREE.SpriteMaterial({ map, depthTest: false, depthWrite: false, transparent: true, fog: false });
-      const sprite = new THREE.Sprite(material); sprite.visible = false; sprite.renderOrder = 3; sprite.userData.ambientOcclusion = false;
-      this.group.add(sprite);
-      return { canvas, ctx: canvas.getContext('2d'), map, material, sprite, age: Infinity, x: 0, y: 0, z: 0, size: 1 };
-    }) : [];
-    this.next = 0; this.lastTime = null; this.shown = 0;
+    this.labels = new FloatingLabels(scene, 'demolition-labels');
+    this.shown = 0;
   }
   // A stand-in for the labels' program, compiled with the city
-  warmupObjects() { return this.labels.length ? [new THREE.Sprite(this.labels[0].material)] : []; }
-  reset() {
-    for (const label of this.labels) { label.age = Infinity; label.sprite.visible = false; }
-    this.lastTime = null; this.shown = 0;
-  }
+  warmupObjects() { return this.labels.warmupObjects(); }
+  reset() { this.labels.reset(); this.shown = 0; }
   // A blow's price (or a fine, or time won) rising off where it landed
   pop(event) {
-    if (!this.labels.length) return;
     const style = LABEL_STYLES[event.kind] ?? LABEL_STYLES.smash;
     const amount = event.kind === 'penalty' ? `−$${event.fine.toLocaleString('en-US')}` : event.kind === 'bonus' ? `+${event.seconds}s` : `$${event.value.toLocaleString('en-US')}`;
-    const label = this.labels[this.next]; this.next = (this.next + 1) % this.labels.length;
-    const { ctx, canvas } = label;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.lineJoin = 'round';
-    ctx.strokeStyle = '#17262f'; ctx.fillStyle = style.colour;
     // (a blow in a chain says what it was multiplied by)
     const times = ['smash', 'dent', 'wreck'].includes(event.kind) && event.multiplier > 1 ? `×${event.multiplier}` : '';
     const caption = [style.caption, times].filter(Boolean).join(' ');
-    if (caption) {
-      ctx.font = "800 38px 'Segoe UI', Arial, sans-serif"; ctx.lineWidth = 9;
-      ctx.strokeText(caption, 256, 50); ctx.fillText(caption, 256, 50);
-    }
-    ctx.font = "900 88px 'Segoe UI', Arial, sans-serif"; ctx.lineWidth = 14;
-    ctx.strokeText(amount, 256, 138, 500); ctx.fillText(amount, 256, 138, 500);
-    label.map.needsUpdate = true;
-    // (stacked over any other still rising from the same spot)
-    const stack = this.labels.filter(other => other !== label && other.age < .6 && Math.hypot(other.x - event.x, other.z - event.z) < 4).length;
-    Object.assign(label, { age: 0, x: event.x, y: event.y + LABEL_HEIGHT + stack * .8, z: event.z, size: style.size });
-    label.sprite.visible = true;
+    this.labels.pop({ x: event.x, y: event.y, z: event.z, amount, caption, colour: style.colour, size: style.size });
   }
-  // Each frame: the labels rise and fade; a pop in, a fade out. `camera`,
-  // if given, keeps near ones from filling the view.
-  render(origin, time, camera = null) {
-    this.group.position.z = origin;
-    if (camera) camera.getWorldPosition(eye);
-    const dt = this.lastTime === null ? 0 : Math.min(.1, Math.max(0, time - this.lastTime));
-    this.lastTime = time;
-    for (const label of this.labels) {
-      if (label.age >= LABEL_LIFE) { if (label.sprite.visible) label.sprite.visible = false; continue; }
-      label.age += dt;
-      const t = Math.min(1, label.age / LABEL_LIFE), pop = t < .1 ? .55 + 4.5 * t : t < .2 ? 1 + .15 * (1 - (t - .1) / .1) : 1;
-      const at = label.sprite.position.set(label.x, label.y + LABEL_RISE * (1 - (1 - t) ** 3), label.z);
-      const size = pop * (camera ? Math.min(label.size, Math.hypot(at.x - eye.x, at.y - eye.y, at.z + origin - eye.z) * NEAR) : label.size);
-      label.sprite.scale.set(size, size * .3125, 1);
-      label.material.opacity = t > .7 ? 1 - (t - .7) / .3 : 1;
-    }
-  }
+  // `camera`, if given, keeps near labels small
+  render(origin, time, camera = null) { this.labels.render(origin, time, camera); }
   // The driving HUD, in the taxi's panels: the clock and the banked damage
   // top left, the chain where the fare would be, the boost as a taxi has it
   hud(run, vehicle) {
@@ -108,7 +59,7 @@ export class DemolitionView {
     if ($('taxi-controller-boost').value !== run.boost) $('taxi-controller-boost').value = run.boost;
     text('taxi-boost-state', run.boostActive ? 'Boosting' : run.boost < .1 ? 'Release to fill' : 'Hold');
     data('taxi-buttons', 'boosting', String(run.boostActive)); data('taxi-buttons', 'drifting', String(vehicle.drifting));
-    data('taxi-task', 'stage', 'demolition'); data('taxi-task', 'urgent', 'false'); data('taxi-task', 'arriving', 'false'); data('taxi-task', 'risky', 'false');
+    data('taxi-task', 'stage', 'demolition'); data('taxi-task', 'urgent', 'false'); data('taxi-task', 'arriving', 'false');
     hide($('taxi-stop-progress').parentElement, true);
     // The chain: its multiplier, its hits, the pot it would bank now, and how
     // long it waits for the next smash, draining along the top edge
@@ -163,7 +114,6 @@ export class DemolitionView {
     $('demolition-results').hidden = false;
   }
   dispose() {
-    for (const label of this.labels) { label.map.dispose(); label.material.dispose(); }
-    this.group.removeFromParent();
+    this.labels.dispose();
   }
 }

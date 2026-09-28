@@ -6,8 +6,9 @@ The top left shows the shift time and earnings. Camera, reset and pause buttons 
 
 - On phones, navigation goes below the top row. On wider screens it sits between the corners.
 - The map starts closed on small or short screens and open on desktop. If the player opens or closes it, that choice stays for the session, including after resizing.
-- Players choose a fare by stopping at any passenger ring. Until the passenger has boarded, only nearby pickup markers are shown, with no route, arrow or destination.
-- The delivery deadline reads `Arrive in …s` and is separate from the shift clock.
+- Players choose a fare by stopping at any passenger ring. Driving up to a ring previews the fare in the task card. Until the passenger has boarded, there is no route or arrow.
+- The timer pill shows the current rating and the seconds until it drops, for example `Speedy 12s`. It is separate from the shift clock, which reads LAST RIDE once time has run out with riders aboard.
+- The distance counts down to the near end of the drop-off zone and says Here anywhere inside it. The map shows the zone as a gold band along the street.
 - Brake and boarding prompts show on arrival, with a progress bar while stopping. Screen reader announcements are made when the state changes, not on every countdown tick.
 - Scoring messages share the instruction line, but arrival prompts take priority. Boarding doesn't show an extra "drive to drop-off" message.
 - Expanded maps use the card's measured height so text doesn't wrap. On short screens the map scrolls and Close map stays visible.
@@ -15,7 +16,7 @@ The top left shows the shift time and earnings. Camera, reset and pause buttons 
 
 On phones, instructions are 14px, destinations 17px and other navigation text 12px. Touch targets are at least 44px for the map and pause buttons and 64px for driving buttons. The steering stick appears wherever the thumb first touches the screen.
 
-Use the shared [UI theme](ui-style.md). Keep the safe-area spacing, controller support, hidden HUD behind dialogs and reduced-motion support.
+Use the shared [UI theme](ui-style.md). Keep the safe-area spacing, controller support and reduced-motion support, and keep the HUD hidden behind dialogs.
 
 ## Compass
 

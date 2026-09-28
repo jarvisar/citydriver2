@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { stableShadowDepth } from './world/shadow-depth.js';
+import { bodyMaterial, lampGlow, markedBody } from './traffic-models.js';
 
 // The garage's oddballs: machines that share no bodywork with the road fleet
 // and are not meant to drive like it either. Like the coupe and the racer they
@@ -346,20 +347,18 @@ export function createSpecialCar(entry) {
   const shape = entry.shape, kit = partsKit();
   BUILDERS[shape.name](kit);
   const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: .74, flatShading: true, ...extra });
-  const paint = mat(entry.paint);
-  const trim = mat('#ffffff', { vertexColors: true });
-  const front = mat('#fff5cf', { emissive: '#e9cc84', emissiveIntensity: .24 });
-  const rear = mat('#8e3328', { emissive: '#b8220d', emissiveIntensity: .1 });
+  // One draw for the body (see markedBody)
+  const head = lampGlow('#e9cc84', .24), tail = lampGlow('#b8220d', .1);
+  const paint = bodyMaterial(entry.paint, { head: head.uniform, tail: tail.uniform });
   const tireMaterial = mat('#2b3434', { roughness: .9 }), hubMaterial = mat(CHROME);
-  const shells = Object.entries(kit.parts).map(([key, geometries]) => [key, mergeGeometries(geometries)]);
+  const shells = Object.fromEntries(Object.entries(kit.parts).map(([key, geometries]) => [key, mergeGeometries(geometries)]));
   for (const geometries of Object.values(kit.parts)) for (const geometry of geometries) geometry.dispose();
+  const shellGeometry = markedBody(shells, { head: '#fff5cf', tail: '#8e3328' });
 
   const car = new THREE.Group(); car.name = `car-${shape.name}`;
   const body = new THREE.Group(); car.add(body);
-  for (const [key, geometry] of shells) {
-    const mesh = new THREE.Mesh(geometry, { paint, details: trim, headlights: front, taillights: rear }[key]);
-    mesh.castShadow = true; mesh.receiveShadow = true; body.add(mesh);
-  }
+  const shell = new THREE.Mesh(shellGeometry, paint);
+  shell.castShadow = true; shell.receiveShadow = true; body.add(shell);
   const wheels = [], wheelGeometries = [];
   for (const [axle, { radius, width, x, z }] of Object.entries(shape.wheels)) {
     const tire = new THREE.CylinderGeometry(radius, radius, width, 14);
@@ -376,14 +375,14 @@ export function createSpecialCar(entry) {
   car.traverse(stableShadowDepth);
   return {
     car, body, wheels,
-    nightLights: [{ material: front, day: .24, night: 2.2 }, { material: rear, day: .1, night: 2.5 }],
+    nightLights: [{ material: head.material, day: .24, night: 2.2 }, { material: tail.material, day: .1, night: 2.5 }],
     // A chosen car keeps its own paint and kit.
     applyTrim() {},
     paintCar(color) { paint.color.set(color || entry.paint); },
     disposeModel() {
-      for (const [, geometry] of shells) geometry.dispose();
+      shellGeometry.dispose();
       for (const geometry of wheelGeometries) geometry.dispose();
-      for (const material of [paint, trim, front, rear, tireMaterial, hubMaterial]) material.dispose();
+      for (const material of [paint, tireMaterial, hubMaterial]) material.dispose();
     },
   };
 }

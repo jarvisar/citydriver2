@@ -60,7 +60,8 @@ test('traffic has five distinct shapes, varied paint, and ample initial gaps', (
   assert.ok(new Set(traffic.vehicles.map(car => car.paint.color.getHex())).size >= 3);
   assert.equal(new Set(TRAFFIC_MODELS.map(spec => `${spec.length}/${spec.cabin.join('/')}`)).size, 5);
   for (const car of traffic.vehicles) {
-    assert.equal(car.car.children.length, 4);
+    // (one mesh a car: paint, trim and lamps draw together)
+    assert.equal(car.car.children.length, 1);
     for (const mesh of car.car.children) {
       assert.ok(mesh.geometry.attributes.position.count > 0);
       assert.ok([...mesh.geometry.attributes.position.array].every(Number.isFinite));
@@ -311,15 +312,16 @@ test('rendering interpolates without moving simulation, and resets clear nearby 
 test('route changes reuse resources, switch lamps, and disposal releases the fleet', () => {
   const { scene, traffic } = setup();
   const car = traffic.vehicles[0], mesh = car.car.children[0], geometry = mesh.geometry;
-  const headlights = car.car.children[2].material;
-  traffic.reset(citydriverRoute, 2000, 'snow'); assert.ok(headlights.emissiveIntensity > 2);
+  // (the fleet's lamps glow together: #ffe3a3 times the old lamp intensity)
+  const headlights = traffic.models.glow.head.value;
+  traffic.reset(citydriverRoute, 2000, 'snow'); assert.ok(headlights.r > 2);
   traffic.respawn(car, 2020); traffic.render(.5, 1024);
   const { rig, light } = traffic.headlightRigs[0];
   assert.equal(rig.parent, traffic.group);
   assert.deepEqual(rig.position, car.car.position);
   assert.deepEqual(rig.quaternion.toArray(), car.car.quaternion.toArray());
   assert.ok(light.intensity > 0); assert.equal(light.castShadow, false);
-  traffic.reset(citydriverRoute, -4000, 'desert'); assert.ok(headlights.emissiveIntensity < 1);
+  traffic.reset(citydriverRoute, -4000, 'desert'); assert.ok(headlights.r < 1);
   assert.ok(traffic.headlightRigs.every(({ rig }) => rig.parent === null));
   assert.equal(car.car.children[0].geometry, geometry);
   assert.deepEqual(car.position, car.previousPosition);

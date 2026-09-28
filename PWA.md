@@ -1,6 +1,6 @@
 # Offline Installation
 
-To install the game, open the pause menu and choose **Install Citydriver**. If your browser can't show an install prompt, the button shows instructions instead. On iPhone or iPad, use **Share → Add to Home Screen** in Safari.
+To install the game, open the pause menu and choose `Install Citydriver`. If your browser can't show an install prompt, the button shows instructions instead. On iPhone or iPad, tap `Share` in Safari, then `Add to Home Screen`.
 
 Let the game load fully while online before playing offline. Hosting requires HTTPS, but localhost also works for testing.
 

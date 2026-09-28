@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEDICATED_HIGH_SHADOWS, Graphics, HEADSET_SHADOWS, QUALITY_LEVELS, dedicatedGpu, detectLevel, gpuName, levelIndex, renderScale } from '../src/graphics.js';
+import { DEDICATED_HIGH_SHADOWS, FRAME_CAPS, Graphics, HEADSET_LADDERS, HEADSET_RATE, HEADSET_SHADOWS, QUALITY_LEVELS, dedicatedGpu, detectLevel, gpuName, headsetBrowser, levelIndex, renderScale } from '../src/graphics.js';
 
 function memoryStorage(initial = {}) {
   const map = new Map(Object.entries(initial));
@@ -202,7 +202,7 @@ test('a chosen level is pinned, adapts to nothing, and is remembered', () => {
   assert.equal(graphics.levelId, 'high');
   new Device(graphics, 8).run(120);
   assert.equal(graphics.levelId, 'high', 'a pinned level stays pinned');
-  assert.deepEqual(stored(storage), { mode: 'high', level: 'high', density: null, ambientOcclusion: null, aoDropped: false });
+  assert.deepEqual(stored(storage), { mode: 'high', level: 'high', density: null, ambientOcclusion: null, aoDropped: false, frameCap: null, headsetRate: null });
 
   const next = new Graphics({ storage, detect: () => levelIndex('basic') });
   assert.equal(next.mode, 'high');
@@ -217,7 +217,7 @@ test('auto remembers the level it settled on so the next visit starts there', ()
   const graphics = new Graphics({ storage, detect: () => levelIndex('high') });
   new Device(graphics, [22, 31, 43, 61]).run(60);
   assert.equal(graphics.levelId, 'basic');
-  assert.deepEqual(stored(storage), { mode: 'auto', level: 'basic', density: null, ambientOcclusion: null, aoDropped: false }, 'no AO choice is saved as none');
+  assert.deepEqual(stored(storage), { mode: 'auto', level: 'basic', density: null, ambientOcclusion: null, aoDropped: false, frameCap: null, headsetRate: null }, 'no AO choice is saved as none');
   const next = new Graphics({ storage, detect: () => levelIndex('high') });
   assert.equal(next.auto, true);
   assert.equal(next.levelId, 'basic');
@@ -416,7 +416,7 @@ test('AO on by default is the first thing given up for frame rate, and stays giv
   const device = new Device(graphics, 61, 40).run(120);
   assert.deepEqual(device.steps, ['high-ao'], 'the level is kept');
   assert.equal(graphics.settings.ambientOcclusion, false);
-  assert.deepEqual(stored(storage), { mode: 'auto', level: 'high', density: null, ambientOcclusion: null, aoDropped: true },
+  assert.deepEqual(stored(storage), { mode: 'auto', level: 'high', density: null, ambientOcclusion: null, aoDropped: true, frameCap: null, headsetRate: null },
     'remembered as the default giving way, not as a choice');
   const next = capableAt(0, { storage });
   assert.equal(next.ambientOcclusion, false, 'the next visit starts without it');
@@ -521,4 +521,143 @@ test('High sharpens its shadows on a dedicated card, and a headset never draws m
   }
   plain.setHeadset(false);
   assert.deepEqual(plain.shadows, { shadowMap: 2048, shadowDistance: 100, shadowDetail: true }, 'back on the page');
+});
+
+test('Auto caps a machine without a card of its own at an even share near 60, and a chosen cap wins', () => {
+  const laptop = graphicsAt(levelIndex('balanced'));
+  assert.equal(laptop.frameCap(null), null, 'nothing until the display is measured');
+  assert.equal(laptop.frameCap(60), null);
+  assert.equal(laptop.frameCap(90), null, 'a 90 Hz display is left alone');
+  assert.equal(laptop.frameCap(120), 60);
+  assert.equal(laptop.frameCap(144), 72);
+  assert.equal(laptop.frameCap(240), 60);
+  assert.equal(capableAt(0).frameCap(144), null, 'a card of its own draws at the display rate');
+  const storage = memoryStorage(), chosen = new Graphics({ storage, detect: () => 1 });
+  assert.deepEqual(FRAME_CAPS, [null, 30, 60, 72, 90, 120, 144, 0]);
+  assert.equal(chosen.chooseFrameCap(30), true);
+  assert.equal(chosen.frameCap(144), 30);
+  assert.equal(stored(storage).frameCap, 30);
+  chosen.chooseFrameCap(0);
+  assert.equal(chosen.frameCap(120), null, 'uncapped');
+  assert.equal(chosen.chooseFrameCap(55), false, 'only the slider\'s stops');
+  assert.equal(new Graphics({ storage, detect: () => 1 }).capChoice, 0, 'remembered');
+  chosen.setMode('high');
+  assert.equal(chosen.capChoice, 0, 'a preset leaves it alone');
+});
+
+test('a cap under the target becomes it: 30 held is not slow', () => {
+  const capped = graphicsAt(levelIndex('high'));
+  capped.chooseFrameCap(30); capped.frameCap(60);
+  assert.equal(new Device(capped, 30).run(60).changes, 0);
+  const uncapped = graphicsAt(levelIndex('high'));
+  assert.ok(new Device(uncapped, 30).run(60).changes > 0, 'without the cap 30 is slow');
+});
+
+test('a headset asks for 90 Hz unless the player picks a rate, and drops to 72 only when no rung holds 90', () => {
+  const graphics = graphicsAt(levelIndex('balanced'));
+  assert.equal(graphics.headsetRate, HEADSET_RATE);
+  graphics.setHeadset(true, { frameRate: 90 });
+  const headset = new Headset(graphics, () => 75, 90);
+  let lowered = 0;
+  graphics.lowerHeadsetRate = () => { if (headset.hz === 72) return false; lowered++; headset.hz = 72; graphics.setHeadsetRate(72); return true; };
+  headset.run(90);
+  assert.equal(lowered, 1);
+  assert.equal(graphics.target, 72);
+  assert.deepEqual([graphics.levelId, graphics.xrScale], HEADSET_LADDERS.standalone[0], 'and at 72 it climbs back to the top');
+  // A rate the player picked is kept, whatever it costs
+  const pinned = graphicsAt(levelIndex('balanced'));
+  pinned.chooseHeadsetRate(90);
+  assert.equal(pinned.headsetRate, 90);
+  pinned.setHeadset(true, { frameRate: 90 });
+  pinned.lowerHeadsetRate = () => { throw new Error('a chosen rate is not lowered'); };
+  new Headset(pinned, () => 75, 90).run(90);
+  assert.equal(pinned.rateChoice, 90);
+});
+
+test('a phone keeps only the big shadow casters below High, where a desktop keeps them all', () => {
+  const phone = graphicsAt(levelIndex('balanced'), { mobile: true }), desktop = graphicsAt(levelIndex('balanced'), { mobile: false });
+  assert.equal(phone.settings.shadowDetail, false);
+  assert.equal(desktop.settings.shadowDetail, true);
+  assert.deepEqual([phone.settings.shadowMap, phone.settings.shadowDistance], [desktop.settings.shadowMap, desktop.settings.shadowDistance], 'as sharp and as far');
+  phone.setMode('high');
+  assert.equal(phone.settings.shadowDetail, true, 'High is High');
+});
+
+// A headset: frames come at its refresh rate, or late. `rate(levelId, scale)`
+// is what each rung could reach unbounded.
+class Headset {
+  constructor(graphics, rate, hz = 72) { this.graphics = graphics; this.rate = rate; this.hz = hz; this.time = 0; this.rungs = []; }
+  run(seconds) {
+    for (let remaining = seconds * 1000; remaining > 0;) {
+      const step = 1000 / Math.min(this.hz, this.rate(this.graphics.levelId, this.graphics.xrScale));
+      this.time += step; remaining -= step;
+      if (this.graphics.sample(this.time, true)) this.rungs.push(`${this.graphics.levelId}@${this.graphics.xrScale}`);
+    }
+    return this;
+  }
+}
+const QUEST_3 = 'Mozilla/5.0 (X11; Linux x86_64; Quest 3) AppleWebKit/537.36 (KHTML, like Gecko) OculusBrowser/39.2.0.0.56.754450099 Chrome/136.0.7103.177 VR Safari/537.36';
+
+test('a headset\'s own browser is tiered as the phone chip it is, whatever it calls itself', () => {
+  assert.equal(headsetBrowser({ userAgent: QUEST_3 }), true);
+  assert.equal(headsetBrowser({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/136.0 Safari/537.36' }), false);
+  // A Quest 3 calls itself desktop Linux, with a fine pointer and an Adreno a
+  // desktop would start at High
+  const quest = { navigator: { userAgent: QUEST_3, userAgentData: { mobile: false } }, coarsePointer: false, gpu: 'Adreno (TM) 740', pixels: 1.9e6 };
+  assert.equal(detectLevel({ ...quest, cores: 6, memory: 8 }), levelIndex('balanced'));
+  assert.equal(detectLevel({ ...quest, cores: 8, memory: 4 }), levelIndex('balanced'), 'a Quest 2');
+  assert.equal(detectLevel({ ...quest, navigator: { userAgent: '', userAgentData: { mobile: false } }, cores: 6, memory: 8 }), 0, 'a desktop with that chip would start at the top');
+});
+
+test('a standalone headset starts a rung down its own ladder and climbs while it keeps the refresh rate', () => {
+  const graphics = graphicsAt(levelIndex('high'));
+  graphics.setHeadset(true, { frameRate: 72 });
+  assert.deepEqual([graphics.levelId, graphics.xrScale], HEADSET_LADDERS.standalone[1], 'Balanced at .85, High left for the page');
+  assert.equal(graphics.target, 72);
+  const headset = new Headset(graphics, () => 72).run(60);
+  assert.deepEqual(headset.rungs, ['balanced@1'], 'up to the top, and no further');
+  graphics.setHeadset(false);
+  assert.equal(graphics.levelId, 'high'); assert.equal(graphics.xrScale, 1); assert.equal(graphics.target, 60);
+});
+
+test('a headset that cannot keep up steps down its ladder, and never climbs back above what proved too much', () => {
+  const storage = memoryStorage(), graphics = new Graphics({ storage, detect: () => levelIndex('balanced') });
+  graphics.setHeadset(true, { frameRate: 90 });
+  // A Quest 2: Balanced is too many draws, and even Basic too many pixels
+  const rate = (level, scale) => (level === 'basic' ? 80 : 60) * (scale < .8 ? 1.3 : 1);
+  const headset = new Headset(graphics, rate, 90).run(30);
+  assert.deepEqual(headset.rungs, ['basic@0.85', 'basic@0.7']);
+  headset.rate = () => 200;
+  headset.run(120);
+  assert.equal(`${graphics.levelId}@${graphics.xrScale}`, 'basic@0.7', 'ratcheted: the rung that failed stays given up');
+  assert.equal(headset.rungs.length, 2);
+  // Nothing the headset decided is the page's
+  assert.equal(storage.map.has('citydriver.graphics'), false);
+  graphics.setHeadset(false);
+  assert.equal(graphics.levelId, 'balanced');
+  // Frames something else caps (an emulator on a 60 Hz desktop claiming 72):
+  // two rungs given up for nothing come back, and 60 is the target
+  const capped = graphicsAt(levelIndex('balanced'));
+  capped.setHeadset(true, { frameRate: 72 });
+  const emulator = new Headset(capped, () => 60).run(60);
+  assert.deepEqual(emulator.rungs, ['basic@0.85', 'basic@0.7', 'balanced@0.85']);
+  assert.ok(Math.abs(capped.target - 60) < .5, `target follows the frames: ${capped.target}`);
+  emulator.run(120);
+  assert.equal(emulator.rungs.length, 3, 'and it stops there');
+});
+
+test('in a headset a pinned level keeps its level and adapts only its scale, and a view that cannot scale keeps whole levels', () => {
+  const pinned = graphicsAt(levelIndex('high'));
+  pinned.setMode('high'); pinned.setHeadset(true, { frameRate: 72 });
+  const headset = new Headset(pinned, (level, scale) => scale < 1 ? 72 : 60).run(60);
+  assert.deepEqual(headset.rungs, ['high@1', 'high@0.85'], 'the player chose the level; the scale is the headset\'s');
+  // A browser without XRView.requestViewportScale: its rungs are whole levels
+  const whole = graphicsAt(levelIndex('balanced'));
+  whole.setHeadset(true, { frameRate: 72, scalable: false });
+  assert.deepEqual([whole.levelId, whole.xrScale], ['basic', 1]);
+  assert.deepEqual(whole.ladder, [[levelIndex('balanced'), 1], [levelIndex('basic'), 1]]);
+  // A PC's card starts at the top of its own ladder, where the page was
+  const card = capableAt(levelIndex('high'));
+  card.setHeadset(true, { frameRate: 90 });
+  assert.deepEqual([card.levelId, card.xrScale], HEADSET_LADDERS.dedicated[0]);
 });

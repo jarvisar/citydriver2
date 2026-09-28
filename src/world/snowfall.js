@@ -16,6 +16,12 @@ export class Snowfall {
       sizes[i] = .55 + randomAt(i, 85) ** 2 * .9;
       near[i] = i < NEAR_COUNT ? 1 : 0;
     }
+    // Each flake's cos and sin of phase * 7 and phase * 11 (see update)
+    this.sway = new Float64Array(COUNT * 4);
+    for (let i = 0; i < COUNT; i++) {
+      const phase = this.seeds[i * 4 + 3];
+      this.sway.set([Math.cos(phase * 7), Math.sin(phase * 7), Math.cos(phase * 11), Math.sin(phase * 11)], i * 4);
+    }
     this.geometry = new THREE.BufferGeometry();
     this.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(COUNT * 3), 3).setUsage(THREE.DynamicDrawUsage));
     this.geometry.setAttribute('flakeSize', new THREE.BufferAttribute(sizes, 1));
@@ -80,16 +86,18 @@ export class Snowfall {
     this.uniforms.snowTime.value = time;
     this.uniforms.snowOrigin.value = origin;
     this.points.position.set(anchor.x, anchor.y, anchor.z + origin);
-    const positions = this.geometry.attributes.position;
-    for (let i = 0; i < COUNT; i++) {
-      const n = i * 4, phase = this.seeds[n + 3];
+    const positions = this.geometry.attributes.position, array = positions.array, seeds = this.seeds, sway = this.sway;
+    // The sways are sin(time * .6 + phase * 7) and sin(time * .4 + phase * 11), split
+    // by angle addition so each flake's half comes from the table (3,600 sin calls a frame)
+    const driftX = time * .65, sinA = Math.sin(time * .6), cosA = Math.cos(time * .6), sinB = Math.sin(time * .4), cosB = Math.cos(time * .4);
+    for (let i = 0, n = 0; i < COUNT; i++, n += 4) {
+      const phase = seeds[n + 3];
       // Reserve a third of the same budget for street-level flakes so driving
       // cameras see snowfall nearby, not just high above the rooftops.
       const near = i < NEAR_COUNT, yOffset = near ? 40 : 0;
-      positions.setXYZ(i,
-        wrap(this.seeds[n] + time * .65 + Math.sin(time * .6 + phase * 7) * 1.8 - anchor.x, near ? 72 : WIDTH),
-        wrap(this.seeds[n + 1] - time * phase - anchor.y + yOffset, near ? 70 : HEIGHT) - yOffset,
-        wrap(this.seeds[n + 2] + Math.sin(time * .4 + phase * 11) * 1.4 - anchor.z, near ? 72 : DEPTH));
+      array[i * 3] = wrap(seeds[n] + driftX + (sinA * sway[n] + cosA * sway[n + 1]) * 1.8 - anchor.x, near ? 72 : WIDTH);
+      array[i * 3 + 1] = wrap(seeds[n + 1] - time * phase - anchor.y + yOffset, near ? 70 : HEIGHT) - yOffset;
+      array[i * 3 + 2] = wrap(seeds[n + 2] + (sinB * sway[n + 2] + cosB * sway[n + 3]) * 1.4 - anchor.z, near ? 72 : DEPTH);
     }
     positions.needsUpdate = true;
   }

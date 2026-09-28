@@ -17,6 +17,10 @@ export function cueNotes(kind, detail = {}) {
       return detail.rating === 'slow' ? notes.slice(0, 2).concat(note(.11, 4, .3)) : notes;
     }
     case 'missed': return [note(0, -3, .2, .045, 'sine'), note(.15, -8, .4, .04, 'sine')];
+    // Time runs out with riders aboard
+    case 'overtime': return [note(0, 7, .1, .04), note(.09, 7, .1, .04), note(.18, 12, .3, .045)];
+    // A crash loses a nervous rider's bonus
+    case 'shaken': return [note(0, 4, .12, .035, 'sine'), note(.1, -1, .25, .035, 'sine')];
     // Each stunt in a combo climbs a step
     case 'tip': return [note(0, 12 + PENTATONIC[Math.min(PENTATONIC.length - 1, Math.max(0, (detail.combo ?? 1) - 1))], .1, .03)];
     case 'tick': return [note(0, detail.urgent ? 28 : 24, .05, detail.urgent ? .04 : .028, 'sine')];

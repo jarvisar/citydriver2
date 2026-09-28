@@ -35,6 +35,10 @@ export class XRCameraRig {
       this.centered = true;
     }
     this.rig.position.copy(source.position);
+    // Clip the eyes at the game camera's far plane. In street views that's where
+    // the fog is fully opaque (fitFogDistance), so nothing past it needs drawing.
+    // WebXR takes this as the session's depthFar.
+    this.camera.far = source.far;
     if (source.isOrthographicCamera) {
       // Match the overhead view's vertical framing at its focal plane using
       // a 60-degree perspective lens. The headset supplies the actual lenses.

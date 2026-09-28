@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FrameClock, PHYSICS_STEP } from '../src/timing.js';
+import { FrameClock, FramePacer, PHYSICS_STEP } from '../src/timing.js';
 import { DrivingController } from '../src/vehicle.js';
 
 const straightRoute = {
@@ -80,6 +80,41 @@ test('pause and resume retain the displayed pose without catching up hidden time
   clock.tick(90000, true, step); assert.equal(steps, 15); // Catch-up is bounded after a stall.
   clock.reset(); clock.tick(100000, true, step);
   assert.equal(clock.alpha, 0); assert.equal(clock.dt, 0);
+});
+
+// The gaps between the frames a pacer lets through, after its first second
+function paced(hz, seconds, cap) {
+  const pacer = new FramePacer(), gaps = [];
+  let last = null;
+  for (let i = 0; i <= hz * seconds; i++) {
+    const t = i * 1000 / hz;
+    if (pacer.skip(t, cap)) continue;
+    if (last !== null && t > 1100) gaps.push(t - last);
+    last = t;
+  }
+  return gaps;
+}
+const rate = gaps => 1000 * gaps.length / gaps.reduce((a, b) => a + b, 0);
+const even = (gaps, ms) => gaps.length > 50 && gaps.every(gap => Math.abs(gap - ms) < 1e-6);
+
+test('a frame cap that divides the display is held evenly, and any other is not overshot', () => {
+  assert.ok(even(paced(120, 4, 60), 1000 / 60), '60 on 120 Hz, every other frame');
+  assert.ok(even(paced(144, 4, 72), 1000 / 72), '72 on 144 Hz');
+  assert.ok(even(paced(60, 4, 30), 1000 / 30), '30 on 60 Hz');
+  for (const hz of [60, 90, 120]) assert.ok(even(paced(hz, 4, null), 1000 / hz), `${hz} Hz uncapped`);
+  assert.ok(even(paced(60, 4, 120), 1000 / 60), 'a cap over the display changes nothing');
+  // 60 on 144 Hz or 90 Hz alternates two and three frames, or one and two
+  for (const hz of [144, 90]) {
+    const fps = rate(paced(hz, 6, 60));
+    assert.ok(fps > 55 && fps <= 60.01, `${hz} Hz capped at 60 draws ${fps.toFixed(1)}`);
+  }
+  // A display that drops to the cap's rate (a battery saver) stops being paced within a second
+  const pacer = new FramePacer();
+  let t = 0, skipped = 0;
+  for (let i = 0; i < 240; i++) { t += 1000 / 120; pacer.skip(t, 60); }
+  assert.equal(Math.round(pacer.displayRate), 120);
+  for (let i = 0; i < 120; i++) { t += 1000 / 60; if (pacer.skip(t, 60) && i > 70) skipped++; }
+  assert.equal(skipped, 0);
 });
 
 test('new steering is visible on the next 60 Hz frame without waiting an extra frame', () => {

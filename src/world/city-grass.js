@@ -31,9 +31,12 @@ export function grassArea(c, polygon, color, y) {
   c.grassAreas.push({ polygon, color, y });
 }
 
+// Yield after about this many point checks (lawns, obstacles and tufts so far
+// per tuft tried). A cell full of lawns took up to 8 ms in one step.
+const FRINGE_CHECKS = 3000;
 // Run after colliders are mapped, so a shifted building or a rigid deck on a
 // curved block protects its actual footprint. Grass never changes collision.
-export function buildGrassFringe(c) {
+export function* buildGrassFringeSteps(c) {
   if (c.distant || !c.grassAreas?.length) return;
   const random = seededRandom(c.plan.seed ^ 0x36f91b27), candidates = [], accepted = [];
   const obstacles = [];
@@ -77,9 +80,12 @@ export function buildGrassFringe(c) {
     const j = Math.floor(random() * (i + 1)); [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
   }
   const tint = new THREE.Color();
+  let checks = 0;
   for (const center of candidates) {
+    if (checks > FRINGE_CHECKS) { checks = 0; yield; }
     const count = random() < .55 ? 2 : 1;
     for (let i = 0; i < count && accepted.length < MAX_GRASS_TUFTS; i++) {
+      checks += c.grassAreas.length + obstacles.length + accepted.length;
       const x = center[0] + (i ? .8 + random() * .4 : 0), s = center[1] + (i ? (random() - .5) * 1.3 : 0);
       const area = c.grassAreas.find(area => containsPoint(area.polygon, x, s, .9));
       if (!area) continue;

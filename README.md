@@ -26,13 +26,13 @@ This is the sequel to [Citydriver](https://github.com/jarvisar/citydriver). The 
 
 ## How to Play
 
-Start a **Taxi run** to pick up passengers and earn money. Stop in a pickup ring, follow the arrow, then stop in the yellow drop-off ring before the fare clock runs out. Earnings can be spent on faster cabs in the taxi fleet. See [progression and balance](docs/taxi-progression.md) and [taxi fleet](docs/taxi-fleet.md) for more details.
+Start a Taxi run to pick up passengers and earn money. Stop in a pickup ring, follow the arrow, then stop in the yellow drop-off zone before the fare clock runs out. Buildings have a short zone outside the entrance. Parks and squares let passengers out anywhere along their side of the street. Some passengers are in a hurry, want stunts or are nervous. An icon on their ring shows which. If time runs out with passengers aboard, the shift ends after the last one gets out. Earnings can be spent on faster cabs in the taxi fleet. See [progression and balance](docs/taxi-progression.md) and [taxi fleet](docs/taxi-fleet.md) for more details.
 
-**Demolition** puts you in a truck with one minute to cause as much property damage as possible. Lamp posts, benches, signs, trees, bus shelters and cars all have a price, and parked cars are worth the most. Hits in quick succession build a chain. Every fourth hit raises the chain's multiplier, up to ×5, and the chain's damage is added to the total when it ends. Wrecking a moving car adds 3 seconds to the clock. Hitting a pedestrian costs a $5,000 fine and the chain in progress. Each run gets a rating, and the best five runs are kept as high scores. See [demolition](docs/demolition.md) for the prices and ratings.
+Demolition puts you in a truck with one minute to cause as much property damage as possible. Lamp posts, benches, signs, trees, bus shelters and cars all have a price, and parked cars are worth the most. Hits in quick succession build a chain. Every fourth hit raises the chain's multiplier, up to ×5, and the chain's damage is added to the total when it ends. Wrecking a moving car adds 3 seconds to the clock. Hitting a pedestrian costs a $5,000 fine and the chain in progress. Each run gets a rating, and the best five runs are kept as high scores. See [demolition](docs/demolition.md) for the prices and ratings.
 
-**Free drive** has no timer. All three taxis are available in the garage, and weather settings and city discoveries are in the pause menu. The garage also has a helicopter that can fly over the city and land on roofs. Press forward on the main menu to enter free drive. Press R or select New city in the pause menu to generate a new city.
+Free drive has no timer. All three taxis are available in the garage, and weather settings and city discoveries are in the pause menu. The garage also has a helicopter that can fly over the city and land on roofs. Press forward on the main menu to enter free drive. Press R or select New city in the pause menu to generate a new city.
 
-In free drive, press E to get out of the car and walk around. Walk up to your car, a car in traffic or a car parked along the street and press E to get in. A car taken from traffic drives off on its own when you get out. A parked car stays where you leave it and goes back to its space once you are far away. Your own car stays where you left it and is marked on both maps. Picking a car in the garage puts you in it. The helicopter can't be left. In first-person view on foot, A and D turn you. Once a click on the view lets the mouse look around, they step sideways instead, as the left stick does on a controller.
+In free drive, press E to get out of the car and walk around. Walk up to your car, a car in traffic or a car parked along the street and press E to get in. A car taken from traffic drives off on its own when you get out. A parked car stays where you leave it and goes back to its space once you are far away. Your own car stays where you left it and is marked on both maps. Picking a car in the garage puts you in it. The helicopter can't be left. In first-person view on foot, A and D turn you. Once you click the view to look around with the mouse, A and D step sideways instead, like the left stick on a controller.
 
 Every visit generates a new city. Add `?seed=4817` to the URL to load the same city again.
 
@@ -67,7 +67,7 @@ On touch screens, use the stick to drive, hold Boost, and tap Drift while steeri
 
 ### VR
 
-In a headset's browser, such as the Meta Quest Browser, select **Enter VR** on the main menu or the pause menu. VR starts on a menu with the car standing still. Menus open in front of the player and the HUD sits below the car. Point at a menu with either controller and pull the trigger, or use a thumbstick and A.
+In a headset's browser, such as the Meta Quest Browser, select `Enter VR` on the main menu or the pause menu. VR starts on a menu with the car standing still. Menus open in front of the player and the HUD sits below the car. Point at a menu with either controller and pull the trigger, or use a thumbstick and A.
 
 | Action | Quest controllers |
 | --- | --- |
@@ -132,7 +132,7 @@ To try VR without a headset, add `?xr` to the dev server's URL. This emulates a 
 
 ## Deployment
 
-Pushes to `main` are tested and deployed to GitHub Pages by GitHub Actions, using `/citydriver2/` as the base path. When setting up a fork, go to **Settings → Pages** and set **Source** to **GitHub Actions**.
+Pushes to `main` are tested and deployed to GitHub Pages by GitHub Actions, using `/citydriver2/` as the base path. When setting up a fork, open the repository's Pages settings and set `Source` to `GitHub Actions`.
 
 ## Documentation
 

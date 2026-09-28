@@ -103,8 +103,9 @@ function headingInto(nav, edge, node) {
 // The control on the approach at the end of an edge, with its node and the
 // junction's radius (cached: every driver asks every frame)
 export function approachControl(nav, edge, direction) {
-  const cache = nav.approachCache ??= new Map(), key = edge.id * 2 + (direction > 0 ? 1 : 0);
-  if (cache.has(key)) return cache.get(key);
+  const cache = nav.approachCache ??= new Map(), key = edge.id * 2 + (direction > 0 ? 1 : 0), known = cache.get(key);
+  // (kept as an approach, or null where there is none, never undefined)
+  if (known !== undefined) return known;
   const node = nav.endNode(edge, direction), control = junctionControls(nav).get(node);
   const approach = control ? { node, ...control.approaches.get(edge), radius: control.radius } : null;
   cache.set(key, approach);
@@ -142,16 +143,19 @@ export class JunctionTraffic {
     this.nav = nav; this.time = 0;
     this.claims = new Map();  // node id -> the claims on it
     this.movements = new Map(); this.conflicts = new Map();
+    // Movements by turn, and conflicts by the two movements, so the lookups
+    // every driver makes every step build no key strings
+    this.byTurn = new WeakMap(); this.meetings = new WeakMap();
   }
   reset() { this.claims.clear(); }
   // Forget claims their drivers have stopped asking about (a car recycled,
   // the autodrive switched off)
   tick(time) {
     this.time = time;
-    for (const [id, claims] of this.claims) {
+    this.claims.forEach((claims, id) => {
       for (const claim of claims.values()) if (claim.seen < time - 1) this.drop(claim);
       if (!claims.size) this.claims.delete(id);
-    }
+    });
   }
   drop(claim) {
     for (const node of claim.nodes) this.claims.get(node.id)?.delete(claim);
@@ -164,6 +168,14 @@ export class JunctionTraffic {
   // line, the turn, and the first metres of the lane beyond, as points a metre
   // apart, and every junction node it crosses (two across a junction complex)
   movement(edge, direction, next, turn) {
+    // (the last one found for this turn, if asked for the same way, which means the same key)
+    const via = next.via ?? null, known = turn && typeof turn === 'object' ? this.byTurn.get(turn) : undefined;
+    if (known && known.edge === edge && known.direction === direction && known.out === next.edge && known.outDirection === next.direction && known.via === via) return known.movement;
+    const movement = this.movementBy(edge, direction, next, turn);
+    if (turn && typeof turn === 'object') this.byTurn.set(turn, { edge, direction, out: next.edge, outDirection: next.direction, via, movement });
+    return movement;
+  }
+  movementBy(edge, direction, next, turn) {
     const key = `${edge.id}:${direction}>${next.edge.id}:${next.direction}${next.via ? `/${next.via.id}` : ''}`;
     if (this.movements.has(key)) return this.movements.get(key);
     const nav = this.nav, control = approachControl(nav, edge, direction), node = nav.endNode(edge, direction), nodes = [node];
@@ -188,6 +200,19 @@ export class JunctionTraffic {
   // the same lane always meet.
   conflict(a, b) {
     if (a === b || (a.edge === b.edge && a.direction === b.direction)) return false;
+    // (the answer given before for these two, either way round)
+    let met = this.meetings.get(a);
+    if (!met) this.meetings.set(a, met = new Map());
+    const known = met.get(b);
+    if (known !== undefined) return known;
+    const hit = this.conflictBy(a, b);
+    met.set(b, hit);
+    let theirs = this.meetings.get(b);
+    if (!theirs) this.meetings.set(b, theirs = new Map());
+    theirs.set(a, hit);
+    return hit;
+  }
+  conflictBy(a, b) {
     const key = a.key < b.key ? `${a.key}|${b.key}` : `${b.key}|${a.key}`;
     if (this.conflicts.has(key)) return this.conflicts.get(key);
     let hit = a.out === b.out && a.outDirection === b.outDirection;

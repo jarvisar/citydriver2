@@ -13,7 +13,7 @@ import './demolition.css';
 import './city-theme.css';
 import { setupTaxiFleet } from './taxi-fleet-view.js';
 import { createRendering } from './rendering.js';
-import { Graphics } from './graphics.js';
+import { FRAME_CAPS, Graphics, headsetBrowser } from './graphics.js';
 import { JOURNEYS } from './journeys.js';
 import { CARS, GARAGE_IDS, DEFAULT_CAR, ROUTE_PAINT, carEntry, carMeters } from './cars.js';
 import { carArt } from './car-art.js';
@@ -50,7 +50,7 @@ import { touchDrivingInput, thirdPersonDrivingInput, pressOnRelease } from './to
 import { MouseLook } from './mouse-look.js';
 import { DriveAudio } from './audio.js';
 import { setupAudioMixer } from './audio/mixer.js';
-import { FrameClock } from './timing.js';
+import { FrameClock, FramePacer } from './timing.js';
 import { setupControlHelp, controlHelpDismissed, updateControlHelp } from './control-help.js';
 import { BrowserVR } from './vr.js';
 import { VRStatus } from './vr-status.js';
@@ -66,7 +66,7 @@ const STICK_LOOK = 2.4;
 const mileageFormat = new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 let paused = false, started = false, time = 0, hudTime = 0, gameMode = 'taxi';
 document.body.dataset.mode = gameMode;
-const frameClock = new FrameClock();
+const frameClock = new FrameClock(), pacer = new FramePacer();
 let toastTimer; let sceneReady = false;
 // Set when an Escape left fullscreen mid-drive and paused it (see fullscreenchange)
 let fullscreenOnResume = false;
@@ -102,7 +102,8 @@ async function boot() {
     document.documentElement.dataset.graphics = graphics.levelId;
     graphics.onChange(settings => { setResidentWindow(settings.chunks); document.documentElement.dataset.graphics = settings.id; });
     const rendering = createRendering($('#scene'), graphics, { showCarSilhouette: () => started,
-      beforeDraw: camera => taxiView.navigation.update(taxi, vehicle, camera) });
+      // (the page's fare arrow has its own WebGL context, which a headset can't see)
+      beforeDraw: camera => { if (!vr?.active) taxiView.navigation.update(taxi, vehicle, camera); } });
     const { renderer, scene } = rendering;
     let vr, vrHintTime = 0, vrMapCanvas = null, vrMapKey = 0;
     const vrStatus = new VRStatus(rendering.vrCamera.camera, rendering.vrCamera.anchor);
@@ -201,9 +202,10 @@ async function boot() {
       nightLighting.update(world, vehicle, traffic, weather.state.lightLevel);
       return drawScene(...args);
     };
-    const cityGuide = new CityGuide(text => { toast(text); audio.cue('discovery'); }, () => vehicle);
+    // No discovery toasts during a run: they cover the task card's instruction
+    const cityGuide = new CityGuide(text => { if (started && gameMode !== 'free') return; toast(text); audio.cue('discovery'); }, () => vehicle);
     let taxiStorage; try { taxiStorage = localStorage; } catch { /* Optional storage. */ }
-    const taxi = new TaxiRun(taxiStorage), taxiView = new TaxiView(scene); cityGuide.taxi = taxi;
+    const taxi = new TaxiRun(taxiStorage), taxiView = new TaxiView(scene, taxiStorage); cityGuide.taxi = taxi;
     // (the street map marks the car the player left parked)
     cityGuide.onFoot = onFoot;
     // Demolition: the truck's timed run, scored by the damage it does (see
@@ -347,7 +349,7 @@ async function boot() {
       $('#scores-panel').hidden = gameMode !== 'demolition';
       $('#switch-mode span').textContent = run ? 'Free drive' : 'Taxi run';
       $('#other-run span').textContent = gameMode === 'demolition' ? 'Taxi run' : 'Demolition';
-      $('#taxi-clock-label').textContent = gameMode === 'demolition' ? 'TIME' : 'SHIFT';
+      $('#taxi-clock-label').textContent = 'TIME';
       $('#taxi-clock').setAttribute('aria-label', gameMode === 'demolition' ? 'Seconds remaining' : 'Shift seconds remaining');
       $('#reset').title = run ? 'Reset car: −5 seconds (R)' : 'Reset city (R)';
       $('#reset').setAttribute('aria-label', $('#reset').title);
@@ -709,11 +711,9 @@ async function boot() {
       },
       onSupport: supported => headsetLayout(supported && headsetBrowser()),
     });
-    // A headset's own browser shows the page as a flat window whose
-    // controllers only point, so there Enter VR leads the title and the pause
-    // screen, and targets are touch-sized. A user agent is no feature test,
-    // but nothing else tells a Quest's browser from a desktop with a headset.
-    function headsetBrowser() { return /OculusBrowser|PicoBrowser|Wolvic|\bVR Safari\b|Mobile VR/.test(navigator.userAgent); }
+    // In a headset's own browser (see headsetBrowser) the page is a flat window
+    // and the controllers only point, so Enter VR goes first on the title and
+    // pause screens and targets are touch-sized.
     function headsetLayout(on) {
       if ((document.documentElement.dataset.headset === 'true') === on) return;
       document.documentElement.dataset.headset = String(on);
@@ -912,9 +912,18 @@ async function boot() {
     graphicsToggle.addEventListener('click', () => {
       graphicsPanel.hidden = !graphicsPanel.hidden;
       graphicsToggle.setAttribute('aria-expanded', String(!graphicsPanel.hidden));
+      // (the display's rate is known by now, for the frame-rate label)
+      if (!graphicsPanel.hidden) updateGraphicsUi();
     });
     const softShading = $('#soft-shading'), graphicsStatus = $('#graphics-status');
     const pixelDensity = $('#pixel-density'), pixelDensityValue = $('#pixel-density-value');
+    const frameCapInput = $('#frame-cap'), frameCapValue = $('#frame-cap-value');
+    // What the cap slider says, Auto with what it has worked out (see Graphics.frameCap)
+    function frameCapText() {
+      const choice = graphics.capChoice, cap = graphics.cap, display = pacer.displayRate;
+      if (choice === null) return cap ? `Auto · ${Math.round(cap)} fps` : display ? `Auto · ${Math.round(display)} fps` : 'Auto';
+      return choice ? `${choice} fps` : 'Uncapped';
+    }
     function updateGraphicsUi(settings = graphics.settings) {
       for (const button of qualityButtons) button.setAttribute('aria-checked', String(button.dataset.quality === graphics.mode));
       softShading.setAttribute('aria-pressed', String(settings.ambientOcclusion));
@@ -924,6 +933,10 @@ async function boot() {
       pixelDensity.style.setProperty('--control-level', `${(densityPercent - 50) * 2}%`);
       pixelDensityValue.textContent = `${densityPercent}%${settings.customDensity ? (densityPercent === 100 ? ' · Native' : '') : ' · Preset limit'}`;
       pixelDensity.setAttribute('aria-valuetext', `${densityPercent}% of native resolution${settings.customDensity ? '' : ', capped by the preset'}`);
+      const capAt = Math.max(0, FRAME_CAPS.indexOf(graphics.capChoice));
+      frameCapInput.value = String(capAt);
+      frameCapInput.style.setProperty('--control-level', `${capAt / (FRAME_CAPS.length - 1) * 100}%`);
+      frameCapValue.textContent = frameCapText(); frameCapInput.setAttribute('aria-valuetext', frameCapText());
       // Show the drawing buffer, which is what the quality level changes: it
       // explains a softer picture.
       graphicsStatus.textContent = `${graphics.auto ? 'Auto · ' : ''}${settings.label} · ${renderer.domElement.width} × ${renderer.domElement.height} · soft shading ${settings.ambientOcclusion ? 'on' : 'off'}`;
@@ -937,6 +950,7 @@ async function boot() {
     for (const button of qualityButtons) button.addEventListener('click', () => graphics.setMode(button.dataset.quality));
     softShading.addEventListener('click', () => action('ambientOcclusion'));
     pixelDensity.addEventListener('input', () => graphics.setDensity(Number(pixelDensity.value) / 100));
+    frameCapInput.addEventListener('input', () => graphics.chooseFrameCap(FRAME_CAPS[Number(frameCapInput.value)]));
     const hud = { distance: $('#distance') };
     const weatherSelect = $('#city-weather');
     weatherSelect.value = weather.mode;
@@ -959,7 +973,8 @@ async function boot() {
       text('#city-location', district);
       text('#world-map-here', district);
       text('#weather-label', weather.state.label);
-      cityGuide.update(started && !paused && !changingJourney);
+      // (the street map's canvas is out of sight in a headset)
+      cityGuide.update(started && !paused && !changingJourney, { draw: !vr?.active });
       if (gameMode === 'demolition') demolitionView.hud(demolition, vehicle);
       else taxiView.hud(taxi, vehicle, started && gameMode === 'free');
       updateUseUi();
@@ -1030,10 +1045,20 @@ async function boot() {
         { column: 1, group: 'View', label: 'Recenter view', activate: () => action('recenterVR') },
         { column: 1, group: 'View', label: 'Comfort vignette', toggle: comfort.enabled, activate: toggleComfort },
         { column: 1, group: 'View', label: 'Graphics', value: graphics.auto ? 'Auto' : graphics.settings.label, activate: () => graphics.setMode(cycle(['auto', 'high', 'balanced', 'smooth', 'basic'], graphics.mode)) },
+        ...headsetRateRow(cycle),
         { column: 1, group: 'Sound', label: 'Sound', toggle: $('#sound').getAttribute('aria-pressed') === 'true', activate: () => action('sound') },
         { column: 1, group: 'Sound', label: 'Sound mix', value: audio.preset[0].toUpperCase() + audio.preset.slice(1), activate: () => { audio.setPreset(cycle(['balanced', 'scenic', 'night'], audio.preset)); refreshAudioMixer(); } },
         { label: 'Exit VR', footer: true, activate: () => action('exitVR') },
       ] };
+    }
+    // The headset picks its own refresh rate (see Graphics.headsetRate): Auto,
+    // then each rate it supports
+    function headsetRateRow(cycle) {
+      const session = vr.session, rates = [...(session?.supportedFrameRates ?? [])].sort((a, b) => a - b);
+      if (!rates.length) return [];
+      const now = session.frameRate ? `${Math.round(session.frameRate)} Hz` : '';
+      return [{ column: 1, group: 'View', label: 'Refresh rate', value: graphics.rateChoice === null ? (now ? `Auto · ${now}` : 'Auto') : `${graphics.rateChoice} Hz`,
+        activate: () => graphics.chooseHeadsetRate(cycle([null, ...rates], graphics.rateChoice)) }];
     }
     // The headset's HUD says what the page's HUD says: taxiView.hud() and
     // updateHud() keep the page's current whether or not it is on screen.
@@ -1102,7 +1127,7 @@ async function boot() {
           } else if (event.kind === 'goal') {
             // A goal usually completes on a payout, whose toast lands first.
             renderGoals(); setTimeout(() => { if (taxi.running && !paused) { toast(event.text, 'goal'); audio.cue('goal'); } }, 1500);
-          } else { toast(event.text, event.rating ?? (event.kind === 'missed' ? 'slow' : '')); audio.cue(event.kind, event); }
+          } else { toast(event.text, event.rating ?? event.tone ?? ''); audio.cue(event.kind, event); taxiView.pop(event, vehicle); }
         }
         // The shift's last ten seconds tick away
         const left = Math.ceil(taxi.timeLeft);
@@ -1136,6 +1161,8 @@ async function boot() {
       }
     }
     function frame(timestamp, xrFrame) {
+      // The page's frame-rate cap (see Graphics.frameCap). A headset sets its own rate.
+      if (pacer.skip(timestamp, vr.active ? null : graphics.frameCap(pacer.displayRate))) return;
       vrStatus.update(vrMenuModel());
       // (in free drive, Y gets in and out of cars)
       const freeDrive = started && gameMode === 'free';
@@ -1169,8 +1196,10 @@ async function boot() {
         world.update(vehicle.s, vehicle.u, { budgetMs: 3 }); vehicle.render(frameClock.alpha, world.origin); onFoot.render(frameClock.alpha, world.origin);
         traffic.render(frameClock.alpha, world.origin); props.render(frameClock.alpha, world.origin);
         pedestrianContacts.update(vehicle, traffic, time, props);
-        rendering.update(vehicle.car, dt, world.origin); world.animate(time, traffic.time, vr.active ? null : rendering.camera, pedestrianContacts);
-        taxiView.render(taxi, vehicle, world.origin, time, pedestrianContacts);
+        // In VR, residents are culled with the last frame's head frustum. The head
+        // turns little in a frame and each chunk's bound is about a cell across.
+        rendering.update(vehicle.car, dt, world.origin); world.animate(time, traffic.time, vr.active ? rendering.vrCamera.camera : rendering.camera, pedestrianContacts);
+        taxiView.render(taxi, vehicle, world.origin, time, pedestrianContacts, vr.active ? null : rendering.camera);
         demolitionView.render(world.origin, time, vr.active ? null : rendering.camera);
         applyWeather(dt);
       }
@@ -1188,9 +1217,9 @@ async function boot() {
       soundScene.heading = Math.atan2(cameraMatrix[2], cameraMatrix[0]);
       audio.update(vehicle.audioTelemetry, dt, false, soundScene);
       hudTime += dt; if (hudTime > .1) { updateHud(); hudTime = 0; }
-      // The desktop quality sampler targets 60 Hz and resizes a canvas, whereas
-      // the headset owns its framebuffer and refresh rate.
-      rendering.recordFrame(timestamp, !vr.active && !paused && !document.hidden && document.hasFocus() && !changingJourney);
+      // Only frames while driving say anything about performance. In a headset
+      // they're measured against its refresh rate (see Graphics.setHeadset).
+      rendering.recordFrame(timestamp, !paused && !changingJourney && (vr.active ? vr.visible && started : !document.hidden && document.hasFocus()));
       // A paused desktop canvas only redraws when invalidated. In VR, keep
       // drawing every headset frame so head tracking continues while stopped.
       const rendered = vr.active ? Boolean(xrFrame) : !document.hidden && (!paused || needsRender);

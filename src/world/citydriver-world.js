@@ -10,7 +10,7 @@ import { buildCityBuildingSteps } from './city-buildings.js';
 import { createSignMaterials, discoverySignFor, signCore } from './city-signs.js';
 import { cityItemMatrix, cityRigidFrame, cityAffinePoint, itemFrame } from './city-layout-render.js';
 import { addSurfacePolygon, faceSlabEdges } from './city-surfaces.js';
-import { buildGrassFringe, grassGeometry, MAX_LAWN_TUFTS } from './city-grass.js';
+import { buildGrassFringeSteps, grassGeometry, MAX_LAWN_TUFTS } from './city-grass.js';
 import { createWaterMaterial } from './city-water.js';
 import { Surface, setColor } from './surface.js';
 import { cityWalker, walkerFloat, WALKER_COLORS, createWalkerMaterial, createWalkerAlert, addWalkerAlert, walkerAppearance, setWalkerAppearance, setWalkerTurn, pairWalkers, offsetWalkerPose } from './city-life.js';
@@ -34,6 +34,8 @@ const residentItem = { p: [0, 0, 0], scale: [1, 1, 1], yaw: 0, roll: 0 }, watchi
 const residentFloat = {};
 // How far either side of a corner of their walk a resident turns through it (m)
 const WALKER_TURN = 1.2;
+// How far a resident can end up from their walk, shoved or knocked flying (m)
+const WALKERS_STRAY = 40;
 const tint = new THREE.Color();
 // A structure's batch key, made once for each (a key made afresh for every
 // window of every building is hashed afresh by every lookup)
@@ -56,7 +58,14 @@ const URGENT_REACH = 80;
 // out the tiles off screen instead of drawing the whole island every frame.
 const STATIC_TILE = CITY_CELL * 3;
 const pick = (items, random) => items[Math.floor(random() * items.length)];
-const cullFrustum = new THREE.Frustum(), cullMatrix = new THREE.Matrix4(), cullSphere = new THREE.Sphere(), meshSphere = new THREE.Sphere();
+const cullFrustum = new THREE.Frustum(), cullMatrix = new THREE.Matrix4(), cullSphere = new THREE.Sphere(), meshSphere = new THREE.Sphere(), walkPoint = new THREE.Vector3();
+// Chunks and the static streets never move once placed (the world is never
+// rebased), so the renderer's per-frame matrix walk skips them unless placing
+// them flagged an update. That's hundreds of meshes a frame, mostly in skyline
+// chunks hidden by fog.
+function settledMatrixWorld(force) {
+  if (force || this.matrixWorldNeedsUpdate) THREE.Object3D.prototype.updateMatrixWorld.call(this, force);
+}
 // A sphere round every mesh of a finished chunk, in the chunk's own frame;
 // null if one of them is never culled
 function chunkBounds(group) {
@@ -71,9 +80,14 @@ function chunkBounds(group) {
 
 // How much of its own colour a sign gives off at full night
 const SIGN_GLOW = .85;
-function batchFlags(key, material) {
+// Window panes never cast, they lie flat on their walls. In a skyline chunk only
+// buildings cast. It's at least a cell from the car, and a tree's shadow (30 m at
+// the lowest sun) can't reach the area the sun's map covers (140 m at most),
+// while a tower's evening shadow can.
+function batchFlags(key, material, distant = false) {
   const flags = {
-    castShadow: !key.startsWith('surface-') && !key.startsWith('public-water') && !['road', 'water', 'lit', 'signal-lens', 'detail-clock', 'glass', 'grass-fringe'].includes(key),
+    castShadow: !key.startsWith('surface-') && !key.startsWith('public-water') && !['road', 'water', 'lit', 'signal-lens', 'detail-clock', 'glass', 'grass-fringe', 'distant-glass', 'distant-lit'].includes(key)
+      && !(distant && key.startsWith('tree-')),
     receiveShadow: !['lit', 'signal-lens', 'detail-clock'].includes(key), ambientOcclusion: true,
   };
   // (signs take the shade of what stands round them, but cast none, and
@@ -226,12 +240,12 @@ export function* blockBatches(group) {
     }
   }
 }
-function* renderBatchSteps(group, batches, east = 0, start = 0) {
+function* renderBatchSteps(group, batches, east = 0, start = 0, distant = false) {
   const groups = new Map();
   for (const [batchKey, batch] of batches) {
     const key = batch.structure ? batchKey.slice('structure-'.length) : batchKey;
     if (!batch.items.length || !mergeable(key, batch)) continue;
-    const flags = batchFlags(key, batch.material);
+    const flags = batchFlags(key, batch.material, distant);
     const id = [batch.material.uuid, batch.structure, flags.castShadow, flags.receiveShadow, flags.ambientOcclusion].join();
     if (!groups.has(id)) groups.set(id, { flags, structure: batch.structure, keys: [], sizes: new Map(), vertices: 0 });
     const group = groups.get(id), vertices = batch.items.length * batch.geometry.attributes.position.count;
@@ -268,7 +282,7 @@ function* renderBatchSteps(group, batches, east = 0, start = 0) {
       if (item.signTile !== undefined) mesh.setColorAt(i, tint.setRGB(...item.signTile));
       if (key === 'residents') setWalkerAppearance(mesh, i, item.appearance);
     }
-    const flags = batchFlags(key, material);
+    const flags = batchFlags(key, material, distant);
     finishBatchMesh(mesh, flags, structure);
     if (flags.castShadow) {
       const trimFrom = items === built ? -1 : items.findIndex(facadeTrim);
@@ -340,7 +354,7 @@ export class CityChunk {
     this.world = world; this.ix = ix; this.iz = iz; this.start = iz * CITY_CELL; this.east = ix * CITY_CELL;
     this.index = `${ix},${iz}`; this.materials = world.materials; this.distant = distant;
     this.plan = { seed: Math.floor(randomAt(ix, iz + 7102, CITY.seed) * 0xffffffff) >>> 0, kind: 'blocks', ix, iz };
-    this.group = new THREE.Group(); this.group.name = `citydriver-block-${this.index}`;
+    this.group = new THREE.Group(); this.group.name = `citydriver-block-${this.index}`; this.group.updateMatrixWorld = settledMatrixWorld;
     this.features = { colliders: [], bridges: [], buildings: [], discoveries: [], medians: [], junctions: [], signals: [], lamps: [] };
     this.batches = new Map(); this.bodies = new Surface();
     this.lots = world.lotsByChunk.get(this.index) ?? [];
@@ -360,7 +374,7 @@ export class CityChunk {
     yield* this.furnitureSteps(); yield;
     this.buildLife(); yield;
     this.mapFeatures(); yield;
-    buildGrassFringe(this); yield;
+    yield* buildGrassFringeSteps(this); yield;
     yield* this.finishSteps();
     this.surfacePoints = null; this.surfaceLayers = null;
   }
@@ -741,7 +755,7 @@ export class CityChunk {
     });
     this.features.lamps = [...lights('lamp', new THREE.Vector3(-1.75, 7.36, 0), 7.36), ...lights('lantern', new THREE.Vector3(0, LANTERN_HEIGHT, 0), LANTERN_HEIGHT)];
     // The cell's building bodies are one flat-shaded mesh, with the edges of its thin paving
-    faceSlabEdges(this);
+    faceSlabEdges(this); yield;
     if (!this.bodies.empty) {
       const mesh = new THREE.Mesh(this.bodies.build(), this.materials['merged-solid']);
       mesh.name = 'citydriver-bodies'; mesh.userData.bodies = true; mesh.dispose = () => mesh.geometry.dispose();
@@ -749,13 +763,21 @@ export class CityChunk {
     }
     this.bodies = null;
     yield;
-    yield* renderBatchSteps(this.group, this.batches, this.east, this.start);
+    yield* renderBatchSteps(this.group, this.batches, this.east, this.start, this.distant);
     this.signalMesh = this.group.getObjectByName('citydriver-signal-lens');
     this.peopleMesh = this.group.getObjectByName('citydriver-residents');
     if (this.peopleMesh) {
       this.peopleMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      // Their initial positions do not bound the full walk around the block.
-      this.peopleMesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(CITY_CELL / 2, PAVEMENT_LEVEL + 1, -CITY_CELL / 2), CITY_CELL * 1.3);
+      // Their initial positions don't bound the walk around the block, so bound
+      // the loops they walk, with room for anyone shoved or knocked flying. The old
+      // sphere round the whole cell and its neighbours kept every chunk's residents
+      // drawn and animated, and the chunk itself couldn't be culled.
+      const walks = new THREE.Box3();
+      for (const loop of new Set(this.walkers.map(walker => walker.loop))) {
+        for (const p of loop.points) walks.expandByPoint(walkPoint.set(p.x - this.east, PAVEMENT_LEVEL + 1, this.start - p.y));
+      }
+      this.peopleMesh.boundingSphere = walks.getBoundingSphere(new THREE.Sphere());
+      this.peopleMesh.boundingSphere.radius += WALKERS_STRAY;
       addWalkerAlert(this.peopleMesh, this.world.peopleAlert);
     }
     this.group.matrixAutoUpdate = false;
@@ -808,9 +830,9 @@ export class CitydriverWorld {
     this.animationFrustum = new THREE.Frustum(); this.animationMatrix = new THREE.Matrix4(); this.animationSphere = new THREE.Sphere();
     this.prepareLots(); this.bridges = findBridges(); this.placeFurniture();
     this.harbour = new HarbourBoats(scene, this.materials);
-    this.staticGroup = new THREE.Group(); this.staticGroup.name = 'citydriver-static'; this.staticGroup.matrixAutoUpdate = false;
+    this.staticGroup = new THREE.Group(); this.staticGroup.name = 'citydriver-static'; this.staticGroup.matrixAutoUpdate = false; this.staticGroup.updateMatrixWorld = settledMatrixWorld;
     scene.add(this.staticGroup);
-    this.buildStatic();
+    this.buildStatic(); this.staticGroup.updateMatrix();
     this.distantGroup = new THREE.Group(); this.distantGroup.name = 'citydriver-distant-city'; this.distantGroup.matrixAutoUpdate = false;
     scene.add(this.distantGroup);
     this.distant = new Map(); this.distantPending = [];
@@ -1038,8 +1060,8 @@ export class CitydriverWorld {
   // hidden only when the sphere round all its meshes is outside both
   // frustums, so no mesh the renderer would have drawn is left out.
   cull(camera, shadow = null) {
-    // (a headset's pair of eyes is left to the renderer)
-    const view = camera && !camera.isArrayCamera
+    // (a headset camera carries one frustum round both eyes, which three culls with too)
+    const view = camera
       ? cullFrustum.setFromProjectionMatrix(cullMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse), THREE.WebGLCoordinateSystem, camera.reversedDepth)
       : null;
     const seen = chunk => {

@@ -2,7 +2,7 @@
 
 Sound is off at first. Turn it on from the pause menu. The game remembers the setting for next time. The title screen is always silent. Sound starts when you start a taxi run or free drive.
 
-**Audio settings** has volume sliders for master, engine, tires/wind, environment, traffic and game cues. There are three presets: Balanced, Scenic and Night drive. **Soften loud sounds** adds compression. Settings are saved locally.
+The Audio settings panel has volume sliders for master, engine, tires and wind, environment, traffic and game cues. There are three presets: Balanced, Scenic and Night drive. The Soften loud sounds switch adds compression. Settings are saved locally.
 
 All sounds are generated with the Web Audio API. There are no audio files.
 

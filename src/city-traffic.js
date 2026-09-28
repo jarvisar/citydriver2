@@ -7,7 +7,7 @@ import { collisionImpulse, contactPoint, footprintMass, heft, rock, rockFrom, sk
 import { sceneryContacts } from './collision.js';
 import { carProfile } from './car-profile.js';
 import { JunctionTraffic, approachControl } from './city-junctions.js';
-import { turnPath, approachSpeed, wayOn, bendSpeed } from './world/lane-paths.js';
+import { turnPath, approachSpeed, wayOn, bendSpeed, hasTurnPath, turnPathSteps, bendSpeedSteps, isLink, HAIRPIN } from './world/lane-paths.js';
 const up = new THREE.Vector3(0, 1, 0), tilt = new THREE.Euler(0, 0, 0, 'YXZ');
 const SPAWN_CLEARANCE = 150, RECYCLE_BEHIND = 190, LOCAL_RADIUS = 380;
 // Following: braking for what is in the way, and the room left behind it
@@ -51,7 +51,49 @@ const PIN = .1;
 // a longer wait: the horn first.
 const SWERVE = .45, THINK = .4, SETTLE = 3, MERGE_BY = 12, MISS = 4;
 const AROUND_WAIT = 1.2, AROUND_WAIT_PLAYER = 3.6, AROUND_SPEED = 4;
+// Working out turns ahead (see warm): up to WARM_SLICE ms and WARM_MOST pieces a step
+const WARM_SLICE = .1, WARM_MOST = 64;
 const wrap = angle => Math.atan2(Math.sin(angle), Math.cos(angle));
+// Scratch reused every step, so the traffic leaves next to nothing for the
+// collector (see pose, following, pathAhead and steer)
+const HERE = { s: 0, u: 0, heading: 0, tx: 0, ty: 0, segment: 0 }, BOX = new Float64Array(4), DISCS = new Float64Array(10), NONE = [];
+const SWAY = { lane: 0, slope: 0 }, TURNING = [0, 0], STEER = { lane: 0, slope: 0 }, STEERING = [0, 0];
+let PATH = new Float64Array(3 * 48);
+// Math.hypot(dx, dy) < clear, answered from the squares. Within a hair of the
+// limit hypot itself decides, so the answer is always the same as before.
+const within = (dx, dy, clear) => {
+  if (!(clear > 0)) return Math.hypot(dx, dy) < clear;
+  const d2 = dx * dx + dy * dy, c2 = clear * clear;
+  return d2 < c2 * (1 - 1e-9) || (!(d2 > c2 * (1 + 1e-9)) && Math.hypot(dx, dy) < clear);
+};
+// Whether any of the first n / 2 disc centres comes within `clear` (and a
+// hair) of the box round the path ahead (BOX). If none does, none can be
+// within `clear` of any point on the path.
+const nearBox = (discs, n, clear) => {
+  const reach = clear + 1e-6 + (Math.abs(BOX[0]) + Math.abs(BOX[1]) + Math.abs(BOX[2]) + Math.abs(BOX[3])) * 1e-9;
+  if (!(reach > 0)) return true;
+  for (let j = 0; j < n; j += 2) {
+    const u = discs[j], s = discs[j + 1];
+    if (!(u < BOX[0] - reach || u > BOX[1] + reach || s < BOX[2] - reach || s > BOX[3] + reach)) return true;
+  }
+  return false;
+};
+// Whether a driver's claim on a junction (see JunctionTraffic) shares a junction with another's
+const meets = (claim, theirs) => {
+  if (!claim) return false;
+  const nodes = claim.nodes;
+  for (let k = 0; k < nodes.length; k++) if (theirs.nodes.includes(nodes[k])) return true;
+  return false;
+};
+// Whoever has waited longest at a stop line first (see update)
+const byWait = (a, b) => (b.stopWait ?? 0) - (a.stopWait ?? 0) || a.index - b.index;
+// Every field a traffic car gets while it drives, declared up front as
+// undefined. Added a few at a time by Object.assign in spawn and settle, they
+// pushed V8 into dictionary properties, and every read in the step was a
+// hash lookup. That made the whole update about twice as slow.
+const DRIVER = Object.fromEntries(['pending', 'leaving', 'claim', 'edge', 'direction', 'along', 'lane', 'next', 'turn', 'after', 'stopWait', 'loose', 'recover', 'rock',
+  'dazed', 'shoved', 'bumped', 'tries', 'stranded', 'laneTo', 'laneOn', 'slope', 'around', 'merging', 'mergeWait', 'stood', 'laneTime', 'pace', 'cruiseSpeed', 'speed',
+  's', 'u', 'laneHeading', 'heading', 'held', 'waited', 'blocker', 'think', 'targetSpeed', 'moved', 'dropBack'].map(key => [key, undefined]));
 // The lanes each way, as offsets right of the centre line: the kerb lane every
 // turn starts and ends in (the profile's), and on a boulevard or the parkway
 // the lane beside the median as well
@@ -62,9 +104,10 @@ export function lanesOf(profile) {
 }
 // How sharply a car at `speed` may steer across: the most it moves across per
 // metre on, and how much that may change per metre
-function swerve(speed) {
+function swerve(speed, out = [0, 0]) {
   const v = Math.max(1, speed);
-  return [Math.min(SWERVE, 1.8 / v), Math.min(.15, .6 / v)];
+  out[0] = Math.min(SWERVE, 1.8 / v); out[1] = Math.min(.15, .6 / v);
+  return out;
 }
 // A metre-by-metre step of a lane change (`state`: lane and slope), toward
 // lane `to` over `dm` metres on: steering in as far as it may, and out again
@@ -109,7 +152,7 @@ export class CityTraffic {
       const model = this.models.create(index % TRAFFIC_MODELS.length, TRAFFIC_COLORS[index % TRAFFIC_COLORS.length]);
       this.group.add(model.car);
       // (its shape, for loose pieces to meet: see carProfile)
-      return { ...model, index, generation: 0, profile: this.profileOf(model), position: new THREE.Vector3(), previousPosition: new THREE.Vector3(), quaternion: new THREE.Quaternion(), previousQuaternion: new THREE.Quaternion() };
+      return { ...model, index, generation: 0, profile: this.profileOf(model), position: new THREE.Vector3(), previousPosition: new THREE.Vector3(), quaternion: new THREE.Quaternion(), previousQuaternion: new THREE.Quaternion(), ...DRIVER };
     });
     // Stand-ins for parked cars knocked loose (see wake)
     this.woken = []; this.standInLimit = PARKED_MOST;
@@ -124,6 +167,8 @@ export class CityTraffic {
     // Told of each blow a car takes from the player, another car or the
     // scenery it was sent into: `(car, closing)`, closing in m/s (see DemolitionRun)
     this.onDamage = null;
+    // What warm has done or is doing (see warm)
+    this.warming = null; this.warmableEnds = new Map(); this.warmBent = new Set(); this.warmMoved = new WeakSet(); this.warmPlanned = new WeakMap();
     this.reset(route, s, journey, u);
   }
   // A model's shape along its length (see carProfile), read once for each
@@ -136,7 +181,7 @@ export class CityTraffic {
   addStandIn(model) {
     const made = this.models.create(model, TRAFFIC_COLORS[0]);
     made.car.visible = false; this.group.add(made.car);
-    const car = { ...made, index: 100 + this.woken.length, profile: this.profileOf(made), parked: null, loose: null, rock: null, s: 0, u: 0, heading: 0, position: new THREE.Vector3(), previousPosition: new THREE.Vector3(), quaternion: new THREE.Quaternion(), previousQuaternion: new THREE.Quaternion() };
+    const car = { ...made, index: 100 + this.woken.length, profile: this.profileOf(made), parked: null, loose: null, rock: null, s: 0, u: 0, heading: 0, position: new THREE.Vector3(), previousPosition: new THREE.Vector3(), quaternion: new THREE.Quaternion(), previousQuaternion: new THREE.Quaternion(), generation: undefined, bay: undefined, dazed: undefined, moved: undefined };
     this.woken.push(car);
     return car;
   }
@@ -158,12 +203,13 @@ export class CityTraffic {
     this.junctions.release(car);
     const r = salt => this.random(car, salt);
     const centreS = s + this.travelS * this.lookAhead, centreU = u + this.travelU * this.lookAhead;
-    // Only the streets around the car are worth trying
-    const edges = this.nav.edges.filter(edge => {
-      if (edge.kind === 'path' || edge.length < 30) return false;
-      const middle = edge.points[Math.floor(edge.points.length / 2)];
-      return Math.hypot(middle.y - centreS, middle.x - centreU) <= LOCAL_RADIUS;
-    });
+    // Only the streets around the car are worth trying. (By the squares, with
+    // hypot deciding within a hair of the radius, so the list is as before.)
+    const { edges: streets, middles } = this.spawnable(), edges = [], r2 = LOCAL_RADIUS * LOCAL_RADIUS;
+    for (let k = 0; k < streets.length; k++) {
+      const ds = middles[k * 2 + 1] - centreS, du = middles[k * 2] - centreU, d2 = ds * ds + du * du;
+      if (d2 < r2 * (1 - 1e-9) || (!(d2 > r2 * (1 + 1e-9)) && Math.hypot(ds, du) <= LOCAL_RADIUS)) edges.push(streets[k]);
+    }
     for (let attempt = 0; attempt < 60 && edges.length; attempt++) {
       const edge = edges[Math.floor(r(10 + attempt * 3) * edges.length)];
       const direction = r(11 + attempt * 3) < .5 ? 1 : -1, along = 12 + r(12 + attempt * 3) * (edge.length - 24);
@@ -200,11 +246,20 @@ export class CityTraffic {
     if (!car.edge) car.car.visible = false;
     return false;
   }
+  // The streets a car may be put on (no paths, none too short) and their middle points, gathered once
+  spawnable() {
+    if (!this.streets) {
+      const edges = this.nav.edges.filter(edge => !(edge.kind === 'path' || edge.length < 30)), middles = new Float64Array(edges.length * 2);
+      edges.forEach((edge, k) => { const middle = edge.points[Math.floor(edge.points.length / 2)]; middles[k * 2] = middle.x; middles[k * 2 + 1] = middle.y; });
+      this.streets = { edges, middles };
+    }
+    return this.streets;
+  }
   pose(car) {
     // On its rails, unless a blow has knocked it loose or it is steering back
     // (turned a little across it while changing lanes)
     if (car.edge && !car.loose && !car.recover) {
-      const pose = this.ahead(car, 0) ?? this.nav.pose(car.edge, car.along, car.direction, car.lane);
+      const pose = this.aheadInto(HERE, car, 0) ? HERE : this.nav.poseInto(HERE, car.edge, car.along, car.direction, car.lane);
       car.s = pose.s; car.u = pose.u; car.laneHeading = pose.heading; car.heading = pose.heading + Math.atan(car.laneOn === car.edge ? car.slope ?? 0 : 0);
     }
     const p = this.route.position(car.s, car.u);
@@ -538,15 +593,19 @@ export class CityTraffic {
   // The way on from the end of any edge, as this driver would choose it: no
   // paths unless already on one, and straight on likelier
   plan(car, edge, direction) {
-    const roll = this.random(car, 30 + edge.id);
     // The driver's choice, unless no car could make that turn and another way on is open
     const pick = options => {
-      const preferred = Math.abs(options[0].turn) < .5 && roll < .55 ? options[0] : options[Math.floor(roll * options.length)];
+      const preferred = this.preferred(car, edge, options);
       if (options.length < 2 || preferred.via || turnPath(this.nav, edge, direction, preferred).radius >= 3) return preferred;
       return options.find(option => !option.via && turnPath(this.nav, edge, direction, option).radius >= 3) ?? preferred;
     };
     const next = wayOn(this.nav, edge, direction, pick, option => option.edge.kind !== 'path' || edge.kind === 'path');
     return { edge, direction, next, turn: turnPath(this.nav, edge, direction, next) };
+  }
+  // The way on this driver tries first among `options` (see plan)
+  preferred(car, edge, options) {
+    const roll = this.random(car, 30 + edge.id);
+    return Math.abs(options[0].turn) < .5 && roll < .55 ? options[0] : options[Math.floor(roll * options.length)];
   }
   // The most a car may carry now to take the turn after next, when the street
   // between is too short to slow down on
@@ -586,6 +645,26 @@ export class CityTraffic {
     }
     return x > car.edge.length ? null : this.nav.pose(car.edge, x, car.direction, lane);
   }
+  // ahead without allocating: into `out` (s, u, and heading unless `heading`
+  // is false), and false where ahead gives null
+  aheadInto(out, car, d, lane = car.lane, heading = true) {
+    const x = car.along + d, turn = car.turn, shift = lane - car.edge.profile.lane;
+    if (turn && x > turn.start) {
+      if (x <= turn.start + turn.length) {
+        // (moved over from the heading, as aside does)
+        turn.place(x - turn.start, out, false, heading || Boolean(shift));
+        if (shift) { const h = out.heading; out.s -= Math.sin(h) * shift; out.u += Math.cos(h) * shift; }
+        return true;
+      }
+      const beyond = turn.end + x - turn.start - turn.length;
+      if (beyond > car.next.edge.length) return false;
+      this.nav.poseInto(out, car.next.edge, beyond, car.next.direction, car.next.edge.profile.lane + shift, heading);
+      return true;
+    }
+    if (x > car.edge.length) return false;
+    this.nav.poseInto(out, car.edge, x, car.direction, lane, heading);
+    return true;
+  }
   // Settled in a lane, not changing
   settle(car, lane) { Object.assign(car, { lane, laneTo: lane, laneOn: car.edge, slope: 0, around: null, merging: false, mergeWait: 0, stood: 0, laneTime: 0 }); }
   // Steering for another lane of the street it is on
@@ -598,8 +677,9 @@ export class CityTraffic {
     if (car.laneOn !== car.edge) { car.slope = 0; return; }
     const to = this.aim(car);
     if (to === car.lane && !car.slope) return;
-    const state = { lane: car.lane, slope: car.slope ?? 0 };
-    sway(state, to, dm, swerve(car.around ? Math.max(car.speed, AROUND_SPEED) : car.speed));
+    const state = STEER;
+    state.lane = car.lane; state.slope = car.slope ?? 0;
+    sway(state, to, dm, swerve(car.around ? Math.max(car.speed, AROUND_SPEED) : car.speed, STEERING));
     car.lane = state.lane; car.slope = state.slope;
   }
   // Where on its street a car must be in the lane for its turn: short of the
@@ -642,22 +722,11 @@ export class CityTraffic {
   // on paths that do not meet.
   following(car, player) {
     const reach = Math.min(70, car.speed * car.speed / (2 * FOLLOW_DECEL) + 18);
-    // (the path ahead is walked only once something is near enough to be on it)
-    let path = null, crossing = null;
-    let limit = Infinity, blocker = null;
-    // (through any lane change it has begun, as it will steer it)
-    const ahead = () => {
-      if (path) return path;
-      path = [];
-      const to = this.aim(car), state = { lane: car.lane, slope: car.laneOn === car.edge ? car.slope ?? 0 : 0 }, turning = swerve(car.around ? Math.max(car.speed, AROUND_SPEED) : car.speed);
-      for (let d = 1.5; d <= reach; d += 1.5) {
-        sway(state, to, 1.5, turning);
-        const p = this.ahead(car, d, state.lane);
-        if (!p) break;
-        path.push(d, p.u, p.s);
-      }
-      return path;
-    };
+    // (the path ahead, into PATH and BOX, is walked only once something is
+    // near enough to be on it)
+    let points = -1, limit = Infinity, blocker = null;
+    // (whether it holds a claim on a junction, see passes)
+    const crossing = (car.claim?.nodes ?? NONE).length + (car.leaving?.nodes ?? NONE).length > 0;
     // (parked cars knocked loose into the road are in the way too, and so is
     // the player's own car wherever they left it)
     const count = this.vehicles.length, woken = count + this.woken.length, total = woken + this.playerCars.length;
@@ -665,9 +734,8 @@ export class CityTraffic {
       const other = i === total ? player : i < count ? this.vehicles[i] : i < woken ? this.woken[i - count] : this.playerCars[i - woken];
       if (other === car || (i < woken && !other.edge && !other.parked) || !Number.isFinite(other.heading) || other.airborne) continue;
       if (Math.abs(other.s - car.s) > reach + 6 || Math.abs(other.u - car.u) > reach + 6) continue;
-      crossing ??= new Set([...(car.claim?.nodes ?? []), ...(car.leaving?.nodes ?? [])]);
-      if (other !== player && other.edge && crossing.size && this.passes(car, other, crossing)) continue;
-      ahead();
+      if (other !== player && other.edge && crossing && this.passes(car, other)) continue;
+      if (points < 0) points = this.pathAhead(car, reach);
       const length = other.spec?.length ?? 4.4, reachAlong = length / 2 * .62, clear = (car.spec.width + (other.spec?.width ?? 2)) / 2 + .2;
       // A car by the median that must get over for its turn, ahead in the
       // lane beside, is let in, if this one can drop back for it gently
@@ -675,22 +743,25 @@ export class CityTraffic {
         const room = other.along - car.along - (car.spec.length + length) / 2 - FOLLOW_GAP, allowed = Math.sqrt(2 * LET_IN * Math.max(0, room));
         if (room > 0 && allowed < limit && allowed > car.speed - 1) { limit = allowed; blocker = other; }
       }
-      const hx = Math.sin(other.heading) * reachAlong, hy = Math.cos(other.heading) * reachAlong;
-      const discs = [other.u, other.s, other.u + hx, other.s + hy, other.u - hx, other.s - hy];
+      const hx = Math.sin(other.heading) * reachAlong, hy = Math.cos(other.heading) * reachAlong, discs = DISCS;
+      discs[0] = other.u; discs[1] = other.s; discs[2] = other.u + hx; discs[3] = other.s + hy; discs[4] = other.u - hx; discs[5] = other.s - hy;
+      let n = 6;
       // The player's car, crossing or coming the other way, also where it will be in the next second
       const speed = other === player ? player.speed ?? 0 : 0, dx = Math.sin(other.heading), dy = Math.cos(other.heading);
       if (Math.abs(speed) > 3 && Math.sign(speed) * (dx * Math.sin(car.heading) + dy * Math.cos(car.heading)) < .7) {
-        for (const t of [.5, 1]) discs.push(other.u + dx * speed * t, other.s + dy * speed * t);
+        discs[6] = other.u + dx * speed * .5; discs[7] = other.s + dy * speed * .5; discs[8] = other.u + dx * speed * 1; discs[9] = other.s + dy * speed * 1; n = 10;
       }
-      for (let k = 0; k < path.length; k += 3) {
-        const px = path[k + 1], py = path[k + 2];
+      // (nowhere near the path's box, it cannot be on it)
+      if (!nearBox(discs, n, clear)) continue;
+      for (let k = 0; k < points; k += 3) {
+        const px = PATH[k + 1], py = PATH[k + 2];
         let hit = false;
-        for (let j = 0; j < discs.length && !hit; j += 2) hit = Math.hypot(px - discs[j], py - discs[j + 1]) < clear;
+        for (let j = 0; j < n && !hit; j += 2) hit = within(px - discs[j], py - discs[j + 1], clear);
         if (hit) {
           // (and something standing in the road is stopped for further back, room to pull out round it)
           const side = !car.around && this.stuck(other, player) ? this.passSides(car, other).sides[0] : undefined;
           const gap = side === undefined ? FOLLOW_GAP : Math.max(FOLLOW_GAP, runUp(side - car.lane) - car.spec.length / 2 + 1);
-          const allowed = Math.sqrt(2 * FOLLOW_DECEL * Math.max(0, path[k] - car.spec.length / 2 - gap));
+          const allowed = Math.sqrt(2 * FOLLOW_DECEL * Math.max(0, PATH[k] - car.spec.length / 2 - gap));
           if (allowed < limit) { limit = allowed; blocker = other; }
           break;
         }
@@ -701,13 +772,14 @@ export class CityTraffic {
     // (see update), the driver edges on through it
     for (const piece of this.lying) {
       if (Math.abs(piece.s - car.s) > reach + piece.reach || Math.abs(piece.u - car.u) > reach + piece.reach) continue;
-      const path = ahead(), discs = piece.discs, clear = car.spec.width / 2 + LYING_CLEAR;
-      for (let k = 0; k < path.length; k += 3) {
-        const px = path[k + 1], py = path[k + 2];
+      if (points < 0) points = this.pathAhead(car, reach);
+      const discs = piece.discs, clear = car.spec.width / 2 + LYING_CLEAR;
+      for (let k = 0; k < points; k += 3) {
+        const px = PATH[k + 1], py = PATH[k + 2];
         let hit = false;
-        for (let j = 0; j < piece.count * 2 && !hit; j += 2) hit = Math.hypot(px - discs[j], py - discs[j + 1]) < clear;
+        for (let j = 0; j < piece.count * 2 && !hit; j += 2) hit = within(px - discs[j], py - discs[j + 1], clear);
         if (!hit) continue;
-        let allowed = Math.sqrt(2 * FOLLOW_DECEL * Math.max(0, path[k] - car.spec.length / 2 - FOLLOW_GAP));
+        let allowed = Math.sqrt(2 * FOLLOW_DECEL * Math.max(0, PATH[k] - car.spec.length / 2 - FOLLOW_GAP));
         if (!piece.person && piece.mass <= EDGE_MOST && car.waited > EDGE_AFTER) allowed = Math.max(allowed, EDGE);
         if (allowed < limit) { limit = allowed; blocker = piece; }
         break;
@@ -717,20 +789,44 @@ export class CityTraffic {
     this.blocker = blocker;
     return limit;
   }
+  // The path ahead of a car every 1.5 m out to `reach`, through any lane
+  // change it has begun, as it will steer it. Written into PATH as distance,
+  // u, s, with the box round it in BOX. Returns how many numbers it wrote.
+  pathAhead(car, reach) {
+    const to = this.aim(car), state = SWAY;
+    state.lane = car.lane; state.slope = car.laneOn === car.edge ? car.slope ?? 0 : 0;
+    swerve(car.around ? Math.max(car.speed, AROUND_SPEED) : car.speed, TURNING);
+    let n = 0, minU = Infinity, maxU = -Infinity, minS = Infinity, maxS = -Infinity;
+    for (let d = 1.5; d <= reach; d += 1.5) {
+      sway(state, to, 1.5, TURNING);
+      if (!this.aheadInto(HERE, car, d, state.lane, false)) break;
+      if (n + 3 > PATH.length) { const longer = new Float64Array(PATH.length * 2); longer.set(PATH); PATH = longer; }
+      const u = HERE.u, s = HERE.s;
+      PATH[n] = d; PATH[n + 1] = u; PATH[n + 2] = s; n += 3;
+      if (u < minU) minU = u;
+      if (u > maxU) maxU = u;
+      if (s < minS) minS = s;
+      if (s > maxS) maxS = s;
+    }
+    BOX[0] = minU; BOX[1] = maxU; BOX[2] = minS; BOX[3] = maxS;
+    return n;
+  }
   // Whether `other` can be left out of `car`'s way while `car` crosses the
-  // junctions `crossing`: waiting at another line there, or crossing on a path
-  // that does not meet this one. A car ahead in its own lane is always in its way.
-  passes(car, other, crossing) {
+  // junctions it holds (see following): waiting at another line there, or
+  // crossing on a path that does not meet this one. A car ahead in its own
+  // lane is always in its way.
+  passes(car, other) {
     if (other.edge === car.edge && other.direction === car.direction) return false;
     // Crossing the same junction: compare the two ways through it
-    for (const theirs of [other.claim, other.leaving]) {
-      const mine = theirs && [car.claim, car.leaving].find(claim => claim?.nodes.some(node => theirs.nodes.includes(node)));
+    for (let k = 0; k < 2; k++) {
+      const theirs = k ? other.leaving : other.claim;
+      const mine = theirs && (meets(car.claim, theirs) ? car.claim : meets(car.leaving, theirs) ? car.leaving : undefined);
       if (!mine) continue;
       return mine.movement.edge !== theirs.movement.edge && !(mine.movement.out === theirs.movement.out && mine.movement.outDirection === theirs.movement.outDirection)
         && !this.junctions.conflict(mine.movement, theirs.movement);
     }
     const control = approachControl(this.nav, other.edge, other.direction);
-    return Boolean(control?.kind && crossing.has(control.node) && other.speed < 1 && other.edge.length - other.along > control.stopDistance - 1);
+    return Boolean(control?.kind && ((car.claim?.nodes ?? NONE).includes(control.node) || (car.leaving?.nodes ?? NONE).includes(control.node)) && other.speed < 1 && other.edge.length - other.along > control.stopDistance - 1);
   }
   // Which lane a driver wants, a few times a second. Round something left
   // standing in its way, once it has waited behind it a moment, and back once
@@ -889,7 +985,11 @@ export class CityTraffic {
     this.lastS = player.s; this.lastU = player.u; this.time += dt;
     this.junctions.tick(this.time);
     // Whoever has waited longest at a stop line asks for the junction first
-    const order = this.vehicles.slice().sort((a, b) => (b.stopWait ?? 0) - (a.stopWait ?? 0) || a.index - b.index);
+    // (sorted from the fleet's own order each step, into one array)
+    const order = this.order ??= [];
+    order.length = 0;
+    for (const car of this.vehicles) order.push(car);
+    order.sort(byWait);
     for (const car of order) {
       if (!car.edge && !this.spawn(car, player.s, player.u)) { car.targetSpeed = 0; continue; }
       const ds = car.s - player.s, du = car.u - player.u;
@@ -967,7 +1067,101 @@ export class CityTraffic {
       this.pose(car);
       this.collidePlayer(car, player);
     }
-    for (const list of [this.vehicles, this.woken]) for (const car of list) if ((car.edge || car.parked) && (car.loose || car.recover || car.bumped > 0)) this.knockOn(car);
+    for (const car of this.vehicles) if ((car.edge || car.parked) && (car.loose || car.recover || car.bumped > 0)) this.knockOn(car);
+    for (const car of this.woken) if ((car.edge || car.parked) && (car.loose || car.recover || car.bumped > 0)) this.knockOn(car);
+    this.warm();
+  }
+  // Turn paths, bend speeds and junction movements are worked out the first
+  // time a driver needs them, then kept. A car joining a street nobody had
+  // driven needed them all in one step: a turn path is about .2 ms on a
+  // desktop, several times that on a phone. This works out what each car will
+  // need at its next street ahead of time, a little each step (generators, a
+  // candidate curve or a few metres of one at a time). Each is kept by what it
+  // depends on alone, so doing it early changes nothing but when the time is
+  // spent, and the clock only decides how much gets done in a step. Streets a
+  // car may spawn on are not warmed: doing every street round the player made
+  // six times the turn paths, and keeping them all made the collector slower.
+  warm() {
+    const until = performance.now() + WARM_SLICE;
+    for (let n = 0; n < WARM_MOST; n++) {
+      this.warming ??= this.warmNext();
+      if (!this.warming) return;
+      if (this.warming.next().done) this.warming = null;
+      if (performance.now() >= until) return;
+    }
+  }
+  // The next job for what a car will need at its next street, if any
+  warmNext() {
+    for (const car of this.vehicles) {
+      const next = car.next;
+      if (!car.edge || !next || !car.turn || next.edge === car.edge) continue;
+      const job = this.warmBends(next.edge) ?? this.warmMovement(car.edge, car.direction, next, car.turn);
+      if (job) return job;
+      // (and the junction after, where limit claims both)
+      const after = car.after;
+      if (after?.edge === next.edge && after.direction === next.direction && after.next && after.turn && after.next.edge !== after.edge) {
+        const later = this.warmMovement(next.edge, next.direction, after.next, after.turn);
+        if (later) return later;
+      }
+      const turn = this.warmTurn(car, next);
+      if (turn) return turn;
+    }
+    return null;
+  }
+  // An edge's bends in the lanes its traffic keeps to, once
+  warmBends(edge) {
+    if (this.warmBent.has(edge)) return null;
+    this.warmBent.add(edge);
+    return bendSpeedSteps(this.nav, edge, lanesOf(edge.profile));
+  }
+  // A driver's way through a controlled junction, as JunctionTraffic.limit asks for it, once per turn
+  warmMovement(edge, direction, next, turn) {
+    if (this.warmMoved.has(turn)) return null;
+    this.warmMoved.add(turn);
+    if (!this.warmable(edge, direction) || !approachControl(this.nav, edge, direction)?.kind) return null;
+    const junctions = this.junctions;
+    return (function* () { junctions.movement(edge, direction, next, turn); })();
+  }
+  // The turn plan asks for first when the car joins this street: its
+  // preferred way on from the far end, of those wayOn offers. Only that one,
+  // since every turn path worked out is kept for good.
+  warmTurn(car, next) {
+    if (this.warmPlanned.get(car) === next) return null;
+    this.warmPlanned.set(car, next);
+    const { edge, direction } = next;
+    if (!this.warmable(edge, direction)) return null;
+    const nav = this.nav, all = nav.choices(edge, direction), usable = all.filter(option => Math.abs(option.turn) < HAIRPIN && (option.edge.kind !== 'path' || edge.kind === 'path'));
+    const options = usable.length ? usable : all, choice = options.length && this.preferred(car, edge, options);
+    if (!choice || hasTurnPath(nav, edge, direction, choice)) return null;
+    return turnPathSteps(nav, edge, direction, choice);
+  }
+  // Whether every turn path from this end is the same whoever asks first.
+  // turnPath keys a curve by the street it joins, not the way there. Past a
+  // link (a junction complex) a street can be asked for directly (the
+  // traffic's pick does that) or across the link (the autodrive does), and
+  // the first one asked is kept. Those ends are left alone.
+  warmable(edge, direction) {
+    const key = edge.id * 2 + (direction > 0 ? 1 : 0);
+    let warmable = this.warmableEnds.get(key);
+    if (warmable !== undefined) return warmable;
+    const ways = new Map(), nav = this.nav, choices = nav.choices(edge, direction);
+    warmable = true;
+    const way = (next, via) => {
+      const joins = next.edge.id * 2 + (next.direction > 0 ? 1 : 0);
+      if (ways.has(joins) && ways.get(joins) !== via) warmable = false;
+      ways.set(joins, via);
+    };
+    way({ edge, direction: -direction }, null);
+    for (const choice of choices) way(choice, null);
+    for (const choice of choices) {
+      if (choice.edge === edge || !isLink(nav, choice.edge)) continue;
+      for (const beyond of nav.choices(choice.edge, choice.direction)) {
+        if (beyond.edge === edge || beyond.edge === choice.edge) continue;
+        way(beyond, null); way(beyond, choice.edge);
+      }
+    }
+    this.warmableEnds.set(key, warmable);
+    return warmable;
   }
   render(alpha, origin = 0) {
     this.group.position.z = origin;

@@ -385,7 +385,7 @@ export class VRStatus {
     const toast = flash && { text: flash.text, color: TONES[flash.tone] ?? UI.text };
     if (model.taxi) {
       glass(0, 160, model.urgent ? UI.urgent : UI.glass);
-      ctx.letterSpacing = '2px'; line(model.clockLabel ?? 'SHIFT', 80, 42, 20, 750, model.urgent ? UI.onUrgent : UI.muted, 140, 'center'); ctx.letterSpacing = '0px';
+      ctx.letterSpacing = '2px'; line(model.clockLabel ?? 'TIME', 80, 42, 20, 750, model.urgent ? UI.onUrgent : UI.muted, 140, 'center'); ctx.letterSpacing = '0px';
       line(model.clock, 80, 114, 64, 750, model.urgent ? UI.onUrgent : UI.text, 140, 'center');
       const x = 174, w = W - 174 * 2;
       glass(x, w);

@@ -279,49 +279,90 @@ export function vehicleGeometry(spec, { separateWheels = false } = {}) {
   return { ...merged, wheels, roof: { y: roofY + .075 - drop, z: (roofFront + roofRear) / 2, length: roofRear - roofFront, width: cw * .94 } };
 }
 
-// Merge each model into four meshes, with shared geometry across the small fleet.
-// Only the paint material belongs to an individual car.
-export function createTrafficModels() {
-  const material = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: .76, flatShading: true, ...extra });
-  const details = material('#ffffff', { vertexColors: true });
-  const headlights = material('#fff0c3', { emissive: '#ffe3a3', emissiveIntensity: .3 });
-  const taillights = material('#a5382e', { emissive: '#e12e18', emissiveIntensity: .25 });
-  const templates = TRAFFIC_MODELS.map(spec => {
-    const { paint, details: trim, headlights: front, taillights: rear } = vehicleGeometry(spec);
-    // Each car casts its whole shadow in one draw instead of four. The trim
-    // and lamp triangles follow the paint's in one buffer: the colour pass
-    // draws only the paint's range, and the shadow pass all of it. The same
-    // triangles reach the shadow map either way.
-    const paintCount = paint.index.count, outline = trim.clone();
-    outline.deleteAttribute('color');
-    const body = mergeGeometries([paint, outline, front, rear]);
-    outline.dispose(); paint.dispose();
-    body.setDrawRange(0, paintCount);
-    return { parts: { paint: body, details: trim, headlights: front, taillights: rear }, paintCount };
+// A car's body in one draw. Four draws a car were about a fifth of a headset's
+// frame, and the four materials only differed in colour and glow. Each vertex is
+// marked [paint, lamp] for bodyMaterial (lamp 1 is a headlight, 2 a taillight).
+// Trim keeps its vertex colours and each lamp gets its own colour.
+export function markedBody({ paint, details, headlights, taillights }, { head, tail }) {
+  const marked = [[paint, 1, 0], [details, 0, 0], [headlights, 0, 1, head], [taillights, 0, 2, tail]].map(([geometry, painted, lamp, color]) => {
+    const count = geometry.attributes.position.count;
+    if (!geometry.attributes.color) {
+      const tint = new THREE.Color(color ?? '#ffffff'), colors = new Float32Array(count * 3);
+      for (let i = 0; i < count; i++) tint.toArray(colors, i * 3);
+      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    }
+    const marks = new Float32Array(count * 2);
+    for (let i = 0; i < count; i++) { marks[i * 2] = painted; marks[i * 2 + 1] = lamp; }
+    geometry.setAttribute('part', new THREE.BufferAttribute(marks, 2));
+    return geometry;
   });
+  const body = mergeGeometries(marked);
+  for (const geometry of marked) geometry.dispose();
+  return body;
+}
+// Paints only the parts marked as paint, and lights the lamps from glow
+// ({ head, tail } uniforms, shared across the traffic fleet)
+export function bodyMaterial(color, glow, roughness = .74) {
+  const material = new THREE.MeshStandardMaterial({ color, vertexColors: true, roughness, flatShading: true });
+  material.customProgramCacheKey = () => 'citydriver-car-body';
+  material.onBeforeCompile = shader => {
+    shader.uniforms.headGlow = glow.head; shader.uniforms.tailGlow = glow.tail;
+    shader.vertexShader = `attribute vec2 part;\nvarying vec2 vPart;\n${shader.vertexShader}`.replace('#include <color_vertex>', '#include <color_vertex>\n\tvPart = part;');
+    shader.fragmentShader = `uniform vec3 headGlow;\nuniform vec3 tailGlow;\nvarying vec2 vPart;\n${shader.fragmentShader}`
+      .replace('#include <color_fragment>', 'diffuseColor.rgb = mix( vec3( 1.0 ), diffuseColor.rgb, vPart.x ) * vColor.rgb;')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n\ttotalEmissiveRadiance += vPart.y > 1.5 ? tailGlow : vPart.y > .5 ? headGlow : vec3( 0.0 );');
+  };
+  return material;
+}
+// A lamp's glow for bodyMaterial, set like a material's emissiveIntensity so
+// DrivingController.setLights works unchanged
+export function lampGlow(color, intensity) {
+  const tint = new THREE.Color(color), uniform = { value: new THREE.Color() };
+  const lamp = { uniform, material: { set emissiveIntensity(level) { uniform.value.copy(tint).multiplyScalar(level); } } };
+  lamp.material.emissiveIntensity = intensity;
+  return lamp;
+}
+// A wheel in one draw. Tyre and hub only differed in colour, so they become
+// vertex colours.
+export function wheelGeometry(tire, hub, tireColor, hubColor) {
+  const parts = [[tire, tireColor], [hub, hubColor]].map(([geometry, color]) => {
+    const part = geometry.clone(), tint = new THREE.Color(color), count = part.attributes.position.count;
+    const colors = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) tint.toArray(colors, i * 3);
+    part.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    part.deleteAttribute('uv');
+    return part;
+  });
+  const wheel = mergeGeometries(parts);
+  for (const part of parts) part.dispose();
+  return wheel;
+}
+
+// One mesh a car (see markedBody), with each model's geometry shared across the fleet
+const TRAFFIC_LAMPS = { head: '#fff0c3', tail: '#a5382e' }, HEAD_GLOW = new THREE.Color('#ffe3a3'), TAIL_GLOW = new THREE.Color('#e12e18');
+export function createTrafficModels() {
+  const glow = { head: { value: new THREE.Color() }, tail: { value: new THREE.Color() } };
+  const templates = TRAFFIC_MODELS.map(spec => markedBody(vehicleGeometry(spec), TRAFFIC_LAMPS));
   const paints = [];
-  return {
+  const models = {
     create(index, color) {
-      const spec = TRAFFIC_MODELS[index], car = new THREE.Group(), paint = material(color);
+      const spec = TRAFFIC_MODELS[index], car = new THREE.Group(), paint = bodyMaterial(color, glow, .76);
       paints.push(paint); car.name = `traffic-${spec.name}`;
-      const { parts, paintCount } = templates[index];
-      for (const [key, geometry] of Object.entries(parts)) {
-        const mesh = new THREE.Mesh(geometry, { paint, details, headlights, taillights }[key]);
-        mesh.receiveShadow = true;
-        if (key === 'paint') {
-          mesh.castShadow = true; stableShadowDepth(mesh);
-          mesh.onBeforeShadow = () => { geometry.drawRange.count = Infinity; };
-          mesh.onAfterShadow = () => { geometry.drawRange.count = paintCount; };
-        }
-        car.add(mesh);
-      }
+      const mesh = new THREE.Mesh(templates[index], paint);
+      mesh.receiveShadow = mesh.castShadow = true; stableShadowDepth(mesh);
+      // (it never moves in its car)
+      mesh.matrixAutoUpdate = false;
+      car.add(mesh);
       return { car, paint, spec };
     },
     // Lamps from daytime (0) to night (1); a storm runs them part way up.
-    setLights(level) { headlights.emissiveIntensity = .3 + 2 * level; taillights.emissiveIntensity = .25 + 1.55 * level; },
+    setLights(level) { glow.head.value.copy(HEAD_GLOW).multiplyScalar(.3 + 2 * level); glow.tail.value.copy(TAIL_GLOW).multiplyScalar(.25 + 1.55 * level); },
+    glow,
     dispose() {
-      for (const template of templates) for (const geometry of Object.values(template.parts)) geometry.dispose();
-      for (const mat of [...paints, details, headlights, taillights]) mat.dispose();
+      for (const geometry of templates) geometry.dispose();
+      for (const mat of paints) mat.dispose();
     },
   };
+  models.setLights(0);
+  return models;
 }

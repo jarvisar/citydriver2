@@ -1,5 +1,6 @@
 import { CITY, cityDistrict, cityCell, cityStyleDistrict } from './world/city.js';
-import { lanePose, nearestLanePose, onRoadAt } from './world/city-route.js';
+import { lanePose, nearestLanePose, onRoadAt, waterAt } from './world/city-route.js';
+import { navGraph } from './world/nav-graph.js';
 import { CITY_PLACES, PLACE_TYPES, LANDMARK_TYPES, SPACE_NAMES, VENUE_DISTRICTS } from './world/city-places.js';
 import { placeName } from './world/city-businesses.js';
 import { randomAt } from './world/route.js';
@@ -208,6 +209,53 @@ function buildPlaces() {
   return out;
 }
 export function cityPlaces() { return places ??= buildPlaces(); }
+
+// Where a place's riders can get out: a stretch of the kerbside lane through
+// its entrance. The cab can stop anywhere near it. A building's stretch covers
+// the middle half of its front. A park's or square's runs along its side of
+// the street as far as its kerb goes, up to OPEN_REACH each way from the gate.
+// Stretches stay on one street and stop short of junctions and water.
+export const OPEN_REACH = 40;
+const STRETCH_STEP = 2, JUNCTION_CLEAR = 14;
+const stretches = new WeakMap(), measured = new WeakMap();
+export function dropOffStretch(place) {
+  if (stretches.has(place)) return stretches.get(place);
+  const e = place.entrance, stretch = [{ s: e.s, u: e.u }];
+  stretches.set(place, stretch);
+  const hit = CITY.roadIndex.nearest(e.u, e.s, 30, (segment, distance) => segment.road.kind === 'path' ? Infinity : distance);
+  if (!hit) return stretch;
+  // Walk the whole road, not a nav edge: a park's gates split its street into
+  // short edges
+  const road = hit.road, points = road.points;
+  if (!measured.has(road)) {
+    const cumulative = [0];
+    for (let i = 1; i < points.length; i++) cumulative.push(cumulative[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y));
+    measured.set(road, { points, cumulative, length: cumulative.at(-1), closed: Math.hypot(points[0].x - points.at(-1).x, points[0].y - points.at(-1).y) < .01 });
+  }
+  const line = measured.get(road), start = line.cumulative[hit.segment.index] + hit.t * hit.segment.length;
+  // The entrance's lane offset, positive to the right of the road's direction
+  const lane = (e.u - hit.x) * hit.ty - (e.s - hit.y) * hit.tx, side = Math.sign(lane) || 1;
+  const kerb = place.park !== undefined ? CITY.parkPlans[place.park]?.kerb : null;
+  const reach = kerb ? OPEN_REACH : (place.footprint?.width ?? 0) / 4;
+  const open = along => {
+    if (line.closed) along = (along % line.length + line.length) % line.length;
+    else if (along < 0 || along > line.length) return null;
+    const p = navGraph().pose(line, along, 1, lane);
+    if (waterAt(p.s, p.u)) return null;
+    const crossing = CITY.roadIndex.nearest(p.u, p.s, 40, (segment, distance) => segment.road === road || segment.road.kind === 'path' ? Infinity : distance - segment.road.profile.halfWidth);
+    if (crossing && crossing.score <= JUNCTION_CLEAR) return null;
+    // A park's or square's kerb must be beside the lane
+    const out = side * (road.profile.halfWidth + 3) - lane;
+    if (kerb && !insidePolygon({ x: p.u + p.ty * out, y: p.s - p.tx * out }, kerb)) return null;
+    return { s: p.s, u: p.u };
+  };
+  for (const way of [-1, 1]) for (let step = STRETCH_STEP; step <= reach; step += STRETCH_STEP) {
+    const p = open(start + way * step);
+    if (!p) break;
+    if (way < 0) stretch.unshift(p); else stretch.push(p);
+  }
+  return stretch;
+}
 let byLot = null, byBlock = null;
 export function placeForLot(index) {
   byLot ??= new Map(cityPlaces().filter(place => place.lot !== undefined).map(place => [place.lot, place]));

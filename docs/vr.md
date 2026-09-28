@@ -1,15 +1,15 @@
 # VR
 
-Citydriver uses WebXR for VR. **Enter VR** shows on the main menu and the pause menu when the browser supports `immersive-vr` on an HTTPS page. The desktop app doesn't offer VR.
+Citydriver uses WebXR for VR. An Enter VR button shows on the main menu and the pause menu when the browser supports `immersive-vr` on an HTTPS page. The desktop app doesn't offer VR.
 
 The page's menus and HUD can't be seen in a headset, so `src/vr-status.js` draws its own on canvases in the scene. `src/main.js` describes them: `vrMenuModel` for the menus and `vrHudModel` for the HUD.
 
 ## Entering and Leaving
 
-- In a headset's own browser (Meta Quest Browser, Pico, Wolvic) Enter VR is the first, yellow button on the main menu and the first row of the pause screen. Its controls use touch sizes of at least 44px. Without a gamepad the page can't be driven there.
+- In a headset's own browser (Meta Quest Browser, Pico, Wolvic) Enter VR is the first, yellow button on the main menu and the first row of the pause screen. Buttons there are touch-sized, at least 44px. Without a gamepad the page can't be driven there.
 - On a page that isn't HTTPS, a headset's browser shows a message saying that VR needs HTTPS.
 - VR starts on a menu with the car standing still: the title menu, or the pause menu when Enter VR was chosen while paused. The shift clock doesn't run until the player starts or resumes.
-- Exit VR is in the pause menu and on the results. Leaving VR pauses a drive, or goes back to the main menu.
+- Exit VR is in the pause menu and on the results screen. Leaving VR pauses a drive, or goes back to the main menu.
 - Holding the headset's Meta button to recenter also recenters the game.
 
 ## Menus
@@ -25,7 +25,7 @@ The page's menus and HUD can't be seen in a headset, so `src/vr-status.js` draws
 
 ## HUD
 
-- The HUD sits below the car, from 21° below eye level. It moves with the car like a dashboard and can't be pointed at.
+- The HUD sits below the car, with its top edge 21° below eye level. It moves with the car like a dashboard and can't be pointed at.
 - It shows the same text as the page's HUD. In a taxi run that is the shift clock, earnings, stage, destination, distance and fare clock. In free drive it is the heading, district and weather. Messages replace the last line for two seconds.
 - During a fare a green arrow floats above the car and points to the drop-off. In first-person view it floats ahead of the car.
 - The controls are listed under the HUD until the player has driven for 10 seconds. On foot the list shows the walking controls.
@@ -33,11 +33,17 @@ The page's menus and HUD can't be seen in a headset, so `src/vr-status.js` draws
 ## Comfort
 
 - The camera follows the chase camera's position and heading only. Pitch and roll come from the headset, and there is no camera shake.
-- The comfort vignette darkens the edge of the view when the camera turns faster than about 20° a second, or the car speeds up or slows down sharply. It keeps the middle of the view clear, fades once the turn ends and never shows in menus. The right thumbstick turns the camera round the car or the player, and on foot it also turns as the player walks across its view. When the chase camera has to jump in because a building is in the way, the view blinks dark for a moment, and the vignette closes in while the camera eases back out. The helicopter's climbs and dives count the same way as speeding up. All of this can be turned off in the pause menu. The setting is saved.
+- The comfort vignette darkens the edge of the view when the camera turns faster than about 20° a second, or the car speeds up or slows down sharply. It keeps the middle of the view clear, fades once the turn ends and never shows in menus. The right thumbstick turns the camera round the car or the player, and on foot it also turns as the player walks across its view. The helicopter's climbs and dives count the same as speeding up.
+- When the chase camera has to jump in because a building is in the way, the view blinks dark for a moment. The vignette closes in while the camera eases back out.
+- The vignette and the blink can be turned off in the pause menu. The setting is saved.
+
+## Performance
+
+The headset lowers its own quality to hold its refresh rate: first the share of each eye's framebuffer that is drawn, then the graphics level. Refresh rate in the pause menu sets the headset's rate. Auto asks for 90 Hz and drops to 72 only if the lowest quality still can't hold 90. See [Performance](performance.md#vr).
 
 ## Controls
 
-See the [README](../README.md#vr). B pauses, and so does Y in a run, so no single button leaves VR. In free drive Y gets out of the car, and into the car the player is standing by. X in free drive puts the car back on the road instead of making a new city.
+See the [README](../README.md#vr). B pauses, and so does Y in a run, so no single button leaves VR. In free drive Y gets out of the car, or into the car the player is standing by, and X puts the car back on the road.
 
 ## Testing
 

@@ -67,12 +67,12 @@ try {
     });
     await page.waitForFunction(() => window.__citydriver.taxi.status === 'driving');
     await page.waitForFunction(() => document.querySelector('#taxi-stage').textContent === 'Drop off');
-    assert.match(await page.locator('#taxi-timer').textContent(), /^\d+s Speedy$/);
+    assert.match(await page.locator('#taxi-timer').textContent(), /^Speedy \d+s$/);
     assert.equal(await page.locator('#taxi-timer').getAttribute('data-rating'), 'speedy');
-    assert.match(await page.locator('#taxi-fare-status').textContent(), /^\$\d/);
+    assert.match(await page.locator('#taxi-fare-status').textContent(), /^Meter \$\d/);
     assert.equal(await page.locator('#next-city-stop').count(), 0);
     await inspect(page, `${name}-fare`);
-    await page.evaluate(() => { window.__citydriver.taxi.fareLeft = 8; });
+    await page.evaluate(() => { const run = window.__citydriver.taxi; run.fareLeft = 8; run.legElapsed = run.currentStop.limit * .9; });
     await page.waitForFunction(() => document.querySelector('#taxi-task').dataset.urgent === 'true'
       && document.querySelector('#taxi-timer').dataset.rating === 'slow');
     await page.evaluate(() => {

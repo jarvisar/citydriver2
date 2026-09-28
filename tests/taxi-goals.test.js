@@ -64,8 +64,12 @@ test('goals track the shift, bank their bonus with the fleet once, and leave the
   const balance = run.fleet.balance; run.checkGoals(); run.checkGoals();
   assert.equal(run.fleet.balance, balance, 'a finished goal never pays twice');
   assert.equal(run.stats.nearMisses, 0); assert.equal(run.stats.combo, 3);
+  // Time runs out with the rider aboard: the last ride still pays, then the shift ends
   run.timeLeft = .01; run.update(.02, car);
-  assert.equal(run.status, 'over'); assert.equal(run.goalCash, 250);
+  assert.equal(run.status, 'driving'); assert.equal(run.overtime, true);
+  const cash = run.cash;
+  while (run.status === 'driving') { Object.assign(car, { s: run.target.s, u: run.target.u }); run.update(STOP_SECONDS, car); }
+  assert.equal(run.status, 'over'); assert.ok(run.cash > cash); assert.equal(run.goalCash, 250);
   assert.equal(new TaxiRun(disk).fleet.balance, run.cash + 250, 'goal money survives reload');
   run.start(car); assert.equal(run.goalCash, 0); assert.ok(run.goals.every(goal => !goal.done && goal.progress === 0));
 });

@@ -102,6 +102,27 @@ test('two cars never cross paths in a junction: the second waits until the first
   assert.equal(junctions.limit(side, [main], null, 1 / 60), Infinity);
 });
 
+test('turns worked out ahead change nothing: the traffic drives the same with it or without', () => {
+  const run = warm => {
+    const player = new DrivingController(citydriverRoute, journeyStart(), 'taxi');
+    const traffic = new CityTraffic(new THREE.Scene(), player.route, player.s, 'city', player.u), states = [];
+    let jobs = 0;
+    if (warm) { const next = traffic.warmNext.bind(traffic); traffic.warmNext = () => { const job = next(); if (job) jobs++; return job; }; }
+    else traffic.warm = () => {};
+    try {
+      for (let i = 0; i < 60 * 20; i++) {
+        traffic.update(1 / 60, player);
+        states.push(traffic.vehicles.map(car => [car.s, car.u, car.heading, car.speed, car.lane, car.generation, car.edge?.id, car.along].join()).join('|'));
+      }
+      return { states, jobs };
+    } finally { traffic.dispose(); player.disposeModel(); }
+  };
+  const warmed = run(true), plain = run(false);
+  assert.ok(warmed.jobs > 20, `${warmed.jobs} pieces of work done ahead`);
+  const first = warmed.states.findIndex((state, i) => state !== plain.states[i]);
+  assert.equal(first, -1, `first differs at step ${first}`);
+});
+
 test('a minute of traffic round the start: no two cars ever overlap and none is left stuck', () => {
   const scene = new THREE.Scene(), start = journeyStart();
   // The player's car parked off the road near the start, out of everyone's way

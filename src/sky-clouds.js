@@ -152,6 +152,9 @@ export class SkyClouds {
         this.mesh.setMatrixAt(index++, this.matrix);
       }
     }
+    // Upload only the clouds that are out, not the whole buffer
+    if (!index) return;
+    this.mesh.instanceMatrix.clearUpdateRanges(); this.mesh.instanceMatrix.addUpdateRange(0, index * 16);
     this.mesh.instanceMatrix.needsUpdate = true;
   }
 }

@@ -1250,9 +1250,11 @@ export function buildGarden(c, lot) {
   }
 }
 
+// One lot per step, all planned before any is built. Planning a busy cell's
+// lots in one step took 2-3 ms here, so 10-15 ms on a phone.
 export function* buildCityBuildingSteps(c) {
-  const plan = c.lots.map(lot => planLot(c, lot));
-  yield;
+  const plan = [];
+  for (const lot of c.lots) { plan.push(planLot(c, lot)); yield; }
   for (const b of plan) {
     if (b.kind === 'landmark') { if (!c.structure(0, 0, () => buildLandmark(c, b.lot, b.place))) buildGarden(c, b.lot); }
     else if (b.kind === 'building') c.structure(0, 0, () => buildBuilding(c, b));

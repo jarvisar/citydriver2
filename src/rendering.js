@@ -5,7 +5,7 @@ import { FirstPersonCamera } from './first-person-camera.js';
 import { AmbientOcclusion } from './ambient-occlusion.js';
 import { CarSilhouette } from './car-silhouette.js';
 import { SkyClouds } from './sky-clouds.js';
-import { Graphics, drawingPixelRatio, gpuName } from './graphics.js';
+import { Graphics, drawingPixelRatio, gpuName, HEADSET_FALLBACK_RATE } from './graphics.js';
 import { XRCameraRig } from './xr-camera.js';
 import { sampleCityWeather } from './world/city-weather.js';
 import { CITY_CELL } from './world/city.js';
@@ -235,6 +235,9 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   function render(frame, beforeXRRender) {
     if (renderer.xr.isPresenting) {
       const pose = frame?.getViewerPose(renderer.xr.getReferenceSpace());
+      // Ask each eye for its rung's share of the framebuffer (Graphics.xrScale).
+      // It applies from the next frame.
+      if (pose) for (const eye of pose.views) eye.requestViewportScale?.(graphics.xrScale);
       vrCamera.update(activeCamera(), pose);
       renderer.xr.updateCamera(vrCamera.camera);
       beforeXRRender?.();
@@ -265,11 +268,35 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
         }
       }
     } finally { scene.fog = fog; clouds.group.visible = skyVisible; clouds.stars.visible = starsVisible; }
+    // Upload textures now too. Otherwise the 4096 px sign atlas and its mipmaps
+    // upload in the first frame that shows a sign.
+    const textures = new Set();
+    for (const target of [scene, warmup]) target.traverse(object => { for (const material of [object.material].flat()) if (material?.map) textures.add(material.map); });
+    for (const texture of textures) renderer.initTexture(texture);
     return Promise.all(pending);
   }
   function setView(index) { view = index; updateFog(); thirdPerson.snap(); firstPerson.snap(); return views[view].label; }
   let desktopView;
-  function enterVR() { desktopView = view; setView(views.findIndex(view => view.thirdPerson)); graphics.setHeadset(true); }
+  function enterVR() {
+    desktopView = view; setView(views.findIndex(view => view.thirdPerson));
+    const session = renderer.xr.getSession(), scalable = typeof XRView !== 'undefined' && 'requestViewportScale' in XRView.prototype;
+    graphics.setHeadset(true, { frameRate: session?.frameRate, scalable });
+    session?.addEventListener?.('frameratechange', () => graphics.setHeadsetRate(session.frameRate));
+    askHeadsetRate(graphics.headsetRate);
+  }
+  // Asks the headset for the supported refresh rate nearest `rate`. False if
+  // it can't change or is there already.
+  function askHeadsetRate(rate) {
+    const session = renderer.xr.getSession(), rates = session?.supportedFrameRates;
+    if (!session?.updateTargetFrameRate || !rates?.length) return false;
+    const nearest = [...rates].sort((a, b) => Math.abs(a - rate) - Math.abs(b - rate) || a - b)[0];
+    if (nearest === session.frameRate) return false;
+    session.updateTargetFrameRate(nearest).then(() => graphics.setHeadsetRate(session.frameRate), () => {});
+    return true;
+  }
+  // (Auto's last resort, see Graphics.judgeHeadset, and a new choice from the headset's menu)
+  graphics.lowerHeadsetRate = () => renderer.xr.getSession()?.frameRate > HEADSET_FALLBACK_RATE && askHeadsetRate(HEADSET_FALLBACK_RATE);
+  graphics.onChange((settings, reason) => { if (reason === 'headset-rate' && renderer.xr.isPresenting) askHeadsetRate(graphics.headsetRate); });
   function exitVR() { if (desktopView !== undefined) setView(desktopView); desktopView = undefined; graphics.setHeadset(false); }
   function addCuller(cull) { cullers.add(cull); return () => cullers.delete(cull); }
   // What the chase camera cannot see through (see ThirdPersonCamera.sight),

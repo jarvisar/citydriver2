@@ -45,8 +45,35 @@ export const HEADSET_SHADOWS = {
   dedicated: { shadowMap: 2048, shadowDistance: 90, shadowDetail: true },
   standalone: { shadowMap: 1024, shadowDistance: 50, shadowDetail: false },
 };
+// In a headset the controller steps through its own ladder, best rung first.
+// A rung is a level (in VR that sets how much of the city is built and the sun's
+// shadows) and the share of each eye's framebuffer drawn (XRView.requestViewportScale).
+// .7 of each side is half the pixels, about a Quest's own resolution under the
+// 1.5 framebuffer scale. A standalone headset stops at Balanced, since High draws
+// half as far again for both eyes, and it starts one rung down. Smooth is left out
+// because in a headset it draws the same city as Balanced. A pinned level only
+// adapts the scale.
+export const HEADSET_LADDERS = {
+  standalone: [['balanced', 1], ['balanced', .85], ['basic', .85], ['basic', .7]],
+  dedicated: [['high', 1], ['balanced', 1], ['balanced', .85], ['basic', .85], ['basic', .7]],
+};
+const HEADSET_SCALES = [1, .85, .7];
+// The frame-rate cap's settings, as the pause menu's slider has them: null is
+// Auto (see frameCap) and 0 uncapped, which in a browser is the display's own
+// rate, the most requestAnimationFrame gives
+export const FRAME_CAPS = [null, 30, 60, 72, 90, 120, 144, 0];
+// A headset's refresh rate when the player hasn't picked one, and the rate it
+// drops to if even the lowest rung can't hold it (see judgeHeadset)
+export const HEADSET_RATE = 90, HEADSET_FALLBACK_RATE = 72;
 const WORST = QUALITY_LEVELS.length - 1;
 export const levelIndex = id => QUALITY_LEVELS.findIndex(level => level.id === id);
+
+// A headset's own browser (Quest, Pico, Wolvic) runs on a phone chip, even
+// though a Quest reports a desktop user agent and a fine pointer. Only the user
+// agent tells it apart.
+export function headsetBrowser(nav = globalThis.navigator ?? {}) {
+  return /OculusBrowser|PicoBrowser|Wolvic|\bVR Safari\b|Mobile VR/.test(nav.userAgent ?? '');
+}
 
 const MIN_DENSITY = .5;
 export function renderScale(density, devicePixelRatio = globalThis.devicePixelRatio || 1) {
@@ -162,13 +189,17 @@ function displayPixels() {
 // out to be quick, which looks better than starting too high and stuttering
 // through the first corner. Desktops are tiered too, so a thin laptop with an
 // integrated chip does not start where a tower with a discrete card does.
+// Phones, tablets and headsets. A coarse primary pointer also catches tablets
+// that report themselves as desktops. A touchscreen laptop keeps a fine primary
+// pointer and is tiered with the other laptops.
+export function mobileDevice(hints = {}) {
+  const nav = hints.navigator ?? globalThis.navigator ?? {};
+  const coarsePointer = hints.coarsePointer ?? Boolean(globalThis.matchMedia?.('(pointer: coarse)').matches);
+  return hints.mobile ?? (headsetBrowser(nav) || nav.userAgentData?.mobile === true || coarsePointer);
+}
 export function detectLevel(hints = {}) {
   const nav = hints.navigator ?? globalThis.navigator ?? {};
-  // A coarse primary pointer covers phones and tablets, including the tablets
-  // that report themselves as desktops; a touchscreen laptop still has a fine
-  // primary pointer and is tiered with the other laptops below.
-  const coarsePointer = hints.coarsePointer ?? Boolean(globalThis.matchMedia?.('(pointer: coarse)').matches);
-  const mobile = hints.mobile ?? (nav.userAgentData?.mobile === true || coarsePointer);
+  const mobile = mobileDevice(hints);
   const cores = hints.cores ?? nav.hardwareConcurrency ?? 0;
   // Safari reports no deviceMemory at all, so absent is treated as "unknown"
   // rather than "small"; getting it wrong costs a few seconds of adapting.
@@ -193,9 +224,9 @@ export function detectLevel(hints = {}) {
 }
 
 export class Graphics {
-  constructor({ storage = defaultStorage(), ambientOcclusion = null, detect = detectLevel } = {}) {
+  constructor({ storage = defaultStorage(), ambientOcclusion = null, detect = detectLevel, mobile = mobileDevice() } = {}) {
     const stored = readStored(storage);
-    this.storage = storage;
+    this.storage = storage; this.mobile = mobile;
     this.listeners = new Set();
     this.detected = detect();
     const storedLevel = levelIndex(stored.level);
@@ -210,9 +241,16 @@ export class Graphics {
     this.aoChoice = typeof stored.ambientOcclusion === 'boolean' ? stored.ambientOcclusion : null;
     this.aoVisit = ambientOcclusion;
     this.aoCapable = false; this.dedicated = false; this.headset = false;
+    // xrScale is the share of each eye's framebuffer drawn. page holds the page's
+    // level and controller state while a headset is on.
+    this.xrScale = 1; this.page = this.ladder = null;
     // The default proved too slow here, so the next visit starts without it.
     this.aoDropped = stored.aoDropped === true;
     this.densityOverride = Number.isFinite(stored.density) && stored.density >= MIN_DENSITY && stored.density <= 1 ? stored.density : null;
+    // The player's frame-rate cap and headset refresh rate, null for none (Auto)
+    this.capChoice = FRAME_CAPS.includes(stored.frameCap) ? stored.frameCap : null;
+    this.rateChoice = Number.isFinite(stored.headsetRate) && stored.headsetRate > 0 ? stored.headsetRate : null;
+    this.cap = null;
     // Never probe above the level a downgrade settled on, so quality ratchets
     // one way and the picture cannot flicker between two levels all drive.
     this.ceiling = 0;
@@ -231,10 +269,13 @@ export class Graphics {
       customDensity: this.densityOverride !== null, ambientOcclusion: this.ambientOcclusion };
   }
   // The level's shadow, sharpened on a dedicated card, lightened in a headset
-  // (see HEADSET_SHADOWS): never more than the level's own.
+  // (see HEADSET_SHADOWS): never more than the level's own. Below High a phone
+  // keeps only the big casters. Shadows a texel or two wide don't show on a phone
+  // screen, and at Balanced most of the shadow pass was window trim and people.
   get shadows() {
     const level = QUALITY_LEVELS[this.level];
     let { shadowMap, shadowDistance, shadowDetail } = this.dedicated && level.id === 'high' ? { ...level, ...DEDICATED_HIGH_SHADOWS } : level;
+    if (this.mobile && level.id !== 'high') shadowDetail = false;
     if (this.headset) {
       const cap = HEADSET_SHADOWS[this.dedicated ? 'dedicated' : 'standalone'];
       shadowMap = Math.min(shadowMap, cap.shadowMap); shadowDistance = Math.min(shadowDistance, cap.shadowDistance);
@@ -253,7 +294,8 @@ export class Graphics {
 
   // AO is saved as the player's choice (null for none), never the default.
   save() {
-    writeStored(this.storage, { mode: this.mode, level: this.levelId, density: this.densityOverride, ambientOcclusion: this.aoChoice, aoDropped: this.aoDropped });
+    writeStored(this.storage, { mode: this.mode, level: QUALITY_LEVELS[this.page?.level ?? this.level].id, density: this.densityOverride, ambientOcclusion: this.aoChoice, aoDropped: this.aoDropped,
+      frameCap: this.capChoice, headsetRate: this.rateChoice });
   }
 
   // The card drawing the game, as its own context names it (see gpuName): made
@@ -267,11 +309,113 @@ export class Graphics {
     this.aoCapable = this.dedicated && this.detected <= levelIndex('balanced');
   }
 
-  // A headset session starts or ends: its shadows follow HEADSET_SHADOWS.
-  setHeadset(presenting) {
+  // A headset session starts or ends. In a headset, shadows follow HEADSET_SHADOWS
+  // and quality follows HEADSET_LADDERS, measured against the headset's refresh
+  // rate. The page's level and controller state come back when it ends, and
+  // nothing the ladder decides is saved.
+  setHeadset(presenting, { frameRate, scalable = true } = {}) {
     if (presenting === this.headset) return;
     this.headset = presenting;
+    if (presenting) {
+      this.page = { level: this.level, ceiling: this.ceiling, target: this.target, cascade: this.cascade };
+      this.cascade = null; this.target = frameRate || 72; this.scalable = scalable;
+      this.climbHeadset();
+    } else {
+      ({ level: this.level, ceiling: this.ceiling, target: this.target, cascade: this.cascade } = this.page);
+      this.page = this.ladder = null; this.xrScale = 1;
+    }
+    this.suspend();
     this.announce('headset');
+  }
+  // The headset's refresh rate, once known or changed. The ladder may climb
+  // again at a new rate.
+  setHeadsetRate(frameRate) {
+    if (!this.headset || !frameRate || frameRate === this.target) return;
+    this.target = frameRate; this.ceilingRung = 0; this.cascade = null; this.suspend();
+  }
+  // The rate to ask a headset for: the player's, else HEADSET_RATE
+  get headsetRate() { return this.rateChoice ?? HEADSET_RATE; }
+  chooseHeadsetRate(rate) {
+    this.rateChoice = rate;
+    this.save();
+    this.announce('headset-rate');
+  }
+  // The page's frame-rate cap in fps, or null for the display's own rate.
+  // Without a choice, a machine with no graphics card of its own (phones,
+  // tablets, built-in graphics) draws an even share of a fast display near 60:
+  // 60 on 120 Hz, 72 on 144. A 90 Hz display is left alone, since 60 there
+  // comes out as alternating 11 and 22 ms frames. A card of its own draws at
+  // the display's rate. `display` is the measured refresh rate, if known yet.
+  frameCap(display) {
+    let cap = this.capChoice === null ? null : this.capChoice || null;
+    if (this.capChoice === null && !this.dedicated && display) {
+      for (let n = 2; display / n >= 55; n++) if (cap === null || Math.abs(display / n - 60) < Math.abs(cap - 60)) cap = display / n;
+    }
+    if (cap !== this.cap) { this.cap = cap; this.suspend(); this.announce('frame-cap'); }
+    return cap;
+  }
+  chooseFrameCap(cap) {
+    if (!FRAME_CAPS.includes(cap)) return false;
+    this.capChoice = cap;
+    this.suspend();
+    this.save();
+    this.announce('frame-cap');
+    return true;
+  }
+  // Start on the ladder at the page's level or below. A standalone headset starts
+  // one rung below the top and climbs from there, like the page does.
+  climbHeadset() {
+    let rungs = !this.auto ? HEADSET_SCALES.map(scale => [this.page.level, scale])
+      : HEADSET_LADDERS[this.dedicated ? 'dedicated' : 'standalone'].map(([id, scale]) => [levelIndex(id), scale]);
+    // Without viewport scaling each level is one rung at full scale
+    if (!this.scalable) rungs = rungs.filter(([level], i) => rungs.findIndex(([other]) => other === level) === i).map(([level]) => [level, 1]);
+    const below = rungs.findIndex(([level]) => level >= this.page.level);
+    this.ladder = rungs; this.ceilingRung = 0;
+    this.setRung(Math.max(this.dedicated ? 0 : 1, below === -1 ? rungs.length - 1 : below));
+  }
+  setRung(rung) {
+    [this.level, this.xrScale] = this.ladder[rung];
+    this.rung = rung;
+    return true;
+  }
+  // Same rules as the page: two slow windows step down, four fast ones step up,
+  // and never back above a rung that was too slow. If giving up rungs doesn't
+  // help, something else sets the pace, so the last useful rung comes back and
+  // the rate it reaches becomes the target.
+  judgeHeadset(fps) {
+    if (fps < this.target * SLOW) {
+      this.fast = 0;
+      if (++this.slow < SLOW_WINDOWS) return false;
+      this.slow = 0;
+      let spent = this.rung >= this.ladder.length - 1;
+      if (this.cascade) {
+        if (fps >= this.cascade.fps * WORTHWHILE) this.cascade = { rung: this.rung, fps, failures: 0 };
+        else if (++this.cascade.failures >= GIVE_UP_AFTER) spent = true;
+      }
+      if (!spent) {
+        this.cascade ??= { rung: this.rung, fps, failures: 0 };
+        this.ceilingRung = this.rung + 1;
+        return this.moveRung(this.rung + 1);
+      }
+      // Out of rungs, or they bought nothing. With no rate chosen the headset
+      // drops to HEADSET_FALLBACK_RATE (see setHeadsetRate) and tries again there.
+      if (this.rateChoice === null && this.lowerHeadsetRate?.()) { this.cascade = null; this.suspend(); return true; }
+      const rung = this.cascade?.rung ?? this.rung;
+      this.cascade = null; this.target = Math.max(24, fps); this.ceilingRung = rung;
+      return rung !== this.rung && this.moveRung(rung);
+    }
+    this.slow = 0;
+    if (fps < this.target * FAST) { this.fast = 0; this.cascade = null; return false; }
+    this.cascade = null;
+    if (++this.fast < FAST_WINDOWS || this.rung <= this.ceilingRung) return false;
+    this.fast = 0;
+    return this.moveRung(this.rung - 1);
+  }
+  moveRung(rung) {
+    this.setRung(rung);
+    this.suspend();
+    this.announce('headset');
+    return true;
   }
 
   setMode(mode) {
@@ -279,10 +423,13 @@ export class Graphics {
     if (mode !== 'auto' && index === -1) return false;
     this.mode = mode;
     // A fresh choice clears adaptive history and the density override.
-    // The independent AO choice stays as the player left it.
-    this.ceiling = 0; this.cascade = null; this.target = 60;
+    // The independent AO choice stays as the player left it. In a headset this
+    // resets the page's state and the ladder starts again from the choice.
+    const page = this.page ?? this;
+    page.ceiling = 0; page.cascade = null; page.target = 60;
     this.densityOverride = null;
-    if (index !== -1) this.level = index;
+    if (index !== -1) page.level = index;
+    if (this.headset) this.climbHeadset();
     this.suspend();
     this.save();
     this.announce('mode');
@@ -345,7 +492,7 @@ export class Graphics {
   // A pinned level adapts to nothing, but AO that is only the default still
   // goes if it proves too slow.
   sample(timestamp, active) {
-    if (!this.auto && !this.aoByDefault && !this.cascade) return false;
+    if (!this.headset && !this.auto && !this.aoByDefault && !this.cascade) return false;
     if (!active) { this.startedAt = null; this.windowStart = null; this.frames = 0; return false; }
     this.startedAt ??= timestamp;
     if (timestamp - this.startedAt < this.settle) return false;
@@ -360,7 +507,10 @@ export class Graphics {
   }
 
   judge(fps) {
-    if (fps < this.target * SLOW) {
+    if (this.headset) return this.judgeHeadset(fps);
+    // (a cap under the target is the target: 30 fps held is not slow)
+    const target = Math.min(this.target, this.cap ?? Infinity);
+    if (fps < target * SLOW) {
       this.fast = 0;
       if (++this.slow < SLOW_WINDOWS) return false;
       this.slow = 0;
@@ -393,7 +543,7 @@ export class Graphics {
       return false;
     }
     this.slow = 0;
-    if (fps < this.target * FAST) { this.fast = 0; this.cascade = null; return false; }
+    if (fps < target * FAST) { this.fast = 0; this.cascade = null; return false; }
     this.cascade = null;
     if (!this.auto || ++this.fast < FAST_WINDOWS || this.level <= this.ceiling) return false;
     this.fast = 0;

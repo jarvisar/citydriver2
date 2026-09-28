@@ -4,7 +4,7 @@ export const FLEET_KEY = 'citydriver-taxi-fleet';
 export const TAXI_FLEET = [
   { id: 'taxi', price: 0, title: 'The original', description: 'A dependable city cab. Plenty of pace to get your fleet started.' },
   { id: 'taxiGT', price: 1500, title: 'The fast lane', description: 'A sports coupe with quicker launches, sharper turns and stronger brakes.' },
-  { id: 'taxiFormula', price: 4500, title: 'The ultimate fare', description: 'Two seats. Open wheels. Formula power with the best grip in the fleet.' },
+  { id: 'taxiFormula', price: 4500, title: 'The ultimate fare', description: 'Open wheels and formula power, with the best grip in the fleet.' },
 ];
 const validMoney = value => Number.isSafeInteger(value) && value >= 0;
 

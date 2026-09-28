@@ -1,7 +1,7 @@
 import { CityMapCache, drawParkedCar } from './city-map.js';
 import { CITY_PLACES, PLACE_TYPES } from './world/city-places.js';
 import { CityExploration } from './city-exploration.js';
-import { taxiRoute } from './taxi-run.js';
+import { taxiRoute, STOP_RADIUS } from './taxi-run.js';
 import { goalProgress } from './taxi-goals.js';
 
 const $ = id => document.getElementById(id);
@@ -17,6 +17,8 @@ export class CityGuide {
     this.exploration = new CityExploration(); this.notify = notify; this.position = position;
     this.mapCache = new CityMapCache();
     this.canvas = $('city-map'); this.ctx = this.canvas.getContext('2d');
+    // A restored context starts blank, so the next update draws again
+    this.canvas.addEventListener('contextrestored', () => { this.shown = null; });
     this.compactQuery = matchMedia('(max-width: 760px), (max-height: 560px)');
     this.setExpanded(!this.compactQuery.matches);
     this.compactQuery.addEventListener('change', () => {
@@ -38,6 +40,7 @@ export class CityGuide {
     $('taxi-offer').hidden = !expanded || !this.taxi?.running || !$('taxi-offer').textContent;
     // Draw immediately so opening the map never exposes an empty canvas.
     if (expanded) {
+      this.shown = null;
       if (this.taxi?.running) this.updateTaxi();
       else this.draw(this.position());
     }
@@ -53,20 +56,22 @@ export class CityGuide {
       button.setAttribute('aria-label', `${CITY_PLACES[button.dataset.placeType].name}, ${collected ? 'discovered' : 'undiscovered'}`);
     }
   }
-  update(active) {
+  // `draw: false` skips the canvas for when nobody can see the page, as in a
+  // headset. Discoveries and the map card's text still update.
+  update(active, { draw = true } = {}) {
     const vehicle = this.position(), e = this.exploration;
     const found = e.update(vehicle.s, vehicle.u, active);
     if (found.length) {
       this.notify(e.found.size === PLACE_TYPES.length ? 'All landmarks visited' : `${found[0].name} · ${e.found.size} / ${PLACE_TYPES.length}`);
       this.refreshNotebook();
     }
-    if (this.taxi?.running) { this.updateTaxi(); return; }
+    if (this.taxi?.running) { this.updateTaxi(draw); return; }
     attribute(this.canvas, 'title', 'Local street map');
     hide($('taxi-offer'), true);
     attribute(this.canvas, 'aria-label', `Local street map. Your heading is up; the white arrow is ${vehicle.walker ? 'you' : 'your car'}.${this.onFoot?.parked ? ' The car in a teal ring is your own, where you left it.' : ''}`);
-    if (this.expanded) this.draw(vehicle);
+    if (this.expanded && draw) this.draw(vehicle);
   }
-  updateTaxi() {
+  updateTaxi(draw = true) {
     const run = this.taxi, vehicle = this.position();
     // The map card keeps the next shift goal in view; the task card already
     // says everything else about the fare.
@@ -77,8 +82,8 @@ export class CityGuide {
     attribute(this.canvas, 'title', run.status === 'pickup' ? 'Nearby passengers' : 'Route to the drop-off');
     attribute(this.canvas, 'aria-label', run.status === 'pickup'
       ? 'Local street map. Your heading is up; the white arrow is your car. Dots mark waiting passengers, red for short trips through orange and yellow to green for long ones; numbers show group size.'
-      : 'Local street map. Your heading is up; the white arrow is your car. Gold marks the current drop-off; a dashed line leads to the next group stop.');
-    if (this.expanded) this.draw(vehicle);
+      : 'Local street map. Your heading is up; the white arrow is your car. Gold marks the current drop-off and the stretch of street to stop in; a dashed line leads to the next group stop.');
+    if (this.expanded && draw) this.draw(vehicle);
   }
   draw(vehicle) {
     // Resolve markers on every redraw; exploration and previous fares must not
@@ -86,10 +91,17 @@ export class CityGuide {
     const run = this.taxi;
     const target = run?.status === 'driving' ? run.target : null;
     const nextStop = target ? run.fare.stops[run.stopIndex + 1]?.destination : null;
+    const ratio = Math.min(window.devicePixelRatio || 1, 2), parked = this.onFoot?.parked;
+    // Everything the map shows comes from these (the route from the car's
+    // position and its drop-off). While none has changed, as when paused or
+    // waiting in a ring, the canvas already shows it.
+    const shown = [ratio, vehicle.u, vehicle.s, vehicle.heading, run, run?.status, run?.status === 'pickup' ? run.customers : null,
+      target, nextStop, run?.stopIndex, parked, parked?.s, parked?.u];
+    if (this.shown?.length === shown.length && this.shown.every((value, i) => value === shown[i])) return;
+    this.shown = shown;
     const places = run?.status === 'pickup' ? run.customers : target ? [{ ...target, color: '#ffd238' }] : [];
-    const route = taxiRoute(vehicle, target);
+    const route = taxiRoute(vehicle, target && run.approach(vehicle));
     const ctx = this.ctx, width = 208, height = 144, scale = MAP_SCALE;
-    const ratio = Math.min(window.devicePixelRatio || 1, 2);
     const pixelWidth = Math.floor(width * ratio), pixelHeight = Math.floor(height * ratio);
     if (this.canvas.width !== pixelWidth || this.canvas.height !== pixelHeight) { this.canvas.width = pixelWidth; this.canvas.height = pixelHeight; }
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0); ctx.clearRect(0, 0, width, height);
@@ -111,7 +123,13 @@ export class CityGuide {
         ctx.save(); ctx.fillStyle = '#17262f'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(run.stopIndex + 2), x, y); ctx.restore();
       }
     }
-    ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.lineWidth = 2; ctx.strokeStyle = '#efca8b';
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    // The drop-off stretch, as wide as the stop reaches
+    if (target?.stretch?.length > 1) {
+      ctx.lineWidth = STOP_RADIUS * 2 * scale; ctx.strokeStyle = 'rgba(245, 214, 156, .5)';
+      ctx.beginPath(); target.stretch.forEach((p, i) => { const [x, y] = point(p); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }); ctx.stroke();
+    }
+    ctx.lineWidth = 2; ctx.strokeStyle = '#efca8b';
     ctx.beginPath(); route.forEach((p, i) => { const [x, y] = point(p); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }); ctx.stroke();
     for (const place of places) {
       const [x, y] = point(place), selected = place.id === target?.id;
@@ -124,7 +142,6 @@ export class CityGuide {
       if (selected) { ctx.strokeStyle = '#fff4dc'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.stroke(); }
     }
     // The car the player left, or where it is from the edge, pointed at
-    const parked = this.onFoot?.parked;
     if (parked) {
       const [x, y] = point(parked), dx = x - width / 2, dy = y - height / 2, edge = 10;
       const factor = Math.min(1, (width / 2 - edge) / Math.max(Math.abs(dx), .001), (height / 2 - edge) / Math.max(Math.abs(dy), .001));

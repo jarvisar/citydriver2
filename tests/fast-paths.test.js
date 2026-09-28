@@ -12,6 +12,8 @@ import { intersection } from '../src/mapgen/booleans.js';
 import { Surface, setColor } from '../src/world/surface.js';
 import { CITY } from '../src/world/city.js';
 import { wallHasOutlook } from '../src/world/city-buildings.js';
+import { navGraph } from '../src/world/nav-graph.js';
+import { turnPath, turnPathSteps, bendSpeed, isLink } from '../src/world/lane-paths.js';
 
 // The city is built through a few shortcuts: indexes, caches and early
 // exits. Each must give exactly the answer of the plain computation it
@@ -195,4 +197,83 @@ test('a tensor\'s angle, worked out when first asked for, is the one it had when
     const grid = new Grid(new Vector(0, 0), 100, 1, random() * Math.PI);
     for (let twice = 0; twice < 2; twice++) assert.deepEqual(grid.getTensor().matrix, [Math.cos(2 * grid._theta), Math.sin(2 * grid._theta)]);
   }
+});
+
+// The traffic's own shortcuts (see city-traffic.js and lane-paths.js)
+const same = (a, b, what) => assert.ok(Object.is(a, b), `${what}: ${a} against ${b}`);
+
+test('a nav pose written in place is the one pose makes, and without its heading leaves the heading be', () => {
+  const nav = navGraph();
+  for (const edge of nav.edges.filter((_, i) => i % 5 === 0)) {
+    const alongs = [0, 1e-9, .4, 1.5, edge.length / 3, edge.length - .2, edge.length, edge.length + 2, -1, ...edge.cumulative.flatMap(c => [c, c - 1.5, c + 1.5])];
+    for (const along of alongs) for (const direction of [1, -1]) for (const lane of [0, 2.8, -1.3]) {
+      const pose = nav.pose(edge, along, direction, lane), into = nav.poseInto({ heading: 9 }, edge, along, direction, lane), bare = nav.poseInto({ heading: 9 }, edge, along, direction, lane, false);
+      for (const key of ['s', 'u', 'heading', 'tx', 'ty', 'segment']) same(into[key], pose[key], `edge ${edge.id} at ${along} ${key}`);
+      for (const key of ['s', 'u', 'tx', 'ty', 'segment']) same(bare[key], pose[key], `edge ${edge.id} at ${along} ${key}, no heading`);
+      assert.equal(bare.heading, 9);
+    }
+  }
+});
+
+test('a turn path worked out a piece at a time is the one worked out whole, across links too', () => {
+  const nav = navGraph(), apart = Object.create(nav);
+  apart.turnPaths = new Map();
+  const compare = (whole, next, what) => {
+    const steps = turnPathSteps(apart, whole.edge, whole.direction, next);
+    let step = steps.next(), pieces = 0;
+    while (!step.done) { step = steps.next(); pieces++; }
+    const path = step.value, turn = whole.path;
+    for (const key of ['start', 'end', 'length', 'angle', 'radius', 'speed', 'overKerb']) same(path[key], turn[key], `${what} ${key}`);
+    for (let d = -1; d <= turn.length + 1; d += .7) for (const key of ['s', 'u', 'heading', 'tx', 'ty']) same(path.pose(d)[key], turn.pose(d)[key], `${what} at ${d} ${key}`);
+    return pieces;
+  };
+  let turns = 0, pieces = 0;
+  for (const edge of nav.edges.filter((_, i) => i % 7 === 0)) for (const direction of [1, -1]) for (const choice of nav.choices(edge, direction)) {
+    pieces += compare({ edge, direction, path: turnPath(nav, edge, direction, choice) }, choice, `${edge.id}:${direction}>${choice.edge.id}`); turns++;
+    if (choice.edge !== edge && isLink(nav, choice.edge)) for (const beyond of nav.choices(choice.edge, choice.direction)) {
+      if (beyond.edge === edge || beyond.edge === choice.edge) continue;
+      const through = { ...beyond, via: choice.edge }, key = `${edge.id}:${direction}>${beyond.edge.id}:${beyond.direction}`;
+      apart.turnPaths.delete(key);
+      pieces += compare({ edge, direction, path: turnPath(nav, edge, direction, through) }, through, `${key} across ${choice.edge.id}`); turns++;
+    }
+  }
+  assert.ok(turns > 300 && pieces > turns * 10, `${turns} turns in ${pieces} pieces`);
+});
+
+test('bend speeds in any lane are the ones a profile for that lane gives', () => {
+  const nav = navGraph(), LATERAL = 2.8;
+  // (a lane's profile, worked out as it always was)
+  const profile = (edge, lane) => {
+    const count = Math.floor(edge.length) + 1, speeds = new Float32Array(count);
+    for (let k = 0; k < count; k++) {
+      const a = nav.pose(edge, Math.max(0, k - 1), 1), b = nav.pose(edge, Math.min(edge.length, k + 1), 1), span = Math.min(edge.length, k + 1) - Math.max(0, k - 1);
+      const turn = Math.abs(Math.atan2(Math.sin(b.heading - a.heading), Math.cos(b.heading - a.heading))), curvature = span > .5 ? turn / span : 0, inside = curvature / Math.max(.35, 1 - curvature * lane);
+      speeds[k] = inside > 1e-4 ? Math.max(1.8, Math.sqrt(LATERAL / inside)) : Infinity;
+    }
+    return speeds;
+  };
+  const expected = (edge, speeds, direction, along) => {
+    let limit = Infinity;
+    for (let x = 0; x <= 60; x += 1) {
+      const d = direction > 0 ? along + x : edge.length - along - x;
+      if (d < 0 || d > edge.length) break;
+      const v = speeds[Math.min(speeds.length - 1, Math.round(d))];
+      if (v < Infinity) limit = Math.min(limit, Math.sqrt(v * v + 2 * 3.2 * x));
+    }
+    return limit;
+  };
+  let bent = 0;
+  for (const edge of nav.edges.filter((_, i) => i % 3 === 0)) {
+    const lanes = [edge.profile.lane, 0, 1.37, edge.profile.lane + .5, -edge.profile.lane];
+    if (edge.profile.divider) lanes.push((edge.profile.median + edge.profile.divider) / 2);
+    for (const lane of lanes) {
+      const speeds = profile(edge, Math.abs(lane));
+      for (const direction of [1, -1]) for (const along of [0, 7.5, edge.length / 2, edge.length - 20, edge.length]) {
+        const limit = bendSpeed(nav, edge, direction, along, lane);
+        same(limit, expected(edge, speeds, direction, along), `edge ${edge.id} lane ${lane} ${direction} at ${along}`);
+        if (limit < Infinity) bent++;
+      }
+    }
+  }
+  assert.ok(bent > 100, `${bent} limits from bends`);
 });

@@ -62,6 +62,7 @@ export class NavGraph {
     this.pruneStubs();
     this.mergeThrough();
     this.index = new RoadIndex(this.edges.map(edge => ({ points: edge.points.map(p => ({ x: p.x, y: p.y })), edge, profile: edge.profile })), 48);
+    this.endpoints = new Map();
   }
   addEdge(a, b, points, roadIndex) {
     const road = CITY.roads[roadIndex] ?? null, kind = road?.kind ?? 'minor';
@@ -156,12 +157,50 @@ export class NavGraph {
     const x = a.x + (b.x - a.x) * t + ty * lane, y = a.y + (b.y - a.y) * t - tx * lane;
     return { s: y, u: x, heading: Math.atan2(tx, ty), tx, ty, segment: i };
   }
+  // pose written into `out` without allocating, for the traffic's per-step
+  // use. Same sums as pose, bit for bit (tests/fast-paths.test.js). With
+  // `heading` false the atan2 is skipped and out.heading is left alone.
+  poseInto(out, edge, along, direction = 1, lane = 0, heading = true) {
+    const distance = direction > 0 ? along : edge.length - along, points = edge.points, cumulative = edge.cumulative, last = points.length - 2;
+    let i = 0, hi = last;
+    const clamped = Math.max(0, Math.min(edge.length, distance));
+    while (i < hi) { const mid = (i + hi + 1) >> 1; if (cumulative[mid] <= clamped) i = mid; else hi = mid - 1; }
+    const a = points[i], b = points[i + 1], span = cumulative[i + 1] - cumulative[i] || 1;
+    const t = Math.max(0, Math.min(1, (clamped - cumulative[i]) / span));
+    // pointAlong's segments for the chord ends, stepped to from i since the lengths only grow
+    const back = Math.max(0, clamped - TANGENT), on = Math.min(edge.length, clamped + TANGENT);
+    let j = i, k = i;
+    while (j > 0 && !(cumulative[j] <= back)) j--;
+    while (k < last && cumulative[k + 1] <= on) k++;
+    const tb = Math.max(0, Math.min(1, (back - cumulative[j]) / (cumulative[j + 1] - cumulative[j] || 1))), ta = Math.max(0, Math.min(1, (on - cumulative[k]) / (cumulative[k + 1] - cumulative[k] || 1)));
+    const p = points[j], q = points[j + 1], r = points[k], w = points[k + 1];
+    let tx = (r.x + (w.x - r.x) * ta) - (p.x + (q.x - p.x) * tb), ty = (r.y + (w.y - r.y) * ta) - (p.y + (q.y - p.y) * tb);
+    const norm = Math.hypot(tx, ty);
+    if (norm > 1e-9) { tx /= norm; ty /= norm; } else { tx = (b.x - a.x) / span; ty = (b.y - a.y) / span; }
+    if (direction < 0) { tx = -tx; ty = -ty; }
+    out.s = a.y + (b.y - a.y) * t - tx * lane; out.u = a.x + (b.x - a.x) * t + ty * lane;
+    if (heading) out.heading = Math.atan2(tx, ty);
+    out.tx = tx; out.ty = ty; out.segment = i;
+    return out;
+  }
   // The edge nearest a point and how far along it the point projects
   nearest(s, u, radius = 40) {
     const hit = this.index.nearest(u, s, radius);
     if (!hit) return null;
     const edge = hit.road.edge, along = edge.cumulative[hit.segment.index] + hit.t * hit.segment.length;
     return { edge, along, distance: hit.distance, x: hit.x, y: hit.y, tx: hit.tx, ty: hit.ty };
+  }
+  // The edge a route starts or ends on, cached by exact position. Taxi offers
+  // route from the same pickups to the same entrances over and over.
+  endpoint(p) {
+    const key = `${p.s},${p.u}`;
+    let hit = this.endpoints.get(key);
+    if (hit === undefined) {
+      if (this.endpoints.size >= 2048) this.endpoints.clear();
+      hit = this.nearest(p.s, p.u, 120);
+      this.endpoints.set(key, hit);
+    }
+    return hit;
   }
   // The node at the end of travel and the edges leaving it
   endNode(edge, direction) { return this.nodes[direction > 0 ? edge.b : edge.a]; }
@@ -182,7 +221,7 @@ export class NavGraph {
   // Shortest drive between two points, as a polyline of {s, u} through the
   // streets, by Dijkstra over the junction nodes.
   route(from, to) {
-    const a = this.nearest(from.s, from.u, 120), b = this.nearest(to.s, to.u, 120);
+    const a = this.endpoint(from), b = this.endpoint(to);
     if (!a || !b) return [{ s: from.s, u: from.u }, { s: to.s, u: to.u }];
     const trace = (edge, start, end) => {
       // points between two distances along the edge, in order of travel
@@ -193,43 +232,93 @@ export class NavGraph {
       return (start <= end ? out : out.reverse()).map(p => ({ s: p.s, u: p.u }));
     };
     if (a.edge === b.edge) return [{ s: from.s, u: from.u }, ...trace(a.edge, a.along, b.along), { s: to.s, u: to.u }];
-    const distance = new Map(), previous = new Map(), done = new Set();
-    const queue = [];
-    const push = (node, cost, via) => { if (cost < (distance.get(node) ?? Infinity)) { distance.set(node, cost); previous.set(node, via); queue.push({ node, cost }); } };
-    push(a.edge.a, a.along, { edge: a.edge, from: null, start: a.along });
-    push(a.edge.b, a.edge.length - a.along, { edge: a.edge, from: null, start: a.along });
-    const targets = new Map([[b.edge.a, b.along], [b.edge.b, b.edge.length - b.along]]);
+    // Per-node state in arrays reused by every search. A node counts as
+    // unvisited until this search stamps it. `from` is -1 for the start.
+    const count = this.nodes.length;
+    if (this.search?.cost.length !== count) this.search = { cost: new Float64Array(count), stamp: new Uint32Array(count), done: new Uint32Array(count),
+      through: new Array(count), from: new Int32Array(count), serial: 0, heap: new Queue() };
+    const search = this.search, { cost: distance, stamp, done, through, from: previous, heap } = search;
+    if (++search.serial === 0xffffffff) { stamp.fill(0); done.fill(0); search.serial = 1; }
+    const visit = search.serial;
+    heap.clear();
+    const push = (node, cost, edge, via) => {
+      if (!(cost < (stamp[node] === visit ? distance[node] : Infinity))) return;
+      stamp[node] = visit; distance[node] = cost; through[node] = edge; previous[node] = via; heap.push(node, cost);
+    };
+    push(a.edge.a, a.along, a.edge, -1);
+    push(a.edge.b, a.edge.length - a.along, a.edge, -1);
+    // On a loop edge both ends are one node, and endB's distance wins, as it
+    // did when these were a Map
+    const endA = b.edge.a, endB = b.edge.b, leftA = b.along, leftB = b.edge.length - b.along;
     let best = null;
-    while (queue.length) {
-      let index = 0;
-      for (let i = 1; i < queue.length; i++) if (queue[i].cost < queue[index].cost) index = i;
-      const { node, cost } = queue.splice(index, 1)[0];
-      if (done.has(node)) continue;
-      done.add(node);
-      if (targets.has(node)) {
-        const total = cost + targets.get(node);
+    while (heap.size) {
+      const cost = heap.cost(), node = heap.pop();
+      if (done[node] === visit) continue;
+      done[node] = visit;
+      if (node === endB || node === endA) {
+        const total = cost + (node === endB ? leftB : leftA);
         if (!best || total < best.total) best = { node, total };
         if (best && cost > best.total) break;
       }
       for (const edge of this.nodes[node].edges) {
         const other = edge.a === node ? edge.b : edge.a;
-        if (!done.has(other)) push(other, cost + edge.length, { edge, from: node });
+        if (done[other] !== visit) push(other, cost + edge.length, edge, node);
       }
     }
     if (!best) return [{ s: from.s, u: from.u }, { s: to.s, u: to.u }];
     // Walk back from the best node to the first edge
     const legs = [];
     let node = best.node;
-    while (node !== undefined) {
-      const via = previous.get(node);
-      if (!via) break;
-      if (via.from === null) { legs.push(trace(via.edge, via.start, via.edge.a === node ? 0 : via.edge.length)); break; }
-      legs.push(trace(via.edge, via.edge.a === via.from ? 0 : via.edge.length, via.edge.a === node ? 0 : via.edge.length));
-      node = via.from;
+    while (stamp[node] === visit) {
+      const edge = through[node], via = previous[node];
+      if (via < 0) { legs.push(trace(edge, a.along, edge.a === node ? 0 : edge.length)); break; }
+      legs.push(trace(edge, edge.a === via ? 0 : edge.length, edge.a === node ? 0 : edge.length));
+      node = via;
     }
     legs.reverse();
     const last = trace(b.edge, b.edge.a === best.node ? 0 : b.edge.length, b.along);
     return [{ s: from.s, u: from.u }, ...legs.flat(), ...last, { s: to.s, u: to.u }];
+  }
+}
+
+// Binary heap for the search, cheapest first, ties in the order pushed. The
+// linear scan it replaced took the cheapest entry nearest the front of its
+// list, which is the same order, so routes come out exactly as before.
+class Queue {
+  constructor() { this.nodes = []; this.costs = []; this.orders = []; this.size = 0; this.order = 0; }
+  clear() { this.size = 0; this.order = 0; }
+  before(i, j) { return this.costs[i] < this.costs[j] || (this.costs[i] === this.costs[j] && this.orders[i] < this.orders[j]); }
+  swap(i, j) {
+    const { nodes, costs, orders } = this;
+    const node = nodes[i], cost = costs[i], order = orders[i];
+    nodes[i] = nodes[j]; costs[i] = costs[j]; orders[i] = orders[j];
+    nodes[j] = node; costs[j] = cost; orders[j] = order;
+  }
+  push(node, cost) {
+    let i = this.size++;
+    this.nodes[i] = node; this.costs[i] = cost; this.orders[i] = this.order++;
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (!this.before(i, parent)) break;
+      this.swap(i, parent); i = parent;
+    }
+  }
+  cost() { return this.costs[0]; }
+  pop() {
+    const node = this.nodes[0], last = --this.size;
+    if (last > 0) {
+      this.nodes[0] = this.nodes[last]; this.costs[0] = this.costs[last]; this.orders[0] = this.orders[last];
+      let i = 0;
+      for (;;) {
+        const left = i * 2 + 1, right = left + 1;
+        let first = i;
+        if (left < last && this.before(left, first)) first = left;
+        if (right < last && this.before(right, first)) first = right;
+        if (first === i) break;
+        this.swap(i, first); i = first;
+      }
+    }
+    return node;
   }
 }
 

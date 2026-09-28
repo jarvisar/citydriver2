@@ -304,9 +304,15 @@ test('whole chunks are culled only when neither the camera nor the sun could dra
     assert.ok(hidden > drawn.length / 2 && hidden < drawn.length, `${hidden} of ${drawn.length} chunks culled`);
     // Out of range, the skyline is not in the scene at all
     for (const chunk of world.distant.values()) if (!chunk.group.parent) assert.equal(chunk.group.visible, false);
-    // A headset's pair of eyes is left to the renderer
-    world.cull(new THREE.ArrayCamera([camera]), shadow);
+    // A headset's pair of eyes carries one frustum round both (as three sets
+    // it for its own culling), and culls as any lens with that frustum does
+    const culled = drawn.map(chunk => chunk.group.visible);
+    const eyes = new THREE.ArrayCamera([camera]);
+    eyes.projectionMatrix.copy(camera.projectionMatrix); eyes.matrixWorldInverse.copy(camera.matrixWorldInverse);
+    world.cull(null, shadow);
     assert.ok(drawn.every(chunk => chunk.group.visible));
+    world.cull(eyes, shadow);
+    assert.deepEqual(drawn.map(chunk => chunk.group.visible), culled);
     // The streets are tiled, so the renderer can leave out those off screen
     for (const name of ['ground', 'roads', 'walls']) {
       const tiles = world.staticGroup.children.filter(mesh => mesh.name === `citydriver-${name}`);

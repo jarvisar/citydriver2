@@ -41,7 +41,7 @@ npm run test:electron -- --build
 npm run test:electron -- --packaged
 ```
 
-Checks startup, driving, settings, fullscreen, and that the browser-only install button is hidden. Reports go to `.artifacts/electron/`.
+These check startup, driving, settings, fullscreen, and that the browser-only install button is hidden. Reports go to `.artifacts/electron/`.
 
 ## Releases
 
@@ -52,6 +52,6 @@ npm version patch
 git push --follow-tags
 ```
 
-Pushing a `v*` tag runs the **Build Citydriver desktop** workflow. Once the builds finish, the packages are published under **Releases**. Existing tags won't rebuild automatically.
+Pushing a `v*` tag runs the `Build Citydriver desktop` workflow. Once the builds finish, the packages are published under Releases. Existing tags won't rebuild automatically.
 
 Manual workflow runs and local builds don't publish a release. The app doesn't update itself.

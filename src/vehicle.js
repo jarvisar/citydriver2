@@ -5,6 +5,7 @@ import { citydriverRoute } from './world/city-route.js';
 import { stableShadowDepth } from './world/shadow-depth.js';
 import { CARS, DEFAULT_CAR, DRAG, ROUTE_PAINT, carEntry, carStats } from './cars.js';
 import { createShapeCar } from './car-models.js';
+import { wheelGeometry } from './traffic-models.js';
 import { createFormulaCar } from './formula-model.js';
 import { createSpecialCar } from './special-models.js';
 import { createHelicopter, Helicopter } from './helicopter.js';
@@ -160,12 +161,14 @@ export function createClassicCar(entry = carEntry(DEFAULT_CAR)) {
   across(bike, .1, .02, [.045, axle - .04, .08], chrome, 10);
   tube([.05, RACK + .045, -.16], [.05, axle + .22, -.16], .022, rubber); box(bike, [.1, .07, .07], [.025, axle + .19, -.158], rubber);
   mergeParts(bike);
-  const wheels = [];
+  // One draw per wheel (see wheelGeometry)
+  const wheels = [], wheelMaterial = mat('#ffffff', { vertexColors: true });
   for (const x of [-1.02, 1.02]) for (const z of [-1.18, 1.21]) {
     const pivot = new THREE.Group(); pivot.position.set(x, .48, z); car.add(pivot);
-    const wheel = new THREE.Mesh(new THREE.CylinderGeometry(.48, .48, .28, 12), tires); wheel.rotation.z = Math.PI / 2; wheel.castShadow = true; pivot.add(wheel);
-    const hub = new THREE.Mesh(new THREE.CylinderGeometry(.23, .23, .295, 10), roof); hub.rotation.z = Math.PI / 2; pivot.add(hub);
-    wheels.push({ pivot, wheel, hub, front: z < 0 });
+    const tire = new THREE.CylinderGeometry(.48, .48, .28, 12), hub = new THREE.CylinderGeometry(.23, .23, .295, 10);
+    const wheel = new THREE.Mesh(wheelGeometry(tire, hub, '#303b36', '#f5e8c8'), wheelMaterial); wheel.rotation.z = Math.PI / 2; wheel.castShadow = true; pivot.add(wheel);
+    tire.dispose(); hub.dispose();
+    wheels.push({ pivot, wheel, hub: wheel, front: z < 0 });
   }
   // Reuse the model and its materials so repeated route changes stay bounded.
   // A chosen trim ignores the route; the default car follows it. A garage colour
