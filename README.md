@@ -15,10 +15,11 @@ This is the sequel to [Citydriver](https://github.com/jarvisar/citydriver). The 
 - Buildings shaped to fit their lots
 - Traffic that follows signals, stop signs and give-way signs
 - Traffic that changes lanes on the boulevards and drives around crashed and stopped cars
+- A bus that comes by now and then and stops at the bus shelters to let people on and off
 - Landmarks and shops that passengers can ask to go to
 - Taxi mode with group fares, shift goals, driver ranks and cabs to buy
 - Demolition mode with a truck, damage chains, contracts, ratings and high scores
-- Get out and walk around in free drive, and borrow cars from traffic
+- Get out and walk around in free drive, chat with the locals, chase pigeons and borrow cars from traffic
 - Weather and night driving
 - Keyboard, controller and touch screen support
 - VR headsets such as Meta Quest, through WebXR
@@ -30,9 +31,13 @@ Start a Taxi run to pick up passengers and earn money. Stop in a pickup ring, fo
 
 Demolition puts you in a truck with one minute to cause as much property damage as possible. Lamp posts, benches, signs, trees, bus shelters and cars all have a price, and cars in traffic are worth the most. Hits in quick succession build a chain. Every fourth hit raises the chain's multiplier, up to ×5, and the chain's damage is added to the total when it ends. Each run has three contracts, like felling five trees, and each one finished adds 10 seconds to the clock. Wrecking a moving car adds 3. If time runs out mid-chain, the chain keeps going until it ends. Pedestrians dive out of the way if you give them the chance. Running one over costs a $10,000 fine and the chain in progress. Each run gets a rating, and the best five runs are kept as high scores. See [demolition](docs/demolition.md) for the prices, contracts and ratings.
 
-Free drive has no timer. All three taxis are available in the garage, and weather settings and city discoveries are in the pause menu. The garage also has a helicopter that can fly over the city and land on roofs. Press forward on the main menu to enter free drive. Press R or select New city in the pause menu to generate a new city.
+Free drive has no timer. All three taxis are available in the garage, and weather settings and city discoveries are in the pause menu. The garage also has a helicopter that can fly over the city and land on roofs, and the city bus. Press forward on the main menu to enter free drive. Press R or select New city in the pause menu to generate a new city.
 
-In free drive, press E to get out of the car and walk around. Walk up to your car, a car in traffic or a car parked along the street and press E to get in. A car taken from traffic drives off on its own when you get out. A parked car stays where you leave it and goes back to its space once you are far away. Your own car stays where you left it and is marked on both maps. Picking a car in the garage puts you in it. The helicopter can't be left. In first-person view on foot, A and D turn you. Once you click the view to look around with the mouse, A and D step sideways instead, like the left stick on a controller.
+In free drive, press E to get out of the car and walk around. Press E near your car, a car in traffic or a car parked along the street to get in. A marker shows which car. If it's a few metres away you walk over to it on your own, and a car in traffic stops to wait for you. Moving the stick or pressing a movement key cancels it. A car taken from traffic drives off on its own when you get out. A parked car stays where you leave it and goes back to its space once you are far away. Your own car stays where you left it and is marked on both maps. Picking a car in the garage puts you in it. The helicopter can't be left. If the car is still going fast, press E a second time to jump out while it slows down.
+
+Tap Space to hop and hold it to jump higher. Press it again in the air to flip. Press E in front of someone to chat, and press it again to keep talking. People sometimes tell you the way to a landmark you haven't found yet, and it gets marked on the street map. On foot, landmarks count as found from anywhere near them, including inside parks and squares. Pigeons gather around some of the benches and scatter if you run at them or drive past fast.
+
+In first-person view on foot, A and D turn you. Once you click the view to look around with the mouse, A and D step sideways instead, like the left stick on a controller.
 
 Every visit generates a new city. Add `?seed=4817` to the URL to load the same city again.
 
@@ -51,7 +56,7 @@ Every visit generates a new city. Add `?seed=4817` to the URL to load the same c
 | Reset | R | Y / Triangle (in a run) |
 | Garage / Taxi fleet | C / G | L3 |
 | Autodrive (free drive) | H | D-pad Up |
-| Get out / get in (free drive) | E | Y / Triangle |
+| Get out / get in / chat (free drive) | E | Y / Triangle |
 | Walk (on foot) | W A S D / arrows | Left stick |
 | Sprint (on foot) | Shift | RT / R2 or RB / R1 |
 | Jump (on foot) | Space | A / Cross or LB / L1 |
@@ -63,7 +68,7 @@ Every visit generates a new city. Add `?seed=4817` to the URL to load the same c
 | Street map (show / hide) | Its arrow button | |
 | Menus | Tab, Enter | D-pad or left stick to choose, A / Cross to select, B / Circle to go back |
 
-On touch screens, use the stick to drive, hold Boost, and tap Drift while steering in chase view. Release the stick to stop. In the helicopter, hold Climb or Descend. On foot, drag the stick the way to walk and push it further to run. Tap Jump, hold Sprint, and tap Get out or Get in.
+On touch screens, use the stick to drive, hold Boost, and tap Drift while steering in chase view. Release the stick to stop. In the helicopter, hold Climb or Descend. On foot, drag the stick the way to walk and push it further to run. Tap or hold Jump, hold Sprint, and tap Get out, Get in or Chat.
 
 ### VR
 
@@ -77,7 +82,7 @@ In a headset's browser, such as the Meta Quest Browser, select `Enter VR` on the
 | Boost | Right grip |
 | Drift / handbrake | Left grip |
 | Climb / descend (helicopter) | Right thumbstick, or right and left grip |
-| Get out / get in (free drive) | Y |
+| Get out / get in / chat (free drive) | Y |
 | Walk (on foot) | Left thumbstick |
 | Jump / sprint (on foot) | Left grip / right grip or right trigger |
 | Look around | Right thumbstick (left and right) |

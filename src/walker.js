@@ -1,11 +1,10 @@
 import * as THREE from 'three';
 import { clamp } from './world/route.js';
-import { cityWalker, createWalkerMaterial, setWalkerAppearance } from './world/city-walkers.js';
-import { stableShadowDepth } from './world/shadow-depth.js';
+import { cityWalker, createWalkerMaterial, setWalkerAppearance, setWalkerTurn, walkerDepthMaterial, walkerPose } from './world/city-walkers.js';
 
 // The player on foot: one of the city's own residents (see city-walkers.js),
 // walked as a character rather than driven as a car. They go the way the
-// stick or the keys point, turn quickly to face it, jog, sprint and hop, and
+// stick or the keys point, turn quickly to face it, jog, sprint and jump, and
 // stop at whatever stands in their way, round so they slide along a wall and
 // round a corner, knocking none of it loose (see collideScenery). They move
 // no car either (see CityTraffic.collidePlayer), but a car that runs into
@@ -17,6 +16,12 @@ import { stableShadowDepth } from './world/shadow-depth.js';
 // current, so the traffic, the streaming, the maps and the cameras need not
 // know the player is walking. Only people shoved aside (PedestrianContacts)
 // and the chase camera's framing tell the difference.
+//
+// With no limbs, the figure moves as a cartoon does: each step a little hop,
+// the body squashed as it lands and stretched as it leaves the ground, and
+// the floating head a moment behind it, dipping and nodding as the body
+// stops and starts. It leans into a run and banks into turns, and the head
+// turns first into a turn, and to look at whatever is about (`watch`).
 
 // A resident's coat and haircut for the player: an existing look for now
 export const PLAYER_LOOK = { look: 13, skin: 2, hair: 1, style: 0, outfit: 9, face: 0, gear: 1, legs: 0, accent: 1 };
@@ -29,13 +34,22 @@ export const WALKER_SPEC = { name: 'walker', width: .64, length: .64, radius: .3
 //                   a gentle push walks
 //   GRIP, AIR       how fast they change speed on their feet and in the air (m/s²)
 //   TURN            how quickly they turn to face the way they go
-//   JUMP, GRAVITY   take-off speed and fall (m/s, m/s²): a hop of about .6 m
-//   STEP            the highest kerb they step up or down without a hop; a
+//   STEP            the highest kerb they step up or down without a jump. A
 //                   drop further than that they fall down
 //   KNOCK           a car coming at them faster than this (m/s) knocks them over
-//   LIE, RISE       seconds lying still once they come to rest, and getting up
+//   LIE, GET_UP     seconds lying still once they come to rest, and getting up
 const JOG = 4.4, SPRINT = 7.4, GRIP = 24, AIR = 5, TURN = 12;
-const JUMP = 4.6, GRAVITY = 17, STEP = .45, KNOCK = 4, LIE = 1.1, RISE = .7;
+const STEP = .45, KNOCK = 4, LIE = 1.1, GET_UP = .7;
+// Jumping as platformers do it (m/s, m/s², s): off the ground at JUMP, slowed
+// by RISE while the button is held on the way up and by LET_GO once it is let
+// go, so a tap hops about half a metre and a held press jumps about a metre,
+// and falling faster than they rose, at FALL. A second press in the air
+// flips them over and on up at FLIP, once a jump. A press up to BUFFER
+// before they land jumps as they land, and one up to COYOTE after they step
+// off an edge still jumps.
+const JUMP = 5.2, FLIP = 4.6, RISE = 13, LET_GO = 34, FALL = 24, BUFFER = .13, COYOTE = .1;
+// A flip is once round, forward, about their middle, over FLIP_TIME s
+const FLIP_TIME = .42, MIDDLE = .95;
 // What a car's stats say, for whatever reads them (the sound's gearing, say)
 export const WALKER_STATS = { topSpeed: SPRINT, acceleration: GRIP, braking: GRIP, grip: 1, offRoad: SPRINT, reverseSpeed: JOG, cruise: SPRINT };
 // Where their eyes are, and how the chase camera frames them: at this share
@@ -43,40 +57,86 @@ export const WALKER_STATS = { topSpeed: SPRINT, acceleration: GRIP, braking: GRI
 const EYE = new THREE.Vector3(0, 1.62, -.12), CHASE_SCALE = .36, CHASE_LIFT = .75;
 // and the overhead views come this much nearer
 const OVERHEAD = .5;
+// The figure's springs, [stiffness, damping ratio]: the body's squash and
+// stretch, and the head over it, which drops and nods a moment behind the
+// body. The head keeps its gap over the collar (COLLAR m up) however the body
+// squashes, and drops into it no further than DROP.
+const SQUASH = [320, .35], BOB = [260, .3], NOD = [180, .4], COLLAR = 1.13, DROP = .03;
+// The head turns up to LOOK_MOST from the body: LEAD of the way into a turn
+// they are making (quickly, at LEAD_RATE), or to watch something within
+// WATCH m that is not behind them (at LOOK_RATE, springs per second)
+const LOOK_MOST = 1.1, LEAD = .8, LEAD_RATE = 18, WATCH = 12, LOOK_RATE = 6;
+// Hopping into a car and down out of one (see OnFoot): how high the hop
+// arcs (m), how long getting out takes (s), and how far they shrink into the
+// seat, where the car's body hides them. Into a car, the hop to its door
+// takes DOOR of the time and the rest is climbing in.
+const HOP = .35, ALIGHT = .42, SEATED = .55, DOOR = .6;
+// Talking to someone, the chase camera looks over their right shoulder, this far to the side (m)
+const SHOULDER = .9;
 
 const wrap = angle => Math.atan2(Math.sin(angle), Math.cos(angle));
-const UP = new THREE.Vector3(0, 1, 0), ONE = new THREE.Vector3(1, 1, 1);
+// A damped spring kept on `s` ({ x, v }), pulled toward `goal`
+function spring(s, goal, [stiffness, ratio], dt) {
+  s.v += (stiffness * (goal - s.x) - 2 * ratio * Math.sqrt(stiffness) * s.v) * dt;
+  s.x += s.v * dt;
+}
+// A turn on a critically damped spring (the head's), kept on `s` ({ x, v })
+function turnToward(s, goal, rate, dt) {
+  for (let left = dt; left > 1e-6; left -= 1 / 120) {
+    const step = Math.min(left, 1 / 120);
+    s.v += (rate * rate * wrap(goal - s.x) - 2 * rate * s.v) * step;
+    s.x += s.v * step;
+  }
+}
+const UP = new THREE.Vector3(0, 1, 0), X = new THREE.Vector3(1, 0, 0), ONE = new THREE.Vector3(1, 1, 1);
 const root = new THREE.Matrix4(), world = new THREE.Matrix4(), place = new THREE.Vector3(), turn = new THREE.Quaternion();
 const from = { p: new THREE.Vector3(), q: new THREE.Quaternion(), s: new THREE.Vector3() };
+const tilt = new THREE.Matrix4(), yaw = new THREE.Matrix4(), unyaw = new THREE.Matrix4(), euler = new THREE.Euler(0, 0, 0, 'YXZ');
 
 // The figure, as createCar makes a car's model: one instance of the
 // residents' shared geometry and palette shader, in a group that bobs and
-// leans about the feet. Nothing to light or paint.
+// leans about the feet. Nothing to light or paint. Its material and shadow
+// read its own pose (see walkerPose), which the residents' do not.
 export function createWalkerModel(appearance = PLAYER_LOOK) {
   const car = new THREE.Group(); car.name = 'walker';
   const body = new THREE.Group(); car.add(body);
-  const material = createWalkerMaterial(), figure = new THREE.InstancedMesh(cityWalker, material, 1);
+  const posture = walkerPose(), material = createWalkerMaterial(posture), figure = new THREE.InstancedMesh(cityWalker, material, 1);
   figure.name = 'walker-figure'; figure.castShadow = true; figure.receiveShadow = true;
-  setWalkerAppearance(figure, 0, appearance); stableShadowDepth(figure);
+  figure.customDepthMaterial = walkerDepthMaterial(posture); figure.userData.posture = posture;
+  setWalkerAppearance(figure, 0, appearance);
   body.add(figure);
   return {
     car, body, figure, wheels: [], nightLights: [],
     applyTrim() {}, paintCar() {},
     // (the geometry is the residents', and stays)
-    disposeModel() { figure.dispose(); material.dispose(); },
+    disposeModel() { figure.dispose(); material.dispose(); figure.customDepthMaterial.dispose(); },
   };
 }
 
 export class Walker {
   constructor(vehicle, model) {
-    this.vehicle = vehicle; this.figure = model.figure;
+    this.vehicle = vehicle; this.figure = model.figure; this.posture = model.figure.userData.posture;
     this.vx = 0; this.vz = 0; this.vy = 0; this.y = NaN; this.grounded = true;
     // How far into their stride they are (radians, a step each turn), how
-    // strongly they bob with it, and the clock the getting up keeps
-    this.phase = 0; this.stride = 0; this.time = 0; this.jumping = false; this.sprinting = false;
+    // strongly they bob with it, and the clock the rest keeps
+    this.phase = 0; this.stride = 0; this.time = 0; this.sprinting = false;
+    // Jumping (see JUMP): whether the button is held, when it was last
+    // pressed, when they last stood on the ground, and whether this time in
+    // the air began with a jump and has had its flip
+    this.held = false; this.asked = -Infinity; this.footing = 0; this.jumped = false; this.flipped = false; this.flipAt = -Infinity;
+    // The figure's springs (see SQUASH: `nod` is the chin down, radians),
+    // the head's turn from the body, and how fast they are turning,
+    // speeding up (m/s²) and skidding
+    this.squash = { x: 0, v: 0 }; this.drop = { x: 0, v: 0 }; this.nod = { x: 0, v: 0 }; this.look = { x: 0, v: 0 };
+    this.turnRate = 0; this.accel = 0; this.skid = 0; this.idle = 0;
+    // Something to look at, { x, z } in the world, or null (see
+    // OnFoot.lookAround), and someone to turn to, talking (see OnFoot.talk)
+    this.watch = null; this.faceTo = null; this.chatting = false;
     // Knocked over: their body (see LooseProps.person); getting up: from where it lay
     this.down = null; this.rise = null;
-    Object.assign(vehicle.car.userData, { driverEye: EYE, chaseLift: CHASE_LIFT, chaseScale: CHASE_SCALE, overheadScale: OVERHEAD, leash: true, velocity: { x: 0, z: 0 } });
+    // Hopping into a car (see boardCar), and down out of one (see alightFrom)
+    this.board = null; this.alight = null;
+    Object.assign(vehicle.car.userData, { driverEye: EYE, chaseLift: CHASE_LIFT, chaseScale: CHASE_SCALE, overheadScale: OVERHEAD, leash: true, velocity: { x: 0, z: 0 }, eyeBob: 0 });
   }
   get velocity() { return { x: this.vx, z: this.vz }; }
   // On their feet, not knocked over or getting up
@@ -87,28 +147,78 @@ export class Walker {
   takeOver() {
     const v = this.vehicle;
     this.stop(); this.vy = 0; this.grounded = true; this.y = v.route.height(v.s, v.u);
+    this.jumped = this.flipped = false; this.asked = this.flipAt = -Infinity; this.footing = this.time;
+    for (const s of [this.squash, this.drop, this.nod]) s.x = s.v = 0;
+    this.skid = this.turnRate = this.accel = 0; this.board = this.alight = null;
   }
+  // Into a car (see OnFoot.board): a hop to its door and in over `duration`
+  // s, `doorway()` saying where its door and seat are now ({ x, z, seat, heading }, or null)
+  boardCar(doorway, duration) {
+    const p = this.vehicle.groundedPosition;
+    this.board = { doorway, duration, at: this.time, x: p.x, y: p.y, z: p.z, heading: this.vehicle.heading };
+    this.stop();
+  }
+  get boarded() { return Boolean(this.board) && this.time - this.board.at >= this.board.duration; }
+  // Out of a car (see OnFoot.getOut): down from its seat at `seat` (a
+  // Vector3), facing `heading`, to where they stand
+  alightFrom(seat, heading) { this.alight = { at: this.time, seat: seat.clone(), heading }; }
+  get alighting() { return Boolean(this.alight) && this.time - this.alight.at < ALIGHT; }
   update(dt, input) {
     const v = this.vehicle, telemetry = v.audioTelemetry;
     v.copyPose(v.previousPose, v.currentPose);
     this.time += dt;
     if (!Number.isFinite(this.y)) this.takeOver();
     if (this.down) this.lie();
-    else if (this.rise && this.time - this.rise.at >= RISE) this.rise = null;
-    const control = !this.down && !this.rise, walk = control ? input.walk : null;
+    else if (this.rise && this.time - this.rise.at >= GET_UP) this.rise = null;
+    // Down from a car's seat: they land, and are theirs to move
+    if (this.alight && !this.alighting) {
+      this.alight = null; this.squash.v -= 2.6; this.drop.v -= .35; this.nod.v += 1.4;
+      telemetry.step = .5; telemetry.stepSerial++; telemetry.landing = 0; telemetry.surface = this.surface();
+    }
+    const control = !this.down && !this.rise && !this.board && !this.alight, walk = control ? input.walk : null;
     // The way they want to go, and how fast: the stick's push, a key's all the way
     const amount = walk ? Math.min(1, Math.hypot(walk.x, walk.z)) : 0, top = input.sprint ? SPRINT : JOG;
     const wx = amount ? walk.x * top : 0, wz = amount ? walk.z * top : 0;
     if (control && Number.isFinite(input.aim)) v.heading = input.aim;
+    const before = v.heading, ahead = { x: Math.sin(before), z: -Math.cos(before) };
+    const forward = this.vx * ahead.x + this.vz * ahead.z, moving = Math.hypot(this.vx, this.vz);
+    // Pushing hard against the way they are running, they skid
+    const against = this.grounded && amount > .5 && moving > 3 && wx * this.vx + wz * this.vz < -.3 * moving * Math.hypot(wx, wz);
+    if (against && this.skid === 0) this.puff(3, 1.4, this.vx * .3, this.vz * .3);
+    this.skid = dt ? clamp(this.skid + (against ? 8 : -5) * dt, 0, 1) : this.skid;
     const dx = wx - this.vx, dz = wz - this.vz, gap = Math.hypot(dx, dz), change = Math.min(gap, (this.grounded ? GRIP : AIR) * dt);
     if (gap > 1e-9) { this.vx += dx / gap * change; this.vz += dz / gap * change; }
     // They turn to face the way they are asked to go (not through their own
     // eyes, where they face where the view looks and back is a step back)
     if (control && input.face !== false && amount > .05) v.heading += wrap(Math.atan2(wx, -wz) - v.heading) * (1 - Math.exp(-TURN * dt));
+    // Talking to someone (see OnFoot.talk), they turn to them, until they move off
+    if (amount > .05 || !control) this.faceTo = null;
+    else if (this.faceTo && dt > 0) {
+      const p = v.groundedPosition;
+      v.heading += wrap(Math.atan2(this.faceTo.x - p.x, p.z - this.faceTo.z) - v.heading) * (1 - Math.exp(-TURN * .5 * dt));
+    }
     v.heading = wrap(v.heading);
-    // A hop, once for each press
-    if (control && input.jump && !this.jumping && this.grounded) { this.vy = JUMP; this.grounded = false; }
-    this.jumping = Boolean(input.jump);
+    if (dt > 0) {
+      this.turnRate = THREE.MathUtils.damp(this.turnRate, wrap(v.heading - before) / dt, 12, dt);
+      this.accel = THREE.MathUtils.damp(this.accel, (this.vx * ahead.x + this.vz * ahead.z - forward) / dt, 10, dt);
+    }
+    // Jumping (see JUMP): a press waits BUFFER for the ground to answer it
+    const pressed = control && Boolean(input.jump) && !this.held;
+    this.held = Boolean(input.jump);
+    if (pressed) this.asked = this.time;
+    if (control && this.time - this.asked <= BUFFER) {
+      const footing = this.grounded || (!this.jumped && this.time - this.footing <= COYOTE);
+      // (in the air, a press the ground will answer in a moment waits for it, rather than flipping)
+      const above = Math.max(0, this.y - v.route.height(v.s, v.u));
+      const landing = !this.grounded && this.vy <= 0 && (this.vy + Math.sqrt(this.vy * this.vy + 2 * FALL * above)) / FALL < BUFFER;
+      if (footing) {
+        this.vy = JUMP; this.grounded = false; this.jumped = true; this.asked = -Infinity;
+        this.squash.v += 2.8; this.drop.v -= .45; this.nod.v -= 1.2;
+      } else if (pressed && !this.flipped && !landing) {
+        this.vy = FLIP; this.flipped = true; this.flipAt = this.time; this.asked = -Infinity;
+        this.squash.v += 1.5; this.drop.v -= .3;
+      }
+    }
     // Along the ground, but never into the water: the half of the move that
     // stays dry is kept, so they walk along a quay's edge rather than stick
     const fromS = v.s, fromU = v.u;
@@ -122,40 +232,105 @@ export class Walker {
         this.vx = (v.u - fromU) / (dt || 1); this.vz = -(v.s - fromS) / (dt || 1);
       }
     }
-    // Up a kerb or down it in their stride; off anything higher they fall
+    // Up a kerb or down it in their stride, and off anything higher they
+    // fall. Rising with the button held they are slowed least, falling most.
     const ground = v.route.height(v.s, v.u), wasGrounded = this.grounded;
+    const gravity = this.vy > 0 ? (this.held && (this.jumped || this.flipped) ? RISE : LET_GO) : FALL;
+    let landed = 0;
     if (this.down) this.y = ground;
     else if (this.grounded && Math.abs(ground - this.y) <= STEP) this.y = ground;
     else {
       if (this.grounded && ground > this.y) { v.s = fromS; v.u = fromU; this.vx = this.vz = 0; }
-      else { this.grounded = false; this.vy -= GRAVITY * dt; this.y += this.vy * dt; }
+      else { this.grounded = false; this.vy -= gravity * dt; this.y += this.vy * dt; }
       const under = v.route.height(v.s, v.u);
-      if (this.y <= under) { this.y = under; this.vy = 0; this.grounded = true; }
+      if (this.y <= under) { landed = Math.max(.5, -this.vy); this.y = under; this.vy = 0; this.grounded = true; }
     }
-    // Landing thuds; every step is a footfall (see DriveAudio)
-    const speed = Math.hypot(this.vx, this.vz), before = this.phase;
-    if (this.grounded && !wasGrounded && dt) { telemetry.step = 1; telemetry.stepSerial++; }
+    if (this.grounded) { this.footing = this.time; this.jumped = this.flipped = false; }
+    // Landing: a squash as deep as the fall was fast, the head dipping into
+    // it, a thud and a puff. Every step is a footfall (see DriveAudio).
+    const speed = Math.hypot(this.vx, this.vz), stepped = this.phase;
+    if (landed && !wasGrounded && dt) {
+      this.squash.v -= 1.4 + landed * .6; this.drop.v -= .2 + landed * .07; this.nod.v += 1 + landed * .25;
+      telemetry.step = clamp(landed / 8, .35, 1); telemetry.stepSerial++; telemetry.landing = landed; telemetry.surface = this.surface();
+      if (landed > 3) this.puff(Math.round(clamp(landed, 4, 9)), .6 + landed * .12);
+    }
+    const sprinted = this.sprinting;
     this.sprinting = input.sprint && speed > JOG + .5;
     // (pressed against a wall, each step's little push into it is no stride)
     if (this.grounded && !this.down && !this.rise) this.phase += dt * Math.PI * 2 * (1.6 + speed * .35) * clamp((speed - .3) / 1.2, 0, 1);
-    if (Math.floor((this.phase - Math.PI * 1.5) / (Math.PI * 2)) > Math.floor((before - Math.PI * 1.5) / (Math.PI * 2))) { telemetry.step = clamp(speed / SPRINT, .25, 1); telemetry.stepSerial++; }
+    if (Math.floor((this.phase - Math.PI * 1.5) / (Math.PI * 2)) > Math.floor((stepped - Math.PI * 1.5) / (Math.PI * 2))) {
+      telemetry.step = clamp(speed / SPRINT, .25, 1); telemetry.stepSerial++; telemetry.landing = 0; telemetry.surface = this.surface();
+      this.drop.v -= .12 * Math.min(1, this.stride);
+      // (a wet street splashes at every step)
+      if (v.props && v.props.underfoot !== 'dust') this.puff(this.sprinting ? 2 : 1, .5, -this.vx * .15, -this.vz * .15);
+    }
+    // Breaking into a sprint kicks up a little dust behind them
+    if (this.sprinting && !sprinted && this.grounded) this.puff(3, .8, -this.vx * .25, -this.vz * .25);
     this.stride = dt ? THREE.MathUtils.damp(this.stride, this.grounded ? clamp(speed / JOG, 0, 1.3) : 0, 8, dt) : this.stride;
+    this.idle = control && !amount && speed < .2 && this.grounded ? this.idle + dt : 0;
+    // The figure's follow-through (see SQUASH): a run's lean and a skid tip
+    // the head too, and standing a while they breathe
+    if (dt > 0) {
+      const breath = this.idle > 1 ? Math.sin(this.time * Math.PI * 2 * .28) * .012 : 0;
+      spring(this.squash, breath, SQUASH, dt); spring(this.drop, 0, BOB, dt);
+      spring(this.nod, clamp(-this.accel * .012, -.14, .14) + this.skid * .15, NOD, dt);
+      this.squash.x = clamp(this.squash.x, -.3, .25); this.drop.x = clamp(this.drop.x, -DROP, .08);
+      turnToward(this.look, this.lookGoal(control, amount, wx, wz, speed), amount > .05 && !this.watching ? LEAD_RATE : LOOK_RATE, dt);
+    }
     // The controller's state, as the rest of the game reads it
     v.speed = speed; v.slideHeading = v.heading; v.steer = 0; v.slip = 0; v.yawRate = 0;
     v.drifting = false; v.boosting = this.sprinting; v.driftAmount = 0; v.weight = 0; v.load = 0; v.airborne = false;
     v.pitch = 0; v.roll = 0; v.wheelSpin = this.phase;
-    // Leaning into a run, more as they set off; swaying with each step
-    const lean = this.down || this.rise ? 0 : clamp(speed * .022 + change / (dt || 1) * .004 * Math.sign(this.vx * dx + this.vz * dz), -.08, .22);
-    v.bodyPitch = -lean; v.bodyRoll = Math.sin(this.phase * .5) * .04 * this.stride;
+    // Leaning into a run, more as they set off, and back into a skid,
+    // swaying with each step, and banking into turns
+    const lean = this.down || this.rise ? 0 : clamp(speed * .022 + this.accel * .004, -.08, .22);
+    const bank = this.down || this.rise ? 0 : clamp(-this.turnRate * speed * .016, -.2, .2);
+    v.bodyPitch = -lean + this.skid * .28; v.bodyRoll = Math.sin(this.phase * .5) * .04 * this.stride + bank;
     const data = v.car.userData;
-    data.speed = speed; data.speedRush = 0; data.velocity.x = this.down ? 0 : this.vx; data.velocity.z = this.down ? 0 : this.vz;
+    data.speed = speed; data.velocity.x = this.down ? 0 : this.vx; data.velocity.z = this.down ? 0 : this.vz;
+    // (a sprint opens the chase camera's lens a little, as a car's speed does,
+    // and talking to someone it looks over their shoulder: see ThirdPersonCamera)
+    data.speedRush = this.sprinting ? clamp((speed - JOG) / (SPRINT - JOG), 0, 1) * .6 : 0;
+    data.shoulder = this.chatting && control && amount < .05 ? SHOULDER : 0;
     v.trauma = Math.max(0, v.trauma - dt * 1.4); data.trauma = v.trauma;
     telemetry.speed = speed; telemetry.throttle = 0; telemetry.brake = 0; telemetry.offRoad = 0;
     telemetry.handbrake = 0; telemetry.boost = 0; telemetry.scrape *= Math.exp(-dt * 14);
     if (dt === 0) telemetry.impact = 0;
     this.pose(dt === 0);
   }
+  // Where the head turns from the body (see LOOK_MOST): into a turn they are
+  // making, else toward what they are watching, else now and then about them
+  lookGoal(control, amount, wx, wz, speed) {
+    const v = this.vehicle, p = v.groundedPosition;
+    this.watching = false;
+    if (!control) return 0;
+    if (amount > .05) {
+      const into = wrap(Math.atan2(wx, -wz) - v.heading);
+      if (Math.abs(into) > .15) return clamp(into * LEAD, -LOOK_MOST, LOOK_MOST);
+    }
+    // (running flat out, they look where they are going)
+    const watch = this.watch, calm = 1 - clamp((speed - JOG) / (SPRINT - JOG), 0, 1);
+    if (watch && calm > 0) {
+      const dx = watch.x - p.x, dz = watch.z - p.z, d = Math.hypot(dx, dz);
+      const turn = wrap(Math.atan2(dx, -dz) - v.heading);
+      if (d > .3 && d < WATCH && Math.abs(turn) < 2.1) { this.watching = true; return clamp(turn, -LOOK_MOST, LOOK_MOST) * calm; }
+    }
+    if (this.idle < 1.5) return 0;
+    // (a new whim every couple of seconds: ahead, about them, or right round to one side)
+    const beat = Math.floor(this.time / 1.9), whim = Math.abs(Math.sin(beat * 12.9898 + 78.233) * 43758.5453) % 1;
+    return whim < .35 ? 0 : whim < .5 ? -.8 : whim < .65 ? .8 : whim < .75 ? -.4 : whim < .85 ? .4 : whim < .93 ? -1.05 : 1.05;
+  }
   wet(s, u) { return Boolean(this.vehicle.route.water?.(s, u)); }
+  // What they are standing on, for their footsteps: 'pavement', 'road' and so on (see surfaceAt)
+  surface() { const v = this.vehicle; return v.route.surface?.(v.s, v.u) ?? 'road'; }
+  // A puff of what the ground gives underfoot, dust or spray (see
+  // LooseProps' bits): `count` bits thrown out `spread` times as fast, carried
+  // along at (vx, vz), from round the hem, so none sits under it like a foot
+  puff(count, spread = 1, vx = 0, vz = 0) {
+    const props = this.vehicle.props, p = this.vehicle.groundedPosition;
+    if (!props?.bits || !(count > 0)) return;
+    props.bits.burst(props.underfoot ?? 'dust', p.x, this.y + .04, p.z, vx, vz, count, spread, .34);
+  }
   // Knocked over, they go where their body goes, and once it has lain still a
   // moment they get up where it lies (the harbour gives them back at the kerb)
   lie() {
@@ -186,31 +361,102 @@ export class Walker {
     v.render(0);
   }
   // The figure, from DrivingController.render with the stride interpolated:
-  // bobbing in its stride, or where its body lies and on its way up from there
+  // hopping along in its stride, squashed and stretched, flipping, or where
+  // its body lies and on its way up from there
   animate(phase, origin = 0) {
-    const v = this.vehicle, figure = this.figure, body = v.body;
+    const v = this.vehicle, figure = this.figure, body = v.body, posture = this.posture;
+    if (this.board || this.alighting) { this.hop(origin); return; }
     if (!this.down && !this.rise) {
-      figure.position.set(0, 0, 0); figure.quaternion.identity();
-      figure.scale.set(1, 1 + Math.cos(phase) * .02 * this.stride, 1);
-      body.position.y = (.05 + Math.sin(phase) * .05) * Math.min(1, this.stride);
+      // Each step a little hop off one foot onto the other: squashed as it
+      // lands, stretched at the top, higher the faster they go
+      const u = ((phase - Math.PI * 1.5) / (Math.PI * 2) % 1 + 1) % 1, arc = Math.sin(Math.PI * u), stride = Math.min(1, this.stride);
+      body.position.y = arc * (.045 + .03 * Math.min(1.3, this.stride)) * stride;
+      const squash = clamp((1 + this.squash.x) * (1 + (arc - .4) * .07 * stride), .6, 1.5);
+      posture.walkerSquash.value = squash;
+      posture.walkerHeadShift.value.set(0, COLLAR * (squash - 1) + this.drop.x, 0);
+      // The head nods about its own middle, and tilts against a bank to stay
+      // nearly level. (Its turn is a yaw, the other way round from a heading.)
+      const turned = -this.look.x;
+      euler.set(-this.nod.x, 0, -v.bodyRoll * .45);
+      tilt.makeRotationFromEuler(euler);
+      tilt.premultiply(yaw.makeRotationY(turned)).multiply(unyaw.makeRotationY(-turned));
+      posture.walkerHeadTilt.value.setFromMatrix4(tilt);
+      setWalkerTurn(figure, 0, turned); figure.instanceColor.needsUpdate = true;
+      // A flip: once round, forward, about their middle
+      const t = (this.time - this.flipAt) / FLIP_TIME;
+      if (t >= 0 && t < 1 && !this.grounded) {
+        turn.setFromAxisAngle(X, -Math.PI * 2 * THREE.MathUtils.smootherstep(t, 0, 1));
+        figure.quaternion.copy(turn); figure.position.set(0, MIDDLE, 0).sub(place.set(0, MIDDLE, 0).applyQuaternion(turn));
+      } else { figure.position.set(0, 0, 0); figure.quaternion.identity(); }
+      figure.scale.set(1, 1, 1);
+      // Through their eyes, each step bobs the view a little, and a landing dips it
+      v.car.userData.eyeBob = (arc - .5) * .03 * stride + this.drop.x * .8 + Math.min(0, this.squash.x) * .25;
       return;
     }
+    posture.walkerSquash.value = 1; posture.walkerHeadShift.value.set(0, 0, 0); posture.walkerHeadTilt.value.identity();
+    setWalkerTurn(figure, 0, 0); figure.instanceColor.needsUpdate = true;
+    v.car.userData.eyeBob = 0;
     body.position.set(0, 0, 0); body.rotation.set(0, 0, 0);
     // (the figure is placed in the world, under wherever the controller stands)
     place.copy(v.car.position); place.z -= origin;
     root.compose(place, v.car.quaternion, ONE).invert();
     if (this.down) v.props.personMatrix(this.down.body, world);
     else {
-      const rise = this.rise, k = THREE.MathUtils.smoothstep(this.time - rise.at, 0, RISE);
+      const rise = this.rise, k = THREE.MathUtils.smoothstep(this.time - rise.at, 0, GET_UP);
       place.copy(v.groundedPosition);
       world.compose(from.p.lerpVectors(rise.from.p, place, k), from.q.slerpQuaternions(rise.from.q, turn.setFromAxisAngle(UP, -v.heading), k), from.s.lerpVectors(rise.from.s, ONE, k));
     }
     world.premultiply(root).decompose(figure.position, figure.quaternion, figure.scale);
   }
+  // Hopping into a car or down out of one, placed in the world as getting up
+  // is. Into it, a hop to its door, then climbing in, shrinking into the
+  // seat and turning to face the way it does. Out, from the seat to where
+  // they stand, growing back as they come out through the door.
+  hop(origin) {
+    const v = this.vehicle, figure = this.figure, posture = this.posture;
+    posture.walkerSquash.value = 1; posture.walkerHeadShift.value.set(0, 0, 0); posture.walkerHeadTilt.value.identity();
+    setWalkerTurn(figure, 0, 0); figure.instanceColor.needsUpdate = true;
+    v.car.userData.eyeBob = 0;
+    v.body.position.set(0, 0, 0); v.body.rotation.set(0, 0, 0);
+    place.copy(v.car.position); place.z -= origin;
+    root.compose(place, v.car.quaternion, ONE).invert();
+    let size = 1, heading = v.heading;
+    if (this.board) {
+      const b = this.board, t = clamp((this.time - b.at) / b.duration, 0, 1), door = b.doorway();
+      from.p.set(b.x, b.y, b.z);
+      if (door && t < DOOR) {
+        const u = t / DOOR, k = THREE.MathUtils.smootherstep(u, 0, 1);
+        from.p.lerp(place.set(door.x, b.y, door.z), k); from.p.y += HOP * 4 * u * (1 - u);
+        heading = b.heading + wrap(door.heading - b.heading) * k;
+      } else if (door) {
+        const k = THREE.MathUtils.smoothstep((t - DOOR) / (1 - DOOR), 0, 1);
+        from.p.set(door.x, b.y, door.z).lerp(place.set(door.seat.x, door.seat.y, door.seat.z), k);
+        size = 1 - (1 - SEATED) * k; heading = door.heading;
+      }
+    } else {
+      const a = this.alight, t = clamp((this.time - a.at) / ALIGHT, 0, 1), k = THREE.MathUtils.smoothstep(t, 0, 1);
+      from.p.copy(a.seat).lerp(v.groundedPosition, k); from.p.y += HOP * 4 * t * (1 - t);
+      size = SEATED + (1 - SEATED) * k; heading = a.heading + wrap(v.heading - a.heading) * k;
+    }
+    world.compose(from.p, turn.setFromAxisAngle(UP, -heading), from.s.setScalar(size));
+    world.premultiply(root).decompose(figure.position, figure.quaternion, figure.scale);
+  }
+  // Leaping from a car going at (vx, vz) (see OnFoot.bail): a body thrown on
+  // at most of its speed and clear to the side (sx, sz), tumbling head over
+  // heels the way it goes, who lies a moment and gets up as one knocked down does
+  bail(vx, vz, sx, sz) {
+    const v = this.vehicle, props = v.props, speed = Math.hypot(vx, vz);
+    if (!props) { this.vx = vx; this.vz = vz; return; }
+    world.compose(v.groundedPosition, turn.setFromAxisAngle(UP, -v.heading), ONE);
+    const thrown = new THREE.Vector3(vx * .8 + sx * 2.5, 2.4, vz * .8 + sz * 2.5), spin = new THREE.Vector3(-vz, 0, vx).setLength(speed * .9);
+    this.down = { body: props.thrown(cityWalker, world, thrown, spin) };
+    this.stop(); this.vy = 0; this.grounded = true; this.rise = null; this.alight = null;
+    v.trauma = Math.min(1, v.trauma + .3);
+  }
   // A blow (as DrivingController.strike takes one). Hard enough, it knocks
-  // them over; otherwise it shoves them.
+  // them over, and otherwise it shoves them. (Climbing into a car, nothing does.)
   strike(dvx, dvz, spin, impact) {
-    if (this.down || this.rise) return;
+    if (this.down || this.rise || this.board) return;
     if (impact > KNOCK) { this.knockDown(dvx, dvz); return; }
     this.vx += dvx; this.vz += dvz;
   }
@@ -231,7 +477,7 @@ export class Walker {
   // merely leans on them carries them along; one they walked into stops them.
   resolveTrafficCollision(dx, dz, dvx, dvz, spin, impact) {
     const v = this.vehicle, length = Math.hypot(dx, dz);
-    if (this.down) return;
+    if (this.down || this.board) return;
     v.shift(dx, dz);
     if (length > 1e-9) {
       // (their own speed out along (nx, nz), and the car's: they closed at `impact`)

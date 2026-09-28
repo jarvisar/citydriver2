@@ -109,6 +109,28 @@ export function nearestOnLoop(loop, x, y) {
 }
 // Metres from b to a round a loop the way a walker goes, between -half and half a lap
 const around = (a, b, perimeter) => a - b - Math.round((a - b) / perimeter) * perimeter;
+// How far either side of a corner of their walk a resident turns through it (m)
+const WALKER_TURN = 1.2;
+// Where a walker is on their loop, `walked` metres on: world (x east, s
+// north) and a yaw facing the way they walk. The yaw turns through each
+// corner over a metre or so either side of it (less on a short side), so a
+// walker rounds it rather than snapping about, and a pair's sideways
+// spacing, which follows the yaw, swings round with them.
+export function walkPose(walker, walked) {
+  const loop = walker.loop, travel = walker.phase + walked * walker.direction;
+  const d = ((travel % loop.perimeter) + loop.perimeter) % loop.perimeter, points = loop.points, cumulative = loop.cumulative, n = points.length;
+  let i = 0;
+  while (i < n - 1 && cumulative[i + 1] <= d) i++;
+  const a = points[i], b = points[(i + 1) % n], span = (cumulative[i + 1] - cumulative[i]) || 1, t = (d - cumulative[i]) / span;
+  const side = k => { const p = points[((k % n) + n) % n], q = points[(((k + 1) % n) + n) % n]; return Math.atan2(q.x - p.x, q.y - p.y); };
+  const length = k => cumulative[((k % n) + n) % n + 1] - cumulative[((k % n) + n) % n];
+  // (the corner nearer this point, and how far through its turn it is)
+  const along = d - cumulative[i], atEnd = along > span / 2, reach = Math.min(WALKER_TURN, span / 2, length(atEnd ? i + 1 : i - 1) / 2);
+  const from = atEnd ? side(i) : side(i - 1), to = atEnd ? side(i + 1) : side(i), past = atEnd ? along - span : along;
+  const blend = reach > 1e-6 ? THREE.MathUtils.smoothstep(past, -reach, reach) : past >= 0 ? 1 : 0;
+  const heading = from + Math.atan2(Math.sin(to - from), Math.cos(to - from)) * blend;
+  return { x: a.x + (b.x - a.x) * t, s: a.y + (b.y - a.y) * t, yaw: -heading + (walker.direction < 0 ? Math.PI : 0) };
+}
 
 // A resident back on their feet at (x, y) (world x, s) rejoins their walk at
 // the nearest point of it, a step on, and waits there for themselves to
@@ -260,6 +282,11 @@ export class PedestrianContacts {
     // Residents dive out of the way of a car bearing down on them (see dive).
     // Only in a demolition run, where they are what the player must avoid.
     this.dodge = false;
+    // Told when someone is shoved by the player on foot, `(person, frame)`,
+    // and when someone the player knocked over gets up, `(person, frame,
+    // by)`, `by` 'tackle' (on foot) or 'player' (their car): `frame` places
+    // where they are drawn in the world (see OnFoot.call)
+    this.onShove = null; this.onUp = null;
   }
   // `props` (LooseProps) takes those knocked flying; without it, nobody is
   update(player, traffic, time, props = null) {
@@ -382,6 +409,8 @@ export class PedestrianContacts {
       person.rise = { at: time, from: { p: position.clone(), q: rotation.clone() }, x: body.p.x, z: body.p.z };
       this.props.release(body); person.body = null;
       rejoin?.(person, body.p.x, -body.p.z, time);
+      if (person.floored) this.onUp?.(person, frame, person.floored);
+      person.floored = null;
     }
     const away = this.away(person, matrix, frame, time);
     // Shoved aside by the player on foot, or at a charge bowled over
@@ -408,6 +437,8 @@ export class PedestrianContacts {
     if (player && blow) this.player.strike(blow.x, blow.z, blow.spin, Math.hypot(blow.x, blow.z));
     if (piece && blow) { piece.v.x += blow.x; piece.v.z += blow.z; }
     person.body = body; person.rise = person.back = null;
+    // (who knocked them over, for what they say getting up)
+    person.floored = charged ? 'tackle' : player ? 'player' : null;
     return true;
   }
   // The player on foot against someone drawn by `matrix` (in `frame`): they
@@ -430,7 +461,7 @@ export class PedestrianContacts {
     if (distance < reach && Math.abs(e[13] + f[13] - p.y) < 1.5) {
       const nx = distance > 1e-6 ? dx / distance : 1, nz = distance > 1e-6 ? dz / distance : 0, v = player.velocity, speed = Math.hypot(v.x, v.z);
       if (speed > TACKLE && v.x * nx + v.z * nz > speed * .5) { person.shove = null; return true; }
-      shove ??= person.shove = { x: 0, z: 0, time };
+      if (!shove) { shove = person.shove = { x: 0, z: 0, time }; this.onShove?.(person, frame); }
       // Out of the way the player is going: back from them, and aside, to
       // whichever side of their path they were on
       let ax = nx, az = nz;

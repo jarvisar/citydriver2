@@ -6,7 +6,7 @@ import { goalProgress } from './taxi-goals.js';
 import { contractProgress } from './demolition-run.js';
 import { $, attribute, hide } from './hud-dom.js';
 
-const MAP_SCALE = .36;
+const MAP_SCALE = .36, HINT_TIME = 120000;
 export class CityGuide {
   constructor(notify, position) {
     // Discoveries last only for the visit: clear any an older build saved
@@ -55,9 +55,13 @@ export class CityGuide {
   }
   // `draw: false` skips the canvas for when nobody can see the page, as in a
   // headset. Discoveries and the map card's text still update.
+  // A landmark a resident has told them the way to (see OnFoot.talk), marked
+  // on the map until it is found, or for HINT_TIME ms
+  pointTo(place) { this.hint = { place, until: performance.now() + HINT_TIME }; }
   update(active, { draw = true } = {}) {
     const vehicle = this.position(), e = this.exploration;
-    const found = e.update(vehicle.s, vehicle.u, active);
+    const found = e.update(vehicle.s, vehicle.u, active, Boolean(vehicle.walker));
+    if (this.hint && (e.found.has(this.hint.place.type) || performance.now() > this.hint.until)) this.hint = null;
     if (found.length) {
       this.notify(e.found.size === PLACE_TYPES.length ? 'All landmarks visited' : `${found[0].name} · ${e.found.size} / ${PLACE_TYPES.length}`);
       this.refreshNotebook();
@@ -107,8 +111,9 @@ export class CityGuide {
     // waiting in a ring, the canvas already shows it.
     // (and a demolition run's contract targets, a fresh list whenever they change)
     const targets = this.demolition?.running ? this.targets?.() ?? [] : [];
+    const hint = run?.running || this.demolition?.running ? null : this.hint?.place ?? null;
     const shown = [ratio, vehicle.u, vehicle.s, vehicle.heading, run, run?.status, run?.status === 'pickup' ? run.customers : null,
-      target, nextStop, run?.stopIndex, parked, parked?.s, parked?.u, targets];
+      target, nextStop, run?.stopIndex, parked, parked?.s, parked?.u, targets, hint];
     if (this.shown?.length === shown.length && this.shown.every((value, i) => value === shown[i])) return;
     this.shown = shown;
     const places = run?.status === 'pickup' ? run.customers : target ? [{ ...target, color: '#ffd238' }] : [];
@@ -158,6 +163,20 @@ export class CityGuide {
       const [x, y] = point(place);
       if (x < 4 || y < 4 || x > width - 4 || y > height - 4) continue;
       ctx.beginPath(); ctx.arc(x, y, 3.2, 0, Math.PI * 2); ctx.stroke(); ctx.fill();
+    }
+    // A landmark someone gave them the way to, in its own colour, or where it
+    // is from the edge, pointed at
+    if (hint) {
+      const [x, y] = point(hint), dx = x - width / 2, dy = y - height / 2, edge = 11;
+      const factor = Math.min(1, (width / 2 - edge) / Math.max(Math.abs(dx), .001), (height / 2 - edge) / Math.max(Math.abs(dy), .001));
+      const hx = width / 2 + dx * factor, hy = height / 2 + dy * factor, color = CITY_PLACES[hint.type]?.color ?? '#f5d69c';
+      if (factor < 1) {
+        ctx.save(); ctx.translate(hx, hy); ctx.rotate(Math.atan2(dy, dx));
+        ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(5, -4); ctx.lineTo(5, 4); ctx.closePath(); ctx.fill(); ctx.restore();
+      }
+      ctx.beginPath(); ctx.arc(hx, hy, 5.5, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = '#17262f'; ctx.stroke();
+      ctx.beginPath(); ctx.arc(hx, hy, 8.5, 0, Math.PI * 2); ctx.lineWidth = 1.2; ctx.strokeStyle = '#fff4dc'; ctx.stroke();
     }
     // The car the player left, or where it is from the edge, pointed at
     if (parked) {

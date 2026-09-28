@@ -29,6 +29,9 @@ import { signSheet } from './world/city-signs.js';
 import { loadingStage } from './loading-status.js';
 import { navGraph } from './world/nav-graph.js';
 import { CityGuide } from './city-guide.js';
+import { cityPlaces } from './city-exploration.js';
+import { SpeechBubbles, compass } from './street-talk.js';
+import { Pigeons } from './world/city-pigeons.js';
 import { WorldMap, DISTRICT_COLORS } from './city-world-map.js';
 import { TaxiRun } from './taxi-run.js';
 import { goalProgress } from './taxi-goals.js';
@@ -37,7 +40,7 @@ import { DemolitionRun, DEMOLITION_CAR, DEMOLITION_PAINT } from './demolition-ru
 import { DemolitionView } from './demolition-view.js';
 import { setResidentWindow } from './world/resident.js';
 import { DrivingController } from './vehicle.js';
-import { OnFoot } from './on-foot.js';
+import { OnFoot, EnterMarker } from './on-foot.js';
 import { walkingInput, createWalkerModel } from './walker.js';
 import { CityTraffic as Traffic } from './city-traffic.js';
 import { TRAFFIC_CRUISE_SPEED } from './traffic.js';
@@ -180,19 +183,49 @@ async function boot() {
     const openWelcomeMenu = () => !started && !paused && !$('#welcome').classList.contains('hidden') ? $('#welcome') : null;
     scene.add(vehicle.car);
     const traffic = new Traffic(scene, vehicle.route, vehicle.s, journey, vehicle.u);
+    // (and the bus calls at the world's stops)
+    traffic.stops = world.busStops;
     // Street furniture knocked loose (see loose-props.js), which loose traffic can knock over too
     const props = new LooseProps(scene, world.materials.props);
     traffic.props = props;
     // (and takes the player on foot, when a car knocks them over)
     vehicle.props = props;
-    // Getting out of the car and into another, in free drive (see on-foot.js)
-    const onFoot = new OnFoot(vehicle, traffic);
+    // Getting out of the car and into another, in free drive (see on-foot.js),
+    // and on foot, a marker over the car they would get into
+    const onFoot = new OnFoot(vehicle, traffic), enterMarker = new EnterMarker(scene);
     const pedestrianContacts = new PedestrianContacts();
+    // What the residents say to them, in bubbles over their heads (see
+    // street-talk.js): what a resident knows where they stand, and a
+    // landmark they give the way to marked on the street map
+    const bubbles = new SpeechBubbles(scene);
+    Object.assign(onFoot, { world, bubbles, context: talkContext, onPoint: place => cityGuide.pointTo(place) });
+    function talkContext(s, u) {
+      const found = cityGuide.exploration.found;
+      let place = null, near = Infinity;
+      for (const each of cityPlaces()) {
+        const d = Math.hypot(each.s - s, each.u - u);
+        if (d < near && !found.has(each.type)) { near = d; place = each; }
+      }
+      return { weather: weather.state.id, night: weather.state.stars > .5, district: cityDistrict(s, u),
+        place: place && { name: place.name, type: place.type, s: place.s, u: place.u, metres: near, way: compass(place.u - u, place.s - s) } };
+    }
+    // and they call out when shoved, or getting up after the player knocked
+    // them over (not in a demolition run, which has enough on screen)
+    pedestrianContacts.onShove = (person, frame) => onFoot.call(person, frame, 'shoved');
+    pedestrianContacts.onUp = (person, frame, by) => { if (gameMode !== 'demolition') onFoot.call(person, frame, by === 'tackle' ? 'floored' : 'run'); };
+    // Pigeons round the benches, which the player puts up on foot or driving
+    // by (see city-pigeons.js), with a flutter of wings (see DriveAudio)
+    const pigeons = new Pigeons(scene, world.materials.props);
+    pigeons.onFlight = (x, z, count) => props.sounds.push({ kind: 'flutter', strength: 6 + count, x, z });
+    // (on the pavement, a park or a square: not the road or the water)
+    const pigeonGround = (x, z) => surfaceAt(-z, x) === 'pavement' ? cityHeight(-z, x) + .02 : NaN;
     const nightLighting = new NightLighting(scene);
     // The weather's light, sky and wet roads, on the scene and every car
     function applyWeather(dt = 0) {
       weather.update(time, vehicle, world.origin); rendering.setWeather(weather.state, dt);
       world.setWetness(weather.state.wetness); world.setWindowGlow(weather.state.windowGlow); vehicle.setLights(weather.state.lightLevel); traffic.models.setLights(weather.state.lightLevel);
+      // (and what a footstep kicks up: see Walker.puff. Snow lies on nothing, so it is slush.)
+      props.underfoot = weather.state.snow > .35 || weather.state.wetness > .35 ? 'spray' : 'dust';
     }
     const haltCar = () => { vehicle.speed = 0; vehicle.knock.x = vehicle.knock.z = vehicle.knock.spin = 0; vehicle.pilot?.stop(); vehicle.walker?.stop(); vehicle.update(0, {}); };
     const drawScene = rendering.render;
@@ -543,7 +576,8 @@ async function boot() {
       const offer = started && !paused && gameMode === 'free' ? onFoot.offer() : null;
       if (useButton.hidden !== !offer) useButton.hidden = !offer;
       if (!offer) return;
-      const label = offer.out ? offer.stopping ? 'Stopping' : 'Get out' : 'Get in', detail = offer.out ? '' : offer.own ? 'Your car' : offer.name;
+      // (stopping fast, a second press jumps out: see OnFoot.bail)
+      const label = offer.out ? offer.bail ? 'Jump out' : offer.stopping ? 'Stopping' : 'Get out' : offer.chat ? 'Chat' : 'Get in', detail = offer.out ? offer.bail ? 'Stopping' : '' : offer.own ? 'Your car' : offer.name;
       if (useButton.querySelector('span').textContent !== label) useButton.querySelector('span').textContent = label;
       if (useButton.querySelector('small').textContent !== detail) useButton.querySelector('small').textContent = detail;
     }
@@ -1096,7 +1130,7 @@ async function boot() {
       if (!vr.active || !started || paused || changingJourney) return null;
       const read = id => document.getElementById(id).textContent;
       const hint = vrHintTime >= 10 ? '' : vehicle.pilot ? 'Triggers: forward, back · Left stick: turn · Right stick or grips: up, down · B: pause'
-        : vehicle.walker ? 'Left stick: walk · Right stick: look · Left grip: jump · Right grip: sprint · Y: get in · B: pause'
+        : vehicle.walker ? 'Left stick: walk · Right stick: look · Left grip: jump · Right grip: sprint · Y: get in, chat · B: pause'
           : `Right trigger: gas · Left trigger: brake · Left stick: steer · Grips: drift, boost${gameMode === 'free' ? ' · Y: get out' : ''} · B: pause`;
       if (!taxi.running && !demolition.running) return { heading: read('city-heading'), place: read('city-location'), weather: read('weather-label'), hint };
       // (a demolition run writes its chain into the same panels)
@@ -1240,6 +1274,10 @@ async function boot() {
         }
         hintMouseLook(dt);
         world.update(vehicle.s, vehicle.u, { budgetMs: 3 }); vehicle.render(frameClock.alpha, world.origin); onFoot.render(frameClock.alpha, world.origin);
+        // (on foot, what catches their eye, the camera included, as the colliders lie, and the car they would get into)
+        const lens = rendering.camera.position;
+        onFoot.lookAround(world, time, { x: lens.x, z: lens.z - world.origin });
+        enterMarker.update(onFoot, time, world.origin);
         traffic.render(frameClock.alpha, world.origin); props.render(frameClock.alpha, world.origin);
         pedestrianContacts.update(vehicle, traffic, time, props);
         // In VR, residents are culled with the last frame's head frustum. The head
@@ -1247,6 +1285,11 @@ async function boot() {
         rendering.update(vehicle.car, dt, world.origin); world.animate(time, traffic.time, vr.active ? rendering.vrCamera.camera : rendering.camera, pedestrianContacts);
         taxiView.render(taxi, vehicle, world.origin, time, pedestrianContacts, vr.active ? null : rendering.camera);
         demolitionView.render(world.origin, time, vr.active ? null : rendering.camera);
+        bubbles.render(world.origin, time, vr.active ? null : rendering.camera, vr.active ? null : { width: renderer.domElement.clientWidth, height: renderer.domElement.clientHeight });
+        const at = vehicle.groundedPosition;
+        pigeons.gather(world.chunks.values(), at.x, at.z, time, pigeonGround);
+        pigeons.scare({ x: at.x, y: at.y, z: at.z, speed: Math.abs(vehicle.speed), car: !vehicle.walker, airborne: Boolean(vehicle.walker && !vehicle.walker.grounded) }, time, world.chunks.values());
+        pigeons.render(world.origin, time);
         applyWeather(dt);
       }
       // (a helicopter's climbs and dives count as surges too)
@@ -1293,7 +1336,7 @@ async function boot() {
     await loadingStage('graphics');
     // (the shop signs are blank until their sheet has loaded)
     await signSheet;
-    await rendering.precompile([...world.warmupObjects(), ...taxiView.warmupObjects(), ...demolitionView.warmupObjects(), createWalkerModel().figure]);
+    await rendering.precompile([...world.warmupObjects(), ...taxiView.warmupObjects(), ...demolitionView.warmupObjects(), ...enterMarker.warmupObjects(), ...bubbles.warmupObjects(), ...pigeons.warmupObjects(), createWalkerModel().figure]);
     try { taxiView.navigation.prepare(); } catch { /* The first fare tries again. */ }
     // Soft shading too, where it is on: loaded and drawn once behind the
     // loading screen, since its first frame compiles for ~200 ms.
@@ -1305,7 +1348,7 @@ async function boot() {
     if (import.meta.env.DEV && emulate !== null) (await import('./xr-emulator.js')).installXREmulator(emulate);
     void vr.detect();
     // Development-only inspection surface for automated driving and streaming checks.
-    if (import.meta.env.DEV) window.__citydriver = { seed: SEED, city: CITY, nav: navGraph(), lanePose, roadAt, nearestLanePose, vehicle, onFoot, traffic, props, nightLighting, weather, autodrive, audio, graphics, vr, vrStatus, cityGuide, taxi, taxiView, beginTaxi, beginFree, demolition, demolitionView, beginDemolition, get gameMode() { return gameMode; }, world, rendering, input, action, chooseCar, applyPaint, get carId() { return carId; }, get paint() { return paint; }, get journey() { return journey; }, get changingJourney() { return changingJourney; }, get paused() { return paused; }, get started() { return started; } };
+    if (import.meta.env.DEV) window.__citydriver = { seed: SEED, city: CITY, nav: navGraph(), lanePose, roadAt, nearestLanePose, vehicle, onFoot, pigeons, bubbles, traffic, props, nightLighting, weather, autodrive, audio, graphics, vr, vrStatus, cityGuide, taxi, taxiView, beginTaxi, beginFree, demolition, demolitionView, beginDemolition, get gameMode() { return gameMode; }, world, rendering, input, action, chooseCar, applyPaint, get carId() { return carId; }, get paint() { return paint; }, get journey() { return journey; }, get changingJourney() { return changingJourney; }, get paused() { return paused; }, get started() { return started; } };
   } catch (error) { console.error('Could not start Citydriver:', error); $('#loading').classList.add('loaded'); $('#error').hidden = false; }
 }
 boot();

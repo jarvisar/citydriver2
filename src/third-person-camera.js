@@ -27,6 +27,15 @@ const GROUND_CLEAR = .6;
 // instead of spinning it round, as Hit & Run's and Mario 64's cameras do.
 // The mouse turns it for good.
 const SCALE_RATE = 3;
+// On foot, something low beside them (a car, most often) can bring the
+// camera in nearer than CRANE_NEAR (m) to their head. It rises up to CRANE
+// (m) to look over it instead, if that sees them better, easing at
+// CRANE_RATE. It stays up until the low view would be clear by a margin.
+const CRANE = 2.6, CRANE_NEAR = 2.5, CRANE_RATE = 4;
+// Talking to someone (see OnFoot.talk), someone on foot is seen over their
+// shoulder, `shoulder` m to their right, so whoever they talk to is not
+// hidden behind their head. The aim moves across AIM_SHOULDER as far.
+const AIM_SHOULDER = .6;
 // (eases toward a goal, and lands on it exactly, so the camera comes back bit for bit)
 export const settle = (value, goal, rate, dt) => {
   const next = THREE.MathUtils.damp(value, goal, rate, dt);
@@ -58,8 +67,9 @@ export class ThirdPersonCamera {
     this.zoom = 1; this.zoomTarget = 1;
     this.axis = new THREE.Vector3();
     // How far toward framing someone on foot it has come (see SCALE_RATE),
-    // and the lift it has come to
-    this.scale = 1; this.lift = 0;
+    // the lift it has come to, and how far it has risen over something low (see CRANE)
+    this.scale = 1; this.lift = 0; this.crane = 0; this.craning = false; this.shoulder = 0;
+    this.raised = new THREE.Vector3();
   }
   // Turns the camera round the car by these many radians: to the right, and
   // up to look down on it
@@ -82,7 +92,7 @@ export class ThirdPersonCamera {
     this.camera.updateProjectionMatrix();
   }
   // (back behind the car, at the distance the player chose)
-  snap() { this.initialized = false; this.rush = 0; this.dip = 0; this.reach = null; this.lookYaw = 0; this.lookPitch = 0; }
+  snap() { this.initialized = false; this.rush = 0; this.dip = 0; this.reach = null; this.lookYaw = 0; this.lookPitch = 0; this.crane = 0; this.craning = false; }
   update(car, dt) {
     // Past two fifths of the car's top speed the lens opens up and the chase
     // seat slides back, so a boulevard at full throttle feels quick and a
@@ -95,6 +105,8 @@ export class ThirdPersonCamera {
     const framing = car.userData.chaseScale ?? 1, raised = car.userData.chaseLift ?? 0;
     this.scale = this.initialized ? settle(this.scale, framing, SCALE_RATE, dt) : framing;
     this.lift = this.initialized ? settle(this.lift, raised, SCALE_RATE, dt) : raised;
+    const shoulder = car.userData.shoulder ?? 0;
+    this.shoulder = this.initialized ? settle(this.shoulder, shoulder, SCALE_RATE, dt) : shoulder;
     const fov = this.baseFov * (1 + (RUSH_FOV - 1) * this.rush);
     if (Math.abs(fov - this.camera.fov) > .01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
     // Look partly along travel during a slide so the exit stays in view and
@@ -148,6 +160,11 @@ export class ThirdPersonCamera {
     this.target.copy(car.position).addScaledVector(this.forward, 7 * scale);
     this.target.y = this.height + 2.2 * scale + lift * .35 + Math.sin(this.pitch) * 7 * scale - this.dip * DIP_DROP;
     this.pivot.set(car.position.x, this.height + PIVOT * scale + lift, car.position.z);
+    if (this.shoulder) {
+      // (the camera's right is the forward turned a quarter clockwise, seen from above)
+      this.camera.position.x -= this.forward.z * this.shoulder; this.camera.position.z += this.forward.x * this.shoulder;
+      this.target.x -= this.forward.z * this.shoulder * AIM_SHOULDER; this.target.z += this.forward.x * this.shoulder * AIM_SHOULDER;
+    }
     // The mouse's tilt and the wheel's distance turn and scale the camera and
     // its aim together about the pivot, so the car keeps its place in the
     // frame. (The axis points to the car's left: a positive tilt raises it.)
@@ -156,6 +173,18 @@ export class ThirdPersonCamera {
       this.camera.position.sub(this.pivot).applyAxisAngle(this.axis, this.lookPitch).multiplyScalar(this.zoom).add(this.pivot);
       this.target.sub(this.pivot).applyAxisAngle(this.axis, this.lookPitch).multiplyScalar(this.zoom).add(this.pivot);
     }
+    // On foot, rising over a car beside them rather than coming in to their
+    // head: the camera and the point it keeps its view from both go up
+    if (car.userData.leash && this.sight && this.initialized) {
+      const low = this.sight(this.pivot, this.camera.position) * this.camera.position.distanceTo(this.pivot);
+      if (low < CRANE_NEAR || (this.craning && low < CRANE_NEAR + 1.5)) {
+        this.raised.copy(this.camera.position); this.raised.y += CRANE; this.pivot.y += CRANE;
+        this.craning = this.sight(this.pivot, this.raised) * this.raised.distanceTo(this.pivot) > low + 1;
+        this.pivot.y -= CRANE;
+      } else this.craning = false;
+    } else this.craning = false;
+    this.crane = settle(this.crane, this.craning ? CRANE : 0, CRANE_RATE, dt);
+    if (this.crane) { this.camera.position.y += this.crane; this.pivot.y += this.crane; }
     // A building between the car and the camera brings it in along that line,
     // at once so no frame looks out from inside a wall, then lets it back out
     // gently once the view clears, as most driving games' chase cameras do.

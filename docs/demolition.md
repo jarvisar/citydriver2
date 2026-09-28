@@ -46,7 +46,7 @@ Street furniture is paid for when it comes loose:
 
 A cafe's table and four chairs come loose together and are paid for together. Trees and bus shelters only give way to the truck.
 
-Cars are worth the most: a hatchback $14,000, a sedan $19,000, an estate $21,000, a pickup $26,000 and a van $29,000. Parked cars pay half. Each hit pays part of the car's price, based on how fast the two were closing. A hit at 16 m/s (36 mph) or faster wrecks the car at once. Slower hits pay by the square of the speed, so a hit at half that speed pays a quarter. Hits under 2.5 m/s don't count, and a car can only take one hit every 0.35 seconds, so pushing a car earns nothing. A car stops paying once it has been paid in full.
+Cars are worth the most: a hatchback $14,000, a sedan $19,000, an estate $21,000, a pickup $26,000, a van $29,000 and the bus, if one comes by, $45,000. Parked cars pay half. Each hit pays part of the car's price, based on how fast the two were closing. A hit at 16 m/s (36 mph) or faster wrecks the car at once. Slower hits pay by the square of the speed, so a hit at half that speed pays a quarter. Hits under 2.5 m/s don't count, and a car can only take one hit every 0.35 seconds, so pushing a car earns nothing. A car stops paying once it has been paid in full.
 
 Everything the truck knocks into something else counts too. A car sent into a parked car, a wall or a lamp post pays for the damage it does.
 

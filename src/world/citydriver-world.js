@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { CITY, cityCell, CITY_CELL, cityStyleDistrict } from './city.js';
 import { ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL } from './city-route.js';
 import { HarbourBoats } from './city-boats.js';
+import { BusStops } from './bus-stops.js';
 import { cityAssets, cityTrees, looseTree, twinLamp, signalMastPiece, LANTERN_HEIGHT, SIGNAL_LENSES, MAST_HEIGHT, parkedCars, PARKED_PAINTS, boatModels } from './city-assets.js';
 import { TRAFFIC_MODELS } from '../traffic-models.js';
 import { seededRandom, randomAt } from './route.js';
@@ -14,7 +15,7 @@ import { buildGrassFringeSteps, grassGeometry, MAX_LAWN_TUFTS } from './city-gra
 import { createWaterMaterial } from './city-water.js';
 import { Surface, setColor } from './surface.js';
 import { cityWalker, walkerFloat, WALKER_COLORS, createWalkerMaterial, createWalkerAlert, addWalkerAlert, walkerAppearance, setWalkerAppearance, setWalkerTurn, pairWalkers, offsetWalkerPose } from './city-life.js';
-import { walkedAt, paceAt, standing, rejoinWalk, stopWalkers, regroupWalkers, lookYaw, lean, glance } from './pedestrian-reactions.js';
+import { walkedAt, paceAt, standing, rejoinWalk, stopWalkers, regroupWalkers, lookYaw, lean, glance, walkPose } from './pedestrian-reactions.js';
 import { stableShadowDepth } from './shadow-depth.js';
 import { navGraph } from './nav-graph.js';
 import { cityGreen } from '../city-junctions.js';
@@ -32,8 +33,6 @@ for (const name of ['position', 'normal', 'color']) warmupMergedGeometry.setAttr
 const transform = new THREE.Object3D();
 const residentItem = { p: [0, 0, 0], scale: [1, 1, 1], yaw: 0, roll: 0 }, watching = { x: 0, z: 0, set(x, z) { this.x = x; this.z = z; return this; } };
 const residentFloat = {};
-// How far either side of a corner of their walk a resident turns through it (m)
-const WALKER_TURN = 1.2;
 // How far a resident can end up from their walk, shoved or knocked flying (m)
 const WALKERS_STRAY = 40;
 const tint = new THREE.Color();
@@ -663,32 +662,12 @@ export class CityChunk {
       this.walkers.push(...walkers);
     }
     for (const walker of this.walkers) {
-      const pose = offsetWalkerPose(this.walkerPose(walker, 0), walker);
+      const pose = offsetWalkerPose(walkPose(walker, 0), walker);
       const motion = walkerFloat(walker, 0, residentFloat), width = walker.size * walker.width;
       this.item('residents', cityWalker, this.materials.residents, [pose.x - this.east, PAVEMENT_LEVEL + motion.lift, -(pose.s - this.start)],
         [width, walker.size * motion.stretch, width], walker.color, pose.yaw, motion.roll);
       this.batches.get('residents').items.at(-1).appearance = walker.appearance;
     }
-  }
-  // Where a walker is on its loop, `walked` metres on: world (x east, s north)
-  // and a yaw facing the way it walks. The yaw turns through each corner
-  // over a metre or so either side of it (less on a short side), so a walker
-  // rounds it rather than snapping about, and a pair's sideways spacing,
-  // which follows the yaw, swings round with them.
-  walkerPose(walker, walked) {
-    const loop = walker.loop, travel = walker.phase + walked * walker.direction;
-    const d = ((travel % loop.perimeter) + loop.perimeter) % loop.perimeter, points = loop.points, cumulative = loop.cumulative, n = points.length;
-    let i = 0;
-    while (i < n - 1 && cumulative[i + 1] <= d) i++;
-    const a = points[i], b = points[(i + 1) % n], span = (cumulative[i + 1] - cumulative[i]) || 1, t = (d - cumulative[i]) / span;
-    const side = k => { const p = points[((k % n) + n) % n], q = points[(((k + 1) % n) + n) % n]; return Math.atan2(q.x - p.x, q.y - p.y); };
-    const length = k => cumulative[((k % n) + n) % n + 1] - cumulative[((k % n) + n) % n];
-    // (the corner nearer this point, and how far through its turn it is)
-    const along = d - cumulative[i], atEnd = along > span / 2, reach = Math.min(WALKER_TURN, span / 2, length(atEnd ? i + 1 : i - 1) / 2);
-    const from = atEnd ? side(i) : side(i - 1), to = atEnd ? side(i + 1) : side(i), past = atEnd ? along - span : along;
-    const blend = reach > 1e-6 ? THREE.MathUtils.smoothstep(past, -reach, reach) : past >= 0 ? 1 : 0;
-    const heading = from + Math.atan2(Math.sin(to - from), Math.cos(to - from)) * blend;
-    return { x: a.x + (b.x - a.x) * t, s: a.y + (b.y - a.y) * t, yaw: -heading + (walker.direction < 0 ? Math.PI : 0) };
   }
   animate(time, signalTime = time, animatePeople = true, contacts = null) {
     this.animateSignals(signalTime);
@@ -700,7 +679,7 @@ export class CityChunk {
     const player = contacts?.player, watch = player ? watching.set(player.u - this.east, -player.s + this.start) : null;
     for (let i = 0; i < this.walkers.length; i++) {
       const walker = this.walkers[i], partner = walker.pairOffset ? this.walkers[i + (walker.pairOffset < 0 ? 1 : -1)] : null;
-      const pose = offsetWalkerPose(this.walkerPose(walker, walkedAt(walker, time)), walker);
+      const pose = offsetWalkerPose(walkPose(walker, walkedAt(walker, time)), walker);
       const motion = walkerFloat(walker, time, residentFloat), width = walker.size * walker.width;
       const x = pose.x - this.east, z = -(pose.s - this.start), pace = paceAt(walker, time);
       // The slower they go, the less they bob; standing still, barely. Waiting
@@ -708,7 +687,10 @@ export class CityChunk {
       // going back to meet them, they face that way. Shoved aside by the
       // player on foot, they look round at them.
       let look = null;
+      // (talking to the player on foot, they face them, or the way to somewhere: see OnFoot.talk)
+      const talking = walker.talking && time < walker.talking.until ? walker.talking.point ?? walker.talking : null;
       if (pace < 0) look = pose.yaw + Math.PI;
+      else if (talking) look = Math.atan2(x - talking.x, z - talking.z);
       else if (walker.shovedBy && time < walker.shovedBy.until) look = Math.atan2(x - walker.shovedBy.x, z - walker.shovedBy.z);
       else if (standing(walker, time) && partner?.drawn && (partner.away || !standing(partner, time))) look = Math.atan2(x - partner.drawn.x, z - partner.drawn.z);
       const bob = .3 + .7 * Math.min(1, Math.abs(pace) / walker.speed);
@@ -724,8 +706,8 @@ export class CityChunk {
       const away = contacts?.person(walker, matrix, this.peopleFrame, .28 * width, time, rejoinWalk) ?? false;
       if (away && !walker.away) { walker.away = true; stopWalkers(walker, partner, time); }
       else if (!away && walker.away) { walker.away = false; regroupWalkers(walker, partner, time, walker.arrival ?? 0); walker.arrival = 0; }
-      walker.drawn ??= { x: 0, z: 0 };
-      walker.drawn.x = matrix.elements[12]; walker.drawn.z = matrix.elements[14];
+      walker.drawn ??= { x: 0, y: 0, z: 0 };
+      walker.drawn.x = matrix.elements[12]; walker.drawn.y = matrix.elements[13]; walker.drawn.z = matrix.elements[14];
       mesh.setMatrixAt(i, matrix);
     }
     mesh.instanceMatrix.needsUpdate = true; mesh.instanceColor.needsUpdate = true;
@@ -829,6 +811,7 @@ export class CitydriverWorld {
     this.animationFrustum = new THREE.Frustum(); this.animationMatrix = new THREE.Matrix4(); this.animationSphere = new THREE.Sphere();
     this.prepareLots(); this.bridges = findBridges(); this.placeFurniture();
     this.harbour = new HarbourBoats(scene, this.materials);
+    this.busStops = new BusStops(scene, this.materials.residents, this.peopleAlert, this.shelters, this.nav);
     this.staticGroup = new THREE.Group(); this.staticGroup.name = 'citydriver-static'; this.staticGroup.matrixAutoUpdate = false; this.staticGroup.updateMatrixWorld = settledMatrixWorld;
     scene.add(this.staticGroup);
     this.buildStatic(); this.staticGroup.updateMatrix();
@@ -877,8 +860,9 @@ export class CitydriverWorld {
   // benches: placed once (see city-streets.js) and handed to whichever chunk
   // they fall in.
   placeFurniture() {
-    this.furnitureByChunk = new Map();
+    this.furnitureByChunk = new Map(); this.shelters = [];
     placeStreetFurniture(this.nav, this.bridges, piece => {
+      if (piece.kind === 'shelter') this.shelters.push(piece);
       const key = cityCell(piece.s, piece.u).key;
       if (!this.furnitureByChunk.has(key)) this.furnitureByChunk.set(key, []);
       this.furnitureByChunk.get(key).push(piece);
@@ -1093,6 +1077,7 @@ export class CitydriverWorld {
     if (full === this.shadowDetail) return;
     this.shadowDetail = full;
     for (const chunk of this.chunks.values()) applyShadowDetail(chunk.group, full);
+    this.busStops.mesh.castShadow = full;
   }
   setWetness(amount) {
     const wet = Math.max(0, Math.min(1, amount));
@@ -1104,6 +1089,7 @@ export class CitydriverWorld {
   animate(time, signalTime = time, camera = null, contacts = null) {
     this.materials.water.userData.time.value = time;
     this.harbour.update(time, camera);
+    this.busStops.animate(time, contacts);
     if (camera) {
       camera.updateMatrixWorld();
       this.animationMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
@@ -1134,7 +1120,7 @@ export class CitydriverWorld {
     for (const chunk of this.spare.values()) chunk.dispose(); this.spare.clear();
     this.building?.dispose(); this.building = null; this.prefetching?.dispose(); this.prefetching = null;
     for (const chunk of this.distant.values()) chunk.dispose(); this.distant.clear(); this.distantPending = [];
-    this.distantGroup.removeFromParent(); this.harbour.dispose();
+    this.distantGroup.removeFromParent(); this.harbour.dispose(); this.busStops.dispose();
     for (const mesh of this.staticGroup.children) if (!mesh.isInstancedMesh) mesh.geometry.dispose(); else mesh.dispose();
     this.staticGroup.removeFromParent();
     for (const material of Object.values(this.materials)) { material.map?.dispose(); material.dispose(); }

@@ -18,8 +18,10 @@ test('traffic spawns on the streets around the car, drives on and stays on the r
   const scene = new THREE.Scene(), player = new DrivingController(citydriverRoute, journeyStart(), 'taxi');
   const traffic = new CityTraffic(scene, player.route, player.s, 'city', player.u);
   try {
-    assert.equal(traffic.vehicles.length, 24);
+    // (24 cars and a bus, which may be resting out of sight: see buses.test.js)
+    assert.equal(traffic.vehicles.length, 25);
     for (const car of traffic.vehicles) {
+      if (car.service && !car.edge) continue;
       assert.ok(car.edge && Number.isFinite(car.s) && Number.isFinite(car.u));
       assert.ok(Math.hypot(car.s - player.s, car.u - player.u) < 400);
       assert.ok(onRoadAt(car.s, car.u), 'spawned on a street');
@@ -29,6 +31,7 @@ test('traffic spawns on the streets around the car, drives on and stays on the r
     for (let i = 0; i < 600; i++) traffic.update(1 / 60, player);
     for (const car of traffic.vehicles) {
       assert.ok(Number.isFinite(car.speed) && car.speed >= 0);
+      if (!car.edge) continue;
       // On the carriageway: a road, or a corner the kerb rounds off
       assert.equal(surfaceAt(car.s, car.u), 'road', 'still on a street after ten seconds');
       if (car.speed > 1) moved++;

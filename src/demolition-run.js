@@ -44,9 +44,9 @@ export const PIECE_NAMES = {
 // Cars by model: what it costs to write one off. A parked car pays
 // PARKED_SHARE of that: they stand in rows, and a truck ploughing a row of
 // them earned most of every big run's score (1.3M of 1.6M in one bot run).
-export const CAR_PRICES = { hatchback: 14000, sedan: 19000, wagon: 21000, pickup: 26000, van: 29000 };
+export const CAR_PRICES = { hatchback: 14000, sedan: 19000, wagon: 21000, pickup: 26000, van: 29000, bus: 45000 };
 export const PARKED_SHARE = .5;
-const CAR_NAMES = { hatchback: 'Hatchback', sedan: 'Sedan', wagon: 'Estate', pickup: 'Pickup', van: 'Van' };
+const CAR_NAMES = { hatchback: 'Hatchback', sedan: 'Sedan', wagon: 'Estate', pickup: 'Pickup', van: 'Van', bus: 'Bus' };
 const CAR_PRICE = 18000;
 // A blow closing at WRECK_SPEED (m/s) writes a car off at once; slower ones
 // dent it by the square of their speed, so it pays to hit hard. Under

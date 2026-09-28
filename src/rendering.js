@@ -173,7 +173,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
     camera.position.copy(target).add(cameraOffset); camera.lookAt(target);
     camera.userData.focusDistance = cameraOffset.length();
     if (views[view].thirdPerson) { thirdPerson.update(car, dt); target.copy(car.position); }
-    if (views[view].firstPerson) { firstPerson.update(car, dt); target.copy(car.position); }
+    if (views[view].firstPerson) { firstPerson.update(car, dt, renderer.xr.isPresenting || reducedMotion); target.copy(car.position); }
     shakeTime += dt;
     if ((views[view].thirdPerson || views[view].firstPerson) && !renderer.xr.isPresenting && !reducedMotion) shakeCamera(activeCamera(), car.userData.trauma ?? 0, shakeTime, views[view].firstPerson ? .6 : 1);
     sun.position.copy(target).add(sunOffset); sun.target.position.copy(target);

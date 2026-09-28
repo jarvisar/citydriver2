@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { stableShadowDepth } from './world/shadow-depth.js';
-import { bodyMaterial, lampGlow, markedBody } from './traffic-models.js';
+import { bodyMaterial, lampGlow, markedBody, busGeometry, BUS_MODEL, BUS_AXLES, BUS_WHEEL } from './traffic-models.js';
 
 // The garage's oddballs: machines that share no bodywork with the road fleet
 // and are not meant to drive like it either. Like the coupe and the racer they
@@ -35,6 +35,11 @@ export const SPECIAL_SHAPES = {
   micro: {
     name: 'micro', width: 1.5, length: 2.4, eye: [0, 1.3, -.72],
     wheels: { front: { radius: .3, width: .18, x: .66, z: -.78 }, rear: { radius: .3, width: .18, x: .66, z: .78 } },
+  },
+  // The traffic's bus (see busGeometry), the driver up front on the left
+  bus: {
+    name: 'bus', width: BUS_MODEL.width, length: BUS_MODEL.length, eye: [-.62, 2.05, -4.95], chaseLift: 2.4,
+    wheels: Object.fromEntries(['front', 'rear'].map((axle, k) => [axle, { radius: BUS_WHEEL.radius, width: BUS_WHEEL.width, x: BUS_MODEL.width / 2 - BUS_WHEEL.inset, z: BUS_AXLES[k] }])),
   },
 };
 
@@ -284,6 +289,11 @@ const BUILDERS = {
       box([.62, .62, .03], [side * .94, .58, 3.625], 'details', DARK);
     }
     for (const x of [-.7, -.35, 0, .35, .7]) box([.12, .07, .1], [x, 2.87, -1.23], 'details', AMBER);
+  },
+
+  // The traffic's own bus, its wheels left to turn
+  bus({ parts }) {
+    for (const [part, geometry] of Object.entries(busGeometry(BUS_MODEL, { wheels: false }))) parts[part].push(geometry);
   },
 
   // A bubble of glass on a roller skate, with the weekend's luggage on top.

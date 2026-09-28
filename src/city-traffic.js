@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { randomAt, clamp } from './world/route.js';
 import { navGraph } from './world/nav-graph.js';
-import { createTrafficModels, TRAFFIC_MODELS, TRAFFIC_COLORS } from './traffic-models.js';
+import { createTrafficModels, TRAFFIC_MODELS, TRAFFIC_COLORS, BUS_PAINT, BUS_ROADS } from './traffic-models.js';
 import { trafficContact } from './traffic.js';
 import { collisionImpulse, contactPoint, footprintMass, heft, rock, rockFrom, skid, LOOSE_GRIP, HANDBRAKE_GRIP, SCENERY_SURFACE } from './impact.js';
 import { sceneryContacts } from './collision.js';
@@ -53,6 +53,13 @@ const SWERVE = .45, THINK = .4, SETTLE = 3, MERGE_BY = 12, MISS = 4;
 const AROUND_WAIT = 1.2, AROUND_WAIT_PLAYER = 3.6, AROUND_SPEED = 4;
 // Working out turns ahead (see warm): up to WARM_SLICE ms and WARM_MOST pieces a step
 const WARM_SLICE = .1, WARM_MOST = 64;
+// The bus keeps to the main roads (see BUS_ROADS). Once out of the fleet's
+// reach it rests out of sight for REST to REST + REST_SPREAD s before turning
+// up again, so it comes by now and then rather than all the time (a bus that
+// never came within NEAR m of the player rests only a fifth of the spread).
+// It slows at BUS_DECEL (m/s²) for a stop, pulls in by the kerb from PULL_IN m
+// short of it, and pulls out at OUT_SPEED at most.
+const REST = 25, REST_SPREAD = 50, NEAR = 150, BUS_DECEL = 1.6, PULL_IN = 45, OUT_SPEED = 6;
 const wrap = angle => Math.atan2(Math.sin(angle), Math.cos(angle));
 // Scratch reused every step, so the traffic leaves next to nothing for the
 // collector (see pose, following, pathAhead and steer)
@@ -93,7 +100,7 @@ const byWait = (a, b) => (b.stopWait ?? 0) - (a.stopWait ?? 0) || a.index - b.in
 // hash lookup. That made the whole update about twice as slow.
 const DRIVER = Object.fromEntries(['pending', 'leaving', 'claim', 'edge', 'direction', 'along', 'lane', 'next', 'turn', 'after', 'stopWait', 'loose', 'recover', 'rock',
   'dazed', 'shoved', 'bumped', 'tries', 'stranded', 'laneTo', 'laneOn', 'slope', 'around', 'merging', 'mergeWait', 'stood', 'laneTime', 'pace', 'cruiseSpeed', 'speed',
-  's', 'u', 'laneHeading', 'heading', 'held', 'waited', 'blocker', 'think', 'targetSpeed', 'moved', 'dropBack'].map(key => [key, undefined]));
+  's', 'u', 'laneHeading', 'heading', 'held', 'waited', 'blocker', 'think', 'targetSpeed', 'moved', 'dropBack', 'waiting', 'service'].map(key => [key, undefined]));
 // The lanes each way, as offsets right of the centre line: the kerb lane every
 // turn starts and ends in (the profile's), and on a boulevard or the parkway
 // the lane beside the median as well
@@ -141,19 +148,25 @@ function aside(pose, shift) {
 // until it joins the next edge. Its `lane` is its offset right of the centre
 // line, which it steers toward `laneTo`: on a boulevard it passes slower cars
 // and keeps right when it can, and anywhere it drives round a car or anything
-// else left standing in its way (see think).
+// else left standing in its way (see think). The last of the fleet is a bus
+// (see serve).
 export class CityTraffic {
   constructor(scene, route, s, journey = 'city', u = 0) {
     this.route = route; this.enabled = true; this.time = 0; this.nav = navGraph();
     this.group = new THREE.Group(); this.group.name = 'city-traffic'; scene.add(this.group);
     this.models = createTrafficModels();
     this.junctions = new JunctionTraffic(this.nav);
-    this.vehicles = Array.from({ length: 24 }, (_, index) => {
-      const model = this.models.create(index % TRAFFIC_MODELS.length, TRAFFIC_COLORS[index % TRAFFIC_COLORS.length]);
+    this.vehicles = Array.from({ length: 25 }, (_, index) => {
+      const bus = index === 24, model = bus ? this.models.create('bus', BUS_PAINT) : this.models.create(index % TRAFFIC_MODELS.length, TRAFFIC_COLORS[index % TRAFFIC_COLORS.length]);
       this.group.add(model.car);
       // (its shape, for loose pieces to meet: see carProfile)
-      return { ...model, index, generation: 0, profile: this.profileOf(model), position: new THREE.Vector3(), previousPosition: new THREE.Vector3(), quaternion: new THREE.Quaternion(), previousQuaternion: new THREE.Quaternion(), ...DRIVER };
+      const car = { ...model, index, generation: 0, profile: this.profileOf(model), position: new THREE.Vector3(), previousPosition: new THREE.Vector3(), quaternion: new THREE.Quaternion(), previousQuaternion: new THREE.Quaternion(), ...DRIVER };
+      if (bus) car.service = { rest: 0, near: false, stop: null, calling: false, state: null, wait: 0, time: 0 };
+      return car;
     });
+    // The bus stops (see BusStops), when there is a city with them: without,
+    // the bus just drives
+    this.stops = null;
     // Stand-ins for parked cars knocked loose (see wake)
     this.woken = []; this.standInLimit = PARKED_MOST;
     // The player's own car where they got out of it (see OnFoot): not the
@@ -190,22 +203,32 @@ export class CityTraffic {
     this.travelS = 0; this.travelU = 0; this.lookAhead = 0;
     this.junctions.reset();
     for (const car of this.woken) this.release(car);
-    for (const car of this.vehicles) { car.claim = car.leaving = car.pending = null; this.spawn(car, s, u, true); }
+    for (const car of this.vehicles) {
+      car.claim = car.leaving = car.pending = null;
+      // (the bus turns up any time within a rest)
+      if (car.service) this.retire(car, true);
+      else this.spawn(car, s, u, true);
+    }
   }
   setEnabled(enabled, player) {
     this.enabled = enabled; this.group.visible = enabled;
     if (enabled) this.reset(this.route, player.s, 'city', player.u);
-    else for (const car of this.woken) this.release(car);
+    else {
+      for (const car of this.woken) this.release(car);
+      for (const car of this.vehicles) if (car.service) this.leaveStop(car);
+    }
   }
   random(car, salt) { return randomAt(car.index + car.generation * 97, 8100 + salt); }
   spawn(car, s, u, initial = false) {
     car.generation++;
     this.junctions.release(car);
+    if (car.service) { this.leaveStop(car); car.service.rest = 0; }
     const r = salt => this.random(car, salt);
     const centreS = s + this.travelS * this.lookAhead, centreU = u + this.travelU * this.lookAhead;
-    // Only the streets around the car are worth trying. (By the squares, with
-    // hypot deciding within a hair of the radius, so the list is as before.)
-    const { edges: streets, middles } = this.spawnable(), edges = [], r2 = LOCAL_RADIUS * LOCAL_RADIUS;
+    // Only the streets around the car are worth trying (for the bus, the main
+    // roads). (By the squares, with hypot deciding within a hair of the
+    // radius, so the list is as before.)
+    const { edges: streets, middles } = this.spawnable(Boolean(car.service)), edges = [], r2 = LOCAL_RADIUS * LOCAL_RADIUS;
     for (let k = 0; k < streets.length; k++) {
       const ds = middles[k * 2 + 1] - centreS, du = middles[k * 2] - centreU, d2 = ds * ds + du * du;
       if (d2 < r2 * (1 - 1e-9) || (!(d2 > r2 * (1 + 1e-9)) && Math.hypot(ds, du) <= LOCAL_RADIUS)) edges.push(streets[k]);
@@ -216,6 +239,9 @@ export class CityTraffic {
       const pose = this.nav.pose(edge, along, direction, edge.profile.lane);
       const ds = pose.s - s, du = pose.u - u, distance = Math.hypot(ds, du);
       if (distance < (initial ? 25 : SPAWN_CLEARANCE) || distance > LOCAL_RADIUS) continue;
+      // (the bus comes the player's way: going off the other way, it was
+      // mostly recycled before anyone saw it)
+      if (car.service && Math.sin(pose.heading) * du + Math.cos(pose.heading) * ds > 0) continue;
       if (!initial && this.lookAhead && ds * this.travelS + du * this.travelU < 60) continue;
       if (this.vehicles.some(other => other !== car && Math.hypot(pose.s - other.s, pose.u - other.u) < 14)) continue;
       // and never over a stop line, in a junction it has not claimed
@@ -223,16 +249,17 @@ export class CityTraffic {
       if (control?.kind && edge.length - along < control.stopDistance + 6) continue;
       Object.assign(car, { edge, direction, along, lane: edge.profile.lane, next: null, turn: null, after: null, stopWait: 0, loose: null, recover: null, rock: null, dazed: 0, shoved: false, bumped: 0, tries: 0, stranded: 0 });
       this.settle(car, edge.profile.lane);
-      // Each driver keeps their own pace, a share of every street's speed
-      car.pace = .75 + r(4) * .25; car.cruiseSpeed = edge.profile.speed * car.pace; car.speed = car.cruiseSpeed;
+      // Each driver keeps their own pace, a share of every street's speed (the bus a steady one)
+      car.pace = car.service ? .8 + r(4) * .06 : .75 + r(4) * .25; car.cruiseSpeed = edge.profile.speed * car.pace; car.speed = car.cruiseSpeed;
       // Knowing its way on from the start, a car is never placed past a turn it
       // has not chosen, nor going faster than it could take the turn ahead
       this.choose(car);
       // and never part-way round it
       if (car.along > car.turn.start - 2) car.along = Math.max(0, car.turn.start - 2);
-      // (on a boulevard, some start by the median, if they need not leave it soon)
+      // (on a boulevard, some start by the median, if they need not leave it
+      // soon; never the bus, which keeps to the kerb lane for its stops)
       const lanes = lanesOf(edge.profile);
-      if (lanes.length > 1 && r(40) < .35 && (this.carriesOn(car) || this.lineAt(car) - car.along > 120)) {
+      if (!car.service && lanes.length > 1 && r(40) < .35 && (this.carriesOn(car) || this.lineAt(car) - car.along > 120)) {
         this.settle(car, lanes[1]);
         const at = this.ahead(car, 0);
         if (this.vehicles.some(other => other !== car && Math.hypot(at.s - other.s, at.u - other.u) < 14)) this.settle(car, edge.profile.lane);
@@ -246,14 +273,29 @@ export class CityTraffic {
     if (!car.edge) car.car.visible = false;
     return false;
   }
-  // The streets a car may be put on (no paths, none too short) and their middle points, gathered once
-  spawnable() {
+  // The streets a car may be put on (no paths, none too short) and their
+  // middle points, gathered once; for the bus, the main roads
+  spawnable(bus = false) {
     if (!this.streets) {
-      const edges = this.nav.edges.filter(edge => !(edge.kind === 'path' || edge.length < 30)), middles = new Float64Array(edges.length * 2);
-      edges.forEach((edge, k) => { const middle = edge.points[Math.floor(edge.points.length / 2)]; middles[k * 2] = middle.x; middles[k * 2 + 1] = middle.y; });
-      this.streets = { edges, middles };
+      const gather = keep => {
+        const edges = this.nav.edges.filter(keep), middles = new Float64Array(edges.length * 2);
+        edges.forEach((edge, k) => { const middle = edge.points[Math.floor(edge.points.length / 2)]; middles[k * 2] = middle.x; middles[k * 2 + 1] = middle.y; });
+        return { edges, middles };
+      };
+      this.streets = gather(edge => !(edge.kind === 'path' || edge.length < 30));
+      this.routes = gather(edge => BUS_ROADS.has(edge.kind) && edge.length >= 60);
     }
-    return this.streets;
+    return bus ? this.routes : this.streets;
+  }
+  // The bus goes off duty for a while (see REST): out of sight and out of
+  // everyone's way, far off where nothing looks for it. If it never came near
+  // the player it is back sooner, and after a reset (`fresh`) any time within a rest.
+  retire(car, fresh = false) {
+    const service = car.service, r = this.random(car, 61);
+    service.rest = fresh ? r * (REST + REST_SPREAD) : service.near ? REST + r * REST_SPREAD : r * REST_SPREAD / 5; service.near = false;
+    this.leaveStop(car); this.junctions.release(car);
+    Object.assign(car, { edge: null, claim: null, leaving: null, pending: null, loose: null, recover: null, rock: null, speed: 0, s: 1e6, u: 1e6, heading: 0, laneHeading: 0 });
+    car.car.visible = false; car.position.set(1e6, 0, -1e6); car.previousPosition.copy(car.position);
   }
   pose(car) {
     // On its rails, unless a blow has knocked it loose or it is steering back
@@ -303,6 +345,7 @@ export class CityTraffic {
     if (car.recover && ++car.tries >= STRANDED) car.stranded = WAIT;
     car.loose = { vx: m.vx, vz: m.vz, spin: 0 }; car.speed = 0; car.recover = null;
     car.slope = 0; car.around = null; car.merging = false;
+    if (car.service) this.leaveStop(car);
   }
   // Moved a little, as when parted from a car it overlaps
   nudge(car, dx, dz) { car.u += dx; car.s -= dz; car.moved = true; this.pose(car); }
@@ -511,10 +554,12 @@ export class CityTraffic {
     car.parked = null; car.loose = null; car.car.visible = false;
   }
   // The player gets into one of the traffic's cars (see OnFoot): it leaves
-  // the traffic, and its model the scene, until they give it back
+  // the traffic, and its model the scene, until they give it back. The bus
+  // leaves its stop, and anyone still to get on waits for the next.
   take(car) {
     const at = this.vehicles.indexOf(car);
     if (at < 0) return false;
+    if (car.service) this.leaveStop(car);
     this.vehicles.splice(at, 1); this.junctions.release(car);
     car.claim = car.leaving = car.pending = null; car.car.visible = false;
     return true;
@@ -591,7 +636,8 @@ export class CityTraffic {
     car.after = null;
   }
   // The way on from the end of any edge, as this driver would choose it: no
-  // paths unless already on one, and straight on likelier
+  // paths unless already on one, and straight on likelier. The bus keeps to
+  // the main roads while it can.
   plan(car, edge, direction) {
     // The driver's choice, unless no car could make that turn and another way on is open
     const pick = options => {
@@ -599,7 +645,9 @@ export class CityTraffic {
       if (options.length < 2 || preferred.via || turnPath(this.nav, edge, direction, preferred).radius >= 3) return preferred;
       return options.find(option => !option.via && turnPath(this.nav, edge, direction, option).radius >= 3) ?? preferred;
     };
-    const next = wayOn(this.nav, edge, direction, pick, option => option.edge.kind !== 'path' || edge.kind === 'path');
+    let usable = option => option.edge.kind !== 'path' || edge.kind === 'path';
+    if (car.service && this.nav.choices(edge, direction).some(option => option.edge !== edge && Math.abs(option.turn) < HAIRPIN && BUS_ROADS.has(option.edge.kind))) usable = option => BUS_ROADS.has(option.edge.kind);
+    const next = wayOn(this.nav, edge, direction, pick, usable);
     return { edge, direction, next, turn: turnPath(this.nav, edge, direction, next) };
   }
   // The way on this driver tries first among `options` (see plan)
@@ -629,6 +677,8 @@ export class CityTraffic {
     car.lane = lane; car.laneTo = !car.around && lanes.length > 1 && Math.abs(lanes[1] - to) < Math.abs(lanes[0] - to) ? lanes[1] : lanes[0]; car.laneOn = car.edge;
     car.around = null; car.merging = false;
     car.stopWait = 0; car.cruiseSpeed = car.edge.profile.speed * (car.pace ?? 1);
+    // (a stop it was slowing for on this street is still ahead)
+    if (car.service && (car.service.state || car.service.stop?.edge !== car.edge)) this.leaveStop(car);
     // The next turn is known on joining a street, so there is all of it to slow down in
     this.choose(car);
   }
@@ -836,6 +886,8 @@ export class CityTraffic {
   // line. It moves only into a gap it can take.
   think(car, player) {
     if (car.laneOn !== car.edge) this.settle(car, car.lane);
+    // (a bus at a stop, or pulling in or out of one, has its lane from serve)
+    if (car.service?.state) return;
     const profile = car.edge.profile, lanes = lanesOf(profile), to = car.laneTo, speed = car.speed;
     car.merging = false;
     if (car.around) {
@@ -877,8 +929,9 @@ export class CityTraffic {
       }
       return;
     }
-    // (and never once it has the junction, or near enough to be asking for it)
-    if (left < 25 || car.claim || (car.laneTime ?? SETTLE) < SETTLE || to !== car.lane) return;
+    // (and never once it has the junction, or near enough to be asking for it,
+    // nor the bus, which keeps to the kerb lane for its stops)
+    if (left < 25 || car.claim || (car.laneTime ?? SETTLE) < SETTLE || to !== car.lane || car.service) return;
     // How fast each lane is going: as fast as the slowest car a little way
     // ahead in it, allowing for those further off; the driver's own lane and
     // (for most drivers) the kerb lane are worth a little more
@@ -972,6 +1025,67 @@ export class CityTraffic {
     if (car.merging) limit = Math.min(limit, Math.sqrt(2 * 4 * Math.max(0, this.lineAt(car) - MERGE_BY - car.along - car.spec.length / 2)), car.dropBack ? Math.max(0, car.speed - 2 * dt) : Infinity);
     return limit;
   }
+  // The bus calls at the next stop along its way (see BusStops) if someone
+  // is waiting there or wants to get off, and it can stop in time from the
+  // kerb lane. It slows for it, pulls in by the kerb once on its street,
+  // waits while they get on and off, and pulls out when there is a gap in
+  // its lane. Held up on the way in by something standing there (the
+  // player's car, say), it gives up and drives on. The most it may go for all that.
+  serve(car, dt, player) {
+    const service = car.service, stops = this.stops;
+    if (!stops) return Infinity;
+    let stop = service.stop, left = stop && this.toStop(car, stop);
+    // (gone by one it did not call at, or gone another way)
+    if (stop && !service.state && (left === null || left < -1)) stop = service.stop = null;
+    if (!stop) {
+      stop = this.nextStop(car);
+      if (!stop) return Infinity;
+      left = this.toStop(car, stop); service.stop = stop;
+      service.calling = left - car.speed * car.speed / (2 * BUS_DECEL) > 2 && !car.around && Math.abs(car.lane - car.edge.profile.lane) < .3 && stops.calling(stop, car);
+    }
+    if (!service.calling) return Infinity;
+    const home = car.edge.profile.lane, slow = Math.sqrt(2 * BUS_DECEL * Math.max(0, left));
+    if (!service.state) {
+      if (left > PULL_IN || stop.edge !== car.edge) return slow;
+      if (car.around) { service.calling = false; return Infinity; }
+      this.steerFor(car, stop.lane); service.state = 'in'; service.time = 0;
+    }
+    if (service.state === 'in') {
+      service.time += dt;
+      if (left < .15) { service.state = 'wait'; service.wait = stops.arrive(stop, car); return 0; }
+      if (car.stood > AROUND_WAIT_PLAYER || service.time > 30) { this.steerFor(car, home); service.state = 'out'; return OUT_SPEED; }
+      return slow;
+    }
+    if (service.state === 'wait') {
+      service.wait -= dt;
+      if (service.wait > 0 || !this.clearFor(car, home, player)) return 0;
+      this.steerFor(car, home); service.state = 'out';
+    }
+    // Pulling out, and back in its lane
+    if (car.lane !== home) return OUT_SPEED;
+    service.state = null; service.calling = false;
+    return Infinity;
+  }
+  // The first stop ahead on the bus's street, else on the one it goes on to
+  nextStop(car) {
+    for (const stop of this.stops.on(car.edge, car.direction)) if (stop.along > car.along + 1) return stop;
+    const { next, turn } = car;
+    if (!turn || !next || next.edge === car.edge) return null;
+    return this.stops.on(next.edge, next.direction).find(stop => stop.along > turn.end) ?? null;
+  }
+  // How far on a stop is (see ahead), or null on neither street
+  toStop(car, stop) {
+    if (stop.edge === car.edge && stop.direction === car.direction) return stop.along - car.along;
+    const { next, turn } = car;
+    if (!turn || !next || next.edge === car.edge || stop.edge !== next.edge || stop.direction !== next.direction) return null;
+    return turn.start - car.along + turn.length + stop.along - turn.end;
+  }
+  // Done with its stop, however it left: knocked loose, recycled, off to
+  // rest, or on to the next street. (BusStops sees it has gone.)
+  leaveStop(car) {
+    const service = car.service;
+    service.stop = null; service.state = null; service.calling = false; service.wait = 0;
+  }
   // `chunks` are the world's, for cars knocked loose to run into (see slide).
   update(dt, player, chunks = null) {
     this.chunks = chunks;
@@ -991,11 +1105,18 @@ export class CityTraffic {
     for (const car of this.vehicles) order.push(car);
     order.sort(byWait);
     for (const car of order) {
-      if (!car.edge && !this.spawn(car, player.s, player.u)) { car.targetSpeed = 0; continue; }
+      // (the bus off duty, or with no main road near enough to turn up on, waits out of sight)
+      if (car.service?.rest > 0) { car.service.rest -= dt; car.targetSpeed = 0; continue; }
+      if (!car.edge && !this.spawn(car, player.s, player.u)) { car.targetSpeed = 0; if (car.service) car.service.rest = 4; continue; }
       const ds = car.s - player.s, du = car.u - player.u;
       const behind = ds * this.travelS + du * this.travelU < -RECYCLE_BEHIND;
       const beside = Math.abs(du * this.travelS - ds * this.travelU) > 260;
-      if (Math.hypot(ds, du) > LOCAL_RADIUS || behind || beside) this.spawn(car, player.s, player.u);
+      if (Math.hypot(ds, du) > LOCAL_RADIUS || behind || beside) {
+        // (the bus goes off to rest instead: see retire)
+        if (car.service) { this.retire(car); car.targetSpeed = 0; continue; }
+        this.spawn(car, player.s, player.u);
+      }
+      if (car.service && Math.abs(ds) < NEAR && Math.abs(du) < NEAR) car.service.near = true;
       car.previousPosition.copy(car.position); car.previousQuaternion.copy(car.quaternion);
       // Choose the way on in good time, and arrive at the turn at its own speed
       if (!car.turn && car.edge.length - car.along < 70) this.choose(car);
@@ -1018,13 +1139,17 @@ export class CityTraffic {
       // and how long it has waited behind something left standing in the road
       car.blocker = this.blocker;
       car.stood = car.speed < 1 && follow < 1 && this.stuck(this.blocker, player) ? (car.stood ?? 0) + dt : 0;
+      // The bus's stops (before its lane is thought about: a stop takes the lane)
+      const serving = car.service && !car.loose && !car.recover ? this.serve(car, dt, player) : Infinity;
       // Its lane, thought about a few times a second (not all on one frame)
       if (!car.loose && !car.recover) {
         car.laneTime = (car.laneTime ?? 0) + dt;
         car.think = (car.think ?? (car.index % 8) * THINK / 8) - dt;
         if (car.think <= 0) { car.think += THINK; this.think(car, player); }
       }
-      target = Math.min(target, after, follow, this.laneLimit(car, dt));
+      target = Math.min(target, after, follow, this.laneLimit(car, dt), serving);
+      // (and stops for someone on foot coming to get in, until `waiting`: see OnFoot.hold)
+      if (car.waiting > this.time) target = 0;
       car.targetSpeed = target;
     }
     for (const car of this.vehicles) {
@@ -1039,7 +1164,7 @@ export class CityTraffic {
         let target = car.targetSpeed, braking = 16;
         if (car.dazed > 0) { target = 0; if (car.targetSpeed >= car.cruiseSpeed) braking = 4; }
         else if (car.shoved && target >= car.cruiseSpeed) braking = 4;
-        car.speed += clamp(target - car.speed, -braking * dt, 3 * dt);
+        car.speed += clamp(target - car.speed, -braking * dt, (car.spec.accel ?? 3) * dt);
         if (car.speed <= car.cruiseSpeed) car.shoved = false;
         car.along += car.speed * dt;
         this.steer(car, car.speed * dt);

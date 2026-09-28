@@ -119,7 +119,7 @@ export function trafficSound(player, car, listenerHeading = player.heading) {
 // What one traffic car sounds like from where it is heard: its engine,
 // quieter idling than pulling away and deeper for a van; its tyres, which
 // only a moving car has; and the air taking the edge off a distant one.
-const HEAVY = { van: 1, pickup: .6 };
+const HEAVY = { van: 1, pickup: .6, bus: 1.5 };
 export function trafficVoice(car, sound) {
   const speed = Math.abs(finite(car.speed)), heavy = HEAVY[car.spec?.name] ?? 0;
   return {

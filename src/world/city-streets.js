@@ -13,6 +13,7 @@ import { cityIslands, islandFor } from './city-islands.js';
 import { rectanglePolygon } from './city-surfaces.js';
 import { frontSetback, treeRoom } from './city-buildings.js';
 import { yardParking, yardDrive, YARD_BAY, PARKED_MODELS } from './city-yards.js';
+import { BUS_ROADS } from '../traffic-models.js';
 import { difference, solids } from '../mapgen/booleans.js';
 import { simplify } from '../mapgen/simplify.js';
 
@@ -1065,14 +1066,14 @@ export function placeStreetFurniture(nav, bridges, add) {
     const planting = block ? STREET_TREES[block.style] ?? STREET_TREES.Midtown : PARK_TREES;
     const trees = randomAt(block?.index ?? 0, 7402, CITY.seed) < planting.share;
     const lampStart = randomAt(block?.index ?? 0, 7403, CITY.seed) * LAMP_SPACING;
-    // A bus shelter now and then where the pavement runs along a main road,
-    // its open side to the kerb
+    // A bus shelter now and then where the pavement runs along a main road
+    // (one the bus runs on), its open side to the kerb
     let sinceShelter = 120 + randomAt(block?.index ?? 0, 7404, CITY.seed) * 120;
     for (const p of alongPolyline(loop, 30, 15)) {
       sinceShelter += 30;
       const nx = -p.ty, ny = p.tx, x = p.x + nx * 1.7, y = p.y + ny * 1.7;
       const road = CITY.roadIndex.nearest(p.x, p.y, 16);
-      if (sinceShelter < 240 || !road || !['main', 'major', 'ring'].includes(road.road.kind) || inZone(x, y)) continue;
+      if (sinceShelter < 240 || !road || !BUS_ROADS.has(road.road.kind) || inZone(x, y)) continue;
       if (!put({ kind: 'shelter', u: x, s: y, yaw: alongYaw(nx, ny) }, 6)) continue;
       sinceShelter = 0; stops.push({ x, y });
       // (with a bin beside it, just past one end)

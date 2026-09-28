@@ -51,7 +51,7 @@ test('every car builds a solid, steerable model', () => {
 // The chooser-only cars are the ones allowed to break the tourer's mould: the
 // two racers by being quicker at everything, the specials by being lopsided.
 const RACERS = ['sports', 'formula'];
-const SPECIALS = ['buggy', 'monster', 'hotrod', 'rig', 'micro'];
+const SPECIALS = ['buggy', 'monster', 'hotrod', 'rig', 'micro', 'bus'];
 const TAXIS = CAR_IDS.filter(id => CARS[id].taxi);
 const CHOOSER_ONLY = [...RACERS, ...SPECIALS, ...TAXIS];
 
@@ -110,7 +110,7 @@ test('each special is the best in the garage at one thing and pays for it', () =
   const road = CAR_IDS.filter(id => !CHOOSER_ONLY.includes(id));
   const best = (key, ids = road) => Math.max(...ids.map(id => carStats(id)[key]));
   const worst = (key, ids = road) => Math.min(...ids.map(id => carStats(id)[key]));
-  const { buggy, monster, hotrod, rig, micro } = Object.fromEntries(SPECIALS.map(id => [id, carStats(id)]));
+  const { buggy, monster, hotrod, rig, micro, bus } = Object.fromEntries(SPECIALS.map(id => [id, carStats(id)]));
   // The buggy is the quickest thing across open ground, racers included.
   assert.ok(buggy.offRoad > best('offRoad', CAR_IDS.filter(id => !['buggy', ...TAXIS].includes(id))));
   assert.ok(buggy.acceleration > best('acceleration') && buggy.topSpeed < worst('topSpeed'));
@@ -124,6 +124,11 @@ test('each special is the best in the garage at one thing and pays for it', () =
   // The rig keeps up once it is rolling, and is last away and last to stop.
   assert.ok(Math.abs(rig.topSpeed / carStats(DEFAULT_CAR).topSpeed - 1) < .1);
   assert.ok(CAR_IDS.every(id => id === 'rig' || (carStats(id).acceleration > rig.acceleration && carStats(id).braking > rig.braking)));
+  // The bus is the biggest thing in the garage and as heavy as the truck, and
+  // needs the most room to turn.
+  const size = id => CARS[id].shape.width * CARS[id].shape.length;
+  assert.ok(CAR_IDS.every(id => id === 'bus' || size(id) < size('bus')) && CARS.bus.mass >= CARS.rig.mass);
+  assert.ok(CAR_IDS.every(id => id === 'bus' || carStats(id).turnRadius < bus.turnRadius));
   // The microcar is the slowest car here and the nimblest with number plates.
   assert.ok(CAR_IDS.every(id => id === 'micro' || carStats(id).topSpeed > micro.topSpeed));
   assert.ok(micro.grip > best('grip', [...road, 'sports']) && micro.grip < carStats('formula').grip && micro.braking > best('braking'));

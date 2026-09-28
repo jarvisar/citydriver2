@@ -1,4 +1,4 @@
-import { TRAFFIC_MODELS, SPORTS_MODEL } from './traffic-models.js';
+import { TRAFFIC_MODELS, SPORTS_MODEL, BUS_MODEL, BUS_PAINT } from './traffic-models.js';
 import { FORMULA_SHAPE } from './formula-model.js';
 import { SPECIAL_SHAPES } from './special-models.js';
 import { HELICOPTER_SHAPE } from './helicopter.js';
@@ -118,6 +118,12 @@ export const CARS = {
   rig: {
     name: 'Truck', mass: 8, kind: 'special', paint: '#a3312c', shape: SPECIAL_SHAPES.rig, breaks: ['tree', 'shelter'],
     stats: { topSpeed: 27, acceleration: 8.6, braking: 15.5, grip: .78, offRoad: 16.2, turnRadius: 5.4 },
+  },
+  // The city's bus, as heavy as the truck and bigger: it goes through what
+  // the truck does, is nearly as slow away, and swings wide at a corner.
+  bus: {
+    name: 'City Bus', mass: BUS_MODEL.mass, kind: 'special', paint: BUS_PAINT, shape: SPECIAL_SHAPES.bus, breaks: ['tree', 'shelter'],
+    stats: { topSpeed: 25, acceleration: 9.2, braking: 16.2, grip: .8, offRoad: 16, turnRadius: 6.8 },
   },
   // Out of breath by 48 mph, but it changes lanes like a thought.
   micro: {

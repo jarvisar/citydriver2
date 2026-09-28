@@ -32,7 +32,8 @@ export class FirstPersonCamera {
   look(yaw, pitch) { this.lookYaw += yaw; this.lookPitch -= pitch; this.rested = 0; }
   // (looking ahead again)
   snap() { this.initialized = false; this.lookYaw = 0; this.lookPitch = 0; }
-  update(car, dt) {
+  // `steady` leaves out the bob of someone's walk (see Walker's `eyeBob`): in a headset, and for reduced motion
+  update(car, dt, steady = false) {
     const pitch = THREE.MathUtils.clamp(car.rotation.x, -.5, .5), own = Boolean(car.userData.leash);
     this.pitch = this.initialized ? THREE.MathUtils.damp(this.pitch, pitch, 7, dt) : pitch;
     if (!this.initialized) this.heading = -car.rotation.y;
@@ -57,6 +58,7 @@ export class FirstPersonCamera {
     this.camera.quaternion.setFromEuler(this.orientation);
     if (car.userData.driverEye) this.eye.copy(car.userData.driverEye);
     else this.eye.set(0, 1.73, -1.01);
+    if (!steady) this.eye.y += car.userData.eyeBob ?? 0;
     // Keep the eye fixed at the windshield as the chassis tilts.
     this.camera.position.copy(this.eye.applyQuaternion(car.quaternion)).add(car.position);
     this.camera.updateMatrixWorld();

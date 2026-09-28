@@ -277,13 +277,15 @@ export class CityExploration {
   constructor() {
     this.found = new Set(); this.places = []; this.cell = null;
   }
-  // The places near the car, looked up again only when it changes cell
-  update(s, u, active = true) {
+  // The places near the car, looked up again only when it changes cell. A
+  // car finds them from the road. Someone on foot (`anywhere`) finds them
+  // wherever they walk, into a park or across a square included.
+  update(s, u, active = true, anywhere = false) {
     const cell = cityCell(s, u).key;
     if (this.cell !== cell) { this.cell = cell; this.places = nearbyPlaces(s, u); }
     if (!active) return [];
     const discoveries = [];
-    if (onRoadAt(s, u)) for (const place of this.places) {
+    if (anywhere || onRoadAt(s, u)) for (const place of this.places) {
       if (Math.hypot(place.s - s, place.u - u) > 69 && Math.hypot(place.entrance.s - s, place.entrance.u - u) > 24) continue;
       if (this.found.has(place.type)) continue;
       this.found.add(place.type); discoveries.push(place);

@@ -134,7 +134,7 @@ test('the truck ploughs through a tree and a bus shelter, the monster truck only
   try {
     for (const [target, kind, city] of [[nearest('tree'), 'tree', world()], [shelter, 'shelter', { scene, world: there }]]) {
       assert.ok(target, `a ${kind} to drive into`);
-      for (const [id, through] of [['rig', true], ['monster', kind === 'shelter'], ['taxi', false]]) {
+      for (const [id, through] of [['rig', true], ['bus', true], ['monster', kind === 'shelter'], ['taxi', false]]) {
         const { props, car, before, after } = drive(target, id, 18, 3, false, city);
         try {
           assert.equal(Boolean(target.woken), through, `${id} into a ${kind}`);
@@ -288,7 +288,7 @@ test('buildings stand firm, and trees and shelters do against all but the cars t
   // Driven into at 15 m/s by each car: only a car that breaks it moves it
   const tree = loose.find(c => c.prop.pieces[0].kind === 'tree' && c.prop.ready);
   const shelter = { prop: { pieces: [{ kind: 'shelter', geometry: cityAssets.shelter }], ready: true, matrix: m => m.makeTranslation(tree.x, PAVEMENT_LEVEL, tree.z), hide() {} }, x: tree.x, z: tree.z };
-  for (const [car, breaks] of [['taxi', []], ['monster', ['shelter']], ['rig', ['tree', 'shelter']]]) {
+  for (const [car, breaks] of [['taxi', []], ['monster', ['shelter']], ['rig', ['tree', 'shelter']], ['bus', ['tree', 'shelter']]]) {
     const vehicle = new DrivingController(citydriverRoute, journeyStart(), car);
     vehicle.groundedPosition.set(tree.x - 3, ROAD_LEVEL, tree.z); vehicle.heading = Math.PI / 2;
     for (const collider of [tree, shelter]) {

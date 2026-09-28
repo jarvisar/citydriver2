@@ -462,6 +462,7 @@ function deepestIn(body, other, entry = false) {
 // A burst of small bits off a smash: glass from a lamp's head, splinters,
 // litter from a bin, a stall's fruit, a splash. One instanced draw, each bit
 // a tiny flat-shaded octahedron that bounces once or twice and shrinks away.
+// Puffs of dust or snow are rounder, in a draw of their own while any are about.
 const BITS = {
   glass: { colours: ['#e6efe9', '#c4d8d6', '#f3edd5'], size: [.05, .09], shape: [1, .3, 1], count: 10, speed: 3.5, up: 3, life: 1.4 },
   wood: { colours: ['#8a6a45', '#6b5a48', '#a3845c', '#5d4a38'], size: [.1, .18], shape: [1, .22, .3], count: 10, speed: 4, up: 3, life: 2.2 },
@@ -469,28 +470,39 @@ const BITS = {
   fruit: { colours: ['#c96246', '#d8af51', '#819d4e', '#d58c43'], size: [.1, .13], shape: [1, .9, 1], count: 22, speed: 4.5, up: 3.5, life: 4.5, rolls: true },
   splash: { colours: ['#e3f1f2', '#b4d6d9', '#ffffff'], size: [.07, .14], shape: [1, 1, 1], count: 16, speed: 1.6, up: 5, life: 1.1 },
   leaves: { colours: ['#63924d', '#80a85c', '#4f8054', '#93ab65', '#6b5a48'], size: [.1, .18], shape: [1, .12, .7], count: 20, speed: 3, up: 3.5, life: 2.6, drag: 2.2 },
+  // Kicked up underfoot (see Walker.puff): dust, or a wet street's spray.
+  // A `puff` hangs in the air, swelling as it goes, rather than falling.
+  dust: { colours: ['#dcd8cf', '#cfcac0', '#e8e5de'], size: [.16, .26], shape: [1, .8, 1], count: 5, speed: 1.6, up: 1.6, life: .5, puff: true },
+  spray: { colours: ['#dbe8eb', '#b9d0d6', '#f2f6f7'], size: [.04, .07], shape: [1, 1, 1], count: 4, speed: .9, up: 2, life: .45 },
 };
-const BIT_LIMIT = 160;
+const BIT_LIMIT = 160, PUFF_LIMIT = 48;
+function bitMesh(geometry, material, name, count) {
+  geometry.deleteAttribute('uv');
+  geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(geometry.attributes.position.count * 3).fill(1), 3));
+  const mesh = new THREE.InstancedMesh(geometry, material, count);
+  mesh.name = name; mesh.count = 0; mesh.frustumCulled = false; mesh.castShadow = false;
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  for (let i = 0; i < count; i++) mesh.setColorAt(i, white);
+  return mesh;
+}
 class Bits {
   constructor(group, material) {
-    const geometry = new THREE.OctahedronGeometry(.5);
-    geometry.deleteAttribute('uv');
-    geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(geometry.attributes.position.count * 3).fill(1), 3));
-    this.mesh = new THREE.InstancedMesh(geometry, material, BIT_LIMIT);
-    this.mesh.name = 'loose-bits'; this.mesh.count = 0; this.mesh.frustumCulled = false; this.mesh.castShadow = false;
-    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    for (let i = 0; i < BIT_LIMIT; i++) this.mesh.setColorAt(i, white);
-    group.add(this.mesh);
+    this.mesh = bitMesh(new THREE.OctahedronGeometry(.5), material, 'loose-bits', BIT_LIMIT);
+    this.puffs = bitMesh(new THREE.IcosahedronGeometry(.5), material, 'loose-puffs', PUFF_LIMIT);
+    this.puffs.visible = false;
+    group.add(this.mesh, this.puffs);
     this.list = []; this.colour = new THREE.Color(); this.euler = new THREE.Euler(); this.seed = 1;
   }
   random() { this.seed = (this.seed * 16807) % 2147483647; return this.seed / 2147483647; }
-  // `kind` of bits from (x, y, z), carried along at (vx, vz)
-  burst(kind, x, y, z, vx = 0, vz = 0) {
+  // `kind` of bits from (x, y, z), carried along at (vx, vz): its own number
+  // of them, or `count`, thrown out `spread` times as fast from a ring `ring` m across
+  burst(kind, x, y, z, vx = 0, vz = 0, count = BITS[kind].count, spread = 1, ring = 0) {
     const style = BITS[kind], floor = level(x, z);
-    for (let k = 0; k < style.count && this.list.length < BIT_LIMIT; k++) {
-      const a = this.random() * Math.PI * 2, out = style.speed * (.4 + this.random() * .6), size = style.size[0] + this.random() * (style.size[1] - style.size[0]);
+    let room = style.puff ? PUFF_LIMIT - this.list.filter(bit => bit.style.puff).length : BIT_LIMIT - this.list.filter(bit => !bit.style.puff).length;
+    for (let k = 0; k < count && room-- > 0; k++) {
+      const a = this.random() * Math.PI * 2, out = style.speed * spread * (.4 + this.random() * .6), size = style.size[0] + this.random() * (style.size[1] - style.size[0]);
       this.list.push({
-        style, x, y, z, floor, vx: vx + Math.cos(a) * out, vy: style.up * (.5 + this.random() * .7), vz: vz + Math.sin(a) * out,
+        style, x: x + Math.cos(a) * ring, y, z: z + Math.sin(a) * ring, floor, vx: vx + Math.cos(a) * out, vy: style.up * (.5 + this.random() * .7), vz: vz + Math.sin(a) * out,
         rx: this.random() * 6, ry: this.random() * 6, rz: this.random() * 6, turn: (this.random() - .5) * 16,
         size, age: 0, life: style.life * (.7 + this.random() * .5), colour: style.colours[Math.floor(this.random() * style.colours.length)],
       });
@@ -501,7 +513,9 @@ class Bits {
       const bit = this.list[i], style = bit.style;
       bit.age += dt;
       if (bit.age > bit.life || (Number.isNaN(bit.floor) && bit.y < WATER_LEVEL - .5)) { this.list[i] = this.list.at(-1); this.list.pop(); continue; }
-      bit.vy -= GRAVITY * dt;
+      // (a puff slows in the air and sinks only a little)
+      if (style.puff) { const drag = Math.exp(-dt * 5); bit.vx *= drag; bit.vy *= drag; bit.vz *= drag; bit.turn *= drag; }
+      bit.vy -= GRAVITY * (style.puff ? .05 : 1) * dt;
       if (style.drag) { const drag = Math.exp(-dt * style.drag); bit.vx *= drag; bit.vz *= drag; bit.vy = Math.max(bit.vy, -2.5); }
       bit.x += bit.vx * dt; bit.y += bit.vy * dt; bit.z += bit.vz * dt;
       bit.rx += bit.turn * dt; bit.rz += bit.turn * .7 * dt;
@@ -514,17 +528,21 @@ class Bits {
     }
   }
   render() {
-    const mesh = this.mesh;
-    if (!this.list.length && !mesh.count) return;
-    for (let i = 0; i < this.list.length; i++) {
-      const bit = this.list[i], fade = Math.min(1, (bit.life - bit.age) / .35), size = bit.size * fade, [sx, sy, sz] = bit.style.shape;
+    const mesh = this.mesh, puffs = this.puffs;
+    if (!this.list.length && !mesh.count && !puffs.count) return;
+    let bits = 0, puffed = 0;
+    for (const bit of this.list) {
+      const fade = Math.min(1, (bit.life - bit.age) / .35), [sx, sy, sz] = bit.style.shape, puff = bit.style.puff;
+      // (a puff swells as it goes, then shrinks away, turning only a little)
+      const size = bit.size * fade * (puff ? .5 + Math.min(1, bit.age / bit.life * 2) * .7 : 1);
       position.set(bit.x, bit.y + size * sy * .5, bit.z);
-      rotation.setFromEuler(this.euler.set(bit.rx, bit.ry, bit.rz));
-      mesh.setMatrixAt(i, matrix.compose(position, rotation, scale.set(size * sx, size * sy, size * sz)));
-      mesh.setColorAt(i, this.colour.set(bit.colour));
+      rotation.setFromEuler(this.euler.set(puff ? bit.rx * .2 : bit.rx, bit.ry, puff ? bit.rz * .2 : bit.rz));
+      const target = puff ? puffs : mesh, i = puff ? puffed++ : bits++;
+      target.setMatrixAt(i, matrix.compose(position, rotation, scale.set(size * sx, size * sy, size * sz)));
+      target.setColorAt(i, this.colour.set(bit.colour));
     }
-    mesh.count = this.list.length;
-    mesh.instanceMatrix.needsUpdate = true; mesh.instanceColor.needsUpdate = true;
+    mesh.count = bits; puffs.count = puffed; puffs.visible = puffed > 0;
+    for (const each of [mesh, puffs]) { each.instanceMatrix.needsUpdate = true; each.instanceColor.needsUpdate = true; }
   }
   clear() { this.list = []; }
 }
@@ -538,6 +556,9 @@ export class LooseProps {
     // those kinds give way to anything, at any speed, a car they shove included
     this.breaks = [];
     this.bits = new Bits(this.group, material);
+    // What a footstep kicks up with the weather (see Walker.puff): 'dust',
+    // or 'spray' off a wet street
+    this.underfoot = 'dust';
     // What was heard: { kind, strength (m/s), x, z }, for the sound to take (see DriveAudio)
     this.sounds = [];
     // Told of each piece of furniture knocked loose, by whatever car:
@@ -595,6 +616,14 @@ export class LooseProps {
     const blow = this.fling(body, car, contact, { x: body.p.x, z: body.p.z });
     if (blow) this.sound('thud', blow.closing, body.p.x, body.p.z);
     return { body, blow };
+  }
+  // Someone leaping from a moving car (see Walker.bail): a body where
+  // `matrix` has them, going at `v` and tumbling at `w` (vectors)
+  thrown(geometry, matrix, v, w) {
+    const body = this.add({ kind: 'person', geometry, person: true }, matrix);
+    body.slept = 0; body.unseen = 0; this.people.push(body);
+    body.v.copy(v); body.w.copy(w);
+    return body;
   }
   // A pedestrian's body put away: they are back on their feet
   release(body) {
@@ -1218,6 +1247,6 @@ export class LooseProps {
   dispose() {
     this.group.removeFromParent();
     for (const pool of this.pools.values()) pool.mesh?.dispose();
-    this.bits.mesh.geometry.dispose(); this.bits.mesh.dispose();
+    for (const mesh of [this.bits.mesh, this.bits.puffs]) { mesh.geometry.dispose(); mesh.dispose(); }
   }
 }

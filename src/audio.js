@@ -251,11 +251,19 @@ export class DriveAudio {
       this.bumpSerial = telemetry.bumpSerial;
       this.bump(now, speed, Math.min(1, (Number(telemetry.bump) || .12) / .12));
     }
-    // On foot, each footfall, and landing from a hop (see Walker): soft, and a little different each time
+    // On foot, each footfall, and landing from a jump (see Walker): soft, a
+    // little different each time, and by what is underfoot: paving clicks,
+    // the road is duller, a bridge's deck knocks, a wet street splashes and
+    // snow crunches. A landing thuds as hard as it came down.
     if (Number.isFinite(telemetry.stepSerial) && telemetry.stepSerial !== this.stepSerial) {
       this.stepSerial = telemetry.stepSerial;
-      const strength = Math.min(1, Math.max(0, Number(telemetry.step) || .5)), v = .9 + g.random() * .2;
-      g.event('road', { duration: .045 + strength * .03, frequency: 1100 * v, endFrequency: 420 * v, level: .012 + strength * .02, attack: .002, q: .9 });
+      const strength = Math.min(1, Math.max(0, Number(telemetry.step) || .5)), v = .9 + g.random() * .2, landing = Number(telemetry.landing) || 0;
+      const wet = clamp01(scene?.wetness), snow = clamp01(scene?.snow) > .35, surface = scene?.deck ? 'deck' : telemetry.surface, tone = surface === 'road' ? .72 : surface === 'deck' ? .6 : 1;
+      if (snow) g.event('road', { duration: .08 + strength * .04, frequency: 1700 * v, endFrequency: 800 * v, level: .012 + strength * .018, attack: .008, q: .7 });
+      else g.event('road', { duration: .045 + strength * .03, frequency: 1100 * v * tone, endFrequency: 420 * v * tone, level: .012 + strength * .02, attack: .002, q: .9 });
+      if (surface === 'deck') g.event('thump', { duration: .09, frequency: 210 * v, endFrequency: 120 * v, level: .02 + strength * .03, attack: .003 });
+      if (wet > .35 && !snow) g.event('road', { time: now + .012, duration: .07, frequency: 2600 * v, endFrequency: 1500 * v, level: (.006 + strength * .012) * wet, attack: .004, q: 1.2 });
+      if (landing > 3) g.event('thump', { duration: .16, frequency: 95 * v, endFrequency: 48, level: Math.min(.12, (landing - 2) * .016), attack: .004 });
     }
     // Over a bridge's expansion joint, at either end
     const deck = scene?.deck === undefined ? null : Boolean(scene.deck);
@@ -292,6 +300,8 @@ export class DriveAudio {
       else if (kind === 'light') event('smash', .1, 2100, 900, .03, .003);
       else if (kind === 'splash') event('smash', .55, 1300, 380, .05, .03);
       else if (kind === 'thud') { event('thump', .2, 150, 62, .09, .006); event('smash', .12, 520, 220, .03, .006); }
+      // (a flock of pigeons put up: a quick run of soft wingbeats, see Pigeons)
+      else if (kind === 'flutter') for (let i = 0; i < 5; i++) g.event('smash', { time: this.context.currentTime + i * .055 + g.random() * .02, duration: .05, frequency: 950 * v, endFrequency: 520 * v, level: .028 * loud, pan, attack: .006, q: .7 });
     }
     props.sounds.length = 0;
   }

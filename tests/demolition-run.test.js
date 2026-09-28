@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { DemolitionRun, DemolitionRecords, DEMOLITION_RANKS, PRICES, PIECE_NAMES, CAR_PRICES, PARKED_SHARE, RUN_SECONDS, CHAIN_SECONDS, CHAIN_STEP,
   MULTIPLIER_MAX, TAKEDOWN_SECONDS, MAX_SECONDS, FINE, FINE_GAP, DENT_SPEED, DENT_GAP, WRECK_SPEED, SCORE_SLOTS, SCORES_KEY,
   CONTRACTS, CONTRACT_SECONDS, CONTRACTS_PER_RUN, chainMultiplier, chainSeconds, carDamage, demolitionRank, runContracts, money, compactMoney } from '../src/demolition-run.js';
-import { TRAFFIC_MODELS } from '../src/traffic-models.js';
+import { TRAFFIC_MODELS, BUS_MODEL } from '../src/traffic-models.js';
 
 const memory = () => { const data = new Map(); return { getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, String(value)), data }; };
 const car = (name = 'sedan', extra = {}) => ({ spec: { name }, generation: 1, parked: null, position: { x: 0, y: 0, z: 0 }, ...extra });
@@ -16,7 +16,7 @@ test('everything a car can knock loose has a price and a name, and every traffic
   for (const kind of ['lamp', 'lantern', 'signal', 'mast', 'sign', 'bench', 'bin', 'table', 'chair', 'stall', 'tree', 'shelter']) {
     assert.ok(PRICES[kind] > 0 && PIECE_NAMES[kind], kind);
   }
-  for (const model of TRAFFIC_MODELS) assert.ok(CAR_PRICES[model.name] > 0, model.name);
+  for (const model of [...TRAFFIC_MODELS, BUS_MODEL]) assert.ok(CAR_PRICES[model.name] > 0, model.name);
   // A car is worth more than any furniture but the signal gantry
   const furniture = Object.entries(PRICES).filter(([kind]) => kind !== 'mast').map(([, price]) => price);
   assert.ok(Math.min(...Object.values(CAR_PRICES)) > Math.max(...furniture));

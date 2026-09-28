@@ -1,5 +1,5 @@
 import { carEntry } from './cars.js';
-import { bodyProfile, heightAt, WHEEL } from './traffic-models.js';
+import { bodyProfile, heightAt, WHEEL, BUS_DOORS } from './traffic-models.js';
 import { taxiChequers } from './car-models.js';
 
 // A side profile drawn from the same numbers the model is built from, so each
@@ -272,6 +272,29 @@ const SPECIAL_ART = {
       // West Coast mirror standing off the door.
       slab(-1.35, -1.15, 2.02, 2.48, TRIM, 1),
       slab(-3.325, -3.21, 1.08, 1.32, LAMP, 2), slab(3.64, 3.68, .9, .98, TAIL, 1),
+      ...tyres(draw, shape.wheels),
+    ];
+  },
+  // The bus's kerb side, both doors on it, as busGeometry lays them out
+  bus(shape) {
+    const draw = pen({ scale: 21, ground: 122 }), { slab, disc, shadow } = draw, half = shape.length / 2;
+    const on = -BUS_DOORS.on, off = -BUS_DOORS.off;
+    const panes = (from, to, count) => Array.from({ length: count }, (_, i) => {
+      const step = (to - from) / count;
+      return slab(from + step * i + .06, from + step * (i + 1) - .06, 1.28, 2.62, GLASS, 1);
+    });
+    return [
+      shadow(half + .2),
+      ...Object.values(shape.wheels).map(({ radius, z }) => disc(z, radius, radius + .12, '#1c2323')),
+      slab(-half, half, .4, 3.06, PAINT, 4),
+      slab(-half + .3, half - .3, 3.02, 3.09, CANVAS, 1),
+      slab(1.4, 3.8, 3.09, 3.31, TRIM, 1),
+      ...panes(on + .68, off - .72, 3), ...panes(off + .72, half - .35, 3),
+      slab(on + .68, off - .72, 1.11, 1.21, CANVAS, 0), slab(off + .72, half - .35, 1.11, 1.21, CANVAS, 0),
+      ...[on, off].flatMap(z => [slab(z - .55, z + .55, .44, 2.62, CARBON, 1), slab(z - .015, z + .015, .44, 2.62, TRIM, 0)]),
+      slab(-half - .05, -half + .3, .31, .57, CARBON, 1), slab(half - .3, half + .05, .33, .59, CARBON, 1),
+      slab(-half - .02, -half + .08, .64, .8, LAMP, 1), slab(half - .08, half + .02, .78, 1.33, TAIL, 1),
+      slab(-half + .02, -half + .1, 2.2, 2.54, TRIM, 1),
       ...tyres(draw, shape.wheels),
     ];
   },

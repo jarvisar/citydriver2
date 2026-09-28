@@ -96,9 +96,10 @@ function triangles(list) {
 // Loft the body through stations along its length. Each section is a hexagon:
 // a flat floor, upright sides and chamfered shoulders. The plan corners narrow
 // the end sections; the arches lift the floor over the wheels, and dark liners
-// inboard of the tyres close the arches from the side.
+// inboard of the tyres close the arches from the side. (The bus brings its
+// own axles, arches and wheels.)
 function loftBody(spec, profile) {
-  const { width: w, length: l } = spec, { body, top, bottom, wheelZ } = profile;
+  const { width: w, length: l } = spec, { body, top, bottom, wheelZ, axles = [-wheelZ, wheelZ], arch = ARCH, wheel = WHEEL } = profile;
   const [nose, tail] = body.corner, [inset, fall] = body.shoulder;
   // The ends and arches first, then the plan corners and the top's breaks,
   // each kept unless a station already stands within 3 cm.
@@ -124,9 +125,9 @@ function loftBody(spec, profile) {
   });
   face(shell, rings[0], new THREE.Vector3(0, 0, -1));
   face(shell, rings.at(-1), new THREE.Vector3(0, 0, 1));
-  for (const side of [-1, 1]) for (const z of [-wheelZ, wheelZ]) {
-    const x = side * (w / 2 - WHEEL.inset - WHEEL.width / 2 - .015);
-    face(under, [[x, body.sill, z - ARCH[0]], [x, body.arch, z - ARCH[1]], [x, body.arch, z + ARCH[1]], [x, body.sill, z + ARCH[0]]], new THREE.Vector3(side, 0, 0));
+  for (const side of [-1, 1]) for (const z of axles) {
+    const x = side * (w / 2 - wheel.inset - wheel.width / 2 - .015);
+    face(under, [[x, body.sill, z - arch[0]], [x, body.arch, z - arch[1]], [x, body.arch, z + arch[1]], [x, body.sill, z + arch[0]]], new THREE.Vector3(side, 0, 0));
   }
   return { shell: triangles(shell), under: triangles(under) };
 }
@@ -279,6 +280,98 @@ export function vehicleGeometry(spec, { separateWheels = false } = {}) {
   return { ...merged, wheels, roof: { y: roofY + .075 - drop, z: (roofFront + roofRear) / 2, length: roofRear - roofFront, width: cw * .94 } };
 }
 
+// A city bus, which one of the traffic drives now and then (see CityTraffic's
+// serve) and the garage has too (see SPECIAL_SHAPES). It is kept out of
+// TRAFFIC_MODELS, which parked cars and their stand-ins draw from. Its doors
+// are on the kerb side (+x: the traffic keeps right), at BUS_DOORS metres
+// forward of its middle: riders get on at the front and off at the middle.
+export const BUS_MODEL = { name: 'bus', width: 2.55, length: 11.6, mass: 8, accel: 1.4 };
+export const BUS_PAINT = '#4679a6';
+export const BUS_DOORS = { on: 4.95, off: -.6 };
+// The roads it runs on: those with bus shelters (see placeStreetFurniture)
+export const BUS_ROADS = new Set(['main', 'major', 'ring']);
+export const BUS_AXLES = [-3.05, 2.6], BUS_WHEEL = { radius: .5, width: .3, hubRadius: .26, y: .5, inset: .16 };
+const BUS_ARCH = [.74, .42];
+const BUS_CREAM = '#e6dfcb', DOOR_GLASS = '#263a40';
+
+// The bus as the four parts vehicleGeometry makes (every part of one kind
+// tinted, or none, so they merge). The garage's turns its own wheels.
+export function busGeometry(spec = BUS_MODEL, { wheels = true } = {}) {
+  const parts = { paint: [], details: [], headlights: [], taillights: [] };
+  const add = (geometry, [x, y, z], category, color) => {
+    geometry.deleteAttribute('uv');
+    geometry.translate(x, y, z);
+    if (color) {
+      const tint = new THREE.Color(color), colors = new Float32Array(geometry.attributes.position.count * 3);
+      for (let i = 0; i < colors.length; i += 3) tint.toArray(colors, i);
+      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    }
+    parts[category].push(geometry);
+  };
+  const box = (size, at, category = 'paint', color) => add(new THREE.BoxGeometry(...size), at, category, color);
+  const { width: w, length: l } = spec, front = -l / 2, back = l / 2, side = w / 2 + .006;
+  // A tall box lofted as the cars are, its plan corners cut, its roof edges
+  // chamfered and its sills notched over its own two axles
+  const arch = z => [[z - BUS_ARCH[0], .4], [z - BUS_ARCH[1], 1.08], [z + BUS_ARCH[1], 1.08], [z + BUS_ARCH[0], .4]];
+  const { shell, under } = loftBody(spec, {
+    body: { corner: [.3, .2], shoulder: [.16, .18], sill: .4, arch: 1.08 },
+    top: [[front, 2.92], [front + .3, 3.06], [back - .2, 3.06], [back, 2.98]],
+    bottom: [[front, .38], ...arch(BUS_AXLES[0]), ...arch(BUS_AXLES[1]), [back, .46]],
+    axles: BUS_AXLES, arch: BUS_ARCH, wheel: BUS_WHEEL,
+  });
+  add(shell, [0, 0, 0], 'paint');
+  add(under, [0, 0, 0], 'details', UNDERSIDE);
+  // Side windows in panes, the paint showing between them, and a cream band
+  // under them. The kerb side has a door at the front and one in the middle.
+  const panes = (x, from, to, count) => {
+    const step = (to - from) / count;
+    for (let i = 0; i < count; i++) box([.02, 1.34, step - .12], [x, 1.95, from + step * (i + .5)], 'details', GLASS);
+    box([.02, .1, to - from + .1], [x, 1.16, (from + to) / 2], 'details', BUS_CREAM);
+  };
+  panes(-side, front + .4, back - .35, 8);
+  const door = z => {
+    for (const leaf of [-1, 1]) box([.02, 2.18, .53], [side, 1.53, z + leaf * .28], 'details', DOOR_GLASS);
+  };
+  door(-BUS_DOORS.on); door(-BUS_DOORS.off);
+  panes(side, -BUS_DOORS.on + .68, -BUS_DOORS.off - .72, 3);
+  panes(side, -BUS_DOORS.off + .72, back - .35, 3);
+  // Nose: a big windscreen under a lit destination board, lamps low down
+  // and a black bumper. Tail: a small rear window, the engine grille and
+  // tall lamps at the corners.
+  box([1.85, 1.6, .04], [0, 1.85, front - .012], 'details', GLASS);
+  box([1.7, .3, .03], [0, 2.78, front - .006], 'details', TRIM);
+  box([1.5, .2, .04], [0, 2.78, front - .014], 'headlights', '#f2b33d');
+  for (const x of [-.72, .72]) box([.34, .16, .04], [x, .72, front - .012], 'headlights', TRAFFIC_LAMPS.head);
+  box([1.9, .26, .07], [0, .44, front - .015], 'details', TRIM);
+  box([.44, .12, .02], [0, .8, front - .012], 'details', '#e9e2cb');
+  box([1.7, .55, .04], [0, 2.3, back + .012], 'details', GLASS);
+  box([1.3, .5, .03], [0, .95, back + .01], 'details', '#3a4444');
+  for (const x of [-.85, .85]) box([.2, .55, .04], [x, 1.05, back + .012], 'taillights');
+  box([.46, .14, .02], [0, 1.38, back + .012], 'details', '#e9e2cb');
+  box([2, .26, .07], [0, .46, back + .015], 'details', TRIM);
+  // Mirrors on arms off the cut corners of the nose, no wider than the sides
+  // (the footprint is the collision box), a pale roof and the air
+  // conditioning's pod toward the back
+  for (const x of [-1, 1]) {
+    box([.28, .04, .04], [x * (w / 2 - .12), 2.5, front + .1], 'details', TRIM);
+    box([.05, .34, .13], [x * (w / 2 + .02), 2.3, front + .1], 'details', TRIM);
+  }
+  box([w - .44, .03, l - .8], [0, 3.075, .1], 'details', BUS_CREAM);
+  box([1.5, .22, 2.4], [0, 3.2, 2.6], 'details', '#c4c9c2');
+  if (wheels) for (const x of [-1, 1]) for (const z of BUS_AXLES) {
+    const tire = new THREE.CylinderGeometry(BUS_WHEEL.radius, BUS_WHEEL.radius, BUS_WHEEL.width, 10);
+    tire.rotateY(Math.PI / 2); tire.rotateZ(Math.PI / 2);
+    add(tire, [x * (w / 2 - BUS_WHEEL.inset), BUS_WHEEL.y, z], 'details', TRIM);
+    const hub = new THREE.CircleGeometry(BUS_WHEEL.hubRadius, 8); hub.rotateY(x * Math.PI / 2);
+    add(hub, [x * (w / 2 - BUS_WHEEL.inset + BUS_WHEEL.width / 2 + .006), BUS_WHEEL.y, z], 'details', '#bfc4b9');
+  }
+  return Object.fromEntries(Object.entries(parts).map(([key, geometries]) => {
+    const geometry = mergeGeometries(geometries);
+    for (const part of geometries) part.dispose();
+    return [key, geometry];
+  }));
+}
+
 // A car's body in one draw. Four draws a car were about a fifth of a headset's
 // frame, and the four materials only differed in colour and glow. Each vertex is
 // marked [paint, lamp] for bodyMaterial (lamp 1 is a headlight, 2 a taillight).
@@ -343,12 +436,14 @@ const TRAFFIC_LAMPS = { head: '#fff0c3', tail: '#a5382e' }, HEAD_GLOW = new THRE
 export function createTrafficModels() {
   const glow = { head: { value: new THREE.Color() }, tail: { value: new THREE.Color() } };
   const templates = TRAFFIC_MODELS.map(spec => markedBody(vehicleGeometry(spec), TRAFFIC_LAMPS));
+  let busTemplate = null;
   const paints = [];
   const models = {
+    // (`index` 'bus' for the bus, whose shape is only made if one is)
     create(index, color) {
-      const spec = TRAFFIC_MODELS[index], car = new THREE.Group(), paint = bodyMaterial(color, glow, .76);
+      const bus = index === 'bus', spec = bus ? BUS_MODEL : TRAFFIC_MODELS[index], car = new THREE.Group(), paint = bodyMaterial(color, glow, .76);
       paints.push(paint); car.name = `traffic-${spec.name}`;
-      const mesh = new THREE.Mesh(templates[index], paint);
+      const mesh = new THREE.Mesh(bus ? busTemplate ??= markedBody(busGeometry(spec), TRAFFIC_LAMPS) : templates[index], paint);
       mesh.receiveShadow = mesh.castShadow = true; stableShadowDepth(mesh);
       // (it never moves in its car)
       mesh.matrixAutoUpdate = false;
@@ -360,6 +455,7 @@ export function createTrafficModels() {
     glow,
     dispose() {
       for (const geometry of templates) geometry.dispose();
+      busTemplate?.dispose();
       for (const mat of paints) mat.dispose();
     },
   };

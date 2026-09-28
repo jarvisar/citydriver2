@@ -144,7 +144,7 @@ export function createSoundGraph(ctx) {
   // Distant traffic uses a cheaper harmonic voice; the player's engine uses
   // combustion textures with separate RPM and load blends.
   const waves = { horn: periodic(hornPartials()), gull: periodic(new Float32Array([0, 1, .75, .55, .38, .24, .14, .08, .05])) };
-  for (const name of ['hatchback', 'sedan', 'wagon', 'pickup', 'van']) waves[name] = periodic(new Float32Array([0, ...ENGINES[name].harmonics]));
+  for (const name of ['hatchback', 'sedan', 'wagon', 'pickup', 'van', 'bus']) waves[name] = periodic(new Float32Array([0, ...ENGINES[name].harmonics]));
   const traffic = Array.from({ length: 4 }, () => {
     const pan = keep(ctx.createStereoPanner()); controlRate(pan.pan); pan.connect(buses.traffic);
     const engine = oscillator('sine', 60, waves.sedan);

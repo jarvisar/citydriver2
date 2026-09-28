@@ -818,16 +818,48 @@ const decode = /* glsl */`
     : walkerSlotIndex == 2 ? ${SLOT_BASE[2]} + ${glslBits('walkerBits.x', PACK.face)}
     : ${SLOT_BASE[3]} + ${glslBits('walkerBits.x', PACK.gear)};
 `;
-const slotAttribute = 'attribute float walkerSlot;';
-// The morphed shape, the head turned about its upright axis
+const slotAttribute = /* glsl */`
+  attribute float walkerSlot;
+  #ifdef WALKER_POSE
+    uniform float walkerSquash;
+    uniform vec3 walkerHeadShift;
+    uniform mat3 walkerHeadTilt;
+  #endif
+`;
+// The morphed shape, the head turned about its upright axis. The player's
+// own figure (WALKER_POSE, see walkerPose) also squashes its body about the
+// feet, keeping its volume, and tilts and moves its head on its own.
+const HEAD_PIVOT = `vec3(0.0, ${HEAD.y.toFixed(3)}, 0.0)`;
 const shaped = /* glsl */`
   transformed += getMorph(gl_VertexID, walkerPick, 0).xyz;
   if (walkerHead) transformed.xz = walkerYaw * transformed.xz;
+  #ifdef WALKER_POSE
+    if (walkerHead) transformed = walkerHeadTilt * (transformed - ${HEAD_PIVOT}) + ${HEAD_PIVOT} + walkerHeadShift;
+    else transformed *= vec3(inversesqrt(walkerSquash), walkerSquash, inversesqrt(walkerSquash));
+  #endif
+`;
+const shapedNormal = /* glsl */`
+  objectNormal += getMorph(gl_VertexID, walkerPick, 1).xyz;
+  if (walkerHead) objectNormal.xz = walkerYaw * objectNormal.xz;
+  #ifdef WALKER_POSE
+    if (walkerHead) objectNormal = walkerHeadTilt * objectNormal;
+    else objectNormal *= vec3(sqrt(walkerSquash), 1.0 / walkerSquash, sqrt(walkerSquash));
+  #endif
 `;
 
-export function createWalkerMaterial() {
+// The pose of the player's own figure (see Walker), read by its material and
+// its shadow: how far its body is squashed (under 1) or stretched, and how
+// far its head is moved and turned from where it floats
+export function walkerPose() {
+  return { walkerSquash: { value: 1 }, walkerHeadShift: { value: new THREE.Vector3() }, walkerHeadTilt: { value: new THREE.Matrix3() } };
+}
+
+// `pose` (see walkerPose) is only for the player's figure: the residents'
+// program is the same without it
+export function createWalkerMaterial(pose = null) {
   const material = new THREE.MeshStandardMaterial({ color: '#ffffff', vertexColors: true, roughness: .92 });
   material.customProgramCacheKey = () => 'citydriver-walker-slots-v5';
+  if (pose) material.defines = { WALKER_POSE: '' };
   // Demolition's warning (see createWalkerAlert): 1 glows them red at the
   // edges; 0, as everywhere else, leaves them exactly as they were
   material.userData.alert = { value: 0 };
@@ -836,7 +868,7 @@ export function createWalkerMaterial() {
       walkerCoats: { value: coatPalette }, walkerTrims: { value: trimPalette },
       walkerSkin: { value: skinPalette }, walkerHair: { value: hairPalette }, walkerLegs: { value: legsPalette },
       walkerAccents: { value: accentPalette }, walkerFixed: { value: fixed },
-      walkerAlert: material.userData.alert,
+      walkerAlert: material.userData.alert, ...pose,
     });
     shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `
       #include <common>
@@ -863,10 +895,7 @@ export function createWalkerMaterial() {
       // Fetch only this vertex's own slot's choice: three fetches a vertex,
       // however many variants there are
       .replace('#include <morphinstance_vertex>', decode)
-      .replace('#include <morphnormal_vertex>', `
-        objectNormal += getMorph(gl_VertexID, walkerPick, 1).xyz;
-        if (walkerHead) objectNormal.xz = walkerYaw * objectNormal.xz;
-      `)
+      .replace('#include <morphnormal_vertex>', shapedNormal)
       .replace('#include <morphtarget_vertex>', shaped)
       .replace('#include <morphcolor_vertex>', `
       vec4 walkerPaint = color + getMorph(gl_VertexID, walkerPick, 2);
@@ -889,19 +918,23 @@ export function createWalkerMaterial() {
 }
 
 // The shadow caster: the same combination, by the same fetch (the stock
-// path would read every target's weight at every vertex)
+// path would read every target's weight at every vertex). The residents all
+// share one. A posed figure has its own, reading its pose.
 let depthMaterial = null;
-function walkerDepthMaterial() {
-  if (depthMaterial) return depthMaterial;
-  depthMaterial = new THREE.MeshDepthMaterial({ side: THREE.BackSide, colorWrite: false });
-  depthMaterial.name = 'shadow-depth-walker';
-  depthMaterial.customProgramCacheKey = () => 'citydriver-walker-depth-v5';
-  depthMaterial.onBeforeCompile = shader => {
+export function walkerDepthMaterial(pose = null) {
+  if (depthMaterial && !pose) return depthMaterial;
+  const material = new THREE.MeshDepthMaterial({ side: THREE.BackSide, colorWrite: false });
+  material.name = pose ? 'shadow-depth-walker-posed' : 'shadow-depth-walker';
+  material.customProgramCacheKey = () => 'citydriver-walker-depth-v5';
+  if (pose) material.defines = { WALKER_POSE: '' };
+  material.onBeforeCompile = shader => {
+    Object.assign(shader.uniforms, pose);
     shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>\n${slotAttribute}`)
       .replace('#include <morphinstance_vertex>', decode)
       .replace('#include <morphtarget_vertex>', shaped);
   };
-  return depthMaterial;
+  if (!pose) depthMaterial = material;
+  return material;
 }
 
 // Demolition's warning: a resident costs a fine, so they glow red (the
