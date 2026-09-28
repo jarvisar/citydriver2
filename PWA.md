@@ -19,7 +19,7 @@ Open the preview URL and wait for the city to load before going offline. City ge
 
 Close all game tabs for a downloaded update to take effect. Old Citydriver caches in the same scope are removed.
 
-The build works from a subdirectory. To match GitHub Pages:
+The build also works from a subdirectory, for example:
 
 ```sh
 npm run build -- --base=/citydriver2/
