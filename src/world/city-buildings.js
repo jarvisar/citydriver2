@@ -1253,11 +1253,7 @@ function paintWall(c, b, ring, i, top) {
   }
 }
 
-// An iron fire escape down the front of some older brick blocks and lofts:
-// a railed landing under each floor's window at the end of the front away
-// from the door, a flight of steps between each landing and the next, and
-// a ladder drawn up under the lowest. Close to only, as the other trim is
-// far off, and chosen by a hash of the building, never a stream.
+// Close-range ironwork, chosen by the building's hash, never its stream.
 const ESCAPE_DISTRICTS = new Set(['Old town', 'Warehouse district', 'Market district']), IRON = '#33383a';
 function fireEscape(c, b, f, bottom, floors) {
   if (c.distant || floors < 3 || f.span < 8 || !['brick', 'loft'].includes(b.type) || !ESCAPE_DISTRICTS.has(b.district)) return;
@@ -1269,23 +1265,50 @@ function fireEscape(c, b, f, bottom, floors) {
   const width = Math.min(spacing - .3, 3.8), h = b.type === 'loft' ? 2.45 : 2.2, at = bay.offset;
   const levels = Array.from({ length: floors }, (_, k) => bottom + 1.7 + k * 3.6 - h / 2 - .3);
   if (levels.some(y => f.blocked(at, y + .6, width + .2, 1.4))) return;
-  const stair = (o0, y0, o1, y1) => {
-    const p = f.position((o0 + o1) / 2, (y0 + y1) / 2, .5), run = o1 - o0, rise = y1 - y0;
-    c.box(p[0], p[1], -p[2], Math.hypot(run, rise), .07, .7, IRON, 'solid', f.yaw, Math.atan2(rise, run));
+  if (![-1, 0, 1].every(side => f.open(at + side * (width / 2 - .1), 1.16))) return;
+  const slope = (o0, y0, o1, y1, outward, thickness) => {
+    const p = f.position((o0 + o1) / 2, (y0 + y1) / 2, outward), run = o1 - o0, rise = y1 - y0;
+    c.box(p[0], p[1], -p[2], Math.hypot(run, rise), thickness, .055, IRON, 'solid', f.yaw, Math.atan2(rise, run));
   };
+  const tread = '#515956', ladderAt = at + end * (width / 2 - .38);
   levels.forEach((y, k) => {
-    f.add(at, y, .6, width, .1, 1.1, IRON);
-    for (const rail of [.55, 1]) f.add(at, y + rail, 1.12, width, .045, .045, IRON);
-    for (const side of [-1, 1]) {
-      f.add(at + side * (width / 2 - .025), y + .5, 1.12, .05, 1, .05, IRON);
-      f.add(at + side * (width / 2 - .025), y + 1, .6, .05, .045, 1.1, IRON);
+    // A strip by the wall and an end landing leave the stairwell open.
+    f.add(at, y, .22, width, .1, .34, IRON);
+    if (k) {
+      const arrival = k % 2 ? 1 : -1;
+      f.add(at + arrival * (width / 2 - .325), y, .77, .65, .1, .76, IRON);
+    } else {
+      const left = at - width / 2, right = at + width / 2;
+      for (const [a, b] of [[left, ladderAt - .28], [ladderAt + .28, right]]) {
+        if (b > a) f.add((a + b) / 2, y, .77, b - a, .1, .76, IRON);
+      }
     }
-    // (up to the next landing, from one end to the other and back)
+    for (const rail of [.12, 1]) f.add(at, y + rail, 1.12, width, .05, .05, IRON);
+    const bars = Math.ceil(width / .55);
+    for (let j = 0; j <= bars; j++) f.add(at - width / 2 + .025 + (width - .05) * j / bars, y + .55, 1.12, .035, .9, .035, IRON);
+    for (const side of [-1, 1]) {
+      const offset = at + side * (width / 2 - .025);
+      f.add(offset, y + 1, .6, .05, .05, 1.1, IRON);
+      f.add(offset, y + .55, .6, .035, .9, .035, IRON);
+      f.add(offset, y + .5, .08, .055, 1, .055, IRON);
+      f.add(offset, y - .3, .06, .12, .65, .12, IRON);
+      const p = f.position(offset, y - .31, .55);
+      c.box(p[0], p[1], -p[2], Math.hypot(.94, .5), .065, .065, IRON, 'solid', f.yaw - Math.PI / 2, Math.atan2(.5, .94));
+    }
     const up = k % 2 ? -1 : 1;
-    if (k < floors - 1) stair(at - up * (width / 2 - .25), y + .05, at + up * (width / 2 - .25), levels[k + 1] + .05);
+    if (k < floors - 1) {
+      const from = at - up * (width / 2 - .325), to = at + up * (width / 2 - .65), rise = levels[k + 1] - y;
+      for (const out of [.46, 1.04]) {
+        slope(from, y, to, y + rise, out, .11);
+        slope(from, y + .88, to, y + rise + .88, out, .045);
+        for (const t of [0, .5, 1]) f.add(from + (to - from) * t, y + rise * t + .44, out, .035, .88, .035, IRON);
+      }
+      const steps = 12, going = Math.abs(to - from) / steps;
+      for (let j = 1; j <= steps; j++) f.add(from + (to - from) * (j - .5) / steps, y + rise * j / steps, .75, going + .025, .055, .64, tread);
+    }
   });
-  // the ladder, drawn up under the lowest landing
-  f.add(at + end * (width / 2 - .45), levels[0] - 1.05, .95, .45, 2, .05, IRON);
+  for (const side of [-1, 1]) f.add(ladderAt + side * .225, levels[0] - 1.05, .85, .045, 2, .06, IRON);
+  for (let j = 0; j < 7; j++) f.add(ladderAt, levels[0] - .2 - j * .28, .85, .45, .045, .045, tread);
 }
 
 // The runs of walls round a ring that turn less than 30 degrees where they

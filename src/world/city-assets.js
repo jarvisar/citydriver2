@@ -313,40 +313,101 @@ function kiosk() {
 
 // Kerbside fittings. Each stands on the lamps' line at the kerb (the
 // residents walk further in), local -x toward the road.
-// A fire hydrant: a red barrel with a nozzle each side and a pale cap
+// Turned fittings keep their collars and shoulders in one closed shell.
+function turned(p, profile, colour, sides = 8) {
+  const vertices = [], point = ([r, y], k) => { const angle = (k + .5) * Math.PI * 2 / sides; return [Math.sin(angle) * r, y, Math.cos(angle) * r]; };
+  for (let j = 1; j < profile.length; j++) for (let k = 0; k < sides; k++) {
+    const a = point(profile[j - 1], k), b = point(profile[j - 1], k + 1), c = point(profile[j], k + 1), d = point(profile[j], k);
+    // A cap's centre needs one triangle, not a collapsed second one.
+    if (profile[j - 1][0]) vertices.push(...a, ...b, ...d);
+    if (profile[j][0]) vertices.push(...b, ...c, ...d);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3)); g.computeVertexNormals();
+  p.add(g, [0, 0, 0], colour);
+}
+
+// Tile the road face instead of stacking panels on a box. The other five
+// faces close the cabinet, without hidden sides behind every small strip.
+function fittingCase(p, position, size, colour) {
+  const g = new THREE.BoxGeometry(...size), indices = [];
+  for (let i = 0; i < g.index.count; i += 3) if (g.attributes.normal.getX(g.index.getX(i)) > -.5) {
+    indices.push(g.index.getX(i), g.index.getX(i + 1), g.index.getX(i + 2));
+  }
+  g.setIndex(indices); p.add(g, position, colour);
+}
+function fittingFace(p, x, y, z, h, w, colour) {
+  p.add(new THREE.PlaneGeometry(w, h), [x, y, z], colour, [0, -Math.PI / 2, 0]);
+}
+
 function hydrant() {
-  const p = new Parts(), red = '#b8352c';
-  p.cylinder([0, .3, 0], .12, .16, .6, red, 6);
-  p.cone([0, .66, 0], .14, .14, '#d8d4c8', 6);
-  p.box([-.03, .4, 0], [.14, .1, .38], '#d8d4c8');
+  const p = new Parts(), red = '#b94f3e', cap = '#d5cebb';
+  turned(p, [[0, 0], [.17, 0], [.17, .055], [.125, .1], [.115, .48], [.145, .5], [.145, .55], [0, .55]], red);
+  turned(p, [[0, .55], [.15, .55], [.15, .58], [.12, .64], [.065, .685], [0, .685]], cap);
+  p.cylinder([0, .703, 0], .04, .04, .054, galvanised, 6);
+  for (const side of [-1, 1]) {
+    p.cylinder([0, .39, side * .125], .055, .055, .09, red, 8, [Math.PI / 2, 0, 0]);
+    p.cylinder([0, .39, side * .17], .075, .075, .05, cap, 8, [Math.PI / 2, 0, 0]);
+  }
+  p.cylinder([-.125, .39, 0], .075, .075, .1, red, 8, [0, 0, Math.PI / 2]);
+  p.cylinder([-.174, .39, 0], .09, .09, .045, cap, 8, [0, 0, Math.PI / 2]);
+  p.box([-.202, .39, 0], [.022, .055, .055], galvanised);
   return p.finish();
 }
 // A pillar box for the post, red with a black foot and a slot to the road
 function postBox() {
-  const p = new Parts(), red = '#b3302b';
-  p.cylinder([0, .66, 0], .24, .27, 1.32, red, 8);
-  p.cone([0, 1.41, 0], .26, .18, red, 8);
-  p.box([-.23, 1.08, 0], [.06, .05, .22], '#1e2224');
-  p.box([0, .07, 0], [.56, .14, .56], '#2b2f31');
+  const p = new Parts(), red = '#a94036', edge = '#862f2a', paper = '#e4dcc7';
+  turned(p, [[0, 0], [.28, 0], [.28, .12], [.245, .17], [0, .17]], darkIron);
+  turned(p, [[0, .17], [.245, .17], [.245, 1.28], [.275, 1.28], [.275, 1.35], [.235, 1.43], [.12, 1.48], [0, 1.48]], red);
+  // The road-facing panel tiles one face, including the slot and notice.
+  const front = (y, z, h, w, colour) => p.box([-.23, y, z], [.045, h, w], colour);
+  for (const z of [-.14, .14]) front(.73, z, 1.04, .045, edge);
+  front(.255, 0, .09, .235, edge); front(.56, 0, .52, .235, red);
+  front(.91, 0, .18, .235, paper); front(1.045, 0, .09, .235, red);
+  front(1.12, 0, .06, .235, darkIron); front(1.2, 0, .1, .235, red);
+  p.box([-.262, 1.17, 0], [.065, .04, .28], edge);
+  p.box([-.26, .57, -.085], [.04, .11, .035], galvanised);
   return p.finish();
 }
 // A utility cabinet, the kind that holds a junction's signal gear or a street's cables
 // (paler than a litter bin, with a vent on its road face)
 function cabinet() {
-  const p = new Parts();
-  p.box([0, .6, 0], [.42, 1.2, .82], '#8f9c93');
-  p.box([0, 1.23, 0], [.48, .06, .88], '#6f7c74');
-  p.box([-.215, .95, 0], [.02, .16, .5], '#56625b');
+  const p = new Parts(), paint = '#8f9c93', seam = '#56625b';
+  p.box([0, .06, 0], [.44, .12, .84], seam);
+  fittingCase(p, [-.015, .655, 0], [.45, 1.07, .8], paint);
+  p.box([0, 1.22, 0], [.48, .06, .88], '#6f7c74');
+  // Door seams and vent slots are adjacent strips, not overlays on a box.
+  const front = (y, z, h, w, colour) => fittingFace(p, -.24, y, z, h, w, colour);
+  for (const z of [-.386, .386]) front(.655, z, 1.07, .028, seam);
+  front(.142, 0, .044, .744, seam); front(1.168, 0, .044, .744, seam);
+  front(.524, 0, .72, .744, paint);
+  for (const z of [-.324, .324]) front(.974, z, .18, .096, paint);
+  for (let i = 0; i < 6; i++) front(.899 + i * .03, 0, .03, .552, i % 2 ? paint : seam);
+  front(1.105, 0, .082, .744, paint);
+  p.box([-.248, .63, -.29], [.036, .16, .045], darkIron);
+  for (const y of [.35, .95]) p.box([-.243, y, .34], [.026, .1, .035], galvanised);
   return p.finish();
 }
 // Newspaper boxes in a row of three colours, their windows to the road
 function newsBoxes() {
-  const p = new Parts();
-  p.box([0, .06, 0], [.34, .12, 1.56], '#2b2f31');
-  p.box([0, .96, 0], [.46, .08, 1.62], '#2b2f31');
-  [['#2f5f9a', -.54], ['#b8413a', 0], ['#d9a93a', .54]].forEach(([paint, z]) => {
-    p.box([0, .54, z], [.42, .76, .5], paint);
-    p.box([-.215, .66, z], [.02, .28, .36], '#e4e0d0');
+  const p = new Parts(), paper = '#e4dcc7', ink = '#65716d';
+  p.box([0, .04, 0], [.34, .08, 1.56], darkIron);
+  [['#456e88', -.54], ['#b65343', 0], ['#bc964b', .54]].forEach(([paint, z]) => {
+    p.box([.04, .225, z], [.2, .29, .18], darkIron);
+    fittingCase(p, [0, .66, z], [.42, .58, .5], paint);
+    p.box([0, .965, z], [.46, .07, .52], darkIron);
+    const front = (y, offset, h, w, colour) => fittingFace(p, -.21, y, z + offset, h, w, colour);
+    for (const side of [-1, 1]) front(.66, side * .225, .58, .05, paint);
+    front(.405, 0, .07, .4, paint); front(.52, 0, .16, .4, ink);
+    front(.61, 0, .02, .4, darkIron);
+    for (const side of [-1, 1]) front(.735, side * .185, .23, .03, paper);
+    front(.8375, 0, .025, .34, paper); front(.8125, 0, .025, .34, ink);
+    front(.78, 0, .04, .34, paper); front(.65, 0, .06, .34, paper);
+    front(.72, -.115, .08, .11, ink); front(.72, -.05, .08, .02, paper);
+    for (let i = 0; i < 4; i++) front(.69 + i * .02, .065, .02, .21, i % 2 ? paper : '#a9ada0');
+    front(.866, 0, .032, .4, ink); front(.916, 0, .068, .4, paint);
+    p.box([-.224, .46, z], [.03, .035, .15], galvanised);
+    p.box([-.224, .91, z + .12], [.03, .035, .065], darkIron);
   });
   return p.finish();
 }
@@ -354,8 +415,21 @@ function newsBoxes() {
 function bikeRack() {
   const p = new Parts();
   for (const z of [-.6, .6]) {
-    for (const x of [-.34, .34]) p.box([x, .42, z], [.05, .84, .05], galvanised);
-    p.box([0, .84, z], [.73, .05, .05], galvanised);
+    const path = [[-.34, 0], [-.34, .7], [-.29, .81], [-.2, .84], [.2, .84], [.29, .81], [.34, .7], [.34, 0]];
+    // Mitred rings make one bent tube, with no separate caps at the elbows.
+    const vertices = [], rings = path.map(([x, y], i) => {
+      const a = path[Math.max(0, i - 1)], b = path[Math.min(path.length - 1, i + 1)];
+      const length = Math.hypot(b[0] - a[0], b[1] - a[1]), nx = -(b[1] - a[1]) / length, ny = (b[0] - a[0]) / length;
+      return Array.from({ length: 6 }, (_, k) => { const angle = k * Math.PI / 3; return [x + nx * Math.cos(angle) * .027, y + ny * Math.cos(angle) * .027, z + Math.sin(angle) * .027]; });
+    });
+    for (let i = 1; i < rings.length; i++) for (let k = 0; k < 6; k++) {
+      const a = rings[i - 1][k], b = rings[i - 1][(k + 1) % 6], c = rings[i][(k + 1) % 6], d = rings[i][k];
+      vertices.push(...a, ...b, ...d, ...b, ...c, ...d);
+    }
+    const tube = new THREE.BufferGeometry();
+    tube.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3)); tube.computeVertexNormals();
+    p.add(tube, [0, 0, 0], galvanised);
+    for (const x of [-.34, .34]) p.box([x, .0175, z], [.1, .035, .09], iron);
   }
   return p.finish();
 }
