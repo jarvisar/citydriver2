@@ -5,11 +5,10 @@ import { CityTraffic, lanesOf } from '../src/city-traffic.js';
 import { CityAutodrive } from '../src/city-autodrive.js';
 import { junctionControls, cityGreen, JunctionTraffic } from '../src/city-junctions.js';
 import { turnPath } from '../src/world/lane-paths.js';
-import { trafficContact } from '../src/traffic.js';
 import { navGraph } from '../src/world/nav-graph.js';
 import { DrivingController } from '../src/vehicle.js';
 import { citydriverRoute, journeyStart, onRoadAt, roadAt, surfaceAt, ROAD_LEVEL } from '../src/world/city-route.js';
-import { collideScenery, sceneryContacts } from '../src/collision.js';
+import { trafficContact, collideScenery, sceneryContacts } from '../src/collision.js';
 import { LooseProps } from '../src/loose-props.js';
 import { cityAssets } from '../src/world/city-assets.js';
 import { cityWalker } from '../src/world/city-walkers.js';
@@ -243,6 +242,68 @@ function onlooker(traffic, edge, along) {
   traffic.lastS = p.s; traffic.lastU = p.u;
   return { s: p.s, u: p.u, heading: 0, speed: 0, airborne: true, groundedPosition: new THREE.Vector3(1e5, 0, 1e5) };
 }
+
+test('rear, head-on and reversing impacts with city traffic separate the cars and report the blow', () => {
+  for (const kind of ['rear', 'head-on', 'reverse', 'hit from behind']) {
+    const player = new DrivingController(citydriverRoute, journeyStart(), 'taxi');
+    player.toggleFreeDriving();
+    const { traffic, pinned: [car] } = pinnedStreet(player, [[60, 16]]);
+    try {
+      const heading = car.heading, gap = (player.spec.length + car.spec.length) / 2 - .3;
+      const ahead = kind === 'rear' ? -gap : gap;
+      player.s = car.s + Math.cos(heading) * ahead; player.u = car.u + Math.sin(heading) * ahead;
+      player.heading = player.slideHeading = heading + (kind === 'head-on' ? Math.PI : 0);
+      player.speed = kind === 'reverse' ? -7 : kind === 'hit from behind' ? 4 : 28;
+      player.update(0, {});
+      const distance = player.distance, impacts = player.audioTelemetry.impactSerial;
+      const before = { player: player.velocity, traffic: traffic.motion(car) };
+      assert.ok(trafficContact(player.motion(), traffic.motion(car)), kind);
+      traffic.collidePlayer(car, player);
+      assert.equal(trafficContact(player.motion(), traffic.motion(car)), null, kind);
+      assert.equal(player.distance, distance);
+      assert.equal(player.audioTelemetry.impactSerial, impacts + 1, kind);
+      assert.equal(player.audioTelemetry.speed, player.speed);
+      assert.deepEqual(player.currentPose.position, player.groundedPosition);
+      assert.notDeepEqual(player.velocity, before.player, kind);
+      const after = traffic.motion(car);
+      assert.ok(Math.hypot(after.vx - before.traffic.vx, after.vz - before.traffic.vz) > 1, kind);
+      if (kind === 'rear') assert.ok(car.speed > 16 && player.speed < 28);
+      if (kind === 'hit from behind') assert.ok(player.speed > 4 && car.speed < 16);
+    } finally { traffic.dispose(); player.disposeModel(); }
+  }
+});
+
+test('a full-speed drive hits a stopped city car without tunnelling through it', () => {
+  const player = new DrivingController(citydriverRoute, journeyStart(), 'taxi');
+  player.toggleFreeDriving();
+  const { traffic, edge, pinned: [car] } = pinnedStreet(player, [[60, 0]]);
+  try {
+    const pose = traffic.nav.pose(edge, 45, 1, car.lane);
+    player.s = pose.s; player.u = pose.u; player.heading = player.slideHeading = pose.heading; player.speed = 28;
+    player.update(0, {});
+    const impacts = player.audioTelemetry.impactSerial;
+    let hit = false;
+    for (let i = 0; i < 60; i++) {
+      player.update(1 / 60, { forward: true }); traffic.update(1 / 60, player);
+      const ahead = (car.u - player.u) * Math.sin(pose.heading) + (car.s - player.s) * Math.cos(pose.heading);
+      assert.ok(ahead > 0, 'the player stays behind the car it hits');
+      if (player.audioTelemetry.impactSerial > impacts) hit = true;
+    }
+    assert.ok(hit, 'the simulation resolved an impact');
+  } finally { traffic.dispose(); player.disposeModel(); }
+});
+
+test('a city car shoved above its cruise speed coasts down without hard braking', () => {
+  const player = new DrivingController(citydriverRoute, journeyStart(), 'taxi');
+  const { traffic, edge, pinned: [car] } = pinnedStreet(player, [[40, 16]]);
+  try {
+    const observer = onlooker(traffic, edge, 40);
+    car.speed = 24; car.shoved = true;
+    for (let i = 0; i < 60; i++) traffic.update(1 / 60, observer);
+    assert.ok(car.speed > 19 && car.speed < 21, `shoved car is doing ${car.speed} m/s`);
+  } finally { traffic.dispose(); player.disposeModel(); }
+});
+
 // The player's car square to the lane at `along`, `across` metres to its left and `ahead` metres on
 function besideLane(traffic, edge, player, along, across, ahead, speed) {
   const rail = traffic.nav.pose(edge, along, 1, edge.profile.lane), h = rail.heading;

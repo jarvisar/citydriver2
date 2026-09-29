@@ -1,6 +1,26 @@
 import { CHUNK_LENGTH, clamp } from './world/route.js';
 import { leadingPoint } from './impact.js';
 
+// Four separating axes give a forgiving rectangular footprint even when the
+// player is sideways. All collision coordinates are independent of render origin.
+export function trafficContact(a, b) {
+  const axes = car => [{ x: Math.cos(car.heading), z: Math.sin(car.heading) }, { x: Math.sin(car.heading), z: -Math.cos(car.heading) }];
+  const aa = axes(a), ba = axes(b), dx = a.x - b.x, dz = a.z - b.z;
+  const dot = (u, v) => u.x * v.x + u.z * v.z;
+  const radius = (car, basis, axis) => car.halfWidth * Math.abs(dot(basis[0], axis)) + car.halfLength * Math.abs(dot(basis[1], axis));
+  let contact = null;
+  for (const axis of [...aa, ...ba]) {
+    const distance = dx * axis.x + dz * axis.z;
+    const depth = radius(a, aa, axis) + radius(b, ba, axis) - Math.abs(distance);
+    if (depth <= 0) return null;
+    if (!contact || depth < contact.depth) {
+      const sign = distance < 0 ? -1 : 1;
+      contact = { x: axis.x * sign, z: axis.z * sign, depth };
+    }
+  }
+  return contact;
+}
+
 // A car's corners are rounded to this radius. Whatever catches one meets it at
 // a slant, so a clipped post or corner glances the car aside rather than
 // stopping it dead, the more the smaller the overlap; and a corner that only

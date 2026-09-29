@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { seededRandom } from './route.js';
 import { PAVEMENT_LEVEL as G } from './city-route.js';
-import { edgeFacade, edgeWindows, shopAwning, cornice, convexHull, exitDistance } from './city-buildings.js';
+import { edgeFacade, edgeWindows, shopAwning, cornice, convexHull, exitDistance } from './city-building-parts.js';
 import { landmarkSite, venueFootprint } from './landmark-site.js';
 import { discoverySignFor, signCore } from './city-signs.js';
 import { round, clock, fireEngine } from './city-detail-assets.js';

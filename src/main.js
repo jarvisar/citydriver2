@@ -47,14 +47,14 @@ import { setResidentWindow } from './world/resident.js';
 import { PlayerController } from './vehicle.js';
 import { OnFoot, EnterMarker } from './on-foot.js';
 import { walkingInput, createWalkerModel } from './walker.js';
-import { CityTraffic as Traffic } from './city-traffic.js';
-import { TRAFFIC_CRUISE_SPEED } from './traffic.js';
+import { CityTraffic } from './city-traffic.js';
 import { collideScenery, sightLine, cameraClearance } from './collision.js';
 import { PedestrianContacts } from './world/pedestrian-reactions.js';
 import { CityAutodrive as Autodrive } from './city-autodrive.js';
 import { Input } from './input.js';
 import { touchDrivingInput, thirdPersonDrivingInput, pressOnRelease } from './touch-stick.js';
 import { MouseLook } from './mouse-look.js';
+import { createFullscreen } from './fullscreen.js';
 import { DriveAudio } from './audio.js';
 import { setupAudioMixer } from './audio/mixer.js';
 import { FrameClock, FramePacer } from './timing.js';
@@ -67,15 +67,13 @@ setupControlHelp();
 
 const $ = selector => document.querySelector(selector);
 const MENU_MOVES = ['menuNext', 'menuPrevious', 'menuUp', 'menuDown'];
-const MENU_CRUISE_SPEED = TRAFFIC_CRUISE_SPEED * 1.4;
+const MENU_CRUISE_SPEED = 16 * 1.4;
 // How fast the right stick turns the camera, pushed all the way (rad/s)
 const STICK_LOOK = 2.4;
 let paused = false, started = false, time = 0, hudTime = 0, gameMode = 'taxi';
 document.body.dataset.mode = gameMode;
 const frameClock = new FrameClock(), pacer = new FramePacer();
 let toastTimer; let sceneReady = false;
-// Set when an Escape left fullscreen mid-drive and paused it (see fullscreenchange)
-let fullscreenOnResume = false;
 // The chosen car outlives the visit; positions and mileage do not.
 const carStorageKey = 'citydriver-car';
 let carId = DEFAULT_CAR;
@@ -192,7 +190,7 @@ async function boot() {
     // The title screen is a menu of its own until a drive begins.
     const openWelcomeMenu = () => !started && !paused ? $('#welcome') : null;
     scene.add(vehicle.car);
-    const traffic = new Traffic(scene, vehicle.route, vehicle.s, journey, vehicle.u);
+    const traffic = new CityTraffic(scene, vehicle.route, vehicle.s, journey, vehicle.u);
     // (and the bus calls at the world's stops)
     traffic.stops = world.busStops;
     // Street furniture knocked loose (see loose-props.js), which loose traffic can knock over too
@@ -456,12 +454,7 @@ async function boot() {
     function setPaused(value, { preserveInput = false } = {}) {
       paused = value; if (!preserveInput) input.clear(); frameClock.suspend();
       if (!paused && autodrive.enabled) start();
-      // (back into the fullscreen an Escape took the drive out of, where the
-      // browser gives Escape no other way to pause: see fullscreenchange)
-      if (!paused) {
-        if (fullscreenOnResume && started && !vr?.active) void setFullscreen(true, { quiet: true });
-        fullscreenOnResume = false;
-      }
+      if (!paused) fullscreen.resume();
       if (paused) { clearTimeout(toastTimer); $('#toast').classList.remove('show'); }
       // (the title screen is silent: sound begins with the drive)
       audio.setPaused(paused || !started);
@@ -638,7 +631,7 @@ async function boot() {
         fpsCounter.textContent = 'FPS: …'; fpsStart = null; fpsFrames = 0;
         return;
       }
-      if (name === 'fullscreen') { fullscreenOnResume = false; await setFullscreen(!fullscreenActive()); return; }
+      if (name === 'fullscreen') { await fullscreen.toggle(); return; }
       if (changingJourney) return;
       const chooser = openChooser();
       if (chooser) {
@@ -699,7 +692,7 @@ async function boot() {
         return;
       }
       // (not the Escape that freed the pointer, when it reaches the page after the pause the freeing made)
-      if (name === 'pause' && !(paused && performance.now() - releasedAt < 400)) setPaused(!paused);
+      if (name === 'pause' && !(paused && fullscreen.recentlyReleased)) setPaused(!paused);
       if (name === 'reset') {
         if (taxi.running || demolition.running) { recoverCar(true); return; }
         // A headset keeps its session: back on the road rather than a new city.
@@ -792,89 +785,10 @@ async function boot() {
     // WebXR needs a secure page, which a headset opening the dev server over
     // the local network is not; say so rather than hide Enter VR unexplained.
     if (headsetBrowser() && !window.isSecureContext) { $('#vr-error').textContent = 'VR needs a secure page. Open Citydriver over HTTPS to play in your headset.'; $('#vr-error').hidden = false; }
-    // Fullscreen is the player's to choose, never the game's: F, D-pad Down
-    // while driving, or the pause screen's Fullscreen switch, which shows
-    // whichever way it is however it got there (F11, the desktop app's own).
-    let fullscreenPending = false, leavingFullscreen = false, leftFullscreen = -Infinity, escapeKept = false, releasedAt = -Infinity;
+    const fullscreen = createFullscreen({ button: $('#fullscreen'), state: () => ({ started, paused, vr: vr.active }), pause: () => setPaused(true), toast });
+    $('#fullscreen').addEventListener('click', () => action('fullscreen'));
     const desktop = window.citydriverDesktop;
-    let desktopFullscreen = false;
-    const fullscreenDisplay = window.matchMedia('(display-mode: fullscreen)');
-    const fullscreenActive = () => desktop ? desktopFullscreen : Boolean(document.fullscreenElement || document.webkitFullscreenElement || fullscreenDisplay.matches);
-    const fullscreenButton = $('#fullscreen');
-    function updateFullscreenUi() {
-      const on = fullscreenActive();
-      if (fullscreenButton.getAttribute('aria-pressed') !== String(on)) fullscreenButton.setAttribute('aria-pressed', String(on));
-      if (on) awaitGesture(false);
-    }
-    // Enters or leaves fullscreen (`quiet`: a page that cannot says nothing)
-    async function setFullscreen(on, { quiet = false } = {}) {
-      const element = document.fullscreenElement || document.webkitFullscreenElement;
-      if (fullscreenPending || (desktop ? on === desktopFullscreen : on === fullscreenActive())) return;
-      // (the browser's own, F11 or an installed app's, is not the page's to leave)
-      if (!desktop && !on && !element) { if (!quiet) toast(matchMedia('(any-pointer: fine)').matches ? 'Press F11 to leave fullscreen' : 'Fullscreen is set by the browser'); return; }
-      // A browser grants fullscreen only inside a click, tap or key press, and
-      // a controller's button is none of them
-      const gesture = navigator.userActivation?.isActive ?? true;
-      fullscreenPending = true;
-      try {
-        if (!on) leftFullscreen = performance.now();
-        if (desktop) {
-          desktopFullscreen = await desktop.toggleFullscreen();
-        } else if (!on) {
-          leavingFullscreen = true;
-          await (document.exitFullscreen ?? document.webkitExitFullscreen).call(document);
-        } else {
-          const request = document.documentElement.requestFullscreen ?? document.documentElement.webkitRequestFullscreen;
-          if (!request) { if (!quiet) toast('Fullscreen unavailable'); return; }
-          // (asked for from the controller: the next click or key goes fullscreen)
-          if (!gesture) { if (!quiet) { awaitGesture(true); toast('Click or press any key for fullscreen'); } return; }
-          await request.call(document.documentElement);
-        }
-      } catch {
-        leavingFullscreen = false;
-        if (!quiet) toast('Fullscreen unavailable');
-      } finally { fullscreenPending = false; updateFullscreenUi(); }
-    }
-    // Asked for without a gesture, fullscreen waits a few seconds for one
-    let gestureTimer = 0;
-    function awaitGesture(on) {
-      clearTimeout(gestureTimer);
-      for (const type of ['pointerup', 'keydown']) window[on ? 'addEventListener' : 'removeEventListener'](type, onGesture, true);
-      if (on) gestureTimer = setTimeout(() => awaitGesture(false), 10000);
-    }
-    function onGesture(event) {
-      if (!event.isTrusted || (event.type === 'keydown' && (event.repeat || ['Escape', 'Shift', 'Control', 'Alt', 'Meta'].includes(event.key)))) return;
-      awaitGesture(false);
-      // (F and the switch go fullscreen themselves)
-      if (event.code === 'KeyF' || event.key === 'F11' || event.target.closest?.('#fullscreen')) return;
-      void setFullscreen(true, { quiet: true });
-    }
-    // A browser's fullscreen takes Escape to leave, and the page never hears
-    // it. Keyboard Lock (Chromium) hands a tap of Escape to the page, so it
-    // pauses and resumes as in a window, and a hold still leaves for good.
-    // Without it (Firefox, Safari), leaving fullscreen mid-drive other than
-    // by F or the switch pauses, as Escape would, and Resume goes back in.
-    document.addEventListener('onfullscreenchange' in document ? 'fullscreenchange' : 'webkitfullscreenchange', () => {
-      updateFullscreenUi();
-      if (document.fullscreenElement || document.webkitFullscreenElement) {
-        navigator.keyboard?.lock?.(['Escape'])?.then(() => { escapeKept = true; }, () => {});
-        return;
-      }
-      const kept = escapeKept; escapeKept = false;
-      if (fullscreenActive()) return;
-      // (an Escape that freed the pointer may have paused the drive already)
-      const driving = started && !vr.active && (!paused || performance.now() - releasedAt < 500);
-      if (!leavingFullscreen && driving) { setPaused(true); fullscreenOnResume = !kept; }
-      leavingFullscreen = false;
-    });
-    fullscreenDisplay.addEventListener?.('change', updateFullscreenUi);
-    fullscreenButton.addEventListener('click', () => action('fullscreen'));
-    // (an iPhone gives a page no fullscreen, so the switch would do nothing)
-    fullscreenButton.hidden = !desktop && !(document.fullscreenEnabled || document.webkitFullscreenEnabled);
-    updateFullscreenUi();
     if (desktop) {
-      desktop.onFullscreenChange(active => { desktopFullscreen = active; updateFullscreenUi(); });
-      desktop.getFullscreen().then(active => { desktopFullscreen = active; updateFullscreenUi(); });
       desktop.onEscape(() => {
         const chooser = openChooser();
         if (chooser) chooser.close(); else action('pause');
@@ -905,13 +819,8 @@ async function boot() {
     const lookHintKey = 'citydriver-mouse-look';
     let lookHint = 0, lookKnown = false, lookHinted = false;
     try { lookKnown = lookHinted = localStorage.getItem(lookHintKey) === 'known'; } catch { /* Storage is optional. */ }
-    const mouseLook = new MouseLook($('#scene'), { lookable: looking, automatic: fullscreenActive, zoomable: chasing, look: rendering.look, zoom: rendering.zoom,
-      // Escape frees the pointer, and pauses, as it does everywhere else
-      // (unless fullscreen, by F or the switch, took it with it)
-      released: () => {
-        if (performance.now() - leftFullscreen < 1000) return false;
-        setPaused(true); releasedAt = performance.now();
-      },
+    const mouseLook = new MouseLook($('#scene'), { lookable: looking, automatic: () => fullscreen.active, zoomable: chasing, look: rendering.look, zoom: rendering.zoom,
+      released: () => fullscreen.released(),
       captured: () => {
         if (lookKnown) return;
         lookKnown = lookHinted = true;

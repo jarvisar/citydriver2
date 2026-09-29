@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { wallHasOutlook, edgeFacade, edgeWindows, shopAwning, shopFront, groundFloor, facadeRuns, runJoins, cornice, planLot, cityLot, wallPainting, VENUE_WALLS } from '../src/world/city-buildings.js';
+import { wallHasOutlook, shopFront, groundFloor, facadeRuns, runJoins, planLot, cityLot, wallPainting, VENUE_WALLS } from '../src/world/city-buildings.js';
+import { edgeFacade, edgeWindows, shopAwning, cornice } from '../src/world/city-building-parts.js';
 import { CityChunk } from '../src/world/citydriver-world.js';
 import { seededRandom } from '../src/world/route.js';
 import { Surface } from '../src/world/surface.js';

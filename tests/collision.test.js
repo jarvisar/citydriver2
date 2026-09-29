@@ -1,8 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { collideScenery, postContact, sightLine, cameraClearance } from '../src/collision.js';
-import { trafficContact } from '../src/traffic.js';
+import { trafficContact, collideScenery, postContact, sightLine, cameraClearance } from '../src/collision.js';
 import { DrivingController } from '../src/vehicle.js';
 import { CHUNK_LENGTH } from '../src/world/route.js';
 import { solidBox, solidPost, solidSpan, solidModel } from '../src/world/colliders.js';
