@@ -12,6 +12,9 @@
 .update-notice button:hover { background: var(--city-accent-hover); }
 .update-notice button:focus-visible { outline: 2px solid var(--city-text); outline-offset: 2px; }
 .update-notice button:disabled { cursor: wait; opacity: .6; }
-#welcome .update-notice { margin-top: 14px; }
+/* Top centre of the title, above the name, still inside #welcome for the controller */
+#welcome .update-notice { position: absolute; bottom: 100%; left: 50%; margin-bottom: 8px; transform: translateX(-50%); text-shadow: none; }
 .pause-header .update-notice { grid-area: 3 / 1 / 4 / 3; margin-top: 10px; background: var(--city-raised); box-shadow: none; }
+/* (a short landscape title fills the height, with room at the top) */
+@media (orientation: landscape) and (max-height: 460px) { #welcome .update-notice { top: 0; bottom: auto; margin: 0; } }
 @media (pointer: coarse) { .update-notice button { min-height: 44px; } }

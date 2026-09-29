@@ -17,7 +17,9 @@ Open the preview URL and wait for the city to load before going offline. City ge
 
 ## Updates and Hosting
 
-Close all game tabs for a downloaded update to take effect. Old Citydriver caches in the same scope are removed.
+An open tab checks for a new version every 10 minutes and when it comes back into view. Once the update has downloaded, the title and pause screens show `Update available` with a `Reload` button. It never shows over a drive, and nothing reloads until you press it. Closing all game tabs also picks up the update. Old Citydriver caches in the same scope are removed.
+
+Pressing `Reload` in one tab moves every open tab onto the new version, so the other tabs show the notice too. They should reload soon, since files only the old version used are gone from the cache.
 
 The build also works from a subdirectory, for example:
 
