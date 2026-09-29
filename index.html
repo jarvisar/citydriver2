@@ -58,6 +58,16 @@
         "url": "https://citydriver2.jarvisar.com/"
       }
     </script>
+    <!-- Cloudflare Web Analytics. Only on the live site, so local dev and the desktop app aren't counted -->
+    <script>
+      if (location.hostname === 'citydriver2.jarvisar.com') {
+        const beacon = document.createElement('script');
+        beacon.type = 'module';
+        beacon.src = 'https://static.cloudflareinsights.com/beacon.min.js';
+        beacon.dataset.cfBeacon = '{"token": "a52a84e110ba48c0868dd4ae87e235b7"}';
+        document.head.appendChild(beacon);
+      }
+    </script>
   </head>
   <body>
     <main id="app">
