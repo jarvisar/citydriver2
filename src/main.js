@@ -12,10 +12,16 @@ import './taxi-fleet.css';
 import './demolition.css';
 import './city-theme.css';
 import { setupTaxiFleet } from './taxi-fleet-view.js';
+import { createFleetMenu, garageModel } from './chooser-model.js';
+import { menuControls, menuModel, WEATHER_CHOICES, cycleChoice } from './menu-model.js';
+import { bindMenuControls, renderMenuControls } from './menu-dom.js';
+import { locationHudModel, headsetHudModel } from './run-hud-model.js';
+import { renderLocationHud, renderRunHud } from './run-hud-dom.js';
+import { taxiResultModel, demolitionResultModel } from './result-model.js';
 import { createRendering } from './rendering.js';
 import { FRAME_CAPS, Graphics, headsetBrowser } from './graphics.js';
 import { JOURNEYS } from './journeys.js';
-import { CARS, GARAGE_IDS, DEFAULT_CAR, ROUTE_PAINT, carEntry, carMeters } from './cars.js';
+import { CARS, DEFAULT_CAR, ROUTE_PAINT, carEntry } from './cars.js';
 import { carArt } from './car-art.js';
 import { PAINTS, DEFAULT_PAINT, DEFAULT_PAINT_NAME, paintName, readPaint } from './car-paint.js';
 import { SEED } from './world/route.js';
@@ -38,7 +44,7 @@ import { TaxiView } from './taxi-view.js';
 import { DemolitionRun, DEMOLITION_CAR, DEMOLITION_PAINT } from './demolition-run.js';
 import { DemolitionView } from './demolition-view.js';
 import { setResidentWindow } from './world/resident.js';
-import { DrivingController } from './vehicle.js';
+import { PlayerController } from './vehicle.js';
 import { OnFoot, EnterMarker } from './on-foot.js';
 import { walkingInput, createWalkerModel } from './walker.js';
 import { CityTraffic as Traffic } from './city-traffic.js';
@@ -64,7 +70,6 @@ const MENU_MOVES = ['menuNext', 'menuPrevious', 'menuUp', 'menuDown'];
 const MENU_CRUISE_SPEED = TRAFFIC_CRUISE_SPEED * 1.4;
 // How fast the right stick turns the camera, pushed all the way (rad/s)
 const STICK_LOOK = 2.4;
-const mileageFormat = new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 let paused = false, started = false, time = 0, hudTime = 0, gameMode = 'taxi';
 document.body.dataset.mode = gameMode;
 const frameClock = new FrameClock(), pacer = new FramePacer();
@@ -148,7 +153,7 @@ async function boot() {
     try { weather.setMode(localStorage.getItem('citydriver-weather') ?? 'auto', { immediate: true }); } catch { /* Storage is optional. */ }
     let changingJourney = true, journeyWasPaused = false;
     // The menu cruises in a cab; starting either mode applies its own saved car.
-    const vehicle = new DrivingController(JOURNEYS[journey].route, journeyStart(), 'taxi'); const audio = new DriveAudio();
+    const vehicle = new PlayerController(JOURNEYS[journey].route, journeyStart(), 'taxi'); const audio = new DriveAudio();
     // (the roofs the helicopter can set down on)
     vehicle.scenery = world.chunks;
     const refreshAudioMixer = setupAudioMixer(audio);
@@ -166,7 +171,9 @@ async function boot() {
     const carDialog = $('#car-dialog'), pauseOverlay = $('#pause-overlay');
     const fleetDialog = $('#taxi-fleet-dialog'), worldMapDialog = $('#world-map-dialog');
     const choosers = [carDialog, fleetDialog, worldMapDialog];
-    const openChooser = () => choosers.find(dialog => dialog.open) ?? null;
+    const chooserDialogs = { garage: carDialog, fleet: fleetDialog, map: worldMapDialog };
+    let chooserName = null;
+    const openChooser = () => chooserDialogs[chooserName] ?? null;
     // A chooser pauses the drive over the pause screen; closing it restores
     // whatever pause state it found (see the dialogs' close handlers).
     function holdForChooser() {
@@ -176,10 +183,10 @@ async function boot() {
     }
     // The pause screen is a menu too: it is up whenever the drive is paused
     // with no chooser over it, and the controller walks it the same way.
-    const resultsCard = () => !$('#taxi-results').hidden ? $('#taxi-results') : !$('#demolition-results').hidden ? $('#demolition-results') : null;
-    const openPauseMenu = () => resultsCard() ?? (paused && !pauseOverlay.hidden ? pauseOverlay : null);
+    const resultsCard = () => taxi.status === 'over' ? $('#taxi-results') : demolition.status === 'over' ? $('#demolition-results') : null;
+    const openPauseMenu = () => resultsCard() ?? (paused && !openChooser() ? pauseOverlay : null);
     // The title screen is a menu of its own until a drive begins.
-    const openWelcomeMenu = () => !started && !paused && !$('#welcome').classList.contains('hidden') ? $('#welcome') : null;
+    const openWelcomeMenu = () => !started && !paused ? $('#welcome') : null;
     scene.add(vehicle.car);
     const traffic = new Traffic(scene, vehicle.route, vehicle.s, journey, vehicle.u);
     // (and the bus calls at the world's stops)
@@ -248,9 +255,10 @@ async function boot() {
       return targets;
     };
     const runOver = () => taxi.status === 'over' || demolition.status === 'over';
-    const fleetView = setupTaxiFleet(taxi.fleet, { running: () => taxi.running, career: taxi.career, onChange: () => { needsRender = true; },
+    const fleetMenu = createFleetMenu(taxi.fleet, { running: () => taxi.running, career: taxi.career, onChange: () => { needsRender = true; },
       // A livery is only paint, so unlike a cab it can change mid-run.
       onLivery: color => { if (started && gameMode === 'taxi') { vehicle.setPaint(color); vehicle.render(0, world.origin); rendering.update(vehicle.car, 0, world.origin); } } });
+    const fleetView = setupTaxiFleet(fleetMenu);
     // The pause screen lists the shift's goals with live progress (in a
     // demolition run, its contracts and the high score table).
     function renderGoals() {
@@ -268,10 +276,9 @@ async function boot() {
       const focus = document.activeElement;
       if (!holdForChooser()) return;
       fleetReturnFocus = focus;
-      fleetView.render(); $('#fleet-feedback').textContent = ''; fleetDialog.showModal();
+      fleetView.render(); $('#fleet-feedback').textContent = ''; fleetDialog.showModal(); chooserName = 'fleet';
       fleetDialog.querySelector(`[data-fleet-car="${taxi.fleet.selected}"]`).focus();
     }
-    document.querySelectorAll('[data-open-fleet]').forEach(button => button.addEventListener('click', openFleet));
     // The whole city, from the pause screen: built the first time it opens,
     // drawn again whenever it opens or the window changes size
     let worldMap = null;
@@ -308,17 +315,12 @@ async function boot() {
       if (parked) $('#world-map-car small').textContent = `${Math.round(Math.hypot(parked.s - vehicle.s, parked.u - vehicle.u) / 10) * 10} m`;
       worldMapCanvas.style.aspectRatio = String(worldMap.aspect);
       $('#world-map-status').textContent = hereText();
-      worldMapDialog.showModal();
+      worldMapDialog.showModal(); chooserName = 'map';
       drawWorldMap();
       // (and once more for the headset's panel, which cannot show the page)
       if (vr?.active) { vrMapCanvas ??= document.createElement('canvas'); vrMapCanvas.width = 940; worldMap.draw(vrMapCanvas, vehicle, onFoot.parked, cityGuide.foundPlaces()); vrMapKey++; }
       $('#close-world-map').focus();
     }
-    $('#open-world-map').addEventListener('click', openWorldMap);
-    // and from the street map on screen, its button or the map itself
-    $('#city-map-open').addEventListener('click', openWorldMap);
-    $('#city-map').addEventListener('click', openWorldMap);
-    $('#close-world-map').addEventListener('click', () => worldMapDialog.close());
     window.addEventListener('resize', drawWorldMap);
     worldMapCanvas.addEventListener('pointermove', event => {
       const box = worldMapCanvas.getBoundingClientRect(), x = event.clientX - box.left, y = event.clientY - box.top;
@@ -326,7 +328,6 @@ async function boot() {
       $('#world-map-status').textContent = name ?? hereText();
     });
     worldMapCanvas.addEventListener('pointerleave', () => { $('#world-map-status').textContent = hereText(); });
-    $('#close-fleet').addEventListener('click', () => fleetDialog.close());
     const soundScene = { player: vehicle, traffic, props, interior: false, heading: 0 };
     let placeTime = -Infinity, shiftTick = Infinity;
     const autodrive = new Autodrive();
@@ -345,18 +346,18 @@ async function boot() {
     window.addEventListener('pointerdown', () => {
       if (autodrive.enabled) revealTouchControls();
     }, { capture: true, passive: true });
-    $('#autodrive').addEventListener('click', () => action('autodrive'));
     const trafficStorageKey = 'citydriver-traffic';
     try { traffic.setEnabled(localStorage.getItem(trafficStorageKey) !== 'false', vehicle); } catch { /* Storage is optional. */ }
     primeMenuDrive();
     $('#traffic').setAttribute('aria-pressed', String(traffic.enabled));
-    $('#traffic').addEventListener('click', () => {
+    function toggleTraffic() {
+      if (started && gameMode !== 'free') return;
       traffic.setEnabled(!traffic.enabled, vehicle);
       traffic.render(1, world.origin);
       $('#traffic').setAttribute('aria-pressed', String(traffic.enabled));
       try { localStorage.setItem(trafficStorageKey, String(traffic.enabled)); } catch { /* Keep the setting for this visit. */ }
       needsRender = true;
-    });
+    }
     function primeMenuDrive() {
       if (started) return;
       // Reveal the menu already cruising, at a speed that respects traffic.
@@ -371,18 +372,15 @@ async function boot() {
     function modeUi() {
       document.body.dataset.mode = gameMode;
       const run = gameMode !== 'free';
-      for (const id of ['change-car', 'autodrive', 'traffic']) $(`#${id}`).disabled = run;
       $('#change-car').hidden = run;
       $('#pause-fleet').hidden = gameMode !== 'taxi';
       // (free drive's makes a new city, as R does: a controller's Y gets in and out of cars there,
       // and it comes last, well away from Resume)
-      $('#restart-run span').textContent = run ? 'Restart run' : 'New city';
+      renderMenuControls(controls());
       if (run) $('#switch-mode').before($('#restart-run')); else $('#traffic').after($('#restart-run'));
       $('#goals-panel').hidden = !run; $('#goals-heading').textContent = gameMode === 'demolition' ? 'Contracts' : 'Shift goals';
       $('#shift-goals').setAttribute('aria-label', $('#goals-heading').textContent);
       $('#scores-panel').hidden = gameMode !== 'demolition';
-      $('#switch-mode span').textContent = run ? 'Free drive' : 'Taxi run';
-      $('#other-run span').textContent = gameMode === 'demolition' ? 'Taxi run' : 'Demolition';
       $('#taxi-clock-label').textContent = 'TIME';
       $('#taxi-clock').setAttribute('aria-label', gameMode === 'demolition' ? 'Seconds remaining' : 'Shift seconds remaining');
       $('#reset').title = run ? 'Reset car: −5 seconds (R)' : 'Reset city (R)';
@@ -426,7 +424,7 @@ async function boot() {
       // (autodrive is free drive's alone)
       if (autodrive.enabled) { autodrive.toggle(); revealTouchControls(); }
       autodrive.reset();
-      onFoot.clear(); vehicle.setCar(id, { paint: carPaint }); recoverCar(); traffic.setEnabled(true, vehicle);
+      onFoot.setCar(id, { paint: carPaint }); recoverCar(); traffic.setEnabled(true, vehicle);
     }
     // and last, once the run itself has started
     function showRun() {
@@ -438,7 +436,7 @@ async function boot() {
     function beginFree({ preserveInput = false } = {}) {
       if (changingJourney) return;
       const wasRun = taxi.status !== 'idle' || demolition.status !== 'idle'; taxi.stop(); demolition.stop(); started = true; gameMode = 'free';
-      autodrive.reset(); vehicle.arcade = false; onFoot.clear(); vehicle.setCar(carId, { paint }); haltCar();
+      autodrive.reset(); vehicle.arcade = false; onFoot.setCar(carId, { paint }); haltCar();
       if (wasRun && freeTraffic !== undefined) traffic.setEnabled(freeTraffic, vehicle);
       $('#traffic').setAttribute('aria-pressed', String(traffic.enabled)); $('#autodrive').setAttribute('aria-pressed', String(autodrive.enabled));
       $('#taxi-results').hidden = true; $('#demolition-results').hidden = true; $('#welcome').classList.add('hidden');
@@ -478,13 +476,13 @@ async function boot() {
     }
     function buildCarCards() {
       const current = '<span class="chooser-current">CURRENT CAR</span>';
-      $('.car-options').innerHTML = GARAGE_IDS.map(id => {
-        const entry = CARS[id];
+      $('.car-options').innerHTML = garageChoices().cars.map(({ id, label, plain, meters: values }) => {
+        const entry = { name: label, plain };
         // The plain row stands for whichever car the road brings: no portrait
         // and no meters, so it sits above the fleet as a single line.
         if (entry.plain) return `<button type="button" class="chooser-card car-card car-card-plain" data-car="${id}" aria-current="false">`
           + `<span class="chooser-card-title">${entry.name}</span>${current}</button>`;
-        const meters = carMeters(id).map(({ label, level }) =>
+        const meters = values.map(({ label, level }) =>
           `<span class="car-meter"><span>${label}</span><span class="car-meter-track"><span style="width:${level}%"></span></span></span>`).join('');
         // The portrait is drawn in whatever the garage is wearing, so the grid
         // doubles as the preview: one colour repaints the whole fleet at once.
@@ -497,13 +495,12 @@ async function boot() {
     }
     const paintSwatches = $('#paint-swatches'), paintWell = $('#paint-custom-well'), paintInput = $('#paint-custom');
     function buildPaintSwatches() {
-      paintSwatches.innerHTML = [`<button type="button" class="paint-swatch paint-default" role="radio" aria-checked="false" data-paint="${DEFAULT_PAINT}" aria-label="${DEFAULT_PAINT_NAME}" title="${DEFAULT_PAINT_NAME}"><span class="paint-chip" aria-hidden="true"></span></button>`,
-        ...PAINTS.map(({ name, color }) => `<button type="button" class="paint-swatch" role="radio" aria-checked="false" data-paint="${color}" style="--swatch:${color}" aria-label="${name}" title="${name}"><span class="paint-chip" aria-hidden="true"></span></button>`)].join('');
+      const choices = garageChoices().paints;
+      paintSwatches.innerHTML = choices.map(choice => `<button type="button" class="paint-swatch${choice.id === DEFAULT_PAINT ? ' paint-default' : ''}" role="radio" aria-checked="${choice.current}" data-paint="${choice.id}" style="--swatch:${choice.swatch}" aria-label="${choice.label}" title="${choice.label}"><span class="paint-chip" aria-hidden="true"></span></button>`).join('');
       for (const swatch of paintSwatches.querySelectorAll('[data-paint]')) {
-        swatch.addEventListener('click', () => applyPaint(swatch.dataset.paint));
-        // A row of bare colours says nothing on its own, so the one under the
-        // pointer or the keyboard focus names itself beside the heading.
-        for (const event of ['pointerenter', 'focus']) swatch.addEventListener(event, () => { $('#paint-current').textContent = swatch.getAttribute('aria-label'); });
+        const choice = choices.find(choice => choice.id === swatch.dataset.paint);
+        swatch.addEventListener('click', choice.activate);
+        for (const event of ['pointerenter', 'focus']) swatch.addEventListener(event, () => { $('#paint-current').textContent = choice.label; });
         for (const event of ['pointerleave', 'blur']) swatch.addEventListener(event, showPaintName);
       }
       paintInput.addEventListener('input', () => applyPaint(paintInput.value));
@@ -518,10 +515,7 @@ async function boot() {
       $('#paint-current').textContent = paint ? paintName(paint) ?? paint.toUpperCase() : DEFAULT_PAINT_NAME;
     }
     function updatePaintUi() {
-      for (const swatch of paintSwatches.querySelectorAll('[data-paint]')) {
-        const value = swatch.dataset.paint;
-        swatch.setAttribute('aria-checked', String(value === DEFAULT_PAINT ? !paint : value === paint));
-      }
+      for (const choice of garageChoices().paints) paintSwatches.querySelector(`[data-paint="${choice.id}"]`)?.setAttribute('aria-checked', String(choice.current));
       paintWell.dataset.active = String(Boolean(paint) && !PAINTS.some(swatch => swatch.color === paint));
       paintWell.style.setProperty('--swatch', paint ?? ownPaint(carId));
       paintInput.value = paint ?? ownPaint(carId);
@@ -563,7 +557,7 @@ async function boot() {
       if (!offer) return;
       // (stopping fast, or landing high up, a second press jumps out: see OnFoot.bail and jump)
       const stopping = offer.flying ? 'Landing' : 'Stopping';
-      const own = offer.own && (carEntry(offer.car.kept.carId).flies ? `Your ${offer.name.toLowerCase()}` : 'Your car');
+      const own = offer.own && (carEntry(offer.car.actor.carId).flies ? `Your ${offer.name.toLowerCase()}` : 'Your car');
       const label = offer.out ? offer.bail ? 'Jump out' : offer.stopping ? stopping : 'Get out' : 'Get in', detail = offer.out ? offer.bail ? stopping : '' : own || offer.name;
       if (useButton.querySelector('span').textContent !== label) useButton.querySelector('span').textContent = label;
       if (useButton.querySelector('small').textContent !== detail) useButton.querySelector('small').textContent = detail;
@@ -575,7 +569,7 @@ async function boot() {
     }
     function updateCarUi() {
       updateDriveUi();
-      for (const button of carDialog.querySelectorAll('[data-car]')) button.setAttribute('aria-current', String(button.dataset.car === carId));
+      for (const choice of garageChoices().cars) carDialog.querySelector(`[data-car="${choice.id}"]`)?.setAttribute('aria-current', String(choice.current));
       $('#current-car').textContent = started && gameMode !== 'free' ? carEntry(vehicle.carId).name : carEntry(carId).name;
       $('#change-car').setAttribute('aria-label', started && gameMode !== 'free' ? 'Garage: free drive only' : `Garage: ${carEntry(carId).name}`);
       updatePaintUi();
@@ -590,7 +584,7 @@ async function boot() {
       // in the nearest lane if they were on foot, and the parked one goes
       if (started) {
         const walked = onFoot.walking;
-        onFoot.clear(); vehicle.setCar(id, { paint }); vehicle.render(0, world.origin);
+        onFoot.setCar(id, { paint }); vehicle.render(0, world.origin);
         if (walked) recoverCar();
       }
       autodrive.reset();
@@ -624,7 +618,7 @@ async function boot() {
       if (started && gameMode === 'taxi') { openFleet(); return; }
       if (started && gameMode === 'demolition') { toast('Garage: free drive only'); return; }
       if (!holdForChooser()) return;
-      carDialog.showModal();
+      carDialog.showModal(); chooserName = 'garage';
       carDialog.querySelector(`[data-car="${carId}"]`).focus();
     }
     async function action(name) {
@@ -794,8 +788,6 @@ async function boot() {
     // WebXR needs a secure page, which a headset opening the dev server over
     // the local network is not; say so rather than hide Enter VR unexplained.
     if (headsetBrowser() && !window.isSecureContext) { $('#vr-error').textContent = 'VR needs a secure page. Open Citydriver over HTTPS to play in your headset.'; $('#vr-error').hidden = false; }
-    $('#change-car').addEventListener('click', openCars);
-    $('#close-cars').addEventListener('click', () => carDialog.close());
     // Fullscreen is the player's to choose, never the game's: F, D-pad Down
     // while driving, or the pause screen's Fullscreen switch, which shows
     // whichever way it is however it got there (F11, the desktop app's own).
@@ -935,9 +927,9 @@ async function boot() {
     // A touch acts on pointerup: a secondary finger may not synthesize a
     // click while the stick is held (and see pressOnRelease).
     for (const name of ['pause', 'view']) pressOnRelease($(`#${name}`), () => action(name));
-    for (const name of ['reset', 'sound']) $(`#${name}`).addEventListener('click', () => action(name));
     for (const dialog of choosers) {
       dialog.addEventListener('close', () => {
+        if (openChooser() === dialog) chooserName = null;
         if (!changingJourney) setPaused(journeyWasPaused || document.hidden);
         if (runOver()) pauseOverlay.hidden = true;
         if (dialog === fleetDialog) fleetReturnFocus?.focus();
@@ -949,31 +941,19 @@ async function boot() {
         if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close();
       });
     }
-    $('#start').addEventListener('click', start);
-    $('#free-drive').addEventListener('click', beginFree);
-    $('#taxi-retry').addEventListener('click', beginTaxi);
-    $('#taxi-free').addEventListener('click', beginFree);
-    $('#demolition').addEventListener('click', beginDemolition);
-    $('#demolition-retry').addEventListener('click', beginDemolition);
-    $('#demolition-taxi').addEventListener('click', beginTaxi);
-    $('#demolition-free').addEventListener('click', beginFree);
-    $('#restart-run').addEventListener('click', () => gameMode === 'demolition' ? beginDemolition() : gameMode === 'taxi' ? beginTaxi() : action('reset'));
-    $('#switch-mode').addEventListener('click', () => gameMode === 'free' ? beginTaxi() : beginFree());
-    $('#other-run').addEventListener('click', () => gameMode === 'demolition' ? beginTaxi() : beginDemolition());
     window.addEventListener('keydown', event => {
       if (event.key !== 'Enter' || event.ctrlKey || event.metaKey || event.altKey || event.defaultPrevented) return;
       if (started || paused || changingJourney || document.querySelector('dialog[open]')) return;
       if (event.target.closest?.('button, a, input, select, textarea, [contenteditable]') && event.target !== $('#start')) return;
       event.preventDefault();
-      if (!event.repeat) $('#start').click();
+      if (!event.repeat) start();
     });
-    $('#resume').addEventListener('click', () => setPaused(false));
     document.addEventListener('visibilitychange', () => { if (vr.active || vr.pending) return; audio.setHidden(document.hidden); if (document.hidden) { if (openChooser() || changingJourney) journeyWasPaused = true; if (started) setPaused(true); input.clear(); } frameClock.suspend(); });
     window.addEventListener('blur', () => { if (vr.active || vr.pending) return; audio.setHidden(true); if (openChooser() || changingJourney) journeyWasPaused = true; if (started) setPaused(true); });
     window.addEventListener('focus', () => audio.setHidden(hidden()));
     window.addEventListener('pointerdown', () => audio.unlock(), { capture: true, passive: true });
     window.addEventListener('keydown', () => audio.unlock(), { capture: true });
-    window.addEventListener('pagehide', event => { audio.setHidden(true); if (!event.persisted) { nightLighting.dispose(); props.dispose(); world.dispose(); weather.dispose(); traffic.dispose(); taxiView.dispose(); demolitionView.dispose(); void audio.dispose().catch(() => {}); } });
+    window.addEventListener('pagehide', event => { audio.setHidden(true); if (!event.persisted) { onFoot.clear(); vehicle.disposeModel(); enterMarker.dispose(); nightLighting.dispose(); props.dispose(); world.dispose(); weather.dispose(); traffic.dispose(); taxiView.dispose(); demolitionView.dispose(); void audio.dispose().catch(() => {}); } });
     window.addEventListener('pageshow', () => { audio.setHidden(document.hidden); needsRender = true; });
     $('#scene').addEventListener('webglcontextlost', event => { event.preventDefault(); setPaused(true); toast('Graphics lost. Reload to restart.'); });
     $('#scene').addEventListener('webglcontextrestored', () => { needsRender = true; });
@@ -1021,34 +1001,28 @@ async function boot() {
     softShading.addEventListener('click', () => action('ambientOcclusion'));
     pixelDensity.addEventListener('input', () => graphics.setDensity(Number(pixelDensity.value) / 100));
     frameCapInput.addEventListener('input', () => graphics.chooseFrameCap(FRAME_CAPS[Number(frameCapInput.value)]));
-    const hud = { distance: $('#distance') };
     const weatherSelect = $('#city-weather');
+    weatherSelect.innerHTML = WEATHER_CHOICES.map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
     weatherSelect.value = weather.mode;
-    weatherSelect.addEventListener('change', () => {
-      weather.setMode(weatherSelect.value, { immediate: paused });
+    weatherSelect.addEventListener('change', () => chooseWeather(weatherSelect.value));
+    function chooseWeather(mode) {
+      weather.setMode(mode, { immediate: paused });
+      weatherSelect.value = weather.mode;
       applyWeather();
       try { localStorage.setItem('citydriver-weather', weather.mode); } catch { /* Storage is optional. */ }
       updateHud(); needsRender = true;
-    });
+    }
+    const locationModel = () => locationHudModel(vehicle, cityDistrict(vehicle.s, vehicle.u), weather.state.label);
     function updateHud() {
-      // Physics uses meters; convert only the displayed measurement. The drive
-      // itself shows nothing, so this is read on the pause screen.
-      const distance = mileageFormat.format(vehicle.distance / 1609.344);
-      // Replacing unchanged text still invalidates layout, including while paused.
-      if (hud.distance.textContent !== distance) hud.distance.textContent = distance;
-      const degrees = ((vehicle.heading * 180 / Math.PI) % 360 + 360) % 360;
-      const text = (selector, value) => { const element = $(selector); if (element.textContent !== value) element.textContent = value; };
-      text('#city-heading', ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(degrees / 45) % 8]);
-      const district = cityDistrict(vehicle.s, vehicle.u);
-      text('#city-location', district);
-      text('#world-map-here', district);
-      text('#weather-label', weather.state.label);
-      // (the street map's canvas is out of sight in a headset)
+      const location = locationModel();
+      renderLocationHud(location);
+      renderMenuControls(controls());
       cityGuide.update(started && !paused && !changingJourney, { draw: !vr?.active });
-      if (gameMode === 'demolition') demolitionView.hud(demolition, vehicle);
-      else taxiView.hud(taxi, vehicle, started && gameMode === 'free');
+      const run = gameMode === 'demolition' ? demolitionView.buildHud(demolition, vehicle)
+        : taxiView.buildHud(taxi, vehicle, started && gameMode === 'free');
+      renderRunHud(run);
       updateUseUi();
-      if (vr?.active) vrStatus.hud(vrHudModel());
+      if (vr?.active) vrStatus.hud(started && !paused && !changingJourney ? headsetHudModel(run, location, vrHint()) : null);
     }
     function updateViewUi() {
       $('#view').title = `${rendering.viewLabel} · Change camera (V)`;
@@ -1061,99 +1035,41 @@ async function boot() {
         : flying ? thirdPerson ? '↓ Back · Release to hover' : 'Release to hover' : thirdPerson ? '↓ Brake · Release to stop' : 'Release to stop';
       $('#touch-stick').setAttribute('aria-label', walking ? 'Virtual joystick: push the way to walk, further to run' : thirdPerson ? 'Virtual joystick: up to accelerate, left and right to steer, down to brake or reverse, release to stop' : 'Virtual joystick');
     }
-    // The headset's menus: the page's own choices, drawn by VRStatus.
-    const VR_CONTROLS = 'Right trigger: gas · Left trigger: brake\nLeft stick: steer · Left grip: drift\nRight grip: boost · A: camera · B: pause';
-    // (in free drive, Y gets out of the car, and into another)
-    const vrControls = () => started && gameMode === 'free' ? `${VR_CONTROLS} · Y: get out` : VR_CONTROLS;
-    const VR_POINTING = 'Point and pull the trigger, or use either stick and A · B: back';
-    function vrMenuModel() {
-      if (!vr.active) return null;
-      if (changingJourney) return { id: 'loading', title: 'Loading…', subtitle: 'Your drive will be ready shortly', items: [] };
-      const back = chooser => ({ label: 'Back', footer: true, activate: () => chooser.close() });
-      const chooser = openChooser();
-      if (chooser === worldMapDialog) return { id: 'map', title: 'City map', subtitle: hereText(), image: vrMapCanvas, imageKey: vrMapKey, items: [back(chooser)], hint: 'B: back' };
-      if (chooser) {
-        const fleet = chooser === fleetDialog;
-        // Each of the page chooser's buttons, pressed as the page would press it
-        const buttons = [...chooser.querySelectorAll(fleet ? '[data-fleet-car], [data-livery]' : '[data-car], [data-paint]')];
-        const items = buttons.map(button => {
-          const [name, state = ''] = (button.getAttribute('aria-label') ?? button.querySelector('.chooser-card-title')?.textContent ?? button.textContent).trim().split(': ');
-          const { paint, livery, fleetCar } = button.dataset, swatch = paint === DEFAULT_PAINT ? ownPaint(carId) : paint ?? button.style.getPropertyValue('--swatch');
-          // A cab shows its price or that it is owned; a locked livery the rank that opens it.
-          const value = fleetCar ? state.startsWith('Buy') ? state.split(' · ')[1] : state === 'Select cab' ? 'Owned' : ''
-            : livery && button.disabled ? state.replace(/^unlocks at (.*) rank$/, '$1') : '';
-          return { label: name, value, swatch: swatch || undefined, group: fleet ? livery ? 'Livery' : 'Cabs' : paint ? 'Paint' : 'Cars',
-            current: ['aria-current', 'aria-checked', 'aria-pressed'].some(attribute => button.getAttribute(attribute) === 'true'), disabled: button.disabled, activate: () => button.click() };
-        });
-        return { id: chooser.id, title: fleet ? 'Taxi fleet' : 'Garage', subtitle: fleet ? `Fleet balance ${$('#fleet-balance').textContent} · Faster cabs fit more fares into a run` : 'Paint applies to all cars',
-          flow: true, items: [...items, back(chooser)], hint: VR_POINTING };
-      }
-      if (demolition.status === 'over') return { id: 'demolition-results', title: `Time up · ${$('#demolition-result-score').textContent}`,
-        subtitle: [$('#demolition-rank-name').textContent, $('#demolition-rank-next').textContent].filter(Boolean).join(' · '), hint: VR_POINTING, items: [
-          { label: 'Play again', primary: true, activate: beginDemolition }, { label: 'Taxi run', activate: beginTaxi }, { label: 'Free drive', activate: beginFree },
-          { label: 'Exit VR', footer: true, activate: () => action('exitVR') },
-        ] };
-      if (taxi.status === 'over') return { id: 'taxi-results', title: `Time up · ${$('#taxi-result-cash').textContent}`, subtitle: [$('#taxi-license-name').textContent, $('#taxi-result-best').textContent].join(' · '), hint: VR_POINTING, items: [
-        { label: 'Play again', primary: true, activate: beginTaxi }, { label: 'Taxi fleet', activate: openFleet }, { label: 'Free drive', activate: beginFree },
-        { label: 'Exit VR', footer: true, activate: () => action('exitVR') },
-      ] };
-      if (!started) return { id: 'title', title: 'citydriver', wordmark: true, mark: $('.brand-mark'), subtitle: 'Pick up. Drop off. Beat the clock.', hint: VR_CONTROLS, items: [
-        { label: 'Start run', primary: true, activate: beginTaxi }, { label: 'Demolition', activate: beginDemolition }, { label: 'Free drive', activate: beginFree },
-        { label: 'Exit VR', activate: () => action('exitVR') },
-      ] };
-      if (!paused) return null;
-      const taxiMode = gameMode === 'taxi', cycle = (list, value) => list[(list.indexOf(value) + 1) % list.length];
-      const drive = (label, activate, extra) => ({ group: 'Driving', label, activate, ...extra });
-      const option = weatherSelect.options[weatherSelect.selectedIndex];
-      return { id: 'pause', title: 'Paused', subtitle: `${cityDistrict(vehicle.s, vehicle.u)} · ${hud.distance.textContent} mi driven`, columns: 2, hint: vrControls(), items: [
-        { label: 'Resume', primary: true, header: true, activate: () => setPaused(false) },
-        ...(taxiMode ? [drive('Restart run', beginTaxi), drive('Free drive', beginFree), drive('Demolition', beginDemolition), drive('Taxi fleet', openFleet, { value: carEntry(taxi.fleet.selected).name })]
-          : gameMode === 'demolition' ? [drive('Restart run', beginDemolition), drive('Free drive', beginFree), drive('Taxi run', beginTaxi)]
-          : [drive('Taxi run', beginTaxi), drive('Demolition', beginDemolition), drive('Garage', openCars, { value: carEntry(carId).name }),
-            drive('Autodrive', () => action('autodrive'), { toggle: autodrive.enabled }), drive('Traffic', () => $('#traffic').click(), { toggle: traffic.enabled })]),
-        drive('Reset car', () => action('reset'), { value: taxi.running || demolition.running ? '−5 seconds' : '' }),
-        { group: 'The city', label: 'City map', value: cityDistrict(vehicle.s, vehicle.u), activate: openWorldMap },
-        { group: 'The city', label: 'Weather', value: option?.textContent, activate: () => { weatherSelect.selectedIndex = (weatherSelect.selectedIndex + 1) % weatherSelect.options.length; weatherSelect.dispatchEvent(new Event('change')); } },
-        { column: 1, group: 'View', label: 'Camera', value: rendering.viewLabel.replace(/ view$/, ''), activate: () => action('view') },
-        { column: 1, group: 'View', label: 'Recenter view', activate: () => action('recenterVR') },
-        { column: 1, group: 'View', label: 'Comfort vignette', toggle: comfort.enabled, activate: toggleComfort },
-        { column: 1, group: 'View', label: 'Graphics', value: graphics.auto ? 'Auto' : graphics.settings.label, activate: () => graphics.setMode(cycle(['auto', 'high', 'balanced', 'smooth', 'basic'], graphics.mode)) },
-        ...headsetRateRow(cycle),
-        { column: 1, group: 'Sound', label: 'Sound', toggle: $('#sound').getAttribute('aria-pressed') === 'true', activate: () => action('sound') },
-        { column: 1, group: 'Sound', label: 'Sound mix', value: audio.preset[0].toUpperCase() + audio.preset.slice(1), activate: () => { audio.setPreset(cycle(['balanced', 'scenic', 'night'], audio.preset)); refreshAudioMixer(); } },
-        { label: 'Exit VR', footer: true, activate: () => action('exitVR') },
-      ] };
+    const menuActions = {
+      start: () => vr.active ? beginTaxi() : start(), taxi: beginTaxi, demolition: beginDemolition, free: beginFree, resume: () => setPaused(false),
+      back: () => openChooser()?.close(), exit: () => action('exitVR'), fleet: openFleet, garage: openCars,
+      autodrive: () => action('autodrive'), traffic: toggleTraffic, reset: () => action('reset'), map: openWorldMap,
+      weather: () => chooseWeather(cycleChoice(WEATHER_CHOICES.map(([id]) => id), weather.mode)),
+      view: () => action('view'), recenter: () => action('recenterVR'), comfort: toggleComfort,
+      graphics: () => graphics.setMode(cycleChoice(['auto', 'high', 'balanced', 'smooth', 'basic'], graphics.mode)),
+      rate: () => graphics.chooseHeadsetRate(cycleChoice([null, ...headsetRates()], graphics.rateChoice)),
+      sound: () => action('sound'), mix: () => { audio.setPreset(cycleChoice(['balanced', 'scenic', 'night'], audio.preset)); refreshAudioMixer(); },
+    };
+    const headsetRates = () => [...(vr.session?.supportedFrameRates ?? [])].sort((a, b) => a - b);
+    function menuState() {
+      return { loading: changingJourney, started, paused, mode: gameMode, chooser: chooserName, over: runOver(),
+        running: taxi.running || demolition.running, location: locationModel(), carName: carEntry(started && gameMode !== 'free' ? vehicle.carId : carId).name,
+        fleetName: carEntry(taxi.fleet.selected).name, autodrive: autodrive.enabled, traffic: traffic.enabled,
+        weather: weather.mode, view: rendering.viewLabel, comfort: comfort.enabled, graphics: graphics.auto ? 'Auto' : graphics.settings.label,
+        rates: headsetRates(), rateChoice: graphics.rateChoice, frameRate: vr.session?.frameRate, sound: audio.enabled, mix: audio.preset };
     }
-    // The headset picks its own refresh rate (see Graphics.headsetRate): Auto,
-    // then each rate it supports
-    function headsetRateRow(cycle) {
-      const session = vr.session, rates = [...(session?.supportedFrameRates ?? [])].sort((a, b) => a - b);
-      if (!rates.length) return [];
-      const now = session.frameRate ? `${Math.round(session.frameRate)} Hz` : '';
-      return [{ column: 1, group: 'View', label: 'Refresh rate', value: graphics.rateChoice === null ? (now ? `Auto · ${now}` : 'Auto') : `${graphics.rateChoice} Hz`,
-        activate: () => graphics.chooseHeadsetRate(cycle([null, ...rates], graphics.rateChoice)) }];
+    const controls = () => menuControls(menuState(), menuActions);
+    const garageChoices = () => garageModel(carId, paint, ownPaint, { chooseCar, applyPaint });
+    const brandMark = new Image(); brandMark.src = `${import.meta.env.BASE_URL}brand-mark.svg`;
+    function currentMenuModel() {
+      const state = menuState();
+      return menuModel(state, menuControls(state, menuActions), {
+        garage: state.chooser === 'garage' ? garageChoices() : null,
+        fleet: state.chooser === 'fleet' ? fleetMenu.model() : null,
+        result: state.over ? gameMode === 'demolition' ? demolitionResultModel(demolition) : taxiResultModel(taxi, cityGuide.lately) : null,
+        mapImage: vrMapCanvas, mapKey: vrMapKey, mark: brandMark,
+      });
     }
-    // The headset's HUD says what the page's HUD says: taxiView.hud() and
-    // updateHud() keep the page's current whether or not it is on screen.
-    function vrHudModel() {
-      if (!vr.active || !started || paused || changingJourney) return null;
-      const read = id => document.getElementById(id).textContent;
-      const hint = vrHintTime >= 10 ? '' : vehicle.pilot ? `Triggers: forward, back · Left stick: turn · Right stick or grips: up, down${gameMode === 'free' ? ' · Y: get out' : ''} · B: pause`
+    bindMenuControls(controls);
+    function vrHint() {
+      return vrHintTime >= 10 ? '' : vehicle.pilot ? `Triggers: forward, back · Left stick: turn · Right stick or grips: up, down${gameMode === 'free' ? ' · Y: get out' : ''} · B: pause`
         : vehicle.walker ? 'Left stick: walk · Right stick: look · Left grip: jump · Right grip: sprint · Y: get in · B: pause'
           : `Right trigger: gas · Left trigger: brake · Left stick: steer · Grips: drift, boost${gameMode === 'free' ? ' · Y: get out' : ''} · B: pause`;
-      if (!taxi.running && !demolition.running) return { heading: read('city-heading'), place: read('city-location'), weather: read('weather-label'), hint };
-      // (a demolition run writes its chain into the same panels)
-      const pickup = taxi.status === 'pickup', timer = $('#taxi-timer');
-      return { taxi: true, clockLabel: read('taxi-clock-label'), clock: read('taxi-clock'), urgent: $('#taxi-clock').dataset.urgent === 'true', cash: read('taxi-cash'), fares: read('taxi-fares'),
-        stage: [read('taxi-stage'), read('taxi-fare-status')].filter(Boolean).join(' · '), title: read('taxi-task-title'),
-        distance: pickup || $('#taxi-nav').hidden ? '' : read('taxi-nav-distance'),
-        // (a pickup's party, or a demolition contract's progress, goes with the instruction)
-        detail: pickup || (demolition.running && !demolition.chain) ? [read('taxi-party'), read('taxi-task-detail')].filter(Boolean).join(' · ')
-          : read('taxi-task-detail') || read('taxi-next-stop') || [read('taxi-party'), read('taxi-combo')].filter(Boolean).join(' · '),
-        // (to the percent: each change redraws and uploads the HUD's texture)
-        // (a pill with no bar under it, such as a demolition run's contracts done)
-        timer: timer.hidden ? null : { text: read('taxi-timer'), tone: timer.dataset.rating,
-          fraction: $('#taxi-timer-fill').parentElement.hidden ? null : Math.round(parseFloat($('#taxi-timer-fill').style.width)) / 100 || 0 }, hint };
     }
     // (what the controls ask of the player on foot, refilled each step)
     const walking = { walk: { x: 0, z: 0 } };
@@ -1259,7 +1175,7 @@ async function boot() {
     function frame(timestamp, xrFrame) {
       // The page's frame-rate cap (see Graphics.frameCap). A headset sets its own rate.
       if (pacer.skip(timestamp, vr.active ? null : graphics.frameCap(pacer.displayRate))) return;
-      vrStatus.update(vrMenuModel());
+      vrStatus.update(vr.active ? currentMenuModel() : null);
       // (in free drive, Y gets in and out of cars)
       const freeDrive = started && gameMode === 'free';
       if (vr.active) input.xr.update(vr.session.inputSources, { blocked: !vr.visible || changingJourney, paused: paused || vrStatus.visible, freeDrive });
@@ -1334,10 +1250,10 @@ async function boot() {
       const rendered = vr.active ? Boolean(xrFrame) : !document.hidden && (!paused || needsRender);
       if (rendered) {
         taxiView.navigation.float(taxi, vehicle, vehicle.car, rendering.camera, { visible: vr.active, ahead: soundScene.interior });
-        vrStatus.update(vrMenuModel());
+        vrStatus.update(vr.active ? currentMenuModel() : null);
         rendering.render(xrFrame, () => {
           vrStatus.point(xrFrame, renderer.xr.getReferenceSpace(), rendering.vrCamera.rig, vr.visible && !changingJourney);
-          vrStatus.update(vrMenuModel());
+          vrStatus.update(vr.active ? currentMenuModel() : null);
         }); needsRender = false;
         if (!sceneReady) { sceneReady = true; $('#loading').classList.add('loaded'); }
       }
@@ -1370,7 +1286,7 @@ async function boot() {
     if (import.meta.env.DEV && emulate !== null) (await import('./xr-emulator.js')).installXREmulator(emulate);
     void vr.detect();
     // Development-only inspection surface for automated driving and streaming checks.
-    if (import.meta.env.DEV) window.__citydriver = { seed: SEED, city: CITY, nav: navGraph(), lanePose, roadAt, nearestLanePose, vehicle, onFoot, pigeons, traffic, props, nightLighting, weather, autodrive, audio, graphics, vr, vrStatus, cityGuide, taxi, taxiView, beginTaxi, beginFree, demolition, demolitionView, beginDemolition, get gameMode() { return gameMode; }, world, rendering, input, action, chooseCar, applyPaint, get carId() { return carId; }, get paint() { return paint; }, get journey() { return journey; }, get changingJourney() { return changingJourney; }, get paused() { return paused; }, get started() { return started; } };
+    if (import.meta.env.DEV) window.__citydriver = { seed: SEED, city: CITY, nav: navGraph(), lanePose, roadAt, nearestLanePose, vehicle, onFoot, pigeons, traffic, props, nightLighting, weather, autodrive, audio, graphics, vr, vrStatus, currentMenuModel, fleetMenu, cityGuide, taxi, taxiView, beginTaxi, beginFree, demolition, demolitionView, beginDemolition, get gameMode() { return gameMode; }, world, rendering, input, action, chooseCar, applyPaint, get carId() { return carId; }, get paint() { return paint; }, get journey() { return journey; }, get changingJourney() { return changingJourney; }, get paused() { return paused; }, get started() { return started; } };
   } catch (error) { console.error('Could not start Citydriver:', error); $('#loading').classList.add('loaded'); $('#error').hidden = false; }
 }
 boot();

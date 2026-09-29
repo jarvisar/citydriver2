@@ -15,6 +15,7 @@ import { createWalkerModel, Walker, WALKER_SPEC, WALKER_STATS } from './walker.j
 import { collisionImpulse, footprintMass, heft, leadingPoint, rock, rockFrom, SCENERY_SURFACE } from './impact.js';
 import { steerCurve, steeringResponse, driftDirection, turnRate, corneringLoad, travelHeading } from './handling.js';
 import { carProfile } from './car-profile.js';
+import { Actor, actorBody } from './actors.js';
 
 const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: .74, flatShading: true, ...extra });
 function box(group, size, location, material) {
@@ -241,24 +242,26 @@ const DRIFT_ARM = .3;
 // the body ahead of itself.
 const LEAD_REACH = .5;
 
-export class DrivingController {
+export class ActorMotion {
   // (`model`: one createCar already built, to drive instead of building another)
-  constructor(route = citydriverRoute, state = {}, carId = DEFAULT_CAR, paint = null, model = null) {
+  constructor(route = citydriverRoute, state = {}, carId = DEFAULT_CAR, paint = null, model = null, actor = null) {
+    const walking = carId === WALKER_SPEC.name;
+    this.actor = actor ?? new Actor(actorBody(state), { source: walking ? 'person' : 'garage', kind: walking ? 'person' : 'vehicle' });
+    this.actor.motion = this;
     this.route = route;
     this.freeDriving = false;
     this.rainbow = false; this.rainbowHue = 0; this.rainbowColor = new THREE.Color();
     this.night = false; this.journeyId = 'coast';
-    // A flying machine's pilot flies it instead while it is the chosen car
+    // A flying machine's pilot stays with it through changes of control
     // (see helicopter.js and plane.js); `airborne` is true once it is up
     // above the traffic, and `scenery` (the world's chunks) holds the roofs
-    // it can set down on. Out of the car, the walker walks the player
-    // instead (see walker.js and stepOut), and `props` (LooseProps) takes
+    // it can set down on. A person has a Walker (see walker.js), and
+    // `props` (LooseProps) takes
     // them when a car knocks them over.
     this.pilot = null; this.airborne = false; this.scenery = null; this.walker = null; this.props = null;
-    if (model) this.fit(CARS[carId] ? carId : DEFAULT_CAR, model, { rebuild: false, paint });
-    else this.setCar(carId, { rebuild: false, paint });
+    this.fit(walking ? carId : CARS[carId] ? carId : DEFAULT_CAR, model ?? (walking ? createWalkerModel() : createCar(carId)), { paint });
     this.s = state.s ?? 24; this.u = state.u ?? 2.4; this.speed = 0; this.steer = 0; this.heading = state.heading ?? route.frame(this.s).angle;
-    this.distance = state.distance ?? 0; this.pitch = 0; this.roll = 0; this.groundedPosition = new THREE.Vector3();
+    this.distance = state.distance ?? 0; this.pitch = 0; this.roll = 0;
     this.reverseDelay = 0; this.driftAmount = 0; this.driftDirection = 0; this.drifting = false; this.boosting = false; this.driftReady = true; this.driftArmed = 0; this.slip = 0;
     // Where the car's weight is: -1 over the back under power, +1 over the nose on the brakes.
     this.weight = 0; this.load = 0;
@@ -271,27 +274,20 @@ export class DrivingController {
     this.audioTelemetry = { speed: 0, throttle: 0, brake: 0, offRoad: 0, handbrake: 0, impact: 0, impactSerial: 0, crashSerial: 0, scrape: 0, boost: 0, bump: 0, bumpSerial: 0, step: 0, stepSerial: 0 };
     const pose = () => ({ position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), bodyPitch: 0, bodyRoll: 0, wheelSpin: 0, steer: 0, slip: 0 });
     this.previousPose = pose(); this.currentPose = pose();
+    this.previousPose.position = this.actor.body.previousPosition; this.previousPose.quaternion = this.actor.body.previousQuaternion;
+    this.currentPose.position = this.actor.body.position; this.currentPose.quaternion = this.actor.body.quaternion;
+    if (walking) { this.spec = WALKER_SPEC; this.stats = WALKER_STATS; this.walker = new Walker(this, this.model); this.walker.takeOver(); }
     this.update(0, {});
   }
-  // Swapping cars keeps the drive going: same place, same road, new machine.
-  // Paint belongs to the car being fitted, so it is passed in rather than kept.
-  setCar(id, { rebuild = true, paint = null } = {}) {
-    const carId = CARS[id] ? id : DEFAULT_CAR;
-    this.disposeModel?.();
-    this.fit(carId, createCar(carId), { rebuild, paint });
-  }
-  // Into a machine whose model (as createCar makes one) is already built:
-  // the last one's model is the caller's to dispose of or to keep.
-  fit(carId, model, { rebuild = true, paint = null } = {}) {
-    const previous = this.car, parent = previous?.parent ?? null, flew = Boolean(this.pilot);
-    previous?.removeFromParent();
+  // Model setup belongs to this actor's lifetime, not a change of driver.
+  fit(carId, model, { paint = null } = {}) {
     // (the rotors, a propeller and whatever else a flying machine turns stay
     // with its model, so one stepped out of is flown again as it was)
-    this.carId = carId; this.model = model; this.rotors = model.rotors ?? null;
-    Object.assign(this, model);
+    this.carId = carId; this.rotors = model.rotors ?? null;
+    this.actor.addModel('driving', model); this.actor.show('driving');
+    this.model = { ...model, car: this.actor.visual };
+    for (const [key, value] of Object.entries(model)) if (key !== 'car' && key !== 'disposeModel') this[key] = value;
     const entry = carEntry(carId);
-    // (someone knocked down leaves no body lying in the road for traffic to wait on)
-    if (this.walker?.down) this.props?.release(this.walker.down.body);
     const Pilot = PILOTS[entry.kind];
     this.pilot = Pilot && this.rotors ? new Pilot(this, this.rotors) : null; this.walker = null; this.airborne = false;
     const { width, length, cabin, cabinZ, cabinY = 1.22, drop = 0, eye, chaseLift = 0, door, seat, exit } = entry.shape;
@@ -304,42 +300,15 @@ export class DrivingController {
       : new THREE.Vector3(0, cabinY + cabin[1] * .7 - drop, cabinZ - cabin[2] / 2 + glassSlope - .18);
     this.car.userData.chaseLift = chaseLift;
     // (its shape along its length, for loose pieces to meet: see carProfile)
-    const profile = carProfile(this.car, length);
+    const profile = carProfile(model.car, length);
     // (and for someone getting in and out, where its door is, metres ahead of
     // its middle, how high its seat, and where to step down: see OnFoot)
-    this.spec = { name: carId, width, length, height: profile.height, profile, mass: entry.mass ?? footprintMass(width, length), breaks: entry.breaks ?? [], door, seat, exit };
+    this.spec = this.drivingSpec = { name: carId, width, length, height: profile.height, profile, mass: entry.mass ?? footprintMass(width, length), breaks: entry.breaks ?? [], door, seat, exit };
     this.stats = carStats(carId);
-    parent?.add(this.car);
     this.setLights(Number(this.night)); this.setAppearance(this.journeyId); this.setPaint(paint);
-    if (!rebuild) return;
-    this.speed = clamp(this.speed, -this.stats.reverseSpeed, this.stats.topSpeed);
-    // (level, whatever the helicopter's bank or the walker's lean left behind)
-    this.wheelSpin = 0; this.bodyPitch = this.bodyRoll = 0;
-    // Into a flying machine it carries on as the car was going; out of one, a
-    // car starts at rest in the nearest lane, wherever it flew.
-    this.pilot?.takeOver(this.heading, this.speed, this.groundedPosition.y);
-    if (flew && !this.pilot) this.reset(); else this.update(0, {});
+    Object.assign(model.car.userData, this.car.userData);
   }
-  // Out of the car, on foot where the controller stands (see OnFoot, which
-  // puts it by the car's door): the car's model is handed back, as it
-  // stands, with what it takes to get back into it (see stepIn), and the
-  // controller walks one of the city's residents instead (see Walker).
-  stepOut(appearance) {
-    const kept = { carId: this.carId, model: this.model, paint: this.paintColor }, parent = this.car.parent;
-    const model = createWalkerModel(appearance);
-    this.car = null; this.fit(WALKER_SPEC.name, model, { rebuild: false });
-    parent?.add(this.car);
-    this.spec = WALKER_SPEC; this.stats = WALKER_STATS; this.walker = new Walker(this, model);
-    this.speed = 0; this.knock.x = this.knock.z = this.knock.spin = 0; this.trauma = 0; this.lost = 0; this.pushing = 0;
-    Object.assign(this.jolt, { pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 });
-    this.walker.takeOver(); this.update(0, {});
-    return kept;
-  }
-  // Back into a car stepOut handed back, where the controller now stands
-  stepIn({ carId, model, paint }) {
-    this.disposeModel?.();
-    this.fit(carId, model, { paint });
-  }
+  disposeModel() { this.actor.dispose(); }
   // A garage colour, or null for the finish the car left the factory in.
   setPaint(color) { this.paintColor = color ?? null; this.updatePaint(); }
   updatePaint(dt = 0) {
@@ -697,3 +666,108 @@ export class DrivingController {
     this.render(0);
   }
 }
+
+// Traffic and player movement write the same physical state. The navigation
+// driver's fields stay on the traffic body, with no extra lookups in its step.
+for (const [name, field] of Object.entries({ s: 's', u: 'u', speed: 'speed', heading: 'heading', spec: 'spec', car: 'car', groundedPosition: 'position' })) {
+  Object.defineProperty(ActorMotion.prototype, name, {
+    get() { return this.actor.body[field]; }, set(value) { this.actor.body[field] = value; },
+  });
+}
+
+const CONTEXT = ['route', 'freeDriving', 'arcade', 'scenery', 'props', 'night', 'journeyId', 'rainbow', 'rainbowHue', 'distance'];
+
+// The player holds a controller, not a replaceable car body. Camera, input and
+// HUD callers keep this handle while cars and the pedestrian live independently.
+export class PlayerController {
+  constructor(route = citydriverRoute, state = {}, carId = DEFAULT_CAR, paint = null, model = null) {
+    const motion = new ActorMotion(route, state, carId, paint, model);
+    this.actor = motion.actor; this.person = null; this.owned = new Set([this.actor]);
+    this.actor.transfer('player');
+  }
+  context(motion, previous) {
+    if (!previous) return;
+    for (const key of CONTEXT) motion[key] = previous[key];
+    Object.assign(motion.audioTelemetry, previous.audioTelemetry);
+  }
+  releasePerson() {
+    const actor = this.actor, motion = actor.motion;
+    if (actor.kind !== 'person') return;
+    if (motion.walker.down) motion.props?.release(motion.walker.down.body);
+    motion.walker.down = null;
+    actor.transfer('inactive'); actor.visual.removeFromParent();
+  }
+  setCar(id, { paint = null } = {}) {
+    const old = this.actor, previous = old.motion, parent = old.visual.parent;
+    const state = { s: previous.s, u: previous.u, heading: previous.heading, distance: previous.distance };
+    const speed = previous.speed, height = previous.groundedPosition.y, flew = Boolean(previous.pilot);
+    const motion = new ActorMotion(previous.route, state, CARS[id] ? id : DEFAULT_CAR, paint);
+    this.context(motion, previous); this.releasePerson(); this.actor = motion.actor; this.owned.add(this.actor);
+    this.actor.transfer('player', parent); this.actor.visual.visible = true;
+    if (old.source === 'garage') { old.dispose(); this.owned.delete(old); }
+    motion.setLights(motion.night); motion.setAppearance(motion.journeyId); motion.setPaint(paint);
+    motion.speed = clamp(speed, -motion.stats.reverseSpeed, motion.stats.topSpeed);
+    motion.pilot?.takeOver(motion.heading, motion.speed, height);
+    if (flew && !motion.pilot) motion.reset(); else motion.update(0, {});
+  }
+  stepOut(appearance) {
+    const left = this.actor, previous = left.motion, parent = left.visual.parent;
+    const state = { s: previous.s, u: previous.u, heading: previous.heading, distance: previous.distance };
+    if (!this.person || this.person.disposed) {
+      const motion = new ActorMotion(previous.route, state, WALKER_SPEC.name, null, createWalkerModel(appearance));
+      this.person = motion.actor; this.owned.add(this.person);
+    }
+    const motion = this.person.motion;
+    this.context(motion, previous);
+    motion.s = state.s; motion.u = state.u; motion.heading = state.heading;
+    motion.speed = 0; motion.knock.x = motion.knock.z = motion.knock.spin = 0;
+    motion.trauma = motion.lost = motion.pushing = 0;
+    Object.assign(motion.jolt, { pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 });
+    motion.walker = new Walker(motion, motion.model);
+    this.actor = this.person; this.actor.transfer('player', parent); this.actor.visual.visible = true;
+    left.transfer('parked');
+    motion.walker.takeOver(); motion.update(0, {});
+    return left;
+  }
+  // A traffic car creates its drivable view once. Its body and scene root
+  // are retained through every subsequent borrow, knock and return.
+  takeControl(actor, { paint = actor.paint, speed = actor.body.speed } = {}) {
+    if (actor.disposed) throw new Error('Cannot control a disposed actor');
+    const previous = this.actor.motion, parent = this.actor.visual.parent;
+    const body = actor.body, state = { s: body.s, u: body.u, heading: body.heading };
+    const motion = actor.motion ?? new ActorMotion(previous.route, state, body.spec.name, paint, null, actor);
+    this.context(motion, previous);
+    this.releasePerson();
+    this.actor = actor; actor.transfer('player', parent); actor.show('driving'); actor.visual.visible = true;
+    body.spec = motion.drivingSpec; body.profile = body.spec.profile; body.perch = undefined;
+    motion.speed = clamp(speed || 0, -motion.stats.reverseSpeed, motion.stats.topSpeed);
+    motion.knock.x = motion.knock.z = motion.knock.spin = 0;
+    motion.steer = motion.driftArmed = motion.trauma = motion.lost = motion.pushing = 0;
+    motion.wheelSpin = 0; motion.bodyPitch = motion.bodyRoll = 0;
+    Object.assign(motion.jolt, { pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 });
+    if (motion.pilot) { motion.pilot.unmanned = false; motion.pilot.events = []; }
+    motion.setLights(motion.night); motion.setAppearance(motion.journeyId); motion.setPaint(paint);
+    motion.update(0, {});
+    return actor;
+  }
+  stepIn(actor) { return this.takeControl(actor, { speed: 0 }); }
+  disposeModel() { for (const actor of this.owned) actor.dispose(); this.owned.clear(); }
+  get generation() { return this.actor.id; }
+}
+
+// These are the player-facing movement fields used by the simulation, menus
+// and review tools. Forwarding on the prototype avoids a Proxy in hot loops.
+const PLAYER_FIELDS = ['airborne', 'arcade', 'audioTelemetry', 'body', 'bodyPitch', 'bodyRoll', 'boosting', 'canopy', 'car', 'carId', 'currentPose', 'distance', 'figure',
+  'driftAmount', 'driftArmed', 'driftDirection', 'drifting', 'driftReady', 'freeDriving', 'groundedPosition', 'heading', 'jolt', 'journeyId', 'knock',
+  'load', 'lost', 'model', 'night', 'nightLights', 'paintColor', 'pilot', 'pitch', 'previousPose', 'props', 'pushing', 'rainbow', 'rainbowColor',
+  'rainbowHue', 'reverseDelay', 'roll', 'rotors', 'route', 's', 'scenery', 'slideHeading', 'slip', 'spec', 'speed', 'stats', 'steer', 'trauma', 'u',
+  'velocity', 'walker', 'weight', 'wheels', 'wheelSpin', 'yawRate'];
+for (const name of PLAYER_FIELDS) Object.defineProperty(PlayerController.prototype, name, {
+  get() { return this.actor.motion[name]; }, set(value) { this.actor.motion[name] = value; },
+});
+for (const name of Object.getOwnPropertyNames(ActorMotion.prototype)) {
+  if (name === 'constructor' || name === 'fit' || name in PlayerController.prototype) continue;
+  if (typeof Object.getOwnPropertyDescriptor(ActorMotion.prototype, name).value !== 'function') continue;
+  PlayerController.prototype[name] = function(a, b, c, d, e, f, g, h) { return this.actor.motion[name](a, b, c, d, e, f, g, h); };
+}
+export { PlayerController as DrivingController };

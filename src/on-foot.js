@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { carEntry } from './cars.js';
 import { collideScenery, roofAt, roofSurface, sceneryContacts } from './collision.js';
 import { rock, rockFrom } from './impact.js';
-import { DrivingController } from './vehicle.js';
 import { TRAFFIC_MODELS, BUS_MODEL, BUS_DOORS } from './traffic-models.js';
 import { PLAYER_LOOK, WALKER_SPEC } from './walker.js';
 import { cityCell } from './world/city.js';
@@ -31,8 +30,8 @@ import { cityCell } from './world/city.js';
 // (the press sets them down by themselves, and any flying control takes
 // over again), and wherever they come down, a roof included, they stay.
 // High enough, a second press jumps out with a parachute (see Walker's
-// `chute`), and the machine lands itself with nobody aboard, flown by a
-// controller of its own (`drone`) until it has stopped and its engine has
+// `chute`), and the machine lands itself with nobody aboard, keeping its
+// own pilot until it has stopped and its engine has
 // died, when it is parked as a car is.
 
 // How near (m, from someone's side to a car's) a car can be got into, and
@@ -75,12 +74,9 @@ function gapTo(p, shape) {
 export class OnFoot {
   constructor(vehicle, traffic, appearance = PLAYER_LOOK) {
     this.vehicle = vehicle; this.traffic = traffic; this.appearance = appearance;
-    // The garage car, parked: a body as the traffic knows one, with what it
-    // takes to drive it again (see DrivingController.stepOut)
-    this.parked = null;
-    // The traffic car they are driving, if it is one (see CityTraffic.take),
-    // or the bay of the parked car they are (see CityTraffic.takeParked)
-    this.borrowed = null; this.bay = null;
+    // The garage actor stays alive while parked or landing. City cars are
+    // owned by the traffic; the player's active actor identifies any loan.
+    this.garage = null;
     // Stopping, to get out as soon as the car is still
     this.leaving = false;
     // Going to a car to get in ({ target, since }), and hopping in ({ target, side })
@@ -91,6 +87,9 @@ export class OnFoot {
     this.world = null; this.clock = 0;
   }
   get walking() { return Boolean(this.vehicle.walker); }
+  get parked() { return this.garage && this.garage.control !== 'player' ? this.garage.body : null; }
+  get borrowed() { const actor = this.vehicle.actor; return actor.source === 'traffic' && actor.control === 'player' ? actor.body : null; }
+  get bay() { const actor = this.vehicle.actor; return actor.source === 'parked' && actor.control === 'player' ? actor.home : null; }
   // Whether a second press now jumps out: of a car going fast, or of
   // something flying, high enough for the parachute (or on its wheels in
   // the street going fast)
@@ -106,7 +105,7 @@ export class OnFoot {
     if (!this.walking) return { out: true, stopping: this.leaving, bail: this.leaving && this.leaping, flying: Boolean(this.vehicle.pilot) };
     if (!this.vehicle.walker.standing || this.boarding) return null;
     const target = this.approach?.target ?? this.target();
-    return target && { ...target, name: carEntry(target.own ? target.car.kept.carId : target.bay ? target.bay.parked.model : target.car.spec.name).name };
+    return target && { ...target, name: carEntry(target.own ? target.car.actor.carId : target.bay ? target.bay.parked.model : target.car.spec.name).name };
   }
   // Out of the car (stopping first, or at speed jumping out), or on foot
   // into the car they would pick (going to it first). Returns anything
@@ -175,7 +174,7 @@ export class OnFoot {
     const car = this.parked;
     if (!car) return said;
     car.previousPosition.copy(car.position); car.previousQuaternion.copy(car.quaternion);
-    if (car.drone) return this.fly(car, dt, chunks) || said;
+    if (car.actor.control === 'landing') return this.fly(car, dt, chunks) || said;
     // (one left up on a roof stays just where it is: nothing but them reaches it there)
     if (car.perch === undefined) this.traffic.slide(car, dt, chunks);
     if (car.rock && !rock(car.rock, dt)) car.rock = null;
@@ -188,37 +187,35 @@ export class OnFoot {
   render(alpha = 1, origin = 0) {
     const car = this.parked;
     if (!car) return;
-    if (car.drone) { car.drone.render(alpha, origin); return; }
+    if (car.actor.control === 'landing') { car.actor.motion.render(alpha, origin); return; }
     const t = Math.min(1, Math.max(0, alpha));
     car.car.position.lerpVectors(car.previousPosition, car.position, t); car.car.position.z += origin;
     car.car.quaternion.slerpQuaternions(car.previousQuaternion, car.quaternion, t);
   }
-  // Something flying left with nobody aboard, setting itself down (see
-  // `drone`): the garage car's record follows it, and once it has stopped
+  // Something flying left with nobody aboard, setting itself down with
+  // its existing pilot. Once it has stopped
   // and its engine has died it is parked there, in the traffic's way in the
   // street, or on the roof it came down on. If it gets too far away first,
   // the garage has it back. Returns anything worth saying.
   fly(car, dt, chunks) {
-    const drone = car.drone, v = this.vehicle, props = v.props;
-    drone.update(dt, LANDING);
+    const motion = car.actor.motion, v = this.vehicle, props = v.props;
+    motion.update(dt, LANDING);
     // (it knocks furniture flying as the player's car does, and meets parked cars as walls)
-    if (chunks) collideScenery(drone, chunks, dt, (collider, contact) => Boolean(collider.prop && props?.hit(collider, contact, drone)));
-    car.s = drone.s; car.u = drone.u; car.heading = drone.heading;
-    car.position.copy(drone.groundedPosition); car.quaternion.copy(drone.car.quaternion);
+    if (chunks) collideScenery(motion, chunks, dt, (collider, contact) => Boolean(collider.prop && props?.hit(collider, contact, motion)));
     // (the streets built round the player: see CitydriverWorld.update)
-    const centre = this.world?.centerCell, cell = centre && cityCell(drone.s, drone.u);
+    const centre = this.world?.centerCell, cell = centre && cityCell(motion.s, motion.u);
     const built = !centre || Math.max(Math.abs(cell.ix - centre.ix), Math.abs(cell.iz - centre.iz)) <= this.world.radius;
-    if (!built || Math.hypot(drone.s - v.s, drone.u - v.u) > DRONE_FAR) {
-      const name = carEntry(car.kept.carId).name;
+    if (!built || Math.hypot(motion.s - v.s, motion.u - v.u) > DRONE_FAR) {
+      const name = carEntry(car.actor.carId).name;
       this.dropParked();
       return `${name} · back in the garage`;
     }
-    if (!drone.pilot.settled) return '';
-    car.drone = null;
+    if (!motion.pilot.settled) return '';
+    car.actor.transfer('parked');
     if (car.position.y > v.route.height(car.s, car.u) + .5) car.perch = car.position.y;
     car.previousPosition.copy(car.position); car.previousQuaternion.copy(car.quaternion);
-    car.kept.model.body.rotation.set(0, 0, 0);
-    for (const light of car.kept.model.nightLights) light.material.emissiveIntensity = light.day;
+    car.actor.model.body.rotation.set(0, 0, 0);
+    for (const light of car.actor.model.nightLights) light.material.emissiveIntensity = light.day;
     this.traffic.playerCars.push(car);
     return '';
   }
@@ -226,23 +223,32 @@ export class OnFoot {
   paint(color) {
     const car = this.parked;
     if (!car) return false;
-    car.kept.paint = color; car.kept.model.paintCar(color);
+    car.actor.paint = color;
     return true;
   }
   // Back to one car, the one under the player: the parked car goes, and a
   // borrowed one back to the traffic, to turn up elsewhere (a run begins,
   // or the garage brings another car)
-  clear() {
+  clear(actor = this.vehicle.actor) {
     this.leaving = false; this.approach = null; this.boarding = null;
-    if (this.borrowed) { this.traffic.giveBack(this.borrowed); this.borrowed = null; }
-    if (this.bay) { this.traffic.leaveParked(this.bay); this.bay = null; }
+    if (actor.source === 'traffic' || actor.source === 'parked') {
+      // Returning a city car also releases the player's control of its body.
+      if (this.vehicle.actor === actor && actor.control === 'player') this.vehicle.stepOut(this.appearance);
+      if (actor.source === 'traffic') this.traffic.giveBack(actor.body);
+      else if (actor.home) this.traffic.leaveParked(actor.home);
+    }
     this.dropParked();
+  }
+  setCar(id, options) {
+    const old = this.vehicle.actor;
+    this.vehicle.setCar(id, options);
+    this.clear(old);
   }
   // The garage car goes, wherever it was left
   dropParked() {
     const car = this.parked;
     if (!car) return;
-    this.unpark(); car.car.removeFromParent(); car.kept.model.disposeModel();
+    this.unpark(); car.actor.dispose(); this.vehicle.owned.delete(car.actor);
   }
   // What they look at on foot (see Walker's `watch`): a car going by close,
   // else someone near them or, now and then, their own car or, standing
@@ -326,8 +332,8 @@ export class OnFoot {
     const p = this.vehicle.groundedPosition, traffic = this.traffic, far = ENTER + 6;
     const near = (x, z) => Math.abs(x - p.x) < far && Math.abs(z - p.z) < far;
     // (their own, unless it is still coming down with nobody aboard, or rolling)
-    const own = this.parked, drone = own?.drone;
-    if (own && (!drone || (drone.pilot.landed && Math.abs(drone.speed) < 2)) && near(own.position.x, own.position.z)) visit({ car: own, own: true });
+    const own = this.parked, landing = own?.actor.control === 'landing' ? own.actor.motion : null;
+    if (own && (!landing || (landing.pilot.landed && Math.abs(landing.speed) < 2)) && near(own.position.x, own.position.z)) visit({ car: own, own: true });
     if (!traffic.enabled) return;
     // (a traffic car sent round to turn up somewhere else is a new car: see shapeOf)
     for (const car of traffic.vehicles) if (car.edge && car.car.visible && near(car.position.x, car.position.z)) visit({ car, generation: car.generation });
@@ -427,15 +433,15 @@ export class OnFoot {
   // Out beside the car, hopping down from its seat. Their own car stays
   // parked. A borrowed one goes back to its driver, or stands where they left it.
   getOut() {
-    const v = this.vehicle, spot = this.exit(), pilot = v.pilot;
+    const v = this.vehicle, spot = this.exit();
     this.leaving = false;
     if (!spot) return 'No room to get out here';
-    const pose = { s: v.s, u: v.u, heading: v.heading, yawRate: v.yawRate }, spec = v.spec, seat = this.seatOf(spot), kept = v.stepOut(this.appearance);
-    const car = this.leave(kept, pose, spec, pilot);
+    const heading = v.heading, seat = this.seatOf(spot), actor = v.stepOut(this.appearance);
+    const car = this.leave(actor);
     // (the car rocks on its springs as they climb out)
-    if (car) rockFrom(car.drone?.jolt ?? (car.rock ??= { pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 }), 0, spot.across * CLIMB);
+    if (car) rockFrom(car.actor.control === 'landing' ? car.actor.motion.jolt : (car.rock ??= { pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 }), 0, spot.across * CLIMB);
     v.s = -spot.z; v.u = spot.x; v.walker.takeOver(spot.y); v.update(0, {});
-    v.walker.alightFrom(seat, pose.heading);
+    v.walker.alightFrom(seat, heading);
     return '';
   }
   // High up in something flying, out anyway: they leap clear of its door and
@@ -445,11 +451,11 @@ export class OnFoot {
     const v = this.vehicle, pilot = v.pilot, p = v.groundedPosition, spec = v.spec;
     this.leaving = false;
     const { x: vx, z: vz } = v.velocity, rise = Math.max(0, pilot.vy ?? 0);
-    const pose = { s: v.s, u: v.u, heading: v.heading, yawRate: v.yawRate }, y = p.y + (spec.seat ?? 1);
+    const y = p.y + (spec.seat ?? 1);
     const rx = Math.cos(v.heading), rz = Math.sin(v.heading), fx = Math.sin(v.heading), fz = -Math.cos(v.heading);
     // (out of the door on the left, the driver's side)
     const out = spec.width / 2 + WALKER_SPEC.radius + .3, along = doorAlong(spec), x = p.x - rx * out + fx * along, z = p.z - rz * out + fz * along;
-    this.leave(v.stepOut(this.appearance), pose, spec, pilot);
+    this.leave(v.stepOut(this.appearance));
     v.s = -z; v.u = x;
     v.walker.leap(y, vx * .85 - rx * 3, rise + 2.5, vz * .85 - rz * 3);
     v.update(0, {});
@@ -462,25 +468,21 @@ export class OnFoot {
     const v = this.vehicle, spot = this.exit();
     this.leaving = false;
     if (!spot) return 'No room to jump out here';
-    const { x: vx, z: vz } = v.velocity, pose = { s: v.s, u: v.u, heading: v.heading, yawRate: v.yawRate }, spec = v.spec, pilot = v.pilot, kept = v.stepOut(this.appearance);
-    const car = this.leave(kept, pose, spec, pilot);
-    if (car?.loose && !car.drone) { car.loose.vx = vx; car.loose.vz = vz; car.moved = true; }
+    const { x: vx, z: vz } = v.velocity, heading = v.heading, actor = v.stepOut(this.appearance);
+    const car = this.leave(actor);
+    if (car?.loose && car.actor.control !== 'landing') { car.loose.vx = vx; car.loose.vz = vz; car.moved = true; }
     v.s = -spot.z; v.u = spot.x; v.walker.takeOver(spot.y); v.update(0, {});
-    const rx = Math.cos(pose.heading), rz = Math.sin(pose.heading), side = spot.across || -1;
+    const rx = Math.cos(heading), rz = Math.sin(heading), side = spot.across || -1;
     v.walker.bail(vx, vz, rx * side, rz * side);
     return '';
   }
-  // The car they have just got out of, `kept` (see stepOut) where it stood
-  // at `pose`: their own is parked (something flying handed on as `pilot`
-  // left it: see drone), a borrowed one given back. Returns the car's
-  // record, as the traffic keeps it.
-  leave(kept, pose, spec, pilot = null) {
-    if (!this.borrowed && !this.bay) { this.park(kept, pose, spec, pilot); return this.parked; }
-    kept.model.car.removeFromParent(); kept.model.disposeModel();
-    let car;
-    if (this.borrowed) { car = this.borrowed; this.traffic.giveBack(car, pose); } else { this.traffic.leaveParked(this.bay, pose); car = this.traffic.woken.find(each => each.parked === this.bay); }
-    this.borrowed = this.bay = null;
-    return car;
+  // The body already holds where its driver left it. Return it to whoever
+  // steps it next, without a second pose or a model packet to synchronize.
+  leave(actor) {
+    if (actor.source === 'garage') { this.park(actor); return this.parked; }
+    if (actor.source === 'traffic') this.traffic.giveBack(actor.body, actor.body);
+    else this.traffic.leaveParked(actor.home, actor.body);
+    return actor.body;
   }
   // The driver's seat of the car they are in, on the side of `spot` (see exit)
   seatOf(spot) {
@@ -525,52 +527,37 @@ export class OnFoot {
     }) ? NaN : floor;
   }
   // The garage car, left standing where it stopped: lights off, handbrake
-  // on. Something flying (`pilot`, as the player left it) goes on as it
-  // was, flown by nobody, until it has set down and stopped (see drone, fly).
-  park(kept, pose, spec, pilot = null) {
-    const model = kept.model;
-    const car = this.parked = {
-      kept, car: model.car, spec, profile: spec.profile, s: pose.s, u: pose.u, heading: pose.heading, speed: 0, handbrake: true, generation: 0, index: -1, dazed: 0, moved: false,
-      loose: { vx: 0, vz: 0, spin: 0 }, rock: null, drone: null,
-      position: new THREE.Vector3(), previousPosition: new THREE.Vector3(), quaternion: new THREE.Quaternion(), previousQuaternion: new THREE.Quaternion(),
-    };
+  // on. Something flying goes on as it
+  // was, flown by nobody, until it has set down and stopped (see fly).
+  park(actor) {
+    this.garage = actor;
+    const model = actor.model, car = actor.body, motion = actor.motion, pilot = motion.pilot;
+    car.profile = car.spec.profile; car.handbrake = true; car.dazed = 0; car.moved = false;
+    car.loose = { vx: 0, vz: 0, spin: 0 }; car.rock = null;
     if (pilot) {
-      const drone = car.drone = this.drone(kept, pose, pilot);
-      car.position.copy(drone.groundedPosition); car.quaternion.copy(drone.car.quaternion);
+      actor.transfer('landing'); pilot.unmanned = true; pilot.events = [];
+      motion.update(0, {});
       car.previousPosition.copy(car.position); car.previousQuaternion.copy(car.quaternion);
       return;
     }
+    car.speed = 0; actor.transfer('parked');
     model.body.rotation.set(0, 0, 0);
     for (const wheel of model.wheels) if (wheel.front) wheel.pivot.rotation.y = 0;
     for (const light of model.nightLights) light.material.emissiveIntensity = light.day;
     this.traffic.pose(car); car.previousPosition.copy(car.position); car.previousQuaternion.copy(car.quaternion);
     this.traffic.playerCars.push(car);
   }
-  // A controller of its own for something flying left with nobody aboard
-  // (see fly), in its model as it stands, flying on just as the player's
-  // pilot left it
-  drone(kept, pose, pilot) {
-    const v = this.vehicle, drone = new DrivingController(v.route, pose, kept.carId, kept.paint, kept.model);
-    Object.assign(drone, { freeDriving: true, scenery: v.scenery, props: v.props, yawRate: pose.yawRate ?? 0 });
-    for (const key of Object.keys(pilot)) if (key !== 'vehicle' && key !== 'feet') drone.pilot[key] = pilot[key];
-    drone.pilot.unmanned = true; drone.pilot.events = [];
-    drone.setLights(v.night);
-    drone.update(0, {});
-    return drone;
-  }
   unpark() {
     const list = this.traffic.playerCars, at = list.indexOf(this.parked);
     if (at >= 0) list.splice(at, 1);
-    this.parked = null;
+    this.garage = null;
   }
   // Into their own car, where it stands (a rotor or a propeller still
   // winding down picks up from there)
   getBackIn() {
-    const v = this.vehicle, car = this.parked, winding = car.drone?.pilot;
+    const v = this.vehicle, car = this.parked;
     this.unpark();
-    v.s = car.s; v.u = car.u; v.heading = car.heading; v.speed = 0;
-    v.stepIn(car.kept);
-    if (winding && v.pilot) { v.pilot.power = winding.power; v.pilot.angle = winding.angle; }
+    v.stepIn(car.actor);
     return '';
   }
   // Into a car from the traffic, moving as it was, in its own paint
@@ -578,21 +565,16 @@ export class OnFoot {
     const v = this.vehicle;
     if (!this.traffic.take(car)) return '';
     const motion = this.traffic.motion(car);
-    v.s = car.s; v.u = car.u; v.heading = car.heading;
-    v.speed = motion.vx * Math.sin(car.heading) - motion.vz * Math.cos(car.heading);
-    v.setCar(car.spec.name, { paint: `#${car.paint.color.getHexString()}` });
-    this.borrowed = car;
+    const speed = motion.vx * Math.sin(car.heading) - motion.vz * Math.cos(car.heading);
+    v.takeControl(car.actor, { paint: `#${car.paint.color.getHexString()}`, speed });
     return `${carEntry(car.spec.name).name} · borrowed`;
   }
   // Into a parked car where it stands, in its bay or where it was knocked
   // to, in its own paint
   borrowParked(collider) {
-    const v = this.vehicle, info = collider.parked, at = this.traffic.woken.find(car => car.parked === collider) ?? this.traffic.bayPose(collider);
-    const { s, u, heading } = at;
-    if (!this.traffic.takeParked(collider)) return '';
-    v.s = s; v.u = u; v.heading = heading; v.speed = 0;
-    v.setCar(info.model, { paint: info.colour });
-    this.bay = collider;
+    const v = this.vehicle, info = collider.parked, actor = this.traffic.takeParked(collider);
+    if (!actor) return '';
+    v.takeControl(actor, { paint: info.colour, speed: 0 });
     return `${carEntry(info.model).name} · borrowed`;
   }
 }

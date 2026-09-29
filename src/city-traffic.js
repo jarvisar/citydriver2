@@ -6,6 +6,7 @@ import { trafficContact } from './traffic.js';
 import { collisionImpulse, contactPoint, footprintMass, heft, rock, rockFrom, skid, LOOSE_GRIP, HANDBRAKE_GRIP, SCENERY_SURFACE } from './impact.js';
 import { sceneryContacts } from './collision.js';
 import { carProfile } from './car-profile.js';
+import { Actor } from './actors.js';
 import { JunctionTraffic, approachControl } from './city-junctions.js';
 import { turnPath, approachSpeed, wayOn, bendSpeed, hasTurnPath, turnPathSteps, bendSpeedSteps, isLink, HAIRPIN } from './world/lane-paths.js';
 const up = new THREE.Vector3(0, 1, 0), tilt = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -161,9 +162,9 @@ export class CityTraffic {
     this.junctions = new JunctionTraffic(this.nav);
     this.vehicles = Array.from({ length: 25 }, (_, index) => {
       const bus = index === 24, model = bus ? this.models.create('bus', BUS_PAINT) : this.models.create(index % TRAFFIC_MODELS.length, TRAFFIC_COLORS[index % TRAFFIC_COLORS.length]);
-      this.group.add(model.car);
       // (its shape, for loose pieces to meet: see carProfile)
-      const car = { ...model, index, generation: 0, profile: this.profileOf(model), position: new THREE.Vector3(), previousPosition: new THREE.Vector3(), quaternion: new THREE.Quaternion(), previousQuaternion: new THREE.Quaternion(), ...DRIVER };
+      const car = { ...model, actor: null, index, generation: 0, profile: this.profileOf(model), position: new THREE.Vector3(), previousPosition: new THREE.Vector3(), quaternion: new THREE.Quaternion(), previousQuaternion: new THREE.Quaternion(), ...DRIVER };
+      new Actor(car, { source: 'traffic', model, control: 'traffic' }); this.group.add(car.car);
       if (bus) car.service = { rest: 0, near: false, stop: null, calling: false, state: null, wait: 0, time: 0 };
       return car;
     });
@@ -171,7 +172,8 @@ export class CityTraffic {
     // the bus just drives
     this.stops = null;
     // Stand-ins for parked cars knocked loose (see wake)
-    this.woken = []; this.standInLimit = PARKED_MOST;
+    this.woken = []; this.standInLimit = PARKED_MOST; this.parkedActors = new WeakMap();
+    this.fleet = new Set(this.vehicles);
     // The player's own car where they got out of it (see OnFoot): not the
     // traffic's to drive, but in its way, and knocked about as a parked car
     // knocked loose is
@@ -196,8 +198,9 @@ export class CityTraffic {
   }
   addStandIn(model) {
     const made = this.models.create(model, TRAFFIC_COLORS[0]);
-    made.car.visible = false; this.group.add(made.car);
-    const car = { ...made, index: 100 + this.woken.length, profile: this.profileOf(made), parked: null, loose: null, rock: null, s: 0, u: 0, heading: 0, position: new THREE.Vector3(), previousPosition: new THREE.Vector3(), quaternion: new THREE.Quaternion(), previousQuaternion: new THREE.Quaternion(), generation: undefined, bay: undefined, dazed: undefined, moved: undefined };
+    const car = { ...made, actor: null, index: 100 + this.woken.length, profile: this.profileOf(made), parked: null, loose: null, rock: null, s: 0, u: 0, heading: 0, position: new THREE.Vector3(), previousPosition: new THREE.Vector3(), quaternion: new THREE.Quaternion(), previousQuaternion: new THREE.Quaternion(), generation: undefined, bay: undefined, dazed: undefined, moved: undefined };
+    new Actor(car, { source: 'parked', model: made, control: 'pooled' });
+    car.car.visible = false; this.group.add(car.car);
     this.woken.push(car);
     return car;
   }
@@ -507,28 +510,44 @@ export class CityTraffic {
     this.release(car);
     // (a new car, as far as anything keeping track of one is concerned)
     car.generation = (car.generation ?? 0) + 1;
+    car.actor.home = collider; this.parkedActors.set(collider, car.actor);
+    car.actor.returnToTraffic(this.group, 'parked');
     Object.assign(car, { parked: collider, s: pose.s, u: pose.u, heading: pose.heading, bay: this.bayPose(collider).heading, loose: { vx: 0, vz: 0, spin: 0 }, rock: null, dazed: 0, moved });
     car.paint.color.set(info.colour); car.car.visible = true;
     collider.woken = true; info.hide(true);
     this.pose(car); car.previousPosition.copy(car.position); car.previousQuaternion.copy(car.quaternion);
   }
   // The player gets into a parked car (see OnFoot), in its bay or knocked
-  // loose: its bay stays empty while they have it, and a stand-in that had
-  // it goes back to the pool. Only while there is traffic, as for wake.
+  // loose: its bay stays empty and its body is reserved until they return
+  // it. Only while there is traffic, as for wake.
   takeParked(collider) {
     if (!this.enabled || !collider.parked?.ready) return false;
-    const standIn = this.woken.find(car => car.parked === collider);
-    if (standIn) Object.assign(standIn, { parked: null, loose: null }).car.visible = false;
-    else { collider.woken = true; collider.parked.hide(true); }
-    return true;
+    let car = this.woken.find(car => car.parked === collider);
+    if (!car) {
+      if (collider.woken) return false;
+      car = this.standIn(collider.parked.model) ?? this.addStandIn(TRAFFIC_MODELS.findIndex(spec => spec.name === collider.parked.model));
+      this.stand(car, collider, this.bayPose(collider), false);
+    }
+    car.parked = null; car.loose = null; car.car.visible = false;
+    car.actor.transfer('player');
+    return car.actor;
   }
   // Back from the player where they got out of it, `pose`: a stand-in, as
   // though knocked loose to there, which goes back to its bay once they are
   // well away (see release). With no pose, or no traffic, straight back.
   leaveParked(collider, pose = null) {
-    const car = pose && this.enabled && this.standIn(collider.parked.model);
-    if (car) this.stand(car, collider, pose, true);
-    else { collider.woken = false; collider.parked.hide(false); }
+    const actor = this.parkedActors.get(collider), held = actor?.home === collider ? actor.body : null;
+    const car = pose && this.enabled && (held ?? this.standIn(collider.parked.model));
+    if (car) {
+      if (held) car.actor.transfer('parked');
+      this.stand(car, collider, pose, true);
+    } else {
+      if (held) {
+        actor.returnToTraffic(this.group, 'pooled'); actor.home = null;
+        held.parked = null; held.loose = null; held.car.visible = false;
+      }
+      collider.woken = false; collider.parked.hide(false);
+    }
   }
   // A free stand-in of the model or, with all of them out (a row of cars
   // knocked into each other uses them up fast), one that has settled back
@@ -539,6 +558,7 @@ export class CityTraffic {
     for (const car of this.woken) {
       if (car.spec.name !== model) continue;
       count++;
+      if (car.actor.control === 'player') continue;
       if (car === except) continue;
       if (!car.parked) return car;
       const loose = car.loose;
@@ -552,9 +572,11 @@ export class CityTraffic {
   }
   // Put back in its bay, out of sight
   release(car) {
+    if (car.actor.control === 'player') return;
     if (!car.parked) return;
     car.parked.woken = false; car.parked.parked.hide(false);
     car.parked = null; car.loose = null; car.car.visible = false;
+    car.actor.home = null; car.actor.transfer('pooled');
   }
   // The player gets into one of the traffic's cars (see OnFoot): it leaves
   // the traffic, and its model the scene, until they give it back. The bus
@@ -565,6 +587,7 @@ export class CityTraffic {
     if (car.service) this.leaveStop(car);
     this.vehicles.splice(at, 1); this.junctions.release(car);
     car.claim = car.leaving = car.pending = null; car.car.visible = false;
+    car.actor.transfer('player');
     return true;
   }
   // Back from the player where they got out of it, `pose` ({ s, u, heading
@@ -572,9 +595,11 @@ export class CityTraffic {
   // way the car faces, as after a knock (see steerBack), never back the way
   // it came. With no pose, or no street near, it turns up again elsewhere.
   giveBack(car, pose = null) {
+    if (this.vehicles.includes(car)) return;
+    car.actor.returnToTraffic(this.group);
     this.vehicles.push(car); car.generation++;
     const hit = pose && this.nav.index.nearest(pose.u, pose.s, 200, (segment, distance) => segment.road.edge.kind === 'path' ? Infinity : distance);
-    if (!hit) { car.edge = null; return; }
+    if (!hit) { car.edge = null; car.car.visible = false; return; }
     const edge = hit.road.edge, along = edge.cumulative[hit.segment.index] + hit.t * hit.segment.length;
     const direction = Math.sin(pose.heading) * hit.tx + Math.cos(pose.heading) * hit.ty >= 0 ? 1 : -1;
     Object.assign(car, { s: pose.s, u: pose.u, heading: pose.heading, edge, direction, along: direction > 0 ? along : edge.length - along, lane: edge.profile.lane,
@@ -1294,9 +1319,13 @@ export class CityTraffic {
   render(alpha, origin = 0) {
     this.group.position.z = origin;
     for (const list of [this.vehicles, this.woken]) for (const car of list) {
+      if (car.actor.control === 'player') continue;
       car.car.position.lerpVectors(car.previousPosition, car.position, clamp(alpha, 0, 1));
       car.car.quaternion.slerpQuaternions(car.previousQuaternion, car.quaternion, clamp(alpha, 0, 1));
     }
   }
-  dispose() { this.group.removeFromParent(); this.models.dispose(); }
+  dispose() {
+    for (const car of [...this.fleet, ...this.woken]) car.actor.dispose();
+    this.group.removeFromParent(); this.models.dispose();
+  }
 }

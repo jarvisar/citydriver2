@@ -1,6 +1,9 @@
 import { demolitionRank, money, contractProgress as progress, CONTRACT_SECONDS } from './demolition-run.js';
+import { demolitionResultModel } from './result-model.js';
+import { demolitionHudModel } from './run-hud-model.js';
+import { renderRunHud } from './run-hud-dom.js';
 import { FloatingLabels } from './floating-labels.js';
-import { $, text, hide, data, attribute, width, compactCash, clock, OnceHints } from './hud-dom.js';
+import { $, text, compactCash, clock, OnceHints } from './hud-dom.js';
 
 const compact = value => value >= 1000 ? compactCash.format(value) : money(value);
 const day = date => { const parsed = new Date(`${date}T12:00:00`); return Number.isNaN(parsed.getTime()) ? '' : parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
@@ -42,60 +45,15 @@ export class DemolitionView {
   render(origin, time, camera = null) { this.labels.render(origin, time, camera); }
   // The driving HUD, in the taxi's panels: the clock and the banked damage
   // top left, the chain where the fare would be, the boost as a taxi has it
+  buildHud(run, vehicle) {
+    this.hudModel = demolitionHudModel(run, vehicle, { shownCash: this.shown, hint: id => this.hint(id) });
+    this.shown = this.hudModel.shownCash;
+    return this.hudModel;
+  }
   hud(run, vehicle) {
-    const running = run.running;
-    hide($('taxi-hud'), !running); hide($('taxi-task'), !running); hide($('taxi-nav'), true);
-    hide($('taxi-buttons'), !running); hide($('taxi-boost'), !running); hide($('taxi-dash'), !running);
-    if (!running) { this.shown = run.score; return; }
-    // (the last chain has no clock: its name takes the box, see demolition.css)
-    text('taxi-clock-label', run.overtime ? 'LAST CHAIN' : 'TIME'); data('taxi-hud', 'overtime', String(run.overtime));
-    text('taxi-clock', run.overtime ? '' : Math.ceil(run.timeLeft)); data('taxi-clock', 'urgent', String(run.timeLeft <= 10));
-    // The total counts up to what the chains bank, like a till
-    this.shown = run.score < this.shown ? run.score : Math.min(run.score, this.shown + Math.max(900, (run.score - this.shown) * .35));
-    text('taxi-cash', compact(this.shown)); attribute($('taxi-cash'), 'aria-label', `Damage ${money(run.score)}`);
-    // (and under it, the best run to beat)
-    text('taxi-fares', run.beatBest ? 'New best!' : run.previousBest > 0 ? `Best ${compact(run.previousBest)}` : `${run.smashed + run.carsHit} smashed`);
-    text('taxi-speed', Math.round(Math.abs(vehicle.speed) * 2.23694));
-    width('taxi-boost-fill', `${run.boost * 100}%`);
-    attribute($('taxi-boost'), 'aria-valuenow', String(Math.round(run.boost * 100)));
-    if ($('taxi-controller-boost').value !== run.boost) $('taxi-controller-boost').value = run.boost;
-    text('taxi-boost-state', run.boostActive ? 'Boosting' : run.boost < .1 ? 'Release to fill' : 'Hold');
-    data('taxi-buttons', 'boosting', String(run.boostActive)); data('taxi-buttons', 'drifting', String(vehicle.drifting));
-    data('taxi-task', 'stage', 'demolition'); data('taxi-task', 'urgent', 'false'); data('taxi-task', 'arriving', 'false');
-    hide($('taxi-stop-progress').parentElement, true);
-    text('taxi-combo', '');
-    data('taxi-timer', 'rating', 'chain'); data('taxi-timer-fill', 'rating', 'chain');
-    hide($('taxi-timer'), false);
-    const contracts = run.contracts ?? [], open = contracts.filter(contract => !contract.done);
-    let detail;
-    if (run.chain > 0) {
-      // The chain: its multiplier, its hits, the pot it would bank now, and
-      // how long it waits for the next smash, draining along the top edge
-      text('taxi-stage', `${run.overtime ? 'Last chain' : 'Chain'} ×${run.multiplier}`);
-      hide($('taxi-timer-fill').parentElement, false);
-      text('taxi-timer', `${run.chain} hit${run.chain === 1 ? '' : 's'}`);
-      attribute($('taxi-timer'), 'aria-label', `${run.chain} hits in the chain`);
-      width('taxi-timer-fill', `${run.chainLeft * 100}%`);
-      text('taxi-fare-status', money(run.pending));
-      text('taxi-task-title', run.last.label);
-      text('taxi-party', `+${money(run.last.value)}`); data('taxi-party', 'band', 'damage');
-      text('taxi-next-stop', run.nextStep ? `${run.nextStep} more for ×${run.multiplier + 1}` : 'Top multiplier');
-      detail = this.hint(run.multiplier > 1 ? 'bank' : '');
-    } else {
-      // Between chains, the contracts: the first still open, and how the
-      // others stand
-      const next = open[0];
-      text('taxi-stage', next ? 'Contract' : 'Demolition');
-      hide($('taxi-timer-fill').parentElement, true);
-      text('taxi-timer', `${contracts.length - open.length} / ${contracts.length}`);
-      attribute($('taxi-timer'), 'aria-label', `${contracts.length - open.length} of ${contracts.length} contracts done`);
-      text('taxi-fare-status', '');
-      text('taxi-task-title', next ? next.text : 'Smash everything');
-      text('taxi-party', next ? `${progress(next)} · +${CONTRACT_SECONDS}s` : ''); data('taxi-party', 'band', next ? 'damage' : '');
-      text('taxi-next-stop', next ? open.slice(1).map(other => `${other.short} ${progress(other)}`).join(' · ') : contracts.length ? 'All contracts done' : '');
-      detail = this.hint(run.bestChain ? 'time' : 'chain') || (next ? 'Mind the pedestrians' : 'Wreck cars and street furniture · Mind the pedestrians');
-    }
-    if ($('taxi-task-detail').textContent !== detail) $('taxi-task-detail').textContent = detail;
+    const model = this.buildHud(run, vehicle);
+    renderRunHud(model);
+    return model;
   }
   hint(id) {
     this.hints ??= new OnceHints(HINTS, HINTS_KEY, this.storage);
@@ -121,15 +79,13 @@ export class DemolitionView {
     text('scores-summary', records.runs ? `${records.runs} run${records.runs === 1 ? '' : 's'} · ${money(records.lifetime)} of damage in all` : '');
   }
   results(run) {
-    const rank = demolitionRank(run.score), summary = run.summary, records = run.records;
+    const model = demolitionResultModel(run), { rank } = model, summary = run.summary, records = run.records;
     $('demolition-result-time').textContent = clock(Math.round(run.elapsed));
-    $('demolition-result-score').textContent = money(run.score);
+    $('demolition-result-score').textContent = model.cash;
     $('demolition-result-rank').dataset.license = rank.id;
     $('demolition-rank-badge').textContent = rank.badge;
-    $('demolition-rank-name').textContent = rank.name;
-    const improved = run.score > 0 && rank.rank > demolitionRank(run.previousBest).rank;
-    $('demolition-rank-next').textContent = [summary?.best ? 'New high score!' : improved && 'Best rating yet!',
-      rank.next ? `${money(rank.next.min - Math.max(0, run.score))} more for ${rank.next.name}` : 'The top rating'].filter(Boolean).join(' · ');
+    $('demolition-rank-name').textContent = model.name;
+    $('demolition-rank-next').textContent = model.next;
     // (contracts as a tile: listed, they made the card taller than a
     // laptop's screen once the high score table was full)
     const tiles = [['smashed', 'Smashed', run.smashed + run.wrecked], ['takedowns', 'Takedowns', run.takedowns],

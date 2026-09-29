@@ -1250,6 +1250,7 @@ export class LooseProps {
           car = player.walker?.down ? null : this.carOf(player);
         }
         for (const other of cars) {
+          if (other.actor?.control === 'player') continue;
           if (!other.car.visible || Math.abs(other.position.x - body.p.x) > 8 || Math.abs(other.position.z - body.p.z) > 8) continue;
           for (let pass = 0; pass < PASSES; pass++) {
             const motion = traffic.motion(other), profile = other.profile ?? other.spec.profile;

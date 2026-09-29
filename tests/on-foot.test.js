@@ -57,6 +57,139 @@ function getIn(feet, vehicle, traffic = null) {
   return said;
 }
 const north = { walk: { x: 0, z: -1 } };
+
+// These transitions must retain one physical actor, even when the model
+// changes between traffic detail and driving detail.
+function actorTraffic() {
+  const scene = new THREE.Scene(), vehicle = new DrivingController(citydriverRoute, journeyStart(), 'sedan');
+  scene.add(vehicle.car); vehicle.freeDriving = true;
+  const traffic = new CityTraffic(scene, vehicle.route, vehicle.s, 'city', vehicle.u), feet = new OnFoot(vehicle, traffic);
+  return { scene, vehicle, traffic, feet, dispose() { feet.clear(); vehicle.disposeModel(); traffic.dispose(); } };
+}
+
+test('repeated boarding retains separate car and pedestrian actors without rebuilding either model', () => {
+  const { scene, vehicle } = onFoot();
+  const garage = vehicle.actor, root = vehicle.car, position = vehicle.groundedPosition, pilotMotion = garage.motion;
+  let person, figure;
+  try {
+    for (let i = 0; i < 20; i++) {
+      vehicle.steer = 1; vehicle.trauma = .8; vehicle.lost = 3; vehicle.pushing = .15; vehicle.driftArmed = .3;
+      assert.equal(vehicle.stepOut(), garage);
+      person ??= vehicle.actor; figure ??= vehicle.figure;
+      assert.equal(vehicle.actor, person); assert.equal(vehicle.figure, figure);
+      assert.equal(garage.motion, pilotMotion); assert.equal(garage.body.position, position);
+      assert.equal(garage.kind, 'vehicle'); assert.equal(person.kind, 'person');
+      vehicle.u += 4; vehicle.update(0, {});
+      assert.equal(garage.body.u, 0, 'walking cannot move the parked car');
+      vehicle.stepIn(garage);
+      assert.equal(vehicle.car, root); assert.equal(vehicle.groundedPosition, position);
+      assert.equal(vehicle.u, 0); assert.equal(person.control, 'inactive');
+      for (const key of ['steer', 'trauma', 'lost', 'pushing', 'driftArmed']) assert.equal(vehicle[key], 0, `boarding cannot resume old ${key}`);
+      assert.equal(person.visual.parent, null); assert.equal(root.parent, scene);
+      assert.equal(vehicle.owned.size, 2);
+    }
+  } finally { vehicle.disposeModel(); }
+  assert.equal(root.parent, null); assert.ok(garage.disposed && person.disposed);
+});
+
+test('garage replacement retains player settings, removes parked actors and releases a knocked-down person', () => {
+  const { vehicle } = onFoot(), feet = new OnFoot(vehicle, noTraffic());
+  const released = [], body = {};
+  vehicle.props = { release: value => released.push(value) };
+  vehicle.arcade = true; vehicle.distance = 123; vehicle.setLights(.7); vehicle.setAppearance('city');
+  try {
+    for (let i = 0; i < 5; i++) {
+      const old = vehicle.actor;
+      feet.getOut(); vehicle.walker.down = { body };
+      feet.setCar(i % 2 ? 'sedan' : 'taxi');
+      assert.ok(old.disposed); assert.equal(old.visual.parent, null); assert.ok(!vehicle.owned.has(old));
+      assert.equal(vehicle.owned.size, 2); assert.equal(feet.parked, null);
+      assert.equal(vehicle.arcade, true); assert.equal(vehicle.distance, 123);
+      assert.equal(vehicle.night, .7); assert.equal(vehicle.journeyId, 'city'); assert.equal(vehicle.freeDriving, true);
+      assert.equal(vehicle.person.motion.walker.down, null);
+    }
+    assert.deepEqual(released, Array(5).fill(body));
+  } finally { feet.clear(); vehicle.disposeModel(); }
+});
+
+test('a borrowed traffic car shares its body and scene root through repeated transfers and garage replacement', () => {
+  const kit = actorTraffic(), { scene, vehicle, traffic, feet } = kit;
+  const car = traffic.vehicles.find(car => car.edge && !car.service), actor = car.actor, root = car.car, position = car.position;
+  let driving;
+  try {
+    feet.getOut();
+    for (let i = 0; i < 10; i++) {
+      feet.borrow(car); driving ??= actor.model;
+      assert.equal(vehicle.actor, actor); assert.equal(vehicle.car, root); assert.equal(actor.model, driving);
+      assert.equal(vehicle.groundedPosition, position); assert.equal(root.parent, scene);
+      assert.equal(actor.models.size, 2); assert.ok(!traffic.vehicles.includes(car));
+      assert.equal(actor.models.get('traffic').car.visible, false);
+      const before = car.s;
+      vehicle.speed = 8; vehicle.update(step, { forward: 1 });
+      assert.equal(car.s, vehicle.s); assert.notEqual(car.s, before);
+      feet.leave(vehicle.stepOut());
+      assert.equal(car.actor, actor); assert.equal(car.car, root); assert.equal(car.position, position);
+      assert.equal(root.parent, traffic.group); assert.equal(actor.control, 'traffic');
+      assert.equal(actor.models.get('driving').car.visible, false);
+      assert.equal(traffic.vehicles.filter(other => other === car).length, 1);
+    }
+    feet.borrow(car); vehicle.speed = 11; vehicle.arcade = true;
+    const s = vehicle.s, u = vehicle.u;
+    feet.setCar('taxi');
+    assert.equal(vehicle.carId, 'taxi'); assert.equal(vehicle.speed, 11); assert.equal(vehicle.s, s); assert.equal(vehicle.u, u);
+    assert.equal(vehicle.arcade, true); assert.equal(car.car.visible, false); assert.equal(car.edge, null);
+    assert.equal(actor.control, 'traffic'); assert.equal(traffic.vehicles.filter(other => other === car).length, 1);
+    assert.ok(!actor.disposed, 'the city still owns its car');
+  } finally { kit.dispose(); }
+  assert.ok(actor.disposed, 'fleet disposal includes every borrowed model');
+});
+
+test('a borrowed parked body is reserved through traffic resets and returned to the same bay', () => {
+  const kit = actorTraffic(), { vehicle, traffic, feet } = kit;
+  try {
+    feet.getOut();
+    const bay = parkedAt(vehicle.s + 20, vehicle.u + 10, vehicle.heading);
+    feet.borrowParked(bay);
+    const actor = vehicle.actor, body = actor.body, model = actor.model, root = vehicle.car;
+    assert.equal(actor.home, bay); assert.equal(body.parked, null);
+    assert.notEqual(traffic.standIn('sedan'), body, 'the pool cannot hand out the player car');
+    traffic.setEnabled(false, vehicle); traffic.setEnabled(true, vehicle);
+    assert.equal(actor.control, 'player'); assert.equal(root.parent, kit.scene);
+    assert.equal(bay.parked.hidden, true);
+    // A loose prop must contact this car only through the player path.
+    const props = new LooseProps(kit.scene, new THREE.MeshStandardMaterial());
+    try {
+      props.add({ kind: 'bin', geometry: cityAssets.bin }, new THREE.Matrix4().makeTranslation(vehicle.u, vehicle.groundedPosition.y, -vehicle.s));
+      const motion = traffic.motion.bind(traffic), seen = [];
+      traffic.motion = car => { seen.push(car); return motion(car); };
+      props.update(step, vehicle, traffic);
+      assert.ok(!seen.includes(body), 'no second collision through the stand-in pool');
+    } finally { props.dispose(); }
+    feet.leave(vehicle.stepOut());
+    assert.equal(body.parked, bay); assert.equal(body.actor, actor); assert.equal(body.car, root);
+    feet.borrowParked(bay);
+    assert.equal(vehicle.actor, actor); assert.equal(actor.model, model);
+    feet.setCar('taxi');
+    assert.equal(actor.control, 'pooled'); assert.equal(actor.home, null); assert.equal(root.visible, false);
+    assert.equal(bay.woken, false); assert.equal(bay.parked.hidden, false);
+  } finally { kit.dispose(); }
+});
+
+test('fleet disposal finds a car still borrowed and disposes its detailed geometry only once', () => {
+  const kit = actorTraffic(), { vehicle, traffic, feet } = kit;
+  feet.getOut();
+  const car = traffic.vehicles.find(car => car.edge && !car.service);
+  feet.borrow(car);
+  const actor = vehicle.actor, counts = new Map();
+  actor.models.get('driving').car.traverse(object => {
+    if (!object.geometry || counts.has(object.geometry)) return;
+    const geometry = object.geometry;
+    counts.set(geometry, 0); geometry.addEventListener('dispose', () => counts.set(geometry, counts.get(geometry) + 1));
+  });
+  feet.dropParked(); vehicle.disposeModel(); traffic.dispose(); actor.dispose();
+  assert.ok(counts.size > 0); assert.ok([...counts.values()].every(count => count === 1));
+  assert.equal(actor.visual.parent, null); assert.equal(actor.control, 'disposed');
+});
 // One chunk holding `colliders`
 const chunkOf = (...colliders) => new Map([['a', { collisionBounds: { minX: -1e3, maxX: 1e3, minZ: -1e3, maxZ: 1e3 }, features: { colliders } }]]);
 // A building 10 m square whose south face is at s = 20
@@ -425,7 +558,7 @@ test('out of the car and back in: by the driver\'s door, stopping first, and the
     assert.ok(feet.walking && !feet.leaving, 'out once it had stopped');
     const car = feet.parked;
     assert.ok(car && traffic.playerCars.includes(car), 'the car is left parked, in the traffic\'s way');
-    assert.equal(car.kept.carId, 'coast');
+    assert.equal(car.actor.carId, 'coast');
     // By the driver's door: on its left, beside the middle
     const dx = vehicle.groundedPosition.x - car.position.x, dz = vehicle.groundedPosition.z - car.position.z;
     const across = dx * Math.cos(car.heading) + dz * Math.sin(car.heading);
@@ -470,7 +603,9 @@ test('a borrowed traffic car is driven as it was going, and given back drives on
     // (moving, it does not stop for them: they dive in)
     assert.match(getIn(feet, vehicle), /borrowed$/);
     assert.equal(feet.borrowed, car); assert.equal(traffic.vehicles.length, count - 1, 'out of the traffic while borrowed');
-    assert.ok(!car.car.visible);
+    assert.equal(vehicle.actor, car.actor, 'the player controls the same traffic actor');
+    assert.equal(vehicle.car, car.car, 'the actor keeps its scene root');
+    assert.ok(!car.actor.models.get('traffic').car.visible, 'only the drivable view is drawn');
     assert.equal(vehicle.carId, car.spec.name); assert.equal(vehicle.paintColor, `#${car.paint.color.getHexString()}`);
     assert.ok(Math.abs(vehicle.speed - speed) < 1e-6, 'moving as it was');
     assert.ok(feet.parked, 'their own car still parked');
@@ -688,13 +823,12 @@ test('a car parked along the kerb can be borrowed while there is traffic, and le
     vehicle.s = standIn.s - Math.sin(standIn.heading) * 1.5; vehicle.u = standIn.u + Math.cos(standIn.heading) * 1.5; vehicle.update(0, {});
     assert.ok(feet.offer()?.bay === bay);
     getIn(feet, vehicle);
-    assert.ok(feet.bay === bay && !standIn.parked && !standIn.car.visible, 'the stand-in is free again');
+    assert.ok(feet.bay === bay && !standIn.parked && standIn.actor === vehicle.actor, 'the same parked actor is borrowed again');
     assert.ok(Math.hypot(vehicle.s - left.s, vehicle.u - left.u) < 1e-9);
     feet.clear();
     assert.ok(!bay.woken && !bay.parked.hidden && !feet.bay);
     // Left once more, it goes back to its bay once they are well away
-    feet.use();
-    assert.ok(feet.walking, 'out of the car they were in, now theirs');
+    assert.ok(feet.walking, 'returning the city car releases the player onto their feet');
     vehicle.s = home.s + Math.sin(h) * 1.6; vehicle.u = home.u - Math.cos(h) * 1.6; vehicle.update(0, {});
     assert.ok(feet.offer()?.bay === bay);
     getIn(feet, vehicle); feet.use();
@@ -788,6 +922,7 @@ function flying(id, state = { s: 0, u: 0, heading: 0 }, chunks = new Map()) {
 
 test('out of the helicopter: it lands itself first, flying it takes over again, and left it winds down and waits in the traffic\'s way', () => {
   const { vehicle, traffic, feet, run } = flying('helicopter');
+  const actor = vehicle.actor, pilot = vehicle.pilot, motion = actor.motion;
   try {
     run(3, { climb: 1 });
     assert.ok(vehicle.pilot.height > 15);
@@ -804,16 +939,35 @@ test('out of the helicopter: it lands itself first, flying it takes over again, 
     assert.ok(feet.walking && !feet.leaving, 'out once it had landed');
     assert.equal(vehicle.groundedPosition.y, GROUND);
     const car = feet.parked;
-    assert.ok(car?.drone && !traffic.playerCars.includes(car), 'its rotor still turning, flown by nobody');
+    assert.equal(car, actor.body); assert.equal(car.actor.motion, motion); assert.equal(motion.pilot, pilot, 'landing retains the pilot and all its state');
+    assert.ok(car?.actor.control === 'landing' && !traffic.playerCars.includes(car), 'its rotor still turning, flown by nobody');
     run(6);
-    assert.ok(!car.drone && traffic.playerCars.includes(car), 'wound down, and parked in the traffic\'s way');
-    assert.equal(car.kept.model.rotors.disc.visible, false, 'the blades stopped');
+    assert.ok(car.actor.control === 'parked' && traffic.playerCars.includes(car), 'wound down, and parked in the traffic\'s way');
+    assert.equal(car.actor.model.rotors.disc.visible, false, 'the blades stopped');
     // Back in, and it flies
     assert.equal(feet.offer().own, true);
     feet.use(); run(3, {}, () => !feet.walking);
     assert.ok(!feet.walking && vehicle.pilot && vehicle.carId === 'helicopter' && !traffic.playerCars.length);
+    assert.equal(vehicle.actor, actor); assert.equal(vehicle.pilot, pilot, 'boarding returns control of the same aircraft');
     run(2, { climb: 1 });
     assert.ok(vehicle.pilot.height > 5);
+  } finally { feet.clear(); vehicle.disposeModel(); }
+});
+
+test('an unattended aircraft keeps its physical heading separate from its interpolated render pose', () => {
+  const { vehicle, feet, run } = flying('helicopter');
+  try {
+    run(2, { climb: 1, right: 1 });
+    feet.jump();
+    const car = feet.parked, motion = car.actor.motion;
+    // The pilot still turns toward its heading while the player falls.
+    motion.heading += .4;
+    feet.update(step);
+    const expected = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -motion.heading);
+    assert.ok(car.quaternion.angleTo(expected) < 1e-7, 'the physical quaternion reflects the current heading');
+    const pose = car.quaternion.clone(), at = car.position.clone();
+    feet.render(.25, 500);
+    assert.deepEqual(car.quaternion, pose); assert.deepEqual(car.position, at, 'drawing with an origin cannot move the actor');
   } finally { feet.clear(); vehicle.disposeModel(); }
 });
 
@@ -856,10 +1010,10 @@ test('high up, a second press jumps out with a parachute, and the plane lands it
     run(1);
     assert.ok(vehicle.walker.chute, 'under a parachute');
     const plane = feet.parked;
-    assert.ok(plane.drone && !plane.drone.pilot.landed);
+    assert.ok(plane.actor.control === 'landing' && !plane.actor.motion.pilot.landed);
     assert.equal(feet.offer(), null, 'nobody gets into a plane still flying');
-    run(40, {}, () => !plane.drone);
-    assert.ok(!plane.drone && traffic.playerCars.includes(plane) && plane.position.y === GROUND, 'down, stopped and parked');
+    run(40, {}, () => plane.actor.control !== 'landing');
+    assert.ok(plane.actor.control === 'parked' && traffic.playerCars.includes(plane) && plane.position.y === GROUND, 'down, stopped and parked');
     assert.ok(vehicle.walker.grounded, 'and they are down too');
   } finally { feet.clear(); vehicle.disposeModel(); }
 });
