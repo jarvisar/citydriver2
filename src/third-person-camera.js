@@ -16,7 +16,7 @@ const DIP_RISE = 4, DIP_DROP = 10;
 const TILT_LOW = -.25, TILT_HIGH = 1.05;
 export const LOOK_REST = 1.5, LOOK_MOVING = 2, LOOK_RETURN = 2.5;
 // The wheel takes it this much nearer or farther, easing there at ZOOM_RATE
-const ZOOM_NEAR = .45, ZOOM_FAR = 2, ZOOM_RATE = 10;
+const ZOOM_NEAR = .45, ZOOM_FAR = 4, ZOOM_RATE = 10;
 // However it is turned, it keeps this far over the ground under it (and
 // this far under a bridge's deck, see `lid`)
 const GROUND_CLEAR = .6, LID_CLEAR = .5;

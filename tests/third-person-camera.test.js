@@ -242,7 +242,7 @@ test('the wheel brings the chase camera nearer or farther within limits, and a r
   assert.equal(rig.zoom, .5);
   assert.ok(Math.abs(rig.camera.position.distanceTo(rig.pivot) - out / 2) < 1e-9);
   assert.ok(onScreen(rig.pivot, rig.camera).distanceTo(framed) < 1e-9);
-  rig.zoomBy(100); assert.equal(rig.zoomTarget, 2);
+  rig.zoomBy(100); assert.equal(rig.zoomTarget, 4);
   rig.zoomBy(1e-3); assert.equal(rig.zoomTarget, .45);
   rig.snap(); rig.update(car, 0);
   assert.equal(rig.zoom, .45);
@@ -252,7 +252,7 @@ test('turned down low or zoomed out, the chase camera stays over the ground unde
   const car = new THREE.Object3D(), rig = new ThirdPersonCamera();
   // A quay 3 m up off to the car's left
   rig.ground = x => x < -6 ? 3 : 0;
-  rig.update(car, 0); rig.zoomBy(2);
+  rig.update(car, 0); rig.zoomBy(4);
   for (const yaw of [0, Math.PI / 2, Math.PI]) {
     rig.snap(); rig.look(yaw, -1);
     for (let i = 0; i < 60; i++) {
@@ -262,6 +262,6 @@ test('turned down low or zoomed out, the chase camera stays over the ground unde
   }
   // (and where the ground does not reach it, it is left alone)
   rig.snap(); rig.update(car, 0);
-  const free = new ThirdPersonCamera(); free.zoomBy(2); free.update(car, 0);
+  const free = new ThirdPersonCamera(); free.zoomBy(4); free.update(car, 0);
   assert.equal(rig.camera.position.distanceTo(free.camera.position), 0);
 });
