@@ -23,6 +23,7 @@ export class AmbientOcclusion {
       this.effect.setQuality(this.quality);
       this.onReady();
     }).catch(error => {
+      this.effect?.dispose(); this.effect = null;
       this.failed = true;
       console.warn('Soft shading could not load; continuing with standard lighting.', error);
     }).finally(() => { this.ready = null; });

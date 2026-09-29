@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { N8AOPass } from 'n8ao';
+import n8aoPackage from 'n8ao/package.json' with { type: 'json' };
+import { createN8AOIntegration } from './rendering-compat.js';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 
 // N8AO shades at exactly half the size of the depth it is given, the one ratio
@@ -23,30 +25,22 @@ export class AmbientOcclusion {
     this.enabled = true;
     this.size = new THREE.Vector2();
     this.hidden = [];
-    this.pass = new N8AOPass(scene, camera, 2, 2);
     // N8AO's noise is fixed to the screen, so while the world scrolls beneath it
     // whatever noise survives denoising reads as crawling shade. Measured at
     // fixed world points, samples and a wide denoise radius are what quiet
     // it; more resolution, or N8AO's sharper radius-6
     // presets, make it worse. Every preset shares these, so changing level never
     // recompiles the AO shaders mid-drive.
-    Object.assign(this.pass.configuration, {
+    this.pass = createN8AOIntegration(N8AOPass, n8aoPackage.version, scene, camera, {
       aoRadius: 2.4, distanceFalloff: 1, intensity: 2,
       aoSamples: 32, denoiseSamples: 16, denoiseRadius: 12, denoiseIterations: 2,
       halfRes: true, gammaCorrection: false, autoRenderBeauty: false,
       transparencyAware: false, accumulate: false, depthAwareUpsampling: true,
     });
     this.setQuality('high');
-    this.pass.setDisplayMode('AO');
-    // Match AO and depth sampling at silhouettes to avoid pulling background
-    // occlusion into a foreground pixel before the denoiser checks its depth.
-    for (const target of [this.pass.writeTargetInternal, this.pass.readTargetInternal, this.pass.accumulationRenderTarget]) {
-      target.texture.minFilter = target.texture.magFilter = THREE.NearestFilter;
-    }
     // Draw geometry once more for depth alone. N8AO derives its normals from
     // depth, so nothing reads this pass's colour and no fragment is shaded.
     this.depthMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, fog: false });
-    this.pass.beautyRenderTarget.texture.type = THREE.UnsignedByteType;
     this.aoTarget = new THREE.WebGLRenderTarget(2, 2, { depthBuffer: false });
     this.material = new THREE.ShaderMaterial({
       name: 'Soft ambient occlusion',
@@ -119,15 +113,8 @@ export class AmbientOcclusion {
       // Even dimensions keep half-resolution depth and AO texels aligned.
       const width = Math.max(2, Math.floor(this.size.x * scale / 2) * 2);
       const height = Math.max(2, Math.floor(this.size.y * scale / 2) * 2);
-      const cameraChanged = Boolean(pass.camera.isOrthographicCamera) !== Boolean(camera.isOrthographicCamera);
-      pass.camera = camera;
-      if (pass.width !== width || pass.height !== height) pass.setSize(width, height);
+      pass.update(camera, width, height);
       if (this.aoTarget.width !== width || this.aoTarget.height !== height) this.aoTarget.setSize(width, height);
-      // N8AO specializes its shaders for the camera projection at creation.
-      if (cameraChanged) {
-        pass.configureSampleDependentPasses();
-        pass.configureEffectCompositer(pass.configuration.depthBufferType, camera.isOrthographicCamera);
-      }
       // Foam, mist, flakes and other overlays must not become opaque AO casters.
       scene.traverseVisible(this.hideOverlay);
       renderer.shadowMap.autoUpdate = false;
@@ -135,7 +122,7 @@ export class AmbientOcclusion {
       scene.matrixWorldAutoUpdate = false;
       scene.overrideMaterial = this.depthMaterial;
       scene.background = null;
-      renderer.setRenderTarget(pass.beautyRenderTarget);
+      renderer.setRenderTarget(pass.depthTarget);
       renderer.render(scene, camera);
       scene.overrideMaterial = overrideMaterial;
       scene.background = background;
@@ -158,14 +145,9 @@ export class AmbientOcclusion {
   }
 
   dispose() {
-    // N8AO 2.0.1 inherits Pass's empty dispose(), so release its owned resources.
-    const resources = new Set();
-    for (const value of Object.values(this.pass)) {
-      if (value?.isWebGLRenderTarget || value?.isTexture || value?.isMaterial) resources.add(value);
-      if (value?.material?.isMaterial) resources.add(value.material);
-      if (value?._mesh?.geometry) resources.add(value._mesh.geometry);
-    }
-    for (const resource of resources) resource.dispose();
+    if (this.disposed) return;
+    this.disposed = true;
+    this.pass.dispose();
     this.aoTarget.dispose();
     this.depthMaterial.dispose();
     this.material.dispose();

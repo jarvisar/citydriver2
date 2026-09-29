@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { fitSunShadow, fitSunShadowAround, stabilizeShadowFiltering } from './shadows.js';
+import { fitSunShadow, fitSunShadowAround } from './shadows.js';
+import { stabilizeShadowFiltering, rendererPrograms, precompileShadowPrograms } from './rendering-compat.js';
 import { ThirdPersonCamera } from './third-person-camera.js';
 import { FirstPersonCamera } from './first-person-camera.js';
 import { AmbientOcclusion } from './ambient-occlusion.js';
@@ -37,6 +38,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   // level this page starts on decides it. The stencil lets demolition's red
   // residents show through props but not buildings (see createWalkerAlert).
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: graphics.antialias, stencil: true, powerPreference: 'high-performance' });
+  const programs = rendererPrograms(renderer);
   // Whether soft shading is on by default depends on the card drawing the game.
   graphics.setGpu(gpuName(renderer.getContext()));
   let canvasWidth, canvasHeight, pixelRatio;
@@ -226,20 +228,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
       if (stereo) renderer.render(scene, viewCamera);
       else ambientOcclusion.render(viewCamera);
     } finally { if (car) car.visible = visible; }
-    keepPrograms();
-  }
-  // Three deletes a shader program once no material uses it. A swapped car, a
-  // walker got back in or a borrowed car given back often took the last user
-  // of one with it (the player car's wheels, the walker, the taxi's sign), and
-  // the next model compiled the same program again, 5-10 ms here and far more
-  // on a phone, at every run start, garage pick and hop out. Once linked, a
-  // program is kept for the visit: there are only ~80. (`usedTimes` is three's
-  // own count, which it frees the program at.)
-  const kept = new Set();
-  function keepPrograms() {
-    const programs = renderer.info.programs;
-    if (!programs || programs.length === kept.size) return;
-    for (const program of programs) if (!kept.has(program) && typeof program.usedTimes === 'number') { program.usedTimes++; kept.add(program); }
+    programs.retain();
   }
   function render(frame, beforeXRRender) {
     if (renderer.xr.isPresenting) {
@@ -277,7 +266,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
         }
       }
     } finally { scene.fog = fog; clouds.group.visible = skyVisible; clouds.stars.visible = starsVisible; }
-    precompileShadows([scene, warmup], lens);
+    precompileShadowPrograms(renderer, scene, [scene, warmup], lens);
     // Upload textures now too. Otherwise the 4096 px sign atlas and its mipmaps
     // upload in the first frame that shows a sign.
     const textures = new Set();
@@ -286,38 +275,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
     // A program's first draw also reads back its uniforms and info log, which
     // for the fogged half waited for the first chase-camera frame (the title's
     // overhead views draw without fog). Do that now, behind the loading screen.
-    return Promise.all(pending).then(() => {
-      for (const program of renderer.info.programs) program.getUniforms?.();
-      keepPrograms();
-    });
-  }
-  // renderer.compile leaves out the shadow pass, which compiles a caster's
-  // depth program the first time it draws it. Casters by the start are drawn
-  // behind the loading screen, but others waited: the walker's posed depth
-  // for the first time out of the car, double-sided walls for the first
-  // bridge in the sun's view. So compile each kind of caster's depth
-  // material as the shadow pass would: into a render target (no tone
-  // mapping), sided and mapped as three sets them from the caster's material.
-  const SHADOW_SIDE = { [THREE.FrontSide]: THREE.BackSide, [THREE.BackSide]: THREE.FrontSide, [THREE.DoubleSide]: THREE.DoubleSide };
-  function precompileShadows(roots, lens) {
-    const casters = new THREE.Group(), target = new THREE.WebGLRenderTarget(1, 1), previous = renderer.getRenderTarget(), kinds = new Set();
-    for (const root of roots) root.traverse(object => {
-      const depth = object.customDepthMaterial, material = object.material, geometry = object.geometry;
-      if (!object.castShadow || !depth || !material || Array.isArray(material)) return;
-      const side = material.shadowSide ?? SHADOW_SIDE[material.side], morphs = geometry.morphAttributes;
-      const kind = [depth.uuid, side, Boolean(material.map), material.alphaTest > 0, object.isInstancedMesh, Boolean(object.instanceColor), Boolean(object.morphTexture),
-        object.isSkinnedMesh, Boolean(geometry.attributes.normal), morphs.position?.length, morphs.normal?.length, morphs.color?.length].join();
-      if (kinds.has(kind)) return;
-      kinds.add(kind);
-      depth.side = side; depth.map = material.map; depth.alphaMap = material.alphaMap; depth.alphaTest = material.alphaTest;
-      const standIn = object.clone(false); standIn.material = depth; casters.add(standIn);
-    });
-    if (!casters.children.length) return;
-    try { renderer.setRenderTarget(target); renderer.compile(casters, lens, scene); }
-    finally {
-      renderer.setRenderTarget(previous); target.dispose();
-      for (const standIn of casters.children) standIn.morphTexture?.dispose();
-    }
+    return Promise.all(pending).then(() => programs.warm());
   }
   function setView(index) { view = index; updateFog(); thirdPerson.snap(); firstPerson.snap(); return views[view].label; }
   let desktopView;

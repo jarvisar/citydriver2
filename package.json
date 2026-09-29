@@ -24,6 +24,7 @@
     "pwa:screenshots": "node scripts/pwa-screenshots.mjs",
     "test:pwa": "node scripts/pwa-test.mjs",
     "test:smoke": "node scripts/citydriver-smoke.mjs",
+    "test:rendering": "node scripts/rendering-compat-test.mjs",
     "city:svg": "node scripts/city-map-svg.mjs"
   },
   "dependencies": {
