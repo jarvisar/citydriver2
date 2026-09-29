@@ -19,6 +19,11 @@ self.addEventListener('install', event => {
   // Let existing tabs finish on their current version; never force a reload.
 });
 
+// Sent when the player presses Reload on the update notice.
+self.addEventListener('message', event => {
+  if (event.data === 'activate-update') self.skipWaiting();
+});
+
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     for (const name of await caches.keys()) {

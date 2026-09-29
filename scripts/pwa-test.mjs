@@ -16,7 +16,7 @@ const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css
 async function checkProduction(base) {
   const outDir = path.resolve('.artifacts', base === '/' ? 'pwa-root' : 'pwa-subpath');
   await build({ base, build: { outDir } });
-  let update = false;
+  let version;
   const server = createServer(async (req, res) => {
     try {
       const pathname = new URL(req.url, 'http://localhost').pathname;
@@ -25,8 +25,8 @@ async function checkProduction(base) {
       const filename = path.resolve(outDir, relative);
       if (!filename.startsWith(`${outDir}${path.sep}`)) { res.writeHead(403).end(); return; }
       let content = await readFile(filename);
-      if (relative === 'sw.js' && update) {
-        content = content.toString().replace(/const VERSION = "[^"]+";/, 'const VERSION = "test-update";');
+      if (relative === 'sw.js' && version) {
+        content = content.toString().replace(/const VERSION = "[^"]+";/, `const VERSION = "${version}";`);
       }
       res.writeHead(200, { 'Content-Type': mime[path.extname(filename)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
       res.end(content);
@@ -103,10 +103,15 @@ async function checkProduction(base) {
     await context.setOffline(false);
     await page.evaluate(() => caches.open('unrelated-app-cache'));
     const oldCache = await page.evaluate(async () => (await caches.keys()).find(name => name.startsWith('citydriver:')));
-    update = true;
+    version = 'test-update';
     await page.evaluate(async () => (await navigator.serviceWorker.getRegistration()).update());
     await page.waitForFunction(async () => Boolean((await navigator.serviceWorker.getRegistration()).waiting));
     assert.ok((await page.evaluate(() => caches.keys())).includes(oldCache), 'Active version stays cached during play');
+    await page.locator('#pause-overlay .update-notice').waitFor({ state: 'attached' });
+    assert.equal(await page.locator('.update-notice').first().isVisible(), false, 'No update notice over a drive');
+    await page.keyboard.press('KeyP');
+    await page.locator('#pause-overlay .update-notice button').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#welcome .update-notice').count(), 1);
     await page.close();
     page = await context.newPage();
     console.log(`Checking ${base}: activate the waiting update after closing the game`);
@@ -150,8 +155,21 @@ async function checkProduction(base) {
     assert.equal(await page.locator('#pause-overlay .pwa-install-help').isVisible(), false);
     await page.evaluate(() => window.dispatchEvent(new Event('appinstalled')));
     assert.equal(await page.locator('#pause-overlay .pwa-install-button').isVisible(), false);
+
+    console.log(`Checking ${base}: the update notice reloads into the next version`);
+    await context.setOffline(false);
+    version = 'test-update-2';
+    await page.evaluate(async () => (await navigator.serviceWorker.getRegistration()).update());
+    const reload = page.locator('#pause-overlay .update-notice button');
+    await reload.waitFor({ state: 'visible' });
+    await page.screenshot({ path: path.resolve('.artifacts', base === '/' ? 'pwa-update.png' : 'pwa-update-subpath.png') });
+    await Promise.all([page.waitForEvent('load'), reload.click()]);
+    await page.waitForFunction(() => document.querySelector('#loading.loaded') && document.querySelector('#error').hidden);
+    const names = (await page.evaluate(() => caches.keys())).filter(name => name.startsWith('citydriver:'));
+    assert.deepEqual(names.map(name => name.split(':').pop()), ['test-update-2']);
+    assert.equal(await page.locator('.update-notice').count(), 0);
     assert.deepEqual(errors, []);
-    console.log(`PASS ${base}: Chrome installability, icons/screenshots, install button/fallback, offline city/driving, safe updates and cache cleanup`);
+    console.log(`PASS ${base}: Chrome installability, icons/screenshots, install button/fallback, offline city/driving, safe updates, the update notice and cache cleanup`);
   } finally {
     await context.close();
     await new Promise(resolve => server.close(resolve));

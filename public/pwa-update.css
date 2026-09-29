@@ -1,0 +1,17 @@
+/* Update notice on the title and pause screens (see pwa-register.js). */
+.update-notice {
+  display: flex; align-items: center; gap: 12px; width: max-content; max-width: 100%;
+  padding: 4px 4px 4px 14px; border: 1px solid var(--city-line); border-radius: var(--city-control-radius);
+  color: var(--city-text); background: var(--city-panel); box-shadow: var(--city-shadow);
+  font-family: var(--city-font); font-size: 13px; pointer-events: auto;
+}
+.update-notice button {
+  min-height: 32px; padding: 0 14px; border: 0; border-radius: 7px;
+  color: var(--city-on-accent); background: var(--city-accent); font-size: 13px; font-weight: 700;
+}
+.update-notice button:hover { background: var(--city-accent-hover); }
+.update-notice button:focus-visible { outline: 2px solid var(--city-text); outline-offset: 2px; }
+.update-notice button:disabled { cursor: wait; opacity: .6; }
+#welcome .update-notice { margin-top: 14px; }
+.pause-header .update-notice { grid-area: 3 / 1 / 4 / 3; margin-top: 10px; background: var(--city-raised); box-shadow: none; }
+@media (pointer: coarse) { .update-notice button { min-height: 44px; } }
