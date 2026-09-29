@@ -63,6 +63,7 @@ import { setupControlHelp, controlHelpDismissed, updateControlHelp } from './con
 import { BrowserVR } from './vr.js';
 import { VRStatus } from './vr-status.js';
 import { moveMenuFocus, confirmMenuFocus, scrollMenu } from './menu-focus.js';
+import { setupMenuIdle } from './menu-idle.js';
 
 setupControlHelp();
 
@@ -190,6 +191,8 @@ async function boot() {
     const openPauseMenu = () => resultsCard() ?? (paused && !openChooser() ? pauseOverlay : null);
     // The title screen is a menu of its own until a drive begins.
     const openWelcomeMenu = () => !started && !paused ? $('#welcome') : null;
+    const menuIdle = setupMenuIdle({ app: $('#app'), welcome: $('#welcome'), fade: $('#menu-view-fade'), rendering,
+      enabled: () => sceneReady && !started && !paused && !changingJourney && !openChooser() && !vr?.active && !vr?.pending && !document.hidden });
     scene.add(vehicle.car);
     const traffic = new CityTraffic(scene, vehicle.route, vehicle.s, journey, vehicle.u);
     // (and the bus calls at the world's stops)
@@ -422,6 +425,7 @@ async function boot() {
     }
     // What either run does first: the player at the wheel of its car, in traffic
     function enterRun(mode, id, carPaint) {
+      menuIdle.stop();
       if (freeTraffic === undefined || gameMode === 'free') freeTraffic = traffic.enabled;
       started = true; gameMode = mode; vehicle.arcade = true;
       // (autodrive is free drive's alone)
@@ -438,6 +442,7 @@ async function boot() {
     }
     function beginFree({ preserveInput = false } = {}) {
       if (changingJourney) return;
+      menuIdle.stop();
       const wasRun = taxi.status !== 'idle' || demolition.status !== 'idle'; taxi.stop(); demolition.stop(); started = true; gameMode = 'free';
       autodrive.reset(); vehicle.arcade = false; onFoot.setCar(carId, { paint }); haltCar();
       if (wasRun && freeTraffic !== undefined) traffic.setEnabled(freeTraffic, vehicle);
@@ -453,6 +458,7 @@ async function boot() {
       }
     }
     function setPaused(value, { preserveInput = false } = {}) {
+      menuIdle.stop();
       paused = value; if (!preserveInput) input.clear(); frameClock.suspend();
       if (!paused && autodrive.enabled) start();
       if (!paused) fullscreen.resume();
@@ -750,6 +756,7 @@ async function boot() {
     vr = new BrowserVR({
       renderer, buttons: [$('#enter-vr'), $('#enter-vr-pause')], canEnter: () => !changingJourney && !openChooser(),
       onStart() {
+        menuIdle.stop();
         $('#vr-error').hidden = true;
         input.xrActive = true; input.clear();
         vrStatus.attach(vr.session); vrHintTime = 0;
@@ -1123,9 +1130,10 @@ async function boot() {
       vrStatus.update(vr.active ? currentMenuModel() : null);
       // (in free drive, Y gets in and out of cars)
       const freeDrive = started && gameMode === 'free';
+      const wokeMenu = menuIdle.update(performance.now());
       if (vr.active) input.xr.update(vr.session.inputSources, { blocked: !vr.visible || changingJourney, paused: paused || vrStatus.visible, freeDrive });
       else {
-        input.gamepad.update({ blocked: document.hidden || !document.hasFocus() || changingJourney, paused, menu: openChooser() ? 'chooser' : openPauseMenu() ? 'pause' : openWelcomeMenu() ? 'welcome' : false, freeDrive });
+        input.gamepad.update({ blocked: wokeMenu || document.hidden || !document.hasFocus() || changingJourney, paused, menu: openChooser() ? 'chooser' : openPauseMenu() ? 'pause' : openWelcomeMenu() ? 'welcome' : false, freeDrive });
         const menu = input.gamepad.scroll && (openChooser() ?? openPauseMenu() ?? openWelcomeMenu());
         if (menu) scrollMenu(menu, input.gamepad.scroll * 18);
       }

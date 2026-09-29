@@ -20,6 +20,15 @@ body { --action: #263f4b; --action-hover: #3d5f6b; --ink: #253e49; --cream: #f4f
 }
 #welcome.hidden { opacity: 0; visibility: hidden; transform: none; transition: opacity .45s, visibility 0s .45s; }
 #welcome.hidden * { pointer-events: none; }
+#welcome:not(.hidden), #app:has(#welcome:not(.hidden)) :where(.topbar, #toast, #fps-counter, #vr-error) {
+  transition: opacity .2s, visibility 0s;
+}
+#app.menu-idle:has(#welcome:not(.hidden)) :where(#welcome, .topbar, #toast, #fps-counter, #vr-error) {
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity 1.2s, visibility 0s 1.2s;
+}
+#app.menu-idle { cursor: none; }
+#menu-view-fade { position: absolute; inset: 0; z-index: 1; background: #081217; opacity: 0; pointer-events: none; }
 #welcome .menu-brand { display: flex; flex-direction: column; gap: 0; text-shadow: 0 2px 4px #10272060, 0 6px 24px #1027204d; }
 /* Soft pools of shade separate the menu from passing scenery without a panel. */
 #welcome .menu-brand, #welcome .menu-actions { position: relative; isolation: isolate; }
