@@ -13,6 +13,7 @@ import { CityTraffic } from '../src/city-traffic.js';
 import { DrivingController } from '../src/vehicle.js';
 import { citydriverRoute, nearestLanePose, PAVEMENT_LEVEL } from '../src/world/city-route.js';
 import { ThirdPersonCamera } from '../src/third-person-camera.js';
+import { PlayerFog } from '../src/player-fog.js';
 import { DemolitionRun } from '../src/demolition-run.js';
 
 test('the world streams detailed chunks around the car and keeps the skyline everywhere else', () => {
@@ -313,6 +314,15 @@ test('whole chunks are culled only when neither the camera nor the sun could dra
     assert.ok(drawn.every(chunk => chunk.group.visible));
     world.cull(eyes, shadow);
     assert.deepEqual(drawn.map(chunk => chunk.group.visible), culled);
+    // Even completely fog-hidden geometry must still cast into visible light.
+    const fog = new PlayerFog('white'); fog.origin.set(100000, 100000, 100000);
+    world.cull(camera, shadow, fog);
+    for (const chunk of drawn) for (const mesh of chunk.group.children) {
+      if (shadow.intersectsObject(mesh)) assert.ok(chunk.group.visible, 'fog must retain off-screen shadow casters');
+    }
+    assert.ok(drawn.some(chunk => chunk.group.visible));
+    world.cull(camera, null, fog);
+    assert.ok(drawn.every(chunk => !chunk.group.visible), 'fully hidden chunks can be skipped without a shadow pass');
     // The streets are tiled, so the renderer can leave out those off screen
     for (const name of ['ground', 'roads', 'walls']) {
       const tiles = world.staticGroup.children.filter(mesh => mesh.name === `citydriver-${name}`);

@@ -194,3 +194,18 @@ test('Keyboard Lock throwing leaves Escape and resume usable', async () => {
   assert.equal(f.fullscreen.active, true);
   assert.deepEqual(f.messages, []);
 });
+
+test('recapturing the mouse after a fullscreen exit makes the next Escape pause immediately', async () => {
+  const f = fixture();
+  await f.fullscreen.toggle(); await f.fullscreen.toggle();
+  assert.equal(f.fullscreen.released(), false);
+  f.fullscreen.captured(); f.advance(50); f.fullscreen.released();
+  assert.equal(f.calls.pauses, 1);
+});
+
+test('a refused fullscreen exit must not suppress a later pointer release', async () => {
+  const f = fixture(); await f.fullscreen.toggle();
+  f.document.exitFullscreen = async () => { throw new Error('denied'); };
+  await f.fullscreen.toggle(); f.fullscreen.released();
+  assert.equal(f.calls.pauses, 1);
+});

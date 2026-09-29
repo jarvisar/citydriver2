@@ -5,12 +5,67 @@ import * as THREE from 'three';
 import { N8AOPass } from 'n8ao';
 import n8aoPackage from 'n8ao/package.json' with { type: 'json' };
 import { RENDERING_COMPAT, RenderingCompatibilityError, patchShadowShader, stabilizeShadowFiltering,
-  rendererPrograms, createN8AOIntegration, precompileShadowPrograms } from '../src/rendering-compat.js';
+  rendererPrograms, createN8AOIntegration, precompileShadowPrograms, patchPlayerFogShader, installPlayerFog } from '../src/rendering-compat.js';
+import { PlayerFog } from '../src/player-fog.js';
 import { AmbientOcclusion } from '../src/ambient-occlusion.js';
 import { AmbientOcclusion as Effect } from '../src/ambient-occlusion-pass.js';
 
 const originalShadow = THREE.ShaderChunk.shadowmap_pars_fragment;
 const aoConfiguration = { halfRes: true, autoRenderBeauty: false, transparencyAware: false, gammaCorrection: false };
+
+test('player fog composes with material hooks, follows the drawing scene and binds new materials before first use', () => {
+  const material = new THREE.MeshBasicMaterial(), scene = new THREE.Scene(), fog = new PlayerFog('white');
+  fog.origin.set(5, 7, 9); scene.fog = fog;
+  let compiled, draws = 0;
+  material.onBeforeCompile = shader => { shader.uniforms.existing = { value: 3 }; };
+  material.customProgramCacheKey = () => 'existing-custom-material';
+  const renderer = { renderBufferDirect(camera, drawnScene, geometry, drawnMaterial) {
+    if (!compiled) {
+      compiled = { vertexShader: THREE.ShaderLib.basic.vertexShader, fragmentShader: THREE.ShaderLib.basic.fragmentShader, uniforms: {} };
+      drawnMaterial.onBeforeCompile(compiled, this);
+    }
+    draws++;
+  } };
+  const owner = installPlayerFog(renderer);
+  assert.equal(installPlayerFog(renderer), owner);
+  renderer.renderBufferDirect(null, scene, null, material);
+  assert.equal(draws, 1); assert.equal(compiled.uniforms.existing.value, 3);
+  assert.equal(compiled.uniforms.playerFog.value, true);
+  assert.deepEqual(compiled.uniforms.playerFogOrigin.value, fog.origin);
+  assert.match(material.customProgramCacheKey(), /^existing-custom-material:/);
+  fog.origin.set(50, 70, 90); renderer.renderBufferDirect(null, scene, null, material);
+  assert.deepEqual(compiled.uniforms.playerFogOrigin.value, fog.origin);
+  scene.fog = new THREE.Fog('white'); renderer.renderBufferDirect(null, scene, null, material);
+  assert.equal(compiled.uniforms.playerFog.value, false, 'ordinary fog on a shared material still works');
+  const clone = material.clone(); compiled = null; scene.fog = fog;
+  renderer.renderBufferDirect(null, scene, null, clone);
+  assert.equal(compiled.uniforms.playerFog.value, true, 'clones created after warm-up get fog too');
+  material.dispose(); clone.dispose();
+});
+
+test('unknown fog shader layouts cannot leave a partly patched shader', () => {
+  const shader = { vertexShader: THREE.ShaderLib.basic.vertexShader, fragmentShader: THREE.ShaderLib.basic.fragmentShader };
+  const before = { ...shader };
+  assert.throws(() => patchPlayerFogShader(shader, { ...THREE.ShaderChunk, fog_fragment: 'changed' }), RenderingCompatibilityError);
+  assert.deepEqual(shader, before);
+  assert.throws(() => patchPlayerFogShader(shader, THREE.ShaderChunk, '999'), RenderingCompatibilityError);
+});
+
+test('AO uses the same player-centred fog after camera motion and projection changes', () => {
+  const { integration, pass, scene } = aoFixture();
+  scene.fog = new PlayerFog('white'); scene.fog.origin.set(3, 4, -100);
+  try {
+    for (const camera of [new THREE.PerspectiveCamera(), new THREE.OrthographicCamera(), new THREE.PerspectiveCamera()]) {
+      camera.position.set(12, 18, 30); camera.lookAt(scene.fog.origin); camera.updateMatrixWorld();
+      integration.update(camera, 640, 480);
+      const uniforms = pass.effectCompositerQuad.material.uniforms;
+      assert.equal(uniforms.playerFog.value, true);
+      assert.deepEqual(uniforms.playerFogOriginView.value, scene.fog.origin.clone().applyMatrix4(camera.matrixWorldInverse));
+    }
+    scene.fog = null; integration.update(new THREE.PerspectiveCamera(), 640, 480);
+    assert.equal(pass.effectCompositerQuad.material.uniforms.playerFog.value, false);
+  } finally { integration.dispose(); }
+});
 
 test('installed renderer dependencies match the reviewed integration', () => {
   assert.equal(THREE.REVISION, RENDERING_COMPAT.three);

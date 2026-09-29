@@ -132,6 +132,88 @@ export function precompileShadowPrograms(renderer, scene, roots, lens) {
   }
 }
 
+export function patchPlayerFogShader(shader, chunks = THREE.ShaderChunk, revision = THREE.REVISION) {
+  checkThree(revision);
+  for (const [stage, name] of [['vertexShader', 'fog_pars_vertex'], ['vertexShader', 'fog_vertex'],
+    ['fragmentShader', 'fog_pars_fragment'], ['fragmentShader', 'fog_fragment']]) {
+    requireCompatible(shader[stage]?.split(`#include <${name}>`).length === 2 && typeof chunks[name] === 'string', `Missing ${name} shader hook`);
+  }
+  requireCompatible(chunks.fog_vertex.includes('vFogDepth = - mvPosition.z;')
+    && chunks.fog_fragment.includes('smoothstep( fogNear, fogFar, vFogDepth )'), 'Three fog calculation changed');
+  shader.vertexShader = shader.vertexShader
+    .replace('#include <fog_pars_vertex>', `${chunks.fog_pars_vertex}\n#ifdef USE_FOG\nuniform vec3 playerFogOrigin;\nvarying vec3 vPlayerFogOffset;\n#endif`)
+    .replace('#include <fog_vertex>', `${chunks.fog_vertex}\n#ifdef USE_FOG\nvPlayerFogOffset = mvPosition.xyz - (viewMatrix * vec4(playerFogOrigin, 1.0)).xyz;\n#endif`);
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <fog_pars_fragment>', `${chunks.fog_pars_fragment}\n#ifdef USE_FOG\nuniform bool playerFog;\nvarying vec3 vPlayerFogOffset;\n#endif`)
+    .replace('#include <fog_fragment>', chunks.fog_fragment.replace('smoothstep( fogNear, fogFar, vFogDepth )',
+      'smoothstep( fogNear, fogFar, playerFog ? length(vPlayerFogOffset) : vFogDepth )'));
+}
+
+const fogMaterials = new WeakMap(), fogRenderers = new WeakMap();
+function bindPlayerFog(material) {
+  if (!material.fog) return null;
+  if (fogMaterials.has(material)) return fogMaterials.get(material);
+  const uniforms = { playerFog: { value: false }, playerFogOrigin: { value: new THREE.Vector3() } };
+  const compile = material.onBeforeCompile, key = material.customProgramCacheKey;
+  material.onBeforeCompile = function (shader, renderer) {
+    compile.call(this, shader, renderer);
+    patchPlayerFogShader(shader);
+    Object.assign(shader.uniforms, uniforms);
+  };
+  material.customProgramCacheKey = function () {
+    return `${key === THREE.Material.prototype.customProgramCacheKey ? compile.toString() : key.call(this)}:player-fog-v1`;
+  };
+  material.needsUpdate = true;
+  fogMaterials.set(material, uniforms);
+  return uniforms;
+}
+
+export function installPlayerFog(renderer, { revision = THREE.REVISION, warn = console.warn } = {}) {
+  if (fogRenderers.has(renderer)) return fogRenderers.get(renderer);
+  try {
+    patchPlayerFogShader({ vertexShader: '#include <fog_pars_vertex>\n#include <fog_vertex>',
+      fragmentShader: '#include <fog_pars_fragment>\n#include <fog_fragment>' }, THREE.ShaderChunk, revision);
+    requireCompatible(typeof renderer.renderBufferDirect === 'function', 'Missing renderer.renderBufferDirect');
+    const draw = renderer.renderBufferDirect;
+    // Catch newly streamed/cloned materials before their first program is made.
+    // Existing materials are bound during warm-up, without a per-frame scene walk.
+    renderer.renderBufferDirect = function (camera, scene, geometry, material, object, group) {
+      const uniforms = bindPlayerFog(material);
+      if (uniforms) {
+        uniforms.playerFog.value = Boolean(scene?.fog?.isPlayerFog);
+        if (uniforms.playerFog.value) uniforms.playerFogOrigin.value.copy(scene.fog.origin);
+      }
+      return draw.call(this, camera, scene, geometry, material, object, group);
+    };
+    const owner = { prepare(root) {
+      root.traverse(object => {
+        if (Array.isArray(object.material)) object.material.forEach(bindPlayerFog);
+        else if (object.material) bindPlayerFog(object.material);
+      });
+    } };
+    fogRenderers.set(renderer, owner);
+    return owner;
+  } catch (error) {
+    if (!(error instanceof RenderingCompatibilityError)) throw error;
+    warnOnce('Player-centred fog', error, warn);
+    return null;
+  }
+}
+
+function updateAOFog(material, fog, camera) {
+  if (!material.uniforms.playerFog) {
+    const source = material.fragmentShader, depth = 'float fogDepth = -getWorldPos(depth, vUv).z;';
+    requireCompatible(source.split(depth).length === 2, 'N8AO fog calculation changed');
+    material.fragmentShader = `uniform bool playerFog;\nuniform vec3 playerFogOriginView;\n${source}`
+      .replace(depth, 'float fogDepth = playerFog ? distance(getWorldPos(depth, vUv), playerFogOriginView) : -getWorldPos(depth, vUv).z;');
+    material.uniforms.playerFog = { value: false };
+    material.uniforms.playerFogOriginView = { value: new THREE.Vector3() };
+    material.needsUpdate = true;
+  }
+  material.uniforms.playerFog.value = Boolean(fog?.isPlayerFog);
+  if (fog?.isPlayerFog) material.uniforms.playerFogOriginView.value.copy(fog.origin).applyMatrix4(camera.matrixWorldInverse);
+}
+
 const aoTargets = ['beautyRenderTarget', 'writeTargetInternal', 'readTargetInternal', 'accumulationRenderTarget',
   'depthDownsampleTarget', 'transparencyRenderTargetDWFalse', 'transparencyRenderTargetDWTrue'];
 const aoQuads = ['effectShaderQuad', 'poissonBlurQuad', 'effectCompositerQuad', 'accumulationQuad', 'depthDownsampleQuad', 'depthCopyPass'];
@@ -183,6 +265,7 @@ export function createN8AOIntegration(N8AOPass, version, scene, camera, configur
     Object.assign(pass.configuration, configuration);
     pass.setDisplayMode('AO');
     checkN8AO(pass, true);
+    updateAOFog(pass.effectCompositerQuad.material, scene.fog, camera);
     // AO and depth must sample the same silhouette before denoising it.
     for (const key of aoTargets.slice(1, 4)) pass[key].texture.minFilter = pass[key].texture.magFilter = THREE.NearestFilter;
     pass.beautyRenderTarget.texture.type = THREE.UnsignedByteType;
@@ -198,6 +281,7 @@ export function createN8AOIntegration(N8AOPass, version, scene, camera, configur
         pass.configureSampleDependentPasses();
         pass.configureEffectCompositer(pass.configuration.depthBufferType, camera.isOrthographicCamera);
       }
+      updateAOFog(pass.effectCompositerQuad.material, scene.fog, camera);
     },
     render(renderer, target) { pass.render(renderer, target); },
     dispose() { if (!disposed) { disposed = true; disposeN8AO(pass); } },

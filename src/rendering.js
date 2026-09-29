@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { fitSunShadow, fitSunShadowAround } from './shadows.js';
-import { stabilizeShadowFiltering, rendererPrograms, precompileShadowPrograms } from './rendering-compat.js';
+import { stabilizeShadowFiltering, rendererPrograms, precompileShadowPrograms, installPlayerFog } from './rendering-compat.js';
+import { PlayerFog, fitFogDistance } from './player-fog.js';
 import { ThirdPersonCamera } from './third-person-camera.js';
 import { FirstPersonCamera } from './first-person-camera.js';
 import { AmbientOcclusion } from './ambient-occlusion.js';
@@ -9,16 +10,7 @@ import { SkyClouds } from './sky-clouds.js';
 import { Graphics, drawingPixelRatio, gpuName, HEADSET_FALLBACK_RATE } from './graphics.js';
 import { XRCameraRig } from './xr-camera.js';
 import { sampleCityWeather } from './world/city-weather.js';
-import { CITY_CELL } from './world/city.js';
-const DISTANT_CITY_RADIUS = 6, CITY_BLOCK = CITY_CELL;
-
-export function fitFogDistance(camera, fog) {
-  if (!camera.isPerspectiveCamera || !fog?.isFog) return;
-  // Linear fog has already replaced every pixel with sky at this depth.
-  // Clipping there saves hidden draws without shortening the visible horizon.
-  const far = Math.max(camera.near + 1, Math.ceil(fog.far) + 1);
-  if (camera.far !== far) { camera.far = far; camera.updateProjectionMatrix(); }
-}
+export { fitFogDistance } from './player-fog.js';
 
 // A slight turn of the lens, jittering a few times a second, that grows with
 // the square of how shaken the car is (0 to 1): under a degree even for the
@@ -39,6 +31,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   // residents show through props but not buildings (see createWalkerAlert).
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: graphics.antialias, stencil: true, powerPreference: 'high-performance' });
   const programs = rendererPrograms(renderer);
+  const fogMaterials = installPlayerFog(renderer);
   // Whether soft shading is on by default depends on the card drawing the game.
   graphics.setGpu(gpuName(renderer.getContext()));
   let canvasWidth, canvasHeight, pixelRatio;
@@ -69,7 +62,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   scene.matrixAutoUpdate = false;
   const carSilhouette = new CarSilhouette(scene);
   const clouds = new SkyClouds(scene);
-  const drivingFog = new THREE.Fog('#c2e2db', 460, 860);
+  const drivingFog = fogMaterials ? new PlayerFog('#c2e2db') : new THREE.Fog('#c2e2db', 100, 205);
   const sky = new THREE.HemisphereLight('#e4f2f5', '#617149', 1.45); scene.add(sky);
   const sun = new THREE.DirectionalLight('#fff1db', 2.5); sun.castShadow = true;
   // (each fit sets the shadow camera's extent and depth, and the biases that
@@ -84,7 +77,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
     if (!cullers.size) return;
     sun.shadow.updateMatrices(sun);
     const shadow = renderer.shadowMap.enabled && sun.castShadow ? sun.shadow.getFrustum() : null;
-    for (const cull of cullers) cull(camera, shadow);
+    for (const cull of cullers) cull(camera, shadow, scene.fog);
   };
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 1200);
   const thirdPerson = new ThirdPersonCamera();
@@ -138,21 +131,15 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
     const profile = weatherFog ?? cityFog;
     // Matching the sky exactly lets fully faded terrain disappear without a seam.
     scene.fog.color.copy(scene.background);
-    // Fog depth is measured along the camera, so a wide lens can see much
-    // farther at the corners. Keep its entire far plane inside the distant
-    // city ring, with room for the chase camera behind the car.
     const settings = graphics.settings;
-    const loadedDistance = settings.chunks.ahead >= 5 ? 310 : 205;
-    // A lens that opens up with speed reports the widest it will ever be, so
-    // the horizon stays covered without refitting the fog every frame.
-    const lens = activeCamera(), widest = Math.max(lens.userData.widestFov ?? 0, lens.getEffectiveFOV());
-    const slope = Math.tan(THREE.MathUtils.degToRad(widest) / 2);
-    const horizonDistance = (CITY_BLOCK * DISTANT_CITY_RADIUS - 20) / Math.hypot(1, slope, slope * lens.aspect);
-    scene.fog.far = Math.min(profile.thirdFar, loadedDistance, horizonDistance);
-    const near = Math.min(profile.thirdNear, scene.fog.far * .5);
-    // Push only the start back, keeping at least half the weather's fade to hide the city edge.
-    scene.fog.near = near + (scene.fog.far - near) * settings.fogDistance * .5;
-    fitFogDistance(lens, scene.fog);
+    if (drivingFog.isPlayerFog) {
+      drivingFog.setRange(profile.thirdNear, profile.thirdFar, settings.chunks.ahead >= 5, settings.fogDistance);
+      if (followedCar) drivingFog.origin.copy(followedCar.position);
+    } else {
+      drivingFog.far = Math.min(profile.thirdFar, 205);
+      drivingFog.near = Math.min(profile.thirdNear, drivingFog.far * .5);
+    }
+    fitFogDistance(activeCamera(), scene.fog);
   }
   function resize() {
     const { width, height } = viewSize();
@@ -181,10 +168,10 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
     if (views[view].firstPerson) { firstPerson.update(car, dt, renderer.xr.isPresenting || reducedMotion); target.copy(car.position); }
     shakeTime += dt;
     if ((views[view].thirdPerson || views[view].firstPerson) && !renderer.xr.isPresenting && !reducedMotion) shakeCamera(activeCamera(), car.userData.trauma ?? 0, shakeTime, views[view].firstPerson ? .6 : 1);
+    updateFog();
     sun.position.copy(target).add(sunOffset); sun.target.position.copy(target);
     fitShadow(activeCamera(), origin);
   }
-  // Zoom only changes the projection; resizing the canvas every zoom frame reallocates its buffers.
   // The box changes without a window resize too (entering fullscreen, the
   // toolbars settling after a turn), so it is watched itself.
   const onResize = () => { graphics.suspend(); resizeCanvas(); resize(); };
@@ -240,6 +227,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
       // It applies from the next frame.
       if (pose) for (const eye of pose.views) eye.requestViewportScale?.(graphics.xrScale);
       vrCamera.update(activeCamera(), pose);
+      fitFogDistance(vrCamera.camera, scene.fog, vrCamera.head);
       renderer.xr.updateCamera(vrCamera.camera);
       beforeXRRender?.();
       if (!renderer.xr.isPresenting) { draw(activeCamera()); return; }
@@ -264,6 +252,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
       for (const variant of [null, drivingFog]) {
         scene.fog = variant;
         for (const target of [scene, warmup]) {
+          fogMaterials?.prepare(target);
           if (parallel) pending.push(renderer.compileAsync(target, lens, scene));
           else renderer.compile(target, lens, scene);
         }

@@ -73,7 +73,7 @@ Every visit generates a new city. Add `?seed=4817` to the URL to load the same c
 | Street map (show / hide) | Its arrow button | |
 | Menus | Tab, Enter | D-pad or left stick to choose, A / Cross to select, B / Circle to go back |
 
-On touch screens, use the stick to drive, hold Boost, and tap Drift while steering in chase view. Release the stick to stop. In the helicopter and the plane, hold Climb or Descend. On foot, drag the stick the way to walk and push it further to run. Tap or hold Jump, hold Sprint, and tap Get out or Get in.
+On touch screens, use the stick to drive, hold Boost, and tap Drift while steering in chase view. Release the stick to stop. In first or third person, keep one thumb on the stick and drag a second thumb across the scene to look around. In the helicopter and the plane, hold Climb or Descend. On foot, drag the stick the way to walk and push it further to run. Tap or hold Jump, hold Sprint, and tap Get out or Get in.
 
 ### VR
 

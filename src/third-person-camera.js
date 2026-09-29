@@ -77,12 +77,16 @@ export class ThirdPersonCamera {
     this.rested = 0;
   }
   // Takes the camera this many times as far out
-  zoomBy(factor) { this.zoomTarget = THREE.MathUtils.clamp(this.zoomTarget * factor, ZOOM_NEAR, ZOOM_FAR); }
+  zoomBy(factor) {
+    if (!Number.isFinite(factor) || factor <= 0) return;
+    this.zoomTarget = THREE.MathUtils.clamp(this.zoomTarget * factor, ZOOM_NEAR, ZOOM_FAR);
+    this.rested = 0;
+  }
   resize(aspect) {
     this.camera.aspect = aspect;
     // Preserve enough horizontal room for the car on narrow phones.
     this.baseFov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(Math.PI / 8) / Math.min(aspect, 1)));
-    // Fog and the sun's shadow are fitted to the lens, and both have to cover
+    // The sun's shadow is fitted to the lens, and has to cover
     // the frame the car will have at full speed rather than the narrower one it
     // has standing still, so say how wide this lens ever gets.
     this.camera.userData.widestFov = this.baseFov * RUSH_FOV;
@@ -189,7 +193,11 @@ export class ThirdPersonCamera {
     const eased = clear < before ? clear : THREE.MathUtils.damp(before, clear, OPEN_RATE, dt);
     this.reachDistance = clear - eased < line * 1e-3 ? clear : eased;
     this.reach = line > 1e-8 ? this.reachDistance / line : 1;
-    if (this.reach < 1) this.camera.position.sub(this.pivot).multiplyScalar(this.reach).add(this.pivot);
+    if (this.reach < 1) {
+      this.camera.position.sub(this.pivot).multiplyScalar(this.reach).add(this.pivot);
+      // As with wheel zoom, keep the player's place in the frame through a pull-in.
+      this.target.sub(this.pivot).multiplyScalar(this.reach).add(this.pivot);
+    }
     // How far it was just pulled in, and how fast it is easing out, for the
     // headset's comfort vignette (see ComfortVignette)
     this.camera.userData.jump = Math.max(0, Math.min(before, previousDistance) - this.reachDistance);

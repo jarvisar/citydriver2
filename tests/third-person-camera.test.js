@@ -339,3 +339,30 @@ test('walking keeps a chosen camera tilt, while driving still recenters it', () 
   for (let i = 0; i < 300; i++) rig.update(car, 1 / 60);
   assert.equal(rig.lookPitch, 0, 'a moving vehicle still recenters');
 });
+
+test('collision pull-ins keep the same framing as zoom and recover smoothly at every frame rate', () => {
+  for (const fps of [30, 60, 120]) {
+    const rig = new ThirdPersonCamera(), car = new THREE.Object3D();
+    rig.resize(16 / 9); rig.zoomBy(3); rig.update(car, 0);
+    const framed = onScreen(rig.pivot, rig.camera);
+    let available = 6;
+    rig.sight = (from, to) => Math.min(1, available / from.distanceTo(to));
+    for (let i = 0; i < fps * 2; i++) {
+      if (i === fps) available = 100;
+      rig.update(car, 1 / fps);
+      assert.ok(onScreen(rig.pivot, rig.camera).distanceTo(framed) < 1e-9);
+    }
+  }
+});
+
+test('scrolling keeps the chosen orbit while adjusting the view, then normal recentering resumes', () => {
+  const rig = new ThirdPersonCamera(), car = new THREE.Object3D();
+  car.userData.speed = 10; rig.update(car, 0); rig.look(1, .4);
+  for (let i = 0; i < 180; i++) {
+    if (i % 30 === 0) rig.zoomBy(1.02);
+    rig.update(car, 1 / 60);
+    assert.equal(rig.lookYaw, 1); assert.equal(rig.lookPitch, .4);
+  }
+  for (let i = 0; i < 300; i++) rig.update(car, 1 / 60);
+  assert.equal(rig.lookYaw, 0); assert.equal(rig.lookPitch, 0);
+});

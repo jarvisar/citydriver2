@@ -35,6 +35,7 @@ export function createFullscreen({ button, state, pause, toast, window = globalT
       }
     } catch {
       leaving = false;
+      leftAt = -Infinity;
       if (!quiet) toast('Fullscreen unavailable');
     } finally { pending = false; update(); }
   }
@@ -86,8 +87,11 @@ export function createFullscreen({ button, state, pause, toast, window = globalT
       if (onResume && started && !vr) void set(true, { quiet: true });
       onResume = false;
     },
+    captured() { leftAt = -Infinity; },
     released() {
-      if (performance.now() - leftAt < 1000) return false;
+      // Ignore the release caused by leaving fullscreen, never the player's
+      // next Escape after the pointer has been taken again.
+      if (performance.now() - leftAt < 1000) { leftAt = -Infinity; return false; }
       pause(); releasedAt = performance.now();
     },
   };

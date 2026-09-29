@@ -143,7 +143,7 @@ async function boot() {
     const world = new JOURNEYS[journey].World(scene);
     // (at lower levels, and in a standalone headset, small things cast no shadow)
     world.setShadowDetail(graphics.settings.shadowDetail); graphics.onChange(settings => world.setShadowDetail(settings.shadowDetail));
-    rendering.addCuller((camera, shadow) => world.cull(camera, shadow));
+    rendering.addCuller((camera, shadow, fog) => world.cull(camera, shadow, fog));
     // The chase camera stays out of the buildings and above the ground, and
     // following someone on foot, out of the cars
     rendering.setSightLine((from, to) => sightLine(world.chunks.values(), from, to, world.origin, vehicle.walker ? onFoot.sightCars() : null));
@@ -822,10 +822,13 @@ async function boot() {
     const mouseLook = new MouseLook($('#scene'), { lookable: looking, automatic: () => fullscreen.active, zoomable: chasing, look: rendering.look, zoom: rendering.zoom,
       released: () => fullscreen.released(),
       captured: () => {
+        fullscreen.captured();
         if (lookKnown) return;
         lookKnown = lookHinted = true;
         try { localStorage.setItem(lookHintKey, 'known'); } catch { /* Known for this visit. */ }
       } });
+    input.touchStick.lookable = looking;
+    input.touchStick.onLook = rendering.look;
     // A first drive with a mouse says, once, how to look round with it
     function hintMouseLook(dt) {
       if (lookHinted || !looking() || !mouseLook.mouse.matches || mouseLook.locked || input.gamepad.connected || controlHelpDismissed() || Math.abs(vehicle.speed) < 2) return;
@@ -834,9 +837,9 @@ async function boot() {
       lookHinted = true;
       toast('Click to look around with the mouse');
     }
-    // On foot through their own eyes, the sides step aside when a mouse or a
-    // stick can turn the view (see walkingInput); otherwise they turn it
-    const strafing = () => vr.active || input.gamepad.connected || mouseLook.locked;
+    // On foot through their own eyes, movement strafes when the mouse, right
+    // stick or second thumb owns the view; keyboard alone turns it.
+    const strafing = () => vr.active || input.gamepad.connected || mouseLook.locked || input.touchStick.engaged;
     // A touch acts on pointerup: a secondary finger may not synthesize a
     // click while the stick is held (and see pressOnRelease).
     for (const name of ['pause', 'view']) pressOnRelease($(`#${name}`), () => action(name));
@@ -945,14 +948,15 @@ async function boot() {
       if (vr?.active) vrStatus.hud(started && !paused && !changingJourney ? headsetHudModel(run, location, vrHint()) : null);
     }
     function updateViewUi() {
+      input.touchStick.releaseLook();
       $('#view').title = `${rendering.viewLabel} · Change camera (V)`;
       $('#view').setAttribute('aria-label', `${rendering.viewLabel}. Change camera`);
       const thirdPerson = rendering.camera.isPerspectiveCamera, flying = document.body.dataset.flying === 'true', walking = document.body.dataset.walking === 'true';
-      $('.stick-help-copy').firstChild.textContent = walking ? rendering.firstPersonView ? 'Touch anywhere · ↑ Walk · ↔ Turn' : 'Drag anywhere to walk' : thirdPerson ? `Touch anywhere · ↑ ${flying ? 'Fly' : 'Drive'} · ↔ ${flying ? 'Turn' : 'Steer'}` : `Drag anywhere to ${flying ? 'fly' : 'drive'}`;
+      $('.stick-help-copy').firstChild.textContent = walking ? rendering.firstPersonView ? 'Touch anywhere · ↑ Walk · ↔ Step' : 'Drag anywhere to walk' : thirdPerson ? `Touch anywhere · ↑ ${flying ? 'Fly' : 'Drive'} · ↔ ${flying ? 'Turn' : 'Steer'}` : `Drag anywhere to ${flying ? 'fly' : 'drive'}`;
       // (the plane never stops in the air: let go, it cruises)
       const cruising = flying && carEntry(vehicle.carId).kind === 'plane';
-      $('.stick-help-line').textContent = walking ? 'Push further to run' : cruising ? thirdPerson ? '↓ Slow down · Release to cruise' : 'Release to cruise'
-        : flying ? thirdPerson ? '↓ Back · Release to hover' : 'Release to hover' : thirdPerson ? '↓ Brake · Release to stop' : 'Release to stop';
+      $('.stick-help-line').textContent = thirdPerson ? 'Second thumb: drag to look' : walking ? 'Push further to run'
+        : cruising ? 'Release to cruise' : flying ? 'Release to hover' : 'Release to stop';
       $('#touch-stick').setAttribute('aria-label', walking ? 'Virtual joystick: push the way to walk, further to run' : thirdPerson ? 'Virtual joystick: up to accelerate, left and right to steer, down to brake or reverse, release to stop' : 'Virtual joystick');
     }
     const menuActions = {
@@ -1125,6 +1129,7 @@ async function boot() {
           if (yaw || pitch) rendering.look(yaw * STICK_LOOK * dt, pitch * STICK_LOOK * dt);
         }
         hintMouseLook(dt);
+        if (input.touchStick.lookPointer !== null && looking()) rendering.look(0, 0);
         world.update(vehicle.s, vehicle.u, { budgetMs: 3 }); vehicle.render(frameClock.alpha, world.origin); onFoot.render(frameClock.alpha, world.origin);
         // (on foot, what catches their eye, the camera included, as the colliders lie, and the car they would get into)
         const lens = rendering.camera.position;

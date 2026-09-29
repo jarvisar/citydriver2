@@ -19,6 +19,7 @@ body { --action: #263f4b; --action-hover: #3d5f6b; --ink: #253e49; --cream: #f4f
   transition: opacity .45s, visibility 0s;
 }
 #welcome.hidden { opacity: 0; visibility: hidden; transform: none; transition: opacity .45s, visibility 0s .45s; }
+#welcome.hidden * { pointer-events: none; }
 #welcome .menu-brand { display: flex; flex-direction: column; gap: 0; text-shadow: 0 2px 4px #10272060, 0 6px 24px #1027204d; }
 /* Soft pools of shade separate the menu from passing scenery without a panel. */
 #welcome .menu-brand, #welcome .menu-actions { position: relative; isolation: isolate; }

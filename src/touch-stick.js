@@ -2,16 +2,20 @@ import * as THREE from 'three';
 
 // The stick stays hidden until a thumb lands on the scene, then anchors right
 // there: the knob follows the thumb up to the rim and lifting hides it again.
+// A second thumb drags the camera. Each role lasts until that finger lifts;
+// releasing movement never promotes the look finger into driving.
 export class TouchStick {
   constructor(element, onDrive, zone) {
     this.element = element; this.onDrive = onDrive; this.zone = zone;
     this.pointer = null; this.engaged = false; this.vector = { x: 0, y: 0 };
+    this.lookPointer = null; this.lookable = () => false; this.onLook = () => {};
     zone.addEventListener('pointerdown', event => this.start(event));
     zone.addEventListener('pointermove', event => this.move(event));
     for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) zone.addEventListener(type, event => {
       if (event.pointerId === this.pointer) this.release();
+      if (event.pointerId === this.lookPointer) this.releaseLook();
     });
-    window.addEventListener('resize', () => this.release());
+    window.addEventListener('resize', () => { this.release(); this.releaseLook(); });
   }
   // Only while the touch controls are on screen: not in menus, pauses or with a controller.
   available() {
@@ -19,7 +23,16 @@ export class TouchStick {
     return style.display !== 'none' && style.visibility === 'visible' && !controls.closest('[inert]');
   }
   start(event) {
-    if (this.pointer !== null || event.pointerType === 'mouse' || !this.available()) return;
+    if (event.pointerType === 'mouse' || event.pointerId === this.lookPointer || !this.available()) return;
+    if (this.pointer !== null) {
+      if (this.lookPointer !== null || !this.lookable()) return;
+      event.preventDefault();
+      this.lookPointer = event.pointerId; this.lookX = event.clientX; this.lookY = event.clientY;
+      this.lookScale = Math.PI / Math.max(320, Math.min(window.innerWidth, window.innerHeight));
+      this.zone.setPointerCapture(event.pointerId);
+      this.onLook(0, 0);
+      return;
+    }
     event.preventDefault();
     this.pointer = event.pointerId; this.origin = { x: event.clientX, y: event.clientY };
     this.zone.setPointerCapture(event.pointerId);
@@ -30,6 +43,13 @@ export class TouchStick {
     this.radius = this.element.offsetWidth * .3;
   }
   move(event) {
+    if (event.pointerId === this.lookPointer) {
+      if (!this.lookable() || !this.available()) { this.releaseLook(); return; }
+      event.preventDefault();
+      this.onLook((event.clientX - this.lookX) * this.lookScale, (event.clientY - this.lookY) * this.lookScale);
+      this.lookX = event.clientX; this.lookY = event.clientY;
+      return;
+    }
     if (event.pointerId !== this.pointer) return;
     event.preventDefault();
     const x = (event.clientX - this.origin.x) / this.radius, y = (this.origin.y - event.clientY) / this.radius;
@@ -46,7 +66,11 @@ export class TouchStick {
     this.element.classList.remove('active');
     if (pointer !== null && this.zone.hasPointerCapture(pointer)) this.zone.releasePointerCapture(pointer);
   }
-  clear() { if (this.engaged || this.pointer !== null) this.release(); this.engaged = false; }
+  releaseLook() {
+    const pointer = this.lookPointer; this.lookPointer = null;
+    if (pointer !== null && this.zone.hasPointerCapture(pointer)) this.zone.releasePointerCapture(pointer);
+  }
+  clear() { if (this.engaged || this.pointer !== null) this.release(); this.releaseLook(); this.engaged = false; }
 }
 
 // A driving HUD button a touch presses on release (pointerup): with a thumb

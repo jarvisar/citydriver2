@@ -1082,9 +1082,9 @@ export class CitydriverWorld {
   }
   // Whole chunks that neither the camera nor the sun's shadow can see are
   // hidden before the renderer walks their meshes one by one. A chunk is
-  // hidden only when the sphere round all its meshes is outside both
-  // frustums, so no mesh the renderer would have drawn is left out.
-  cull(camera, shadow = null) {
+  // hidden only when its bounding sphere is outside the view or fully fogged,
+  // and outside the sun's frustum too: hidden casters can still shade the city.
+  cull(camera, shadow = null, fog = null) {
     // (a headset camera carries one frustum round both eyes, which three culls with too)
     const view = camera
       ? cullFrustum.setFromProjectionMatrix(cullMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse), THREE.WebGLCoordinateSystem, camera.reversedDepth)
@@ -1094,7 +1094,8 @@ export class CitydriverWorld {
       if (chunk.bounds === undefined) chunk.bounds = chunkBounds(chunk.group);
       if (!chunk.bounds) return true;
       cullSphere.copy(chunk.bounds).applyMatrix4(chunk.group.matrixWorld);
-      return view.intersectsSphere(cullSphere) || Boolean(shadow?.intersectsSphere(cullSphere));
+      return (view.intersectsSphere(cullSphere) && (!fog?.isPlayerFog || fog.intersectsSphere(cullSphere)))
+        || Boolean(shadow?.intersectsSphere(cullSphere));
     };
     for (const chunk of this.chunks.values()) chunk.group.visible = seen(chunk);
     for (const chunk of this.distant.values()) if (chunk.group.parent) chunk.group.visible = seen(chunk);
