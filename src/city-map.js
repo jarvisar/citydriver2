@@ -112,6 +112,30 @@ export class CityMapCache {
   get grounds() { return this.#grounds ??= this.whole(this.shapes.grounds, true); }
   get roads() { return this.#roads ??= new Map([...this.lines].map(([key, lines]) => [key, this.whole(lines, false)])); }
   #water = null; #parks = null; #blocks = null; #lots = null; #grounds = null; #roads = null;
+  // Rotate a north-up bitmap each frame. The extra border covers turns and
+  // short moves without rasterizing the streets again.
+  drawCached(ctx, vehicle, scale, width, height, ratio) {
+    // Keep the centre on a pixel at common DPI scales, including 1.25x.
+    const border = 32, size = Math.ceil((Math.hypot(width, height) + border * 2) / 4) * 4;
+    if (!this.image) {
+      const canvas = document.createElement('canvas');
+      canvas.addEventListener('contextrestored', () => { this.image = null; });
+      this.image = { canvas, ctx: canvas.getContext('2d'), u: Infinity, s: Infinity };
+    }
+    const image = this.image;
+    if (image.size !== size || image.ratio !== ratio || image.scale !== scale || Math.hypot(vehicle.u - image.u, vehicle.s - image.s) * scale > border) {
+      const pixels = Math.ceil(size * ratio);
+      if (image.canvas.width !== pixels || image.canvas.height !== pixels) image.canvas.width = image.canvas.height = pixels;
+      image.ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      image.ctx.fillStyle = '#20383e'; image.ctx.fillRect(0, 0, size, size);
+      this.draw(image.ctx, { u: vehicle.u, s: vehicle.s, heading: 0 }, scale, size, size);
+      Object.assign(image, { u: vehicle.u, s: vehicle.s, size, ratio, scale });
+    }
+    ctx.save(); ctx.translate(width / 2, height / 2); ctx.rotate(-(vehicle.heading ?? 0));
+    ctx.translate((image.u - vehicle.u) * scale, (vehicle.s - image.s) * scale);
+    ctx.drawImage(image.canvas, 0, 0, size * ratio, size * ratio, -size / 2, -size / 2, size, size);
+    ctx.restore();
+  }
   draw(ctx, vehicle, scale, width, height) {
     ctx.save();
     ctx.translate(width / 2, height / 2);

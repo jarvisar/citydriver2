@@ -7,6 +7,7 @@ import { contractProgress } from './demolition-run.js';
 import { $, attribute, hide } from './hud-dom.js';
 
 const MAP_SCALE = .36;
+const EMPTY = [];
 export class CityGuide {
   constructor(notify, position) {
     // Discoveries last only for the visit: clear any an older build saved
@@ -84,6 +85,7 @@ export class CityGuide {
   // `draw: false` skips the canvas for when nobody can see the page, as in a
   // headset. Discoveries and the map card's text still update.
   update(active, { draw = true } = {}) {
+    if (!draw) this.mapState = null;
     const vehicle = this.position(), e = this.exploration;
     // (on foot, or seen from the air, a landmark counts from anywhere near it)
     const found = e.update(vehicle.s, vehicle.u, active, Boolean(vehicle.walker || vehicle.airborne));
@@ -121,26 +123,35 @@ export class CityGuide {
     attribute(this.canvas, 'aria-label', 'Local street map. Your heading is up; the white arrow is your car. Orange dots mark what your contracts ask for.');
     if (this.expanded && draw) this.draw(vehicle);
   }
-  draw(vehicle) {
-    // Resolve markers on every redraw; exploration and previous fares must not
-    // leave destinations behind after the passenger has gone.
-    const run = this.taxi;
-    const target = run?.status === 'driving' ? run.target : null;
-    const nextStop = target ? run.fare.stops[run.stopIndex + 1]?.destination : null;
-    const ratio = Math.min(window.devicePixelRatio || 1, 2), parked = this.onFoot?.parked;
+  render(car, origin) {
+    if (!this.expanded) return;
+    if (!this.mapState) this.draw(this.position());
+    const pose = this.mapPose ??= {};
+    pose.u = car.position.x; pose.s = origin - car.position.z; pose.heading = -car.rotation.y;
+    this.draw(pose, false);
+  }
+  draw(vehicle, refresh = true) {
+    // Routes and marker lists stay on the HUD's slower refresh. Only their
+    // screen positions follow the rendered car each frame.
+    if (refresh || !this.mapState) {
+      const run = this.taxi, target = run?.status === 'driving' ? run.target : null;
+      const nextStop = target ? run.fare.stops[run.stopIndex + 1]?.destination : null;
+      const parked = this.onFoot?.parked;
+      const targets = this.demolition?.running ? this.targets?.() ?? EMPTY : EMPTY;
+      const known = run?.running || this.demolition?.running ? [] : this.foundPlaces();
+      this.mapState = { target, nextStop, parked, targets, known, stopIndex: run?.stopIndex,
+        places: run?.status === 'pickup' ? run.customers : target ? [{ ...target, color: '#ffd238' }] : [],
+        route: taxiRoute(vehicle, target && run.approach(vehicle)), nextRoute: nextStop ? taxiRoute(target, nextStop) : [],
+        key: [run, run?.status, run?.status === 'pickup' ? run.customers : null, target, nextStop, run?.stopIndex, parked, parked?.s, parked?.u, targets, known.length] };
+    }
+    const { target, nextStop, parked, targets, known, places, route, nextRoute, stopIndex, key } = this.mapState;
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
     // Everything the map shows comes from these (the route from the car's
     // position and its drop-off). While none has changed, as when paused or
     // waiting in a ring, the canvas already shows it.
-    // (and a demolition run's contract targets, a fresh list whenever they change)
-    const targets = this.demolition?.running ? this.targets?.() ?? [] : [];
-    // (in free drive, the places found so far)
-    const known = run?.running || this.demolition?.running ? [] : this.foundPlaces();
-    const shown = [ratio, vehicle.u, vehicle.s, vehicle.heading, run, run?.status, run?.status === 'pickup' ? run.customers : null,
-      target, nextStop, run?.stopIndex, parked, parked?.s, parked?.u, targets, known.length];
+    const shown = [ratio, vehicle.u, vehicle.s, vehicle.heading, ...key];
     if (this.shown?.length === shown.length && this.shown.every((value, i) => value === shown[i])) return;
     this.shown = shown;
-    const places = run?.status === 'pickup' ? run.customers : target ? [{ ...target, color: '#ffd238' }] : [];
-    const route = taxiRoute(vehicle, target && run.approach(vehicle));
     const ctx = this.ctx, width = 208, height = 144, scale = MAP_SCALE;
     const pixelWidth = Math.floor(width * ratio), pixelHeight = Math.floor(height * ratio);
     if (this.canvas.width !== pixelWidth || this.canvas.height !== pixelHeight) { this.canvas.width = pixelWidth; this.canvas.height = pixelHeight; }
@@ -152,15 +163,15 @@ export class CityGuide {
       const du = p.u - vehicle.u, ds = p.s - vehicle.s;
       return [width / 2 + (du * cos - ds * sin) * scale, height / 2 - (du * sin + ds * cos) * scale];
     };
-    this.mapCache.draw(ctx, vehicle, scale, width, height);
+    this.mapCache.drawCached(ctx, vehicle, scale, width, height, ratio);
     if (nextStop) {
       ctx.save(); ctx.strokeStyle = '#95b8b9'; ctx.lineWidth = 2; ctx.setLineDash([3, 4]);
-      ctx.beginPath(); taxiRoute(target, nextStop).forEach((p, i) => { const [x, y] = point(p); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }); ctx.stroke();
+      ctx.beginPath(); nextRoute.forEach((p, i) => { const [x, y] = point(p); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }); ctx.stroke();
       ctx.restore();
       const [x, y] = point(nextStop);
       if (x > 7 && y > 7 && x < width - 7 && y < height - 7) {
         ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.fillStyle = '#95b8b9'; ctx.fill();
-        ctx.save(); ctx.fillStyle = '#17262f'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(run.stopIndex + 2), x, y); ctx.restore();
+        ctx.save(); ctx.fillStyle = '#17262f'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(stopIndex + 2), x, y); ctx.restore();
       }
     }
     ctx.lineJoin = 'round'; ctx.lineCap = 'round';

@@ -48,3 +48,25 @@ test('first-person camera handles terrain, origin rebases, resets, and phone rot
     assert.ok(Math.abs(roadAhead.x) < 1e-9 && Math.abs(roadAhead.y) < 1e-9);
   }
 });
+
+test('cockpit depth precision increases in open air and restores close clipping near scenery', () => {
+  const car = new THREE.Object3D(), rig = new FirstPersonCamera();
+  let room = 1;
+  rig.clearance = () => room;
+  rig.update(car, 0); assert.equal(rig.camera.near, .1, 'normal driving stays unchanged');
+  car.position.y = 100; car.userData.chaseDip = 1;
+  rig.update(car, 0); assert.equal(rig.camera.near, 1);
+  const ground = new THREE.Vector3(0, .007, -150), asphalt = new THREE.Vector3(0, 0, -150);
+  rig.look(0, .6); rig.update(car, 0);
+  const separation = () => Math.abs(ground.clone().project(rig.camera).z - asphalt.clone().project(rig.camera).z);
+  const improved = separation();
+  room = .1; rig.update(car, 1 / 60);
+  assert.equal(rig.camera.near, .1, 'nearby scenery restores the close plane in one frame');
+  assert.ok(improved > separation() * 9, 'thin ground layers gain depth precision');
+  room = 1; car.userData.lid = rig.camera.position.y + .3; rig.update(car, 0);
+  assert.ok(rig.camera.near <= .15 + 1e-9, 'a bridge limits the near plane too');
+  car.userData.lid = null; car.userData.chaseDip = 0; rig.snap(); rig.update(car, 0);
+  assert.equal(rig.camera.near, .1, 'landing or changing to a car restores the close plane');
+  car.userData.chaseDip = 1; rig.clearance = null; rig.update(car, 0);
+  assert.equal(rig.camera.near, .1, 'missing scenery information keeps conservative clipping');
+});

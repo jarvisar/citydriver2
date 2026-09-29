@@ -305,9 +305,10 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   // the ground it keeps above, and whether a bridge's deck is over a point
   function setSightLine(sight) { thirdPerson.sight = sight; }
   function setGround(ground, decked = null) { thirdPerson.ground = ground; thirdPerson.decked = decked; }
+  function setCameraClearance(clearance) { firstPerson.clearance = clearance; vrCamera.clearance = clearance; }
   // The mouse turns the chase camera round the car, or the view through the
   // player's eyes, and the wheel brings the chase camera in or out (see MouseLook)
   const look = (yaw, pitch) => (views[view].firstPerson ? firstPerson : thirdPerson).look(yaw, pitch), zoom = factor => thirdPerson.zoomBy(factor);
   const stencil = renderer.getContext().getContextAttributes()?.stencil === true;
-  return { renderer, scene, graphics, ambientOcclusion, vrCamera, stencil, render, precompile, addCuller, setSightLine, setGround, look, zoom, enterVR, exitVR, setView, toggleAO() { return graphics.toggleAmbientOcclusion(); }, get camera() { return activeCamera(); }, update, resize, recordFrame, setWeather, get viewLabel() { return views[view].label; }, get chaseView() { return Boolean(views[view].thirdPerson); }, get firstPersonView() { return Boolean(views[view].firstPerson); }, toggleView() { return setView((view + 1) % views.length); }, snap() { initialized = false; thirdPerson.snap(); firstPerson.snap(); } };
+  return { renderer, scene, graphics, ambientOcclusion, vrCamera, stencil, render, precompile, addCuller, setSightLine, setGround, setCameraClearance, look, zoom, enterVR, exitVR, setView, toggleAO() { return graphics.toggleAmbientOcclusion(); }, get camera() { return activeCamera(); }, update, resize, recordFrame, setWeather, get viewLabel() { return views[view].label; }, get chaseView() { return Boolean(views[view].thirdPerson); }, get firstPersonView() { return Boolean(views[view].firstPerson); }, toggleView() { return setView((view + 1) % views.length); }, snap() { initialized = false; thirdPerson.snap(); firstPerson.snap(); } };
 }

@@ -21,6 +21,7 @@ export class XRCameraRig {
     this.origin = new THREE.Vector3();
     this.orientation = new THREE.Quaternion();
     this.offset = new THREE.Vector3();
+    this.head = new THREE.Vector3(); this.clearance = null; this.nearLimit = null;
     this.centered = false;
   }
   recenter() { this.centered = false; }
@@ -51,6 +52,13 @@ export class XRCameraRig {
     this.rig.quaternion.setFromAxisAngle(up, yaw(source.quaternion)).multiply(this.orientation);
     this.rig.position.sub(this.offset.copy(this.origin).applyQuaternion(this.rig.quaternion));
     this.rig.updateMatrixWorld(true);
+    // The comfort mask is 30 cm away. Keep it and nearby hands/panels in view,
+    // and check the tracked head's position rather than just the game's camera.
+    this.head.copy(pose?.transform.position ?? this.camera.position).applyMatrix4(this.rig.matrixWorld);
+    const leaning = this.offset.copy(pose?.transform.position ?? this.origin).sub(this.origin).length() > .3;
+    const wanted = leaning ? .1 : Math.min(.2, this.nearLimit?.() ?? .2, source.isPerspectiveCamera ? source.near : .2);
+    const near = Math.max(.1, Math.min(wanted, wanted > .1 ? this.clearance?.(this.head) ?? .1 : .1));
+    if (near < this.camera.near || near - this.camera.near > .02) this.camera.near = near;
   }
 }
 

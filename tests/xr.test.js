@@ -259,6 +259,33 @@ test('VR rig centers initial pose, preserves later head motion and follows origi
   assert.ok(pose.transform.position.clone().applyMatrix4(rig.rig.matrixWorld).distanceTo(source.position) < 1e-10);
 });
 
+test('VR improves depth precision within the comfort mask and checks the tracked head for clearance', () => {
+  const source = new THREE.PerspectiveCamera(70, 1, 3.5, 310), rig = new XRCameraRig();
+  source.position.set(20, 100, -500);
+  const pose = { transform: { position: new THREE.Vector3(0, 1.7, 0), orientation: new THREE.Quaternion() } };
+  let checked;
+  rig.clearance = point => { checked = point.clone(); return point.x > 20.1 ? .1 : 1; };
+  rig.update(source, pose);
+  assert.equal(rig.camera.near, .2);
+  assert.equal(rig.camera.far, 310);
+  assert.ok(rig.camera.near < -rig.comfort.mesh.position.z && rig.camera.near < -rig.comfort.blink.position.z);
+  assert.ok(checked.distanceTo(source.position) < 1e-9);
+  pose.transform.position.x += .2; rig.update(source, pose);
+  assert.equal(rig.camera.near, .1, 'leaning toward scenery immediately restores close clipping');
+  assert.ok(Math.abs(checked.x - 20.2) < 1e-9, 'clearance uses the current head pose');
+  pose.transform.position.x = 0; source.near = .1; rig.update(source, pose);
+  assert.equal(rig.camera.near, .1, 'normal street views retain their near plane');
+  const overhead = new THREE.OrthographicCamera(-10, 10, 10, -10, 1, 1000);
+  overhead.position.y = 100; overhead.userData.focusDistance = 100; overhead.lookAt(0, 0, 0);
+  rig.update(overhead, pose);
+  assert.equal(rig.camera.near, .2, 'overhead VR uses the same safe ceiling');
+  source.near = 1; rig.nearLimit = () => .1; rig.update(source, pose);
+  assert.equal(rig.camera.near, .1, 'menus and their hand rays use the original close plane');
+  rig.nearLimit = null;
+  pose.transform.position.z += .4; rig.update(source, pose);
+  assert.equal(rig.camera.near, .1, 'leaning toward a HUD panel restores close clipping');
+});
+
 test('panels hang from an anchor that follows the game camera with yaw only', () => {
   const source = new THREE.PerspectiveCamera(), rig = new XRCameraRig();
   source.position.set(40, 7, -300); source.quaternion.setFromEuler(new THREE.Euler(-.25, .8, .05, 'YXZ'));

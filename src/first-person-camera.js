@@ -16,6 +16,7 @@ export class FirstPersonCamera {
   constructor() {
     this.camera = new THREE.PerspectiveCamera(70, 1, .1, 1200);
     this.initialized = false;
+    this.clearance = null;
     this.pitch = 0;
     this.orientation = new THREE.Euler(0, 0, 0, 'YXZ');
     this.eye = new THREE.Vector3(); this.turn = new THREE.Quaternion(); this.gaze = new THREE.Quaternion();
@@ -70,6 +71,12 @@ export class FirstPersonCamera {
     }
     // Keep the eye fixed at the windshield as the chassis tilts.
     this.camera.position.copy(this.eye.applyQuaternion(car.quaternion)).add(car.position);
+    // Only widen clipping in open air; a nearby wall or roof needs the close view.
+    const dip = THREE.MathUtils.clamp(car.userData.chaseDip ?? 0, 0, 1);
+    const wanted = .1 + dip * .9, lid = car.userData.lid;
+    const room = wanted > .1 ? this.clearance?.(this.camera.position) ?? .1 : .1;
+    const near = Math.max(.1, Math.min(wanted, room, lid == null ? Infinity : (lid - this.camera.position.y) * .5));
+    if (near < this.camera.near || near - this.camera.near > .02) { this.camera.near = near; this.camera.updateProjectionMatrix(); }
     this.camera.updateMatrixWorld();
   }
 }

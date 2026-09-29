@@ -145,6 +145,24 @@ export function sceneryContacts(box, chunks, visit) {
 // balconies stand up to about 2 m out from its walls. With the car itself
 // nearer a wall than that, it keeps at least CLOSE off that one.
 const CLEAR = 2.2, CLOSE = .5;
+// Room for a camera's near plane in any look direction. Keep the same allowance
+// for eaves and awnings as the chase sight line, including above a roof.
+export function cameraClearance(chunks, point, origin = 0) {
+  const radius = 1 + CLEAR, circle = { x: point.x, z: point.z - origin, radius };
+  let room = radius;
+  for (const chunk of chunks) {
+    const bounds = chunk?.collisionBounds;
+    if (!bounds || circle.x + radius < bounds.minX || circle.x - radius > bounds.maxX
+      || circle.z + radius < bounds.minZ || circle.z - radius > bounds.maxZ) continue;
+    for (const solid of chunk.features.colliders) {
+      const above = Math.max(0, point.y - (solid.ridge ?? solid.top ?? Infinity));
+      if (above >= room || Math.abs(circle.x - solid.x) > solid.reach + radius || Math.abs(circle.z - solid.z) > solid.reach + radius) continue;
+      const contact = circleContact(circle, solid);
+      if (contact) room = Math.min(room, Math.hypot(Math.max(0, radius - contact.depth), above));
+    }
+  }
+  return Math.max(.1, room - CLEAR);
+}
 // Someone on foot is framed low (see Walker), so cars come between them and
 // the camera too: they count ROOF high, and the camera keeps CAR_CLEAR off them.
 const ROOF = 2.1, CAR_CLEAR = .35;

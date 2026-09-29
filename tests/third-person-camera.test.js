@@ -242,7 +242,7 @@ test('the wheel brings the chase camera nearer or farther within limits, and a r
   assert.equal(rig.zoom, .5);
   assert.ok(Math.abs(rig.camera.position.distanceTo(rig.pivot) - out / 2) < 1e-9);
   assert.ok(onScreen(rig.pivot, rig.camera).distanceTo(framed) < 1e-9);
-  rig.zoomBy(100); assert.equal(rig.zoomTarget, 4);
+  rig.zoomBy(100); assert.equal(rig.zoomTarget, 6);
   rig.zoomBy(1e-3); assert.equal(rig.zoomTarget, .45);
   rig.snap(); rig.update(car, 0);
   assert.equal(rig.zoom, .45);
@@ -252,7 +252,7 @@ test('turned down low or zoomed out, the chase camera stays over the ground unde
   const car = new THREE.Object3D(), rig = new ThirdPersonCamera();
   // A quay 3 m up off to the car's left
   rig.ground = x => x < -6 ? 3 : 0;
-  rig.update(car, 0); rig.zoomBy(4);
+  rig.update(car, 0); rig.zoomBy(6);
   for (const yaw of [0, Math.PI / 2, Math.PI]) {
     rig.snap(); rig.look(yaw, -1);
     for (let i = 0; i < 60; i++) {
@@ -262,6 +262,80 @@ test('turned down low or zoomed out, the chase camera stays over the ground unde
   }
   // (and where the ground does not reach it, it is left alone)
   rig.snap(); rig.update(car, 0);
-  const free = new ThirdPersonCamera(); free.zoomBy(4); free.update(car, 0);
+  const free = new ThirdPersonCamera(); free.zoomBy(6); free.update(car, 0);
   assert.equal(rig.camera.position.distanceTo(free.camera.position), 0);
+});
+
+test('zoomed-out cameras preserve depth separation for thin road details', () => {
+  for (const flying of [false, true]) {
+    const car = new THREE.Object3D(), rig = new ThirdPersonCamera();
+    car.position.y = flying ? 124 : 24;
+    car.userData.chaseDip = flying ? 1 : 0;
+    rig.ground = () => 24; rig.resize(16 / 9); rig.update(car, 0);
+    assert.equal(rig.camera.near, flying ? 1 : .1);
+    rig.zoomBy(6); rig.snap(); rig.look(0, .4); rig.update(car, 0);
+    const camera = rig.camera, asphalt = new THREE.Vector3(0, 24, -200), patch = asphalt.clone();
+    patch.y += .007;
+    const depthSteps = () => Math.abs(asphalt.clone().project(camera).z - patch.clone().project(camera).z) * .5 * (2 ** 24 - 1);
+    const improved = depthSteps(), near = camera.near;
+    assert.ok(improved > 2, `7 mm layers stay several depth steps apart: ${improved}`);
+    camera.near = flying ? 1 : .1; camera.updateProjectionMatrix();
+    assert.ok(improved > depthSteps() * 3, 'zoom improves on the old flight-only precision');
+    camera.near = near; camera.updateProjectionMatrix();
+    rig.zoomBy(1 / 6); rig.snap(); rig.update(car, 0);
+    assert.equal(camera.near, flying ? 1 : .1, 'zooming back restores the close view');
+  }
+});
+
+test('camera depth precision respects sudden wall pull-ins, ground and bridge clearance', () => {
+  const car = new THREE.Object3D(), rig = new ThirdPersonCamera();
+  rig.ground = () => 0; rig.zoomBy(6); rig.update(car, 0);
+  assert.ok(rig.camera.near > 2);
+  rig.sight = () => .01; rig.update(car, 1 / 60);
+  assert.equal(rig.camera.near, .1, 'a wall restores close clipping in the same frame');
+  rig.sight = null; rig.snap(); rig.look(0, -1); rig.update(car, 0);
+  assert.ok(rig.camera.near <= rig.camera.position.y * .5 + 1e-9, 'the ground stays outside the near plane');
+  car.userData.lid = 5; rig.snap(); rig.update(car, 0);
+  assert.ok(rig.camera.near <= (5 - rig.camera.position.y) * .5 + 1e-9, 'a bridge lid stays outside the near plane');
+});
+
+test('zooming against a fixed wall keeps the camera at the available distance', () => {
+  for (const fps of [30, 60, 120]) {
+    const car = new THREE.Object3D(), rig = new ThirdPersonCamera();
+    let available = 10;
+    rig.sight = (from, to) => Math.min(1, available / from.distanceTo(to));
+    rig.zoomBy(6); rig.update(car, 0);
+    for (const factor of [1 / 6, 6]) {
+      rig.zoomBy(factor);
+      for (let i = 0; i < fps * 2; i++) {
+        rig.update(car, 1 / fps);
+        assert.ok(Math.abs(rig.camera.position.distanceTo(rig.pivot) - 10) < 1e-9);
+        assert.ok(rig.camera.userData.jump < 1e-9 && rig.camera.userData.glide < 1e-9, 'zooming against the wall does not trigger VR comfort');
+      }
+    }
+    available = 4; rig.update(car, 1 / fps);
+    assert.ok(Math.abs(rig.camera.position.distanceTo(rig.pivot) - 4) < 1e-9);
+    assert.ok(Math.abs(rig.camera.userData.jump - 6) < 1e-9, 'a newly closer wall still pulls in immediately');
+    available = 10; rig.update(car, 1 / fps);
+    assert.ok(rig.reachDistance > 4 && rig.reachDistance < 5, 'clearing a wall still eases out');
+    rig.zoomBy(.45 / 6); rig.snap(); rig.update(car, 0);
+    assert.equal(rig.reach, 1, 'a zoom closer than the wall is unrestricted');
+    assert.equal(rig.camera.userData.jump, 0, 'a reset is not a collision');
+    rig.zoomBy(6 / .45);
+    for (let i = 0; i < fps * 2; i++) {
+      rig.update(car, 1 / fps);
+      assert.ok(rig.camera.userData.jump < 1e-9, 'zooming outward until it meets a wall is not a collision jump');
+    }
+  }
+});
+
+test('walking keeps a chosen camera tilt, while driving still recenters it', () => {
+  const car = new THREE.Object3D(), rig = new ThirdPersonCamera();
+  Object.assign(car.userData, { leash: true, chaseScale: .36, speed: 4.4, velocity: { x: 0, z: -4.4 } });
+  rig.update(car, 0); rig.look(.4, .6);
+  for (let i = 0; i < 300; i++) rig.update(car, 1 / 60);
+  assert.equal(rig.lookPitch, .6, 'walking leaves the chosen tilt alone');
+  car.userData.leash = false;
+  for (let i = 0; i < 300; i++) rig.update(car, 1 / 60);
+  assert.equal(rig.lookPitch, 0, 'a moving vehicle still recenters');
 });

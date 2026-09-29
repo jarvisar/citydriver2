@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { collideScenery, postContact, sightLine } from '../src/collision.js';
+import { collideScenery, postContact, sightLine, cameraClearance } from '../src/collision.js';
 import { trafficContact } from '../src/traffic.js';
 import { DrivingController } from '../src/vehicle.js';
 import { CHUNK_LENGTH } from '../src/world/route.js';
@@ -252,6 +252,17 @@ function block(extra = {}) {
   const building = { corners: [{ x: -5, z: -25 }, { x: 5, z: -25 }, { x: 5, z: -15 }, { x: -5, z: -15 }], x: 0, z: -20, reach: Math.hypot(5, 5), top: 10, ...extra };
   return { collisionBounds: { minX: -5, maxX: 5, minZ: -25, maxZ: -15 }, features: { colliders: [building] } };
 }
+
+test('camera clearance keeps close clipping near walls, roof ridges and after rebasing', () => {
+  const chunks = [block()];
+  assert.equal(cameraClearance(chunks, { x: 0, y: 100, z: -20 }), 1, 'open air above the building');
+  assert.equal(cameraClearance(chunks, { x: 5.2, y: 5, z: -20 }), .1, 'beside a wall');
+  assert.equal(cameraClearance(chunks, { x: 0, y: 10.2, z: -20 }), .1, 'just above a flat roof');
+  assert.equal(cameraClearance([block({ ridge: 15 })], { x: 0, y: 15.2, z: -20 }), .1, 'a pitched roof uses its ridge');
+  assert.equal(cameraClearance(chunks, { x: 0, y: 5, z: -20 }), .1, 'inside a footprint');
+  assert.equal(cameraClearance(chunks, { x: 5.2, y: 5, z: 1004 }, 1024), .1, 'same clearance after an origin shift');
+  assert.equal(cameraClearance(chunks, { x: 9, y: 5, z: -20 }), 1, 'clear of the wall and its overhangs');
+});
 test('the chase camera sees up to 2.2 m short of a building below its roof, and over or past anything else', () => {
   const from = { x: 0, y: 2, z: 0 }, to = { x: 0, y: 5, z: -30 };
   assert.ok(Math.abs(sightLine([block()], from, to) - 12.8 / 30) < 1e-9, 'awnings and balconies stand out from the wall');

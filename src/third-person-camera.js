@@ -16,7 +16,7 @@ const DIP_RISE = 4, DIP_DROP = 10;
 const TILT_LOW = -.25, TILT_HIGH = 1.05;
 export const LOOK_REST = 1.5, LOOK_MOVING = 2, LOOK_RETURN = 2.5;
 // The wheel takes it this much nearer or farther, easing there at ZOOM_RATE
-const ZOOM_NEAR = .45, ZOOM_FAR = 4, ZOOM_RATE = 10;
+const ZOOM_NEAR = .45, ZOOM_FAR = 6, ZOOM_RATE = 10;
 // However it is turned, it keeps this far over the ground under it (and
 // this far under a bridge's deck, see `lid`)
 const GROUND_CLEAR = .6, LID_CLEAR = .5;
@@ -55,7 +55,7 @@ export class ThirdPersonCamera {
     // `sight(from, to)` answers how far from the car toward the camera the view
     // is clear (see sightLine); `reach` is how far out the camera stands.
     this.sight = null;
-    this.reach = null;
+    this.reach = null; this.reachDistance = 0;
     this.pivot = new THREE.Vector3();
     // `ground(x, z)` is the height of the ground under a point, `decked(x, z)`
     // whether a bridge's deck is over it, and `lid` the deck it keeps under
@@ -140,7 +140,7 @@ export class ThirdPersonCamera {
       this.zoom = settle(this.zoom, this.zoomTarget, ZOOM_RATE, dt);
       if (this.lookYaw || this.lookPitch) {
         this.rested += dt;
-        if (this.rested > LOOK_REST && Math.abs(car.userData.speed ?? 0) > LOOK_MOVING) {
+        if (!car.userData.leash && this.rested > LOOK_REST && Math.abs(car.userData.speed ?? 0) > LOOK_MOVING) {
           this.lookYaw = settle(this.lookYaw, 0, LOOK_RETURN, dt); this.lookPitch = settle(this.lookPitch, 0, LOOK_RETURN, dt);
         }
       }
@@ -181,14 +181,19 @@ export class ThirdPersonCamera {
     // at once so no frame looks out from inside a wall, then lets it back out
     // gently once the view clears, as most driving games' chase cameras do.
     const open = this.sight?.(this.pivot, this.camera.position) ?? 1;
-    const eased = this.reach === null || open < this.reach ? open : THREE.MathUtils.damp(this.reach, open, OPEN_RATE, dt);
-    const before = this.reach ?? eased, line = this.camera.position.distanceTo(this.pivot);
-    this.reach = open - eased < 1e-3 ? open : eased;
+    const line = this.camera.position.distanceTo(this.pivot), clear = open * line;
+    // Ease metres, not a fraction of a line that changes while zooming.
+    // Free zoom already eases on its own; only an obstruction needs this lag.
+    const before = this.reach === null ? clear : this.reach === 1 ? line : Math.min(this.reachDistance, line);
+    const previousDistance = this.reach === null ? clear : this.reachDistance;
+    const eased = clear < before ? clear : THREE.MathUtils.damp(before, clear, OPEN_RATE, dt);
+    this.reachDistance = clear - eased < line * 1e-3 ? clear : eased;
+    this.reach = line > 1e-8 ? this.reachDistance / line : 1;
     if (this.reach < 1) this.camera.position.sub(this.pivot).multiplyScalar(this.reach).add(this.pivot);
     // How far it was just pulled in, and how fast it is easing out, for the
     // headset's comfort vignette (see ComfortVignette)
-    this.camera.userData.jump = Math.max(0, before - this.reach) * line;
-    this.camera.userData.glide = dt > 0 ? Math.max(0, this.reach - before) * line / dt : 0;
+    this.camera.userData.jump = Math.max(0, Math.min(before, previousDistance) - this.reachDistance);
+    this.camera.userData.glide = dt > 0 ? Math.max(0, this.reachDistance - before) / dt : 0;
     // Nor, turned down low, does it go into the ground, nor, following a
     // flying machine under a bridge, up into the deck (`lid`, its underside),
     // until it is out from under the deck itself (`decked`): let go as the
@@ -197,12 +202,13 @@ export class ThirdPersonCamera {
     if (this.camera.position.y < floor) this.camera.position.y = floor;
     const lid = this.lid = car.userData.lid ?? (this.lid && this.decked?.(this.camera.position.x, this.camera.position.z) ? this.lid : null);
     if (lid) { this.camera.position.y = Math.min(this.camera.position.y, lid - LID_CLEAR); this.target.y = Math.min(this.target.y, lid - LID_CLEAR); }
-    // High up, the near plane moves out to a metre: at .1 m a square's lawns
-    // and walks, a centimetre or two apart, striped seen from 100 m up. It
-    // stays within a tenth of the way to the pivot, so the machine itself is
-    // never cut, and a car's never moves.
-    const near = this.dip < .005 ? .1 : .1 + this.dip * Math.max(0, Math.min(.9, this.camera.position.distanceTo(this.pivot) * .1 - .1));
-    if (near === .1 ? this.camera.near !== .1 : Math.abs(near - this.camera.near) > .02) { this.camera.near = near; this.camera.updateProjectionMatrix(); }
+    // Zoomed out or flying, give thin road and paving layers more depth precision.
+    // Fit after collision/ground clamps so a wall pulling us in cannot clip the car.
+    const wantedNear = .1 + (this.dip < .005 ? 0 : this.dip * .9) + Math.max(0, this.zoom - 1) * .5;
+    const groundRoom = this.camera.position.y - floor + GROUND_CLEAR;
+    const roofRoom = lid ? lid - this.camera.position.y : Infinity;
+    const near = Math.max(.1, Math.min(wantedNear, this.camera.position.distanceTo(this.pivot) * .1, groundRoom * .5, roofRoom * .5));
+    if (near < this.camera.near || near - this.camera.near > .02) { this.camera.near = near; this.camera.updateProjectionMatrix(); }
     this.camera.lookAt(this.target);
     this.camera.updateMatrixWorld();
   }

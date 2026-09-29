@@ -49,7 +49,7 @@ import { OnFoot, EnterMarker } from './on-foot.js';
 import { walkingInput, createWalkerModel } from './walker.js';
 import { CityTraffic as Traffic } from './city-traffic.js';
 import { TRAFFIC_CRUISE_SPEED } from './traffic.js';
-import { collideScenery, sightLine } from './collision.js';
+import { collideScenery, sightLine, cameraClearance } from './collision.js';
 import { PedestrianContacts } from './world/pedestrian-reactions.js';
 import { CityAutodrive as Autodrive } from './city-autodrive.js';
 import { Input } from './input.js';
@@ -113,6 +113,7 @@ async function boot() {
     const { renderer, scene } = rendering;
     let vr, vrHintTime = 0, vrMapCanvas = null, vrMapKey = 0;
     const vrStatus = new VRStatus(rendering.vrCamera.camera, rendering.vrCamera.anchor);
+    rendering.vrCamera.nearLimit = () => vrStatus.visible ? .1 : .2;
     echoToast = (message, tone) => { if (vr?.active) vrStatus.toast(message, tone); };
     const comfortStorageKey = 'citydriver-vr-comfort', comfort = rendering.vrCamera.comfort;
     try { comfort.enabled = localStorage.getItem(comfortStorageKey) !== 'off'; } catch { /* Storage is optional. */ }
@@ -149,6 +150,9 @@ async function boot() {
     // following someone on foot, out of the cars
     rendering.setSightLine((from, to) => sightLine(world.chunks.values(), from, to, world.origin, vehicle.walker ? onFoot.sightCars() : null));
     rendering.setGround((x, z) => cityHeight(world.origin - z, x), (x, z) => Boolean(vehicle.route.under?.(world.origin - z, x)));
+    rendering.setCameraClearance(point => Math.max(.1, Math.min(
+      (point.y - cityHeight(world.origin - point.z, point.x)) * .5,
+      cameraClearance(world.chunks.values(), point, world.origin))));
     const weather = new CityWeather(scene);
     try { weather.setMode(localStorage.getItem('citydriver-weather') ?? 'auto', { immediate: true }); } catch { /* Storage is optional. */ }
     let changingJourney = true, journeyWasPaused = false;
@@ -1249,6 +1253,7 @@ async function boot() {
       // drawing every headset frame so head tracking continues while stopped.
       const rendered = vr.active ? Boolean(xrFrame) : !document.hidden && (!paused || needsRender);
       if (rendered) {
+        if (!vr.active && started && !paused) cityGuide.render(vehicle.car, world.origin);
         taxiView.navigation.float(taxi, vehicle, vehicle.car, rendering.camera, { visible: vr.active, ahead: soundScene.interior });
         vrStatus.update(vr.active ? currentMenuModel() : null);
         rendering.render(xrFrame, () => {
