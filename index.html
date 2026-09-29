@@ -230,6 +230,11 @@
                     <label for="frame-cap">Frame rate <output id="frame-cap-value" for="frame-cap">Auto</output></label>
                     <input type="range" id="frame-cap" class="graphics-slider" min="0" max="7" step="1" value="0">
                   </div>
+                  <div class="pixel-density-control">
+                    <label for="fog-distance">Fog distance <output id="fog-distance-value" for="fog-distance">25% · Default</output></label>
+                    <input type="range" id="fog-distance" class="graphics-slider" min="0" max="100" step="1" value="25" aria-describedby="fog-distance-note">
+                    <p id="fog-distance-note" class="weather-note">First and third person. Higher pushes the fog back.</p>
+                  </div>
                   <button type="button" id="soft-shading" class="panel-toggle" aria-pressed="true">Soft shading<span class="panel-switch" aria-hidden="true"></span></button>
                   <p id="graphics-status" class="graphics-status" role="status"></p>
                 </div>

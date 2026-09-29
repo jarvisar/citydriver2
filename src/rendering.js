@@ -141,14 +141,17 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
     // Fog depth is measured along the camera, so a wide lens can see much
     // farther at the corners. Keep its entire far plane inside the distant
     // city ring, with room for the chase camera behind the car.
-    const loadedDistance = graphics.settings.chunks.ahead >= 5 ? 310 : 205;
+    const settings = graphics.settings;
+    const loadedDistance = settings.chunks.ahead >= 5 ? 310 : 205;
     // A lens that opens up with speed reports the widest it will ever be, so
     // the horizon stays covered without refitting the fog every frame.
     const lens = activeCamera(), widest = Math.max(lens.userData.widestFov ?? 0, lens.getEffectiveFOV());
     const slope = Math.tan(THREE.MathUtils.degToRad(widest) / 2);
     const horizonDistance = (CITY_BLOCK * DISTANT_CITY_RADIUS - 20) / Math.hypot(1, slope, slope * lens.aspect);
     scene.fog.far = Math.min(profile.thirdFar, loadedDistance, horizonDistance);
-    scene.fog.near = weatherFog ? Math.min(profile.thirdNear, scene.fog.far * .5) : profile.thirdNear;
+    const near = Math.min(profile.thirdNear, scene.fog.far * .5);
+    // Push only the start back, keeping at least half the weather's fade to hide the city edge.
+    scene.fog.near = near + (scene.fog.far - near) * settings.fogDistance * .5;
     fitFogDistance(lens, scene.fog);
   }
   function resize() {
@@ -186,7 +189,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   // toolbars settling after a turn), so it is watched itself.
   const onResize = () => { graphics.suspend(); resizeCanvas(); resize(); };
   // (a new reach shows at once, paused or not)
-  graphics.onChange(() => { if (initialized) fitShadow(activeCamera(), previousOrigin); });
+  graphics.onChange(() => { updateFog(); if (initialized) fitShadow(activeCamera(), previousOrigin); });
   window.addEventListener('resize', onResize); globalThis.ResizeObserver && new ResizeObserver(onResize).observe(canvas); resize();
   // Golden hour until the game applies the city's weather
   setWeather(sampleCityWeather(0, 'sunset'), 0);

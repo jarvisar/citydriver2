@@ -62,6 +62,7 @@ const HEADSET_SCALES = [1, .85, .7];
 // Auto (see frameCap) and 0 uncapped, which in a browser is the display's own
 // rate, the most requestAnimationFrame gives
 export const FRAME_CAPS = [null, 30, 60, 72, 90, 120, 144, 0];
+export const DEFAULT_FOG_DISTANCE = .25;
 // A headset's refresh rate when the player hasn't picked one, and the rate it
 // drops to if even the lowest rung can't hold it (see judgeHeadset)
 export const HEADSET_RATE = 90, HEADSET_FALLBACK_RATE = 72;
@@ -247,6 +248,7 @@ export class Graphics {
     // The default proved too slow here, so the next visit starts without it.
     this.aoDropped = stored.aoDropped === true;
     this.densityOverride = Number.isFinite(stored.density) && stored.density >= MIN_DENSITY && stored.density <= 1 ? stored.density : null;
+    this.fogDistance = Number.isFinite(stored.fogDistance) && stored.fogDistance >= 0 && stored.fogDistance <= 1 ? stored.fogDistance : DEFAULT_FOG_DISTANCE;
     // The player's frame-rate cap and headset refresh rate, null for none (Auto)
     this.capChoice = FRAME_CAPS.includes(stored.frameCap) ? stored.frameCap : null;
     this.rateChoice = Number.isFinite(stored.headsetRate) && stored.headsetRate > 0 ? stored.headsetRate : null;
@@ -266,7 +268,7 @@ export class Graphics {
   get aoByDefault() { return this.aoVisit === null && this.aoChoice === null && this.ambientOcclusion; }
   get settings() {
     return { ...QUALITY_LEVELS[this.level], ...this.shadows, density: this.densityOverride ?? QUALITY_LEVELS[this.level].density,
-      customDensity: this.densityOverride !== null, ambientOcclusion: this.ambientOcclusion };
+      customDensity: this.densityOverride !== null, ambientOcclusion: this.ambientOcclusion, fogDistance: this.fogDistance };
   }
   // The level's shadow, sharpened on a dedicated card, lightened in a headset
   // (see HEADSET_SHADOWS): never more than the level's own. Below High a phone
@@ -295,7 +297,7 @@ export class Graphics {
   // AO is saved as the player's choice (null for none), never the default.
   save() {
     writeStored(this.storage, { mode: this.mode, level: QUALITY_LEVELS[this.page?.level ?? this.level].id, density: this.densityOverride, ambientOcclusion: this.aoChoice, aoDropped: this.aoDropped,
-      frameCap: this.capChoice, headsetRate: this.rateChoice });
+      frameCap: this.capChoice, headsetRate: this.rateChoice, fogDistance: this.fogDistance });
   }
 
   // The card drawing the game, as its own context names it (see gpuName): made
@@ -444,6 +446,14 @@ export class Graphics {
     this.suspend();
     this.save();
     this.announce('density');
+    return true;
+  }
+
+  setFogDistance(distance) {
+    if (!Number.isFinite(distance)) return false;
+    this.fogDistance = Math.max(0, Math.min(1, distance));
+    this.save();
+    this.announce('fog');
     return true;
   }
 

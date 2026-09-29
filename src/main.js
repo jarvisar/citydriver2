@@ -19,7 +19,7 @@ import { locationHudModel, headsetHudModel } from './run-hud-model.js';
 import { renderLocationHud, renderRunHud } from './run-hud-dom.js';
 import { taxiResultModel, demolitionResultModel } from './result-model.js';
 import { createRendering } from './rendering.js';
-import { FRAME_CAPS, Graphics, headsetBrowser } from './graphics.js';
+import { DEFAULT_FOG_DISTANCE, FRAME_CAPS, Graphics, headsetBrowser } from './graphics.js';
 import { JOURNEYS } from './journeys.js';
 import { CARS, DEFAULT_CAR, ROUTE_PAINT, carEntry } from './cars.js';
 import { carArt } from './car-art.js';
@@ -881,6 +881,7 @@ async function boot() {
     const softShading = $('#soft-shading'), graphicsStatus = $('#graphics-status');
     const pixelDensity = $('#pixel-density'), pixelDensityValue = $('#pixel-density-value');
     const frameCapInput = $('#frame-cap'), frameCapValue = $('#frame-cap-value');
+    const fogDistance = $('#fog-distance'), fogDistanceValue = $('#fog-distance-value');
     // What the cap slider says, Auto with what it has worked out (see Graphics.frameCap)
     function frameCapText() {
       const choice = graphics.capChoice, cap = graphics.cap, display = pacer.displayRate;
@@ -900,6 +901,11 @@ async function boot() {
       frameCapInput.value = String(capAt);
       frameCapInput.style.setProperty('--control-level', `${capAt / (FRAME_CAPS.length - 1) * 100}%`);
       frameCapValue.textContent = frameCapText(); frameCapInput.setAttribute('aria-valuetext', frameCapText());
+      const fogPercent = Math.round(settings.fogDistance * 100);
+      const fogText = `${fogPercent}%${settings.fogDistance === DEFAULT_FOG_DISTANCE ? ' · Default' : ''}`;
+      fogDistance.value = String(fogPercent);
+      fogDistance.style.setProperty('--control-level', `${fogPercent}%`);
+      fogDistanceValue.textContent = fogText; fogDistance.setAttribute('aria-valuetext', fogText);
       // Show the drawing buffer, which is what the quality level changes: it
       // explains a softer picture.
       graphicsStatus.textContent = `${graphics.auto ? 'Auto · ' : ''}${settings.label} · ${renderer.domElement.width} × ${renderer.domElement.height} · soft shading ${settings.ambientOcclusion ? 'on' : 'off'}`;
@@ -914,6 +920,7 @@ async function boot() {
     softShading.addEventListener('click', () => action('ambientOcclusion'));
     pixelDensity.addEventListener('input', () => graphics.setDensity(Number(pixelDensity.value) / 100));
     frameCapInput.addEventListener('input', () => graphics.chooseFrameCap(FRAME_CAPS[Number(frameCapInput.value)]));
+    fogDistance.addEventListener('input', () => graphics.setFogDistance(Number(fogDistance.value) / 100));
     const weatherSelect = $('#city-weather');
     weatherSelect.innerHTML = WEATHER_CHOICES.map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
     weatherSelect.value = weather.mode;

@@ -202,7 +202,7 @@ test('a chosen level is pinned, adapts to nothing, and is remembered', () => {
   assert.equal(graphics.levelId, 'high');
   new Device(graphics, 8).run(120);
   assert.equal(graphics.levelId, 'high', 'a pinned level stays pinned');
-  assert.deepEqual(stored(storage), { mode: 'high', level: 'high', density: null, ambientOcclusion: null, aoDropped: false, frameCap: null, headsetRate: null });
+  assert.deepEqual(stored(storage), { mode: 'high', level: 'high', density: null, ambientOcclusion: null, aoDropped: false, frameCap: null, headsetRate: null, fogDistance: .25 });
 
   const next = new Graphics({ storage, detect: () => levelIndex('basic') });
   assert.equal(next.mode, 'high');
@@ -217,7 +217,7 @@ test('auto remembers the level it settled on so the next visit starts there', ()
   const graphics = new Graphics({ storage, detect: () => levelIndex('high') });
   new Device(graphics, [22, 31, 43, 61]).run(60);
   assert.equal(graphics.levelId, 'basic');
-  assert.deepEqual(stored(storage), { mode: 'auto', level: 'basic', density: null, ambientOcclusion: null, aoDropped: false, frameCap: null, headsetRate: null }, 'no AO choice is saved as none');
+  assert.deepEqual(stored(storage), { mode: 'auto', level: 'basic', density: null, ambientOcclusion: null, aoDropped: false, frameCap: null, headsetRate: null, fogDistance: .25 }, 'no AO choice is saved as none');
   const next = new Graphics({ storage, detect: () => levelIndex('high') });
   assert.equal(next.auto, true);
   assert.equal(next.levelId, 'basic');
@@ -416,7 +416,7 @@ test('AO on by default is the first thing given up for frame rate, and stays giv
   const device = new Device(graphics, 61, 40).run(120);
   assert.deepEqual(device.steps, ['high-ao'], 'the level is kept');
   assert.equal(graphics.settings.ambientOcclusion, false);
-  assert.deepEqual(stored(storage), { mode: 'auto', level: 'high', density: null, ambientOcclusion: null, aoDropped: true, frameCap: null, headsetRate: null },
+  assert.deepEqual(stored(storage), { mode: 'auto', level: 'high', density: null, ambientOcclusion: null, aoDropped: true, frameCap: null, headsetRate: null, fogDistance: .25 },
     'remembered as the default giving way, not as a choice');
   const next = capableAt(0, { storage });
   assert.equal(next.ambientOcclusion, false, 'the next visit starts without it');
