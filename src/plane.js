@@ -406,6 +406,8 @@ export class Plane {
     v.car.rotation.set(0, -v.heading, 0, 'YXZ');
     v.currentPose.position.copy(v.groundedPosition); v.currentPose.quaternion.copy(v.car.quaternion);
     for (const key of ['bodyPitch', 'bodyRoll', 'wheelSpin', 'steer', 'slip']) v.currentPose[key] = v[key];
+    // Half the bank for the body and cockpit camera, keeping handling and barrel rolls intact.
+    v.currentPose.bodyRoll += this.bank * .5;
     v.currentPose.bodyPitch += v.jolt.pitch; v.currentPose.bodyRoll += v.jolt.roll;
     if (teleport) v.copyPose(v.previousPose, v.currentPose);
     v.render(0);
