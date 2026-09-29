@@ -2,6 +2,7 @@ import { carEntry } from './cars.js';
 import { bodyProfile, heightAt, WHEEL, BUS_DOORS } from './traffic-models.js';
 import { taxiChequers } from './car-models.js';
 import { PLANE_PROFILE } from './plane-model.js';
+import { EXOTIC_DARK, EXOTIC_TRIM, EXOTIC_BODY, EXOTIC_BOTTOM, EXOTIC_ROOF, EXOTIC_WINDOW, EXOTIC_SWEEP, EXOTIC_WING } from './exotic-model.js';
 
 // A side profile drawn from the same numbers the model is built from, so each
 // card shows the car the player will actually be driving.
@@ -32,7 +33,7 @@ export function carArt(id) {
   const entry = carEntry(id);
   const parts = entry.kind === 'formula' ? formulaParts(entry) : entry.kind === 'special' ? SPECIAL_ART[entry.shape.name](entry.shape)
     : entry.kind === 'helicopter' ? helicopterParts(entry.shape) : entry.kind === 'plane' ? planeParts()
-      : entry.kind === 'classic' ? classicParts(entry) : builtCarParts(entry);
+      : entry.kind === 'classic' ? classicParts(entry) : entry.shape.name === 'exotic' ? exoticParts() : builtCarParts(entry);
   return `<svg class="chooser-art car-art" viewBox="0 0 280 142" aria-hidden="true">${parts.join('')}</svg>`;
 }
 
@@ -71,6 +72,31 @@ function builtCarParts(entry) {
   parts.push(...[-profile.wheelZ, profile.wheelZ].map(z => disc(z, radius + drop, radius, TIRE) + disc(z, radius + drop, radius * .46, HUB)));
   parts.push(...accessories(entry, { ...draw, l, roofY, profile }));
   return parts;
+}
+
+function exoticParts() {
+  const { slab, shape2d, disc, shadow, px, py, size } = pen();
+  const top = EXOTIC_BODY.map(([z, , crown, centre]) => [z, Math.max(crown, centre + .018)]), wing = EXOTIC_WING;
+  const line = (points, width, color) => `<polyline points="${points.map(([z, y]) => `${px(z)},${py(y)}`).join(' ')}" fill="none" stroke="${color}" stroke-width="${size(width)}" stroke-linejoin="bevel"/>`;
+  return [
+    shadow(2.4),
+    shape2d([...top, ...[...EXOTIC_BOTTOM].reverse()], PAINT),
+    shape2d([...top.filter(([z]) => z >= .28), ...[...EXOTIC_BOTTOM].reverse().filter(([z]) => z >= .28), [.28, .2]], EXOTIC_DARK),
+    shape2d([...EXOTIC_ROOF, [1.82, 1.02], [-.92, 1.02]], EXOTIC_DARK),
+    shape2d([...EXOTIC_ROOF.slice(0, 3), [.28, 1.501], [.28, 1.02], [-.92, 1.02]], PAINT),
+    shape2d(EXOTIC_WINDOW, '#253436'),
+    line([[.245, 1.06], [.12, 1.425]], .043, EXOTIC_DARK),
+    line(EXOTIC_SWEEP, .065, EXOTIC_TRIM),
+    slab(-.76, .77, .19, .29, CARBON, 0),
+    slab(-2.27, -2.05, .13, .235, CARBON, 0),
+    slab(-2.13, -2.05, .627, .76, '#ffeec2', 0),
+    slab(2.08, 2.14, .738, .818, '#c4483a', 0),
+    slab(2.02, 2.24, .13, .235, CARBON, 0),
+    slab(wing.z - .065, wing.z + .065, wing.foot, wing.y, CARBON, 0),
+    slab(wing.z - wing.depth / 2, wing.z + wing.depth / 2, wing.y - wing.height / 2, wing.y + wing.height / 2, EXOTIC_DARK, 0),
+    ...[-1.35, 1.35].map(z => disc(z, WHEEL.radius, WHEEL.radius, TIRE) + disc(z, WHEEL.radius, WHEEL.hubRadius, HUB)),
+    slab(-.9025, -.6775, 1.0375, 1.1725, PAINT, 1),
+  ];
 }
 
 // The wagon, from createClassicCar's measurements: the tub with its bonnet and

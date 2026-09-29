@@ -3,6 +3,7 @@ import { FORMULA_SHAPE } from './formula-model.js';
 import { SPECIAL_SHAPES } from './special-models.js';
 import { HELICOPTER_SHAPE } from './helicopter.js';
 import { PLANE_SHAPE } from './plane-model.js';
+import { EXOTIC_MODEL } from './exotic-model.js';
 
 // The player's original car. Its collision box is the footprint the game has
 // always used; the extra fields only describe it for the chooser's artwork.
@@ -18,8 +19,8 @@ export const ROUTE_PAINT = { coast: '#d96143', desert: '#78977b', snow: '#9fc4d5
 
 // The road fleet is the same kind of relaxed tourer. Stats stay within about
 // a tenth of the coastal wagon so a choice changes character, not the game. The
-// chooser-only cars are the exceptions: the coupe reaches noticeably further,
-// the formula racer is quicker again by the same margin over it, and each of
+// chooser-only cars are the exceptions: the GT and Exotic reach further,
+// the Formula racer is quicker again, and each of
 // the specials trades one thing away to be the best in the garage at another.
 //
 //   topSpeed            metres per second, the speed ceiling (drag may limit it first)
@@ -99,6 +100,10 @@ export const CARS = {
   sports: {
     name: 'GT', kind: 'built', paint: '#b8232f', shape: SPORTS_MODEL,
     stats: { topSpeed: 33, acceleration: 13.5, braking: 23, grip: 1.14, offRoad: 20.1 },
+  },
+  exotic: {
+    name: 'Exotic', kind: 'built', paint: '#407394', shape: EXOTIC_MODEL,
+    stats: { topSpeed: 37.5, acceleration: 15, braking: 23, grip: 1.22, offRoad: 20.1 },
   },
   // Light, short and on knobbly tyres: it barely notices the tarmac ending.
   buggy: {

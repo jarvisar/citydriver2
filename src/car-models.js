@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { bodyMaterial, bodyProfile, heightAt, lampGlow, markedBody, vehicleGeometry, wheelGeometry, WHEEL } from './traffic-models.js';
 import { stableShadowDepth } from './world/shadow-depth.js';
+import { exoticGeometry } from './exotic-model.js';
 
 // A taxi's chequers run along its doors in two rows of squares, clear of the
 // wheel arches and under the shoulder (heights before the shape's drop).
@@ -14,11 +15,11 @@ export function taxiChequers(shape) {
   return { size, low, count, start: -count * size / 2 };
 }
 
-// Drive one of the road-car shapes. The bodywork is the same merged geometry
-// traffic uses, with the wheels left loose so they can steer and spin.
+// Road cars share traffic's bodywork. The Exotic brings its own shell, with
+// the same paint, lamps and loose wheels so they can steer and spin.
 export function createShapeCar(entry) {
   const { paint: paintGeometry, details: trimGeometry, headlights: frontGeometry, taillights: rearGeometry, wheels: placements, roof } =
-    vehicleGeometry(entry.shape, { separateWheels: true });
+    entry.shape.name === 'exotic' ? exoticGeometry(WHEEL) : vehicleGeometry(entry.shape, { separateWheels: true });
   const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: .74, flatShading: true, ...extra });
   // One draw for the body and one per wheel (see markedBody, wheelGeometry)
   const head = lampGlow('#e9cc84', .24), tail = lampGlow('#b8220d', .1);

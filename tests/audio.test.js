@@ -313,7 +313,7 @@ function signalStats(data) {
   return { rms: Math.sqrt(energy / data.length), step: Math.sqrt(steps / data.length), peak, mean: mean / data.length };
 }
 test('combustion takes are deterministic, centered, matched in level, and distinct under load', () => {
-  for (const profile of [ENGINES.coast, ENGINES.pickup, ENGINES.formula]) {
+  for (const profile of [ENGINES.coast, ENGINES.pickup, ENGINES.formula, ENGINES.exotic]) {
     const coast = createEngineBuffer(bufferContext, profile, profile.idle, false).getChannelData(0);
     const load = createEngineBuffer(bufferContext, profile, profile.idle, true).getChannelData(0);
     assert.deepEqual(coast, createEngineBuffer(bufferContext, profile, profile.idle, false).getChannelData(0));

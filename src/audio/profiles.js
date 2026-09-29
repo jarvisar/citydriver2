@@ -20,6 +20,7 @@ export const ENGINES = {
   pickup: voice({ idle: 640, cylinders: 8, gears: 4, body: 1.8, rasp: 1.1, harmonics: [1, .7, .22, .3, .12, .1, .05] }),
   van: voice({ idle: 680, redline: 3500, body: 1.5, rasp: 1.2, intake: .3 }),
   sports: voice({ idle: 980, redline: 6500, cylinders: 6, gears: 6, body: .85, rasp: 1, intake: 1.4, pops: .6, harmonics: [1, .6, .38, .26, .18, .12, .075, .04] }),
+  exotic: voice({ idle: 850, redline: 6800, cylinders: 16, gears: 7, body: 1.3, rasp: .7, intake: 1.4, pops: .4, harmonics: [1, .4, .24, .14, .08, .04] }),
   // `open` marks a car with no cabin, so first person hears it unfiltered.
   formula: voice({ idle: 1800, redline: 12500, cylinders: 8, gears: 7, body: .5, rasp: .9, intake: 1.8, pops: .5, harmonics: [1, .48, .24, .13, .06, .03], open: true }),
   buggy: voice({ idle: 900, redline: 5200, body: .7, rasp: 1.3, intake: 1.1, harmonics: [1, .45, .5, .2, .18, .08], open: true }),
