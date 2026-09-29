@@ -64,6 +64,13 @@ try {
     assert.deepEqual(after.vector, steering, 'looking must not steer');
     assert.ok(changed(before.camera, after.camera), 'second thumb must move the camera');
     assert.match(after.hint, /Second thumb/);
+    // Camera buttons have their own touches, with no extra drive/look role.
+    const zoomBox = await page.locator('[data-camera-action="zoomOut"]').boundingBox();
+    const zoom = [6, zoomBox.x + zoomBox.width / 2, zoomBox.y + zoomBox.height / 2];
+    const zoomBefore = await page.evaluate(() => window.__citydriver.rendering.zoomLevel);
+    await touch('touchStart', [drive, look, zoom]); await touch('touchEnd', [drive, look]);
+    assert.ok(await page.evaluate(value => window.__citydriver.rendering.zoomLevel > value, zoomBefore));
+    assert.equal((await state()).look, before.look); assert.equal((await state()).drive, before.drive);
     await page.screenshot({ path: `${out}/${name}-two-thumbs.png` });
 
     // A third finger on Boost belongs to its button, never the camera.

@@ -23,7 +23,10 @@ const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
 page.setDefaultTimeout(120000);
 page.on('pageerror', error => errors.push(error.message));
 page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
-await page.addInitScript(() => { localStorage.setItem('citydriver.graphics', JSON.stringify({ mode: 'balanced' })); localStorage.setItem('citydriver-weather', 'clear'); });
+await page.addInitScript(() => {
+  localStorage.setItem('citydriver.graphics', JSON.stringify({ mode: 'balanced' })); localStorage.setItem('citydriver-weather', 'clear');
+  localStorage.setItem('citydriver.camera', JSON.stringify({ profiles: { driving: { view: 2, zoom: 2 }, walking: { view: 5, zoom: .8 } } }));
+});
 const wait = ms => page.waitForTimeout(ms);
 // Controls, as a hand would work them: a press lasts a few headset frames.
 const set = (hand, id, value) => page.evaluate(([hand, id, value]) => window.__xr.controllers[hand].updateButtonValue(id, value), [hand, id, value]);
@@ -124,6 +127,15 @@ try {
   await press('left', 'y-button');
   now = await shot('06-paused');
   check('Y pauses (it no longer leaves VR) and Resume is selected', now.vr && now.paused && now.menu === 'pause' && now.selected === 'Resume', now.selected);
+  const beforeLook = await page.evaluate(() => window.__citydriver.rendering.vrCamera.camera.quaternion.toArray());
+  await aim('right', 'Stick look speed'); await press('right', 'trigger');
+  check('headset settings change stick look speed', await page.evaluate(() => window.__citydriver.rendering.cameraPreferences.inputs.controller.sensitivity === 1.25));
+  check('look speed does not rotate tracked head orientation', await page.evaluate(before => window.__citydriver.rendering.vrCamera.camera.quaternion.toArray().every((value, i) => Math.abs(value - before[i]) < 1e-6), beforeLook));
+  check('headset view changes leave screen preferences alone', await page.evaluate(() => {
+    const r = window.__citydriver.rendering, before = JSON.stringify(r.cameraPreferences.profiles);
+    r.toggleView(); r.setView(4); r.cameraPreferences.setInput('controller', { sensitivity: 1 });
+    return JSON.stringify(r.cameraPreferences.profiles) === before;
+  }));
   await page.evaluate(() => window.__xr.quaternion.set(0, 0, 0, 1));
   await shot('07-paused-ahead', { close: true });
   await stick('left', 0, 1); await stick('right', 1, 0);
@@ -188,6 +200,7 @@ try {
   await aim('right', 'Exit VR'); await press('right', 'trigger'); await wait(800);
   now = await shot('15-exited');
   check('Exit VR returns to the page, paused', !now.vr && now.paused);
+  check('Exit VR restores the saved screen camera', await page.evaluate(() => window.__citydriver.rendering.viewIndex === 2 && window.__citydriver.rendering.zoomLevel === 2));
 } catch (error) { errors.push(error.stack); }
 finally { await browser.close(); await server.close(); }
 await writeFile(`${out}/checks.txt`, `${checks.join('\n')}\n\nerrors: ${errors.join('\n') || 'none'}\n`);

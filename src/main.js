@@ -19,6 +19,7 @@ import { locationHudModel, headsetHudModel } from './run-hud-model.js';
 import { renderLocationHud, renderRunHud } from './run-hud-dom.js';
 import { taxiResultModel, demolitionResultModel } from './result-model.js';
 import { createRendering } from './rendering.js';
+import { setupCameraControls } from './camera-controls.js';
 import { DEFAULT_FOG_DISTANCE, FRAME_CAPS, Graphics, headsetBrowser } from './graphics.js';
 import { JOURNEYS } from './journeys.js';
 import { CARS, DEFAULT_CAR, ROUTE_PAINT, carEntry } from './cars.js';
@@ -432,7 +433,7 @@ async function boot() {
     function showRun() {
       $('#traffic').setAttribute('aria-pressed', 'true'); $('#autodrive').setAttribute('aria-pressed', 'false');
       $('#taxi-results').hidden = true; $('#demolition-results').hidden = true; $('#welcome').classList.add('hidden');
-      rendering.setView(4); updateViewUi(); setPaused(false); modeUi(); updateHud();
+      rendering.useCameraProfile('driving', true); updateViewUi(); setPaused(false); modeUi(); updateHud();
       taxiView.render(taxi, vehicle, world.origin, time); rendering.update(vehicle.car, 1, world.origin);
     }
     function beginFree({ preserveInput = false } = {}) {
@@ -442,7 +443,7 @@ async function boot() {
       if (wasRun && freeTraffic !== undefined) traffic.setEnabled(freeTraffic, vehicle);
       $('#traffic').setAttribute('aria-pressed', String(traffic.enabled)); $('#autodrive').setAttribute('aria-pressed', String(autodrive.enabled));
       $('#taxi-results').hidden = true; $('#demolition-results').hidden = true; $('#welcome').classList.add('hidden');
-      rendering.setView(4); updateViewUi();
+      rendering.useCameraProfile('driving', true); updateViewUi();
       taxiView.render(taxi, vehicle, world.origin, time); setPaused(false, { preserveInput }); modeUi(); updateHud();
     }
     function start() {
@@ -537,7 +538,9 @@ async function boot() {
       const free = started && gameMode === 'free', mode = free && vehicle.pilot ? 'flying' : free && vehicle.walker ? 'walking' : 'driving';
       // (the helicopter and the plane fly on the same buttons, but the stick's help differs)
       if (mode === driveMode && vehicle.carId === driveMachine) return;
-      driveMode = mode; driveMachine = vehicle.carId; document.body.dataset.flying = String(mode === 'flying'); document.body.dataset.walking = String(mode === 'walking'); updateViewUi();
+      driveMode = mode; driveMachine = vehicle.carId; document.body.dataset.flying = String(mode === 'flying'); document.body.dataset.walking = String(mode === 'walking');
+      if (started) rendering.useCameraProfile(mode === 'walking' ? 'walking' : 'driving');
+      updateViewUi();
       ['handbrake', 'boost'].forEach((key, i) => {
         const button = $(`[data-drive-button="${key}"]`), [label, hint] = driveButtons[mode][i];
         button.querySelector('span').textContent = label;
@@ -661,6 +664,16 @@ async function boot() {
       // M or View / Share: the city map, from the drive or the pause screen
       if (name === 'map') { if ((started || paused) && !runOver()) openWorldMap(); return; }
       if (name === 'nextJourney') return;
+      if (name === 'recenter') {
+        if (!started) return;
+        if (vr.active) rendering.vrCamera.recenter();
+        else { rendering.recenter(paused); if (paused) rendering.update(vehicle.car, 0, world.origin); }
+        needsRender = true; return;
+      }
+      if (name === 'zoomIn' || name === 'zoomOut') {
+        if (!started || paused || vr.active || !rendering.chaseView) return;
+        rendering.zoom(name === 'zoomIn' ? 1 / 1.2 : 1.2); return;
+      }
       if (taxi.status === 'over') { if (name === 'reset') beginTaxi(); return; }
       if (demolition.status === 'over') { if (name === 'reset') beginDemolition(); return; }
       if (name === 'car') { openCars(); return; }
@@ -819,7 +832,8 @@ async function boot() {
     const lookHintKey = 'citydriver-mouse-look';
     let lookHint = 0, lookKnown = false, lookHinted = false;
     try { lookKnown = lookHinted = localStorage.getItem(lookHintKey) === 'known'; } catch { /* Storage is optional. */ }
-    const mouseLook = new MouseLook($('#scene'), { lookable: looking, automatic: () => fullscreen.active, zoomable: chasing, look: rendering.look, zoom: rendering.zoom,
+    const cameraPreferences = rendering.cameraPreferences;
+    const mouseLook = new MouseLook($('#scene'), { lookable: looking, automatic: () => fullscreen.active, zoomable: chasing, look: (yaw, pitch) => cameraPreferences.look('mouse', yaw, pitch, rendering.look), zoom: rendering.zoom,
       released: () => fullscreen.released(),
       captured: () => {
         fullscreen.captured();
@@ -828,7 +842,12 @@ async function boot() {
         try { localStorage.setItem(lookHintKey, 'known'); } catch { /* Known for this visit. */ }
       } });
     input.touchStick.lookable = looking;
-    input.touchStick.onLook = rendering.look;
+    input.touchStick.onLook = (yaw, pitch) => cameraPreferences.look('touch', yaw, pitch, rendering.look);
+    const cameraControls = setupCameraControls(rendering, { action,
+      chooseView: index => { rendering.setView(index, true); updateViewUi(); rendering.update(vehicle.car, 0, world.origin); needsRender = true; },
+      changed: () => { rendering.update(vehicle.car, 0, world.origin); needsRender = true; },
+      inputSource: () => input.gamepad.connected ? 'controller' : matchMedia('(any-pointer: coarse)').matches ? 'touch' : 'mouse',
+    });
     // A first drive with a mouse says, once, how to look round with it
     function hintMouseLook(dt) {
       if (lookHinted || !looking() || !mouseLook.mouse.matches || mouseLook.locked || input.gamepad.connected || controlHelpDismissed() || Math.abs(vehicle.speed) < 2) return;
@@ -949,6 +968,7 @@ async function boot() {
     }
     function updateViewUi() {
       input.touchStick.releaseLook();
+      cameraControls?.refresh();
       $('#view').title = `${rendering.viewLabel} · Change camera (V)`;
       $('#view').setAttribute('aria-label', `${rendering.viewLabel}. Change camera`);
       const thirdPerson = rendering.camera.isPerspectiveCamera, flying = document.body.dataset.flying === 'true', walking = document.body.dataset.walking === 'true';
@@ -964,7 +984,8 @@ async function boot() {
       back: () => openChooser()?.close(), exit: () => action('exitVR'), fleet: openFleet, garage: openCars,
       autodrive: () => action('autodrive'), traffic: toggleTraffic, reset: () => action('reset'), map: openWorldMap,
       weather: () => chooseWeather(cycleChoice(WEATHER_CHOICES.map(([id]) => id), weather.mode)),
-      view: () => action('view'), recenter: () => action('recenterVR'), comfort: toggleComfort,
+      view: () => action('view'), recenter: () => action('recenter'), comfort: toggleComfort,
+      lookSensitivity: () => cameraPreferences.setInput('controller', { sensitivity: cycleChoice([.25, .5, .75, 1, 1.25, 1.5, 2], cameraPreferences.inputs.controller.sensitivity) }),
       graphics: () => graphics.setMode(cycleChoice(['auto', 'high', 'balanced', 'smooth', 'basic'], graphics.mode)),
       rate: () => graphics.chooseHeadsetRate(cycleChoice([null, ...headsetRates()], graphics.rateChoice)),
       sound: () => action('sound'), mix: () => { audio.setPreset(cycleChoice(['balanced', 'scenic', 'night'], audio.preset)); refreshAudioMixer(); },
@@ -974,7 +995,7 @@ async function boot() {
       return { loading: changingJourney, started, paused, mode: gameMode, chooser: chooserName, over: runOver(),
         running: taxi.running || demolition.running, location: locationModel(), carName: carEntry(started && gameMode !== 'free' ? vehicle.carId : carId).name,
         fleetName: carEntry(taxi.fleet.selected).name, autodrive: autodrive.enabled, traffic: traffic.enabled,
-        weather: weather.mode, view: rendering.viewLabel, comfort: comfort.enabled, graphics: graphics.auto ? 'Auto' : graphics.settings.label,
+        weather: weather.mode, view: rendering.viewLabel, lookSensitivity: cameraPreferences.inputs.controller.sensitivity, comfort: comfort.enabled, graphics: graphics.auto ? 'Auto' : graphics.settings.label,
         rates: headsetRates(), rateChoice: graphics.rateChoice, frameRate: vr.session?.frameRate, sound: audio.enabled, mix: audio.preset };
     }
     const controls = () => menuControls(menuState(), menuActions);
@@ -1125,8 +1146,8 @@ async function boot() {
           let yaw = stick.lookX || 0;
           if (flying && Math.abs(yaw) <= Math.abs(stick.lookY || 0)) yaw = 0;
           const pitch = vr.active || flying ? 0 : stick.lookY || 0;
-          if (vehicle.walker && rendering.firstPersonView && !strafing()) { const keys = input.state; yaw += keys.touchStick?.x || keys.moveX || 0; }
-          if (yaw || pitch) rendering.look(yaw * STICK_LOOK * dt, pitch * STICK_LOOK * dt);
+          if (vehicle.walker && rendering.firstPersonView && !strafing()) rendering.look((input.state.moveX || 0) * STICK_LOOK * dt, 0);
+          if (yaw || pitch) cameraPreferences.look('controller', yaw * STICK_LOOK * dt, pitch * STICK_LOOK * dt, rendering.look);
         }
         hintMouseLook(dt);
         if (input.touchStick.lookPointer !== null && looking()) rendering.look(0, 0);

@@ -18,6 +18,7 @@ The page's menus and HUD can't be seen in a headset, so `src/vr-status.js` draws
 - A menu opens 1.5 m away and 5° below eye level, in front of wherever the player is looking. It then stays in place. Menus are never locked to the head.
 - Rows are about 2.6° tall and labels about 1.1°.
 - The pause menu has the same groups as the pause screen: Driving, The city, View and Sound. Resume is at the top right and is selected first. Exit VR is at the bottom.
+- Stick look speed adjusts only controller-driven camera rotation, using the same saved Controller sensitivity as the page's Camera settings. Head tracking and flight controls are unaffected. Recenter view and right-stick click still recenter the headset. Headset camera changes leave the saved screen views alone; leaving VR restores the current driving or walking preference.
 - The garage and taxi fleet list the page's own buttons in two columns under headings, with pages. The city map shows as a picture.
 - Closing the map or a garage goes back to the row that opened it.
 - While a menu is open each controller shows a short beam, with a dot where it points. Moving a pointer onto a row selects it. A pointer already resting on the panel when it opens doesn't change the selection. A trigger held when a menu opens has to be released before it can press anything.

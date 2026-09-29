@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
+import { sightLine } from '../src/collision.js';
 import { ThirdPersonCamera } from '../src/third-person-camera.js';
 import { touchDrivingInput, thirdPersonDrivingInput } from '../src/touch-stick.js';
 import { DrivingController } from '../src/vehicle.js';
@@ -365,4 +366,67 @@ test('scrolling keeps the chosen orbit while adjusting the view, then normal rec
   }
   for (let i = 0; i < 300; i++) rig.update(car, 1 / 60);
   assert.equal(rig.lookYaw, 0); assert.equal(rig.lookPitch, 0);
+});
+
+test('recenter settles a stationary camera without changing zoom or bypassing an obstruction, and new look cancels it', () => {
+  for (const fps of [30, 60, 120]) for (const leash of [false, true]) {
+    const rig = new ThirdPersonCamera(), car = new THREE.Object3D(); car.userData.leash = leash;
+    rig.setZoom(3); rig.sight = (from, to) => Math.min(1, 5 / from.distanceTo(to));
+    rig.update(car, 0); rig.look(1.3, .6); rig.update(car, 1 / fps); rig.recenter(car);
+    for (let i = 0; i < fps * 2; i++) {
+      rig.update(car, 1 / fps);
+      assert.ok(rig.camera.position.distanceTo(rig.pivot) <= 5 + 1e-6, 'recenter always respects the wall');
+    }
+    assert.equal(rig.zoomTarget, 3); assert.equal(rig.zoom, 3);
+    assert.ok(Math.abs(rig.heading) < 1e-4 && rig.lookYaw === 0 && rig.lookPitch === 0);
+    rig.look(1, .4); rig.recenter(car); rig.update(car, 1 / fps); rig.look(.2, 0);
+    assert.equal(rig.centering, false);
+    rig.recenter(car, true); assert.equal(rig.centering, false); assert.equal(rig.lookYaw, 0);
+  }
+});
+
+const cameraWall = top => ({ collisionBounds: { minX: -5, maxX: 5, minZ: 8, maxZ: 24 }, features: { colliders: [
+  { x: 0, z: 16, reach: 10, top, corners: [{ x: -5, z: 8 }, { x: 5, z: 8 }, { x: 5, z: 24 }, { x: -5, z: 24 }] },
+] } });
+test('a bridge clamp checks the low sight line instead of moving a previously clear lens into a building', () => {
+  const rig = new ThirdPersonCamera(), car = new THREE.Object3D(), chunks = [cameraWall(6)];
+  car.userData.lid = 5;
+  rig.sight = (from, to) => sightLine(chunks, from, to);
+  rig.setZoom(6); rig.look(0, .8); rig.update(car, 0);
+  assert.ok(rig.camera.position.y <= 4.5);
+  assert.ok(rig.camera.position.z <= 5.8 + 1e-8, 'ceiling cannot lower the lens through a wall');
+});
+
+test('pulling onto a raised verge retains ground clearance without crossing the nearby wall', () => {
+  const rig = new ThirdPersonCamera(), car = new THREE.Object3D();
+  rig.ground = (x, z) => z > 4 ? 7 : 0;
+  rig.sight = (from, to) => sightLine([cameraWall(20)], from, to);
+  rig.update(car, 0);
+  assert.ok(rig.camera.position.y >= 7.6 - 1e-9);
+  assert.ok(rig.camera.position.z <= 5.8 + 1e-9);
+});
+
+test('reversing toward a wall and changing vehicle framing stays outside it at different frame rates', () => {
+  for (const fps of [30, 60, 120]) {
+    const rig = new ThirdPersonCamera(), car = new THREE.Object3D();
+    rig.sight = (from, to) => sightLine([cameraWall(30)], from, to);
+    rig.update(car, 0);
+    for (let i = 0; i < fps * 4; i++) {
+      const time = i / fps;
+      car.position.z = time < 2 ? time * 3.4 : (4 - time) * 3.4;
+      if (i === fps * 2) { car.userData.chaseLift = 2.2; car.userData.chaseScale = 1.2; }
+      rig.update(car, 1 / fps);
+      assert.ok(rig.camera.position.z <= 7.5 + 1e-7, 'camera never crosses the wall clearance');
+      assert.ok(Number.isFinite(rig.camera.position.y));
+    }
+  }
+});
+
+test('wide and zoomed chase lenses fit their near-plane corners into the available scenery clearance', () => {
+  for (const aspect of [.4, 16 / 9, 4]) {
+    const rig = new ThirdPersonCamera(), car = new THREE.Object3D();
+    rig.resize(aspect); rig.clearance = () => .35; rig.setZoom(6); rig.update(car, 0);
+    const slope = Math.tan(THREE.MathUtils.degToRad(rig.camera.fov) / 2);
+    assert.ok(rig.camera.near * Math.hypot(1, slope, slope * aspect) <= .35 + 1e-9);
+  }
 });

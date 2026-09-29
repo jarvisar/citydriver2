@@ -1,0 +1,21 @@
+.camera-settings .weather-setting { margin: 0 0 12px; }
+.camera-settings .weather-setting select { min-width: 0; max-width: 65%; }
+.camera-settings .camera-input-controls { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--city-line); }
+.camera-settings .panel-button { width: 100%; }
+.camera-settings .weather-note { margin: 8px 0 12px; }
+.camera-settings input:disabled { opacity: .4; cursor: default; }
+.camera-input-controls #reset-look { margin-top: 6px; }
+#camera-tools {
+  position: absolute; right: var(--ui-right); bottom: var(--ui-bottom);
+  display: none; flex-direction: column; padding: 3px; gap: 2px;
+  border: 1px solid var(--city-line); border-radius: var(--city-radius);
+  background: var(--city-glass); color: var(--city-text); touch-action: none;
+}
+#camera-tools button { width: 44px; height: 44px; border: 0; border-radius: var(--city-control-radius); background: transparent; color: inherit; display: grid; place-items: center; }
+#camera-tools button:hover { background: var(--city-hover); }
+#camera-tools button:disabled { opacity: .35; }
+#camera-tools svg { width: 22px; height: 22px; }
+#app:has(#camera-tools:not([hidden])) #stick-help { bottom: calc(var(--stick-size) + 36px); }
+@media (any-pointer: coarse) { #camera-tools { display: flex; } }
+body[data-controller=true] #camera-tools,
+#app:has(.welcome:not(.hidden), #pause-overlay:not([hidden]), dialog[open]) #camera-tools { display: none; }

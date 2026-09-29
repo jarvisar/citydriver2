@@ -67,6 +67,10 @@ export class Input {
         return;
       }
       if (document.querySelector('dialog[open]')) return;
+      if (e.code === 'KeyQ' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); onAction('recenter'); return; }
+      if (['BracketLeft', 'BracketRight'].includes(e.code) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault(); onAction(e.code === 'BracketLeft' ? 'zoomIn' : 'zoomOut'); return;
+      }
       // E gets out of the car and into another (free drive)
       if (e.code === 'KeyE' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) onAction('use');
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Numpad8', 'Numpad2', 'Numpad4', 'Numpad6', 'Space'].includes(e.code)) e.preventDefault();

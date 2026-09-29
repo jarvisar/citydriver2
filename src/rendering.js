@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { fitSunShadow, fitSunShadowAround } from './shadows.js';
 import { stabilizeShadowFiltering, rendererPrograms, precompileShadowPrograms, installPlayerFog } from './rendering-compat.js';
 import { PlayerFog, fitFogDistance } from './player-fog.js';
+import { CAMERA_VIEWS, CameraPreferences } from './camera-preferences.js';
 import { ThirdPersonCamera } from './third-person-camera.js';
 import { FirstPersonCamera } from './first-person-camera.js';
 import { AmbientOcclusion } from './ambient-occlusion.js';
@@ -82,6 +83,8 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 1200);
   const thirdPerson = new ThirdPersonCamera();
   const firstPerson = new FirstPersonCamera();
+  const cameraPreferences = new CameraPreferences();
+  let cameraMode = null, headsetCamera = false;
   let followedCar;
   // A crash shakes the chase and driver's views: never a headset's, nor for
   // anyone who prefers reduced motion.
@@ -117,7 +120,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   const cameraOffset = new THREE.Vector3(-220, 245, 260);
   const touchScreen = window.matchMedia('(any-pointer: coarse)');
   const sunOffset = new THREE.Vector3(-110, 240, 100);
-  const views = [{ height: 235, label: 'Scenic view' }, { height: 165, label: 'Medium view' }, { height: 115, label: 'Close view' }, { height: 75, label: 'Extra close view' }, { height: 115, label: 'Third-person view', thirdPerson: true }, { height: 115, label: 'First-person view', firstPerson: true }];
+  const views = CAMERA_VIEWS;
   const activeCamera = () => views[view].firstPerson ? firstPerson.camera : views[view].thirdPerson ? thirdPerson.camera : camera;
   let initialized = false; let view = touchScreen.matches ? 2 : 1; let viewHeight = views[view].height; let previousOrigin = 0;
   let weatherFog = null;
@@ -269,9 +272,32 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
     // overhead views draw without fog). Do that now, behind the loading screen.
     return Promise.all(pending).then(() => programs.warm());
   }
-  function setView(index) { view = index; updateFog(); thirdPerson.snap(); firstPerson.snap(); return views[view].label; }
+  function setView(index, remember = false) {
+    if (!Number.isInteger(index) || !views[index]) return views[view].label;
+    view = index; updateFog(); thirdPerson.snap(); firstPerson.snap();
+    if (remember && !headsetCamera) cameraPreferences.setProfile(cameraMode, { view });
+    return views[view].label;
+  }
+  function setZoom(value, immediate = false) {
+    thirdPerson.setZoom(value);
+    if (immediate) thirdPerson.zoom = thirdPerson.zoomTarget;
+    if (!headsetCamera) cameraPreferences.setProfile(cameraMode, { zoom: thirdPerson.zoomTarget });
+  }
+  function useCameraProfile(mode, restore = false) {
+    if (!cameraPreferences.profiles[mode] || (cameraMode === mode && !restore)) return;
+    cameraMode = mode;
+    if (headsetCamera) return;
+    const profile = cameraPreferences.profiles[mode];
+    thirdPerson.setZoom(profile.zoom);
+    if (view !== profile.view) setView(profile.view);
+  }
+  function recenter(immediate = false) {
+    if (!followedCar || !activeCamera().isPerspectiveCamera) return;
+    (views[view].firstPerson ? firstPerson : thirdPerson).recenter(followedCar, immediate || reducedMotion);
+  }
   let desktopView;
   function enterVR() {
+    headsetCamera = true;
     desktopView = view; setView(views.findIndex(view => view.thirdPerson));
     const session = renderer.xr.getSession(), scalable = typeof XRView !== 'undefined' && 'requestViewportScale' in XRView.prototype;
     graphics.setHeadset(true, { frameRate: session?.frameRate, scalable });
@@ -291,16 +317,24 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   // (Auto's last resort, see Graphics.judgeHeadset, and a new choice from the headset's menu)
   graphics.lowerHeadsetRate = () => renderer.xr.getSession()?.frameRate > HEADSET_FALLBACK_RATE && askHeadsetRate(HEADSET_FALLBACK_RATE);
   graphics.onChange((settings, reason) => { if (reason === 'headset-rate' && renderer.xr.isPresenting) askHeadsetRate(graphics.headsetRate); });
-  function exitVR() { if (desktopView !== undefined) setView(desktopView); desktopView = undefined; graphics.setHeadset(false); }
+  function exitVR() {
+    headsetCamera = false;
+    if (cameraMode) useCameraProfile(cameraMode, true);
+    else if (desktopView !== undefined) setView(desktopView);
+    desktopView = undefined; graphics.setHeadset(false);
+  }
   function addCuller(cull) { cullers.add(cull); return () => cullers.delete(cull); }
   // What the chase camera cannot see through (see ThirdPersonCamera.sight),
   // the ground it keeps above, and whether a bridge's deck is over a point
   function setSightLine(sight) { thirdPerson.sight = sight; }
   function setGround(ground, decked = null) { thirdPerson.ground = ground; thirdPerson.decked = decked; }
-  function setCameraClearance(clearance) { firstPerson.clearance = clearance; vrCamera.clearance = clearance; }
+  function setCameraClearance(clearance) { thirdPerson.clearance = clearance; firstPerson.clearance = clearance; vrCamera.clearance = clearance; }
   // The mouse turns the chase camera round the car, or the view through the
   // player's eyes, and the wheel brings the chase camera in or out (see MouseLook)
-  const look = (yaw, pitch) => (views[view].firstPerson ? firstPerson : thirdPerson).look(yaw, pitch), zoom = factor => thirdPerson.zoomBy(factor);
+  const look = (yaw, pitch) => (views[view].firstPerson ? firstPerson : thirdPerson).look(yaw, pitch);
+  const zoom = factor => { if (Number.isFinite(factor) && factor > 0) setZoom(thirdPerson.zoomTarget * factor); };
   const stencil = renderer.getContext().getContextAttributes()?.stencil === true;
-  return { renderer, scene, graphics, ambientOcclusion, vrCamera, stencil, render, precompile, addCuller, setSightLine, setGround, setCameraClearance, look, zoom, enterVR, exitVR, setView, toggleAO() { return graphics.toggleAmbientOcclusion(); }, get camera() { return activeCamera(); }, update, resize, recordFrame, setWeather, get viewLabel() { return views[view].label; }, get chaseView() { return Boolean(views[view].thirdPerson); }, get firstPersonView() { return Boolean(views[view].firstPerson); }, toggleView() { return setView((view + 1) % views.length); }, snap() { initialized = false; thirdPerson.snap(); firstPerson.snap(); } };
+  return { renderer, scene, graphics, ambientOcclusion, vrCamera, stencil, render, precompile, addCuller, setSightLine, setGround, setCameraClearance, look, zoom, setZoom, recenter, cameraPreferences, useCameraProfile,
+    get cameraMode() { return cameraMode; }, get viewIndex() { return view; }, get zoomLevel() { return thirdPerson.zoomTarget; },
+    enterVR, exitVR, setView, toggleAO() { return graphics.toggleAmbientOcclusion(); }, get camera() { return activeCamera(); }, update, resize, recordFrame, setWeather, get viewLabel() { return views[view].label; }, get chaseView() { return Boolean(views[view].thirdPerson); }, get firstPersonView() { return Boolean(views[view].firstPerson); }, toggleView() { return setView((view + 1) % views.length, true); }, snap() { initialized = false; thirdPerson.snap(); firstPerson.snap(); } };
 }

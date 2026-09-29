@@ -26,6 +26,7 @@ export function menuControls(state, actions) {
     weather: control('Weather', actions.weather, { value: WEATHER_CHOICES.find(([id]) => id === state.weather)?.[1] }),
     view: control('Camera', actions.view, { value: state.view.replace(/ view$/, '') }),
     recenter: control('Recenter view', actions.recenter), comfort: control('Comfort vignette', actions.comfort, { toggle: state.comfort }),
+    lookSensitivity: control('Stick look speed', actions.lookSensitivity, { value: `${Math.round((state.lookSensitivity ?? 1) * 100)}%` }),
     graphics: control('Graphics', actions.graphics, { value: state.graphics }),
     rate: control('Refresh rate', actions.rate, { value: state.rateChoice === null ? state.frameRate ? `Auto · ${Math.round(state.frameRate)} Hz` : 'Auto' : `${state.rateChoice} Hz` }),
     sound: control('Sound', actions.sound, { toggle: state.sound }),
@@ -54,7 +55,7 @@ export function menuModel(state, controls, { garage, fleet, result, mapImage, ma
       item('resume', { primary: true, header: true }),
       ...(state.mode === 'taxi' ? ['restart', 'free', 'demolition', 'fleet'] : state.mode === 'demolition' ? ['restart', 'free', 'taxi'] : ['taxi', 'demolition', 'garage', 'autodrive', 'traffic']).map(drive),
       drive('reset'), item('map', { group: 'The city' }), item('weather', { group: 'The city' }),
-      ...['view', 'recenter', 'comfort', 'graphics'].map(view), ...(state.rates.length ? [view('rate')] : []),
+      ...['view', 'recenter', 'lookSensitivity', 'comfort', 'graphics'].map(view), ...(state.rates.length ? [view('rate')] : []),
       item('sound', { column: 1, group: 'Sound' }), item('mix', { column: 1, group: 'Sound' }), item('exit', { footer: true }),
     ] };
 }

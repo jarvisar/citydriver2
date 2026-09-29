@@ -89,12 +89,11 @@ export class GamepadInput {
     // fire once and Start can resume the game without a keyboard or touchscreen.
     this.state = paused ? {} : state;
     const pause = pressed(9), view = pressed(2), reset = pressed(3), nextJourney = pressed(5);
-    const map = pressed(8), fps = pressed(11), car = pressed(10), fullscreen = pressed(13);
+    const map = pressed(8), recenter = pressed(11), car = pressed(10), fullscreen = pressed(13);
     const back = pressed(1), confirm = pressed(0), autodrive = pressed(12);
     const previous = pressed(14) || pressed(17), next = pressed(15) || pressed(18);
     const up = pressed(12) || pressed(19), down = pressed(13) || pressed(20);
     this.previousButtons = buttons;
-    if (fps) this.onAction('fps');
     // A chooser takes the whole pad. The pause screen only borrows the
     // directions and A, so the shortcuts below still work from it.
     if (menu && menu !== 'pause' && menu !== 'welcome') {
@@ -125,6 +124,7 @@ export class GamepadInput {
     if (car) { this.onAction('car'); return; }
     if (pause) { this.onAction('pause'); return; }
     if (nextJourney) { this.onAction('nextJourney'); return; }
+    if (recenter) { this.onAction('recenter'); return; }
     if (paused) {
       // Paused, the D-pad and sticks move the pause screen's focus ring rather
       // than the car, so resume, the garage and the graphics settings are all
@@ -139,6 +139,8 @@ export class GamepadInput {
       return;
     }
     if (state.forward || state.brake) this.onAction('drive');
+    if (previous) this.onAction('zoomIn');
+    if (next) this.onAction('zoomOut');
     if (autodrive) this.onAction('autodrive');
     // D-pad Down is fullscreen while driving; in a menu it moves the focus
     if (fullscreen) this.onAction('fullscreen');

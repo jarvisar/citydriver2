@@ -5,6 +5,18 @@ import { FirstPersonCamera } from '../src/first-person-camera.js';
 import { DrivingController } from '../src/vehicle.js';
 import { CARS } from '../src/cars.js';
 
+test('recenter levels first-person walking without turning the player and returns a driver to the road', () => {
+  for (const walking of [false, true]) for (const fps of [30, 60, 120]) {
+    const rig = new FirstPersonCamera(), car = new THREE.Object3D(); car.userData.leash = walking;
+    rig.update(car, 0); rig.look(1, -.5); rig.update(car, 1 / fps);
+    const heading = rig.heading; rig.recenter(car);
+    for (let i = 0; i < fps * 2; i++) rig.update(car, 1 / fps);
+    assert.equal(rig.lookYaw, 0); assert.equal(rig.lookPitch, 0);
+    assert.equal(rig.heading, heading, 'walking keeps its heading, the driver keeps the car heading');
+    rig.look(.2, .1); assert.equal(rig.centering, false);
+  }
+});
+
 test('first-person camera follows every windshield and faces the car heading', () => {
   const vehicle = new DrivingController(), rig = new FirstPersonCamera();
   for (const id of Object.keys(CARS)) {

@@ -23,6 +23,7 @@ export class FirstPersonCamera {
     // Where the view looks, as a heading (on foot, its own), and how far the
     // mouse has turned and tilted it
     this.heading = 0; this.lookYaw = 0; this.lookPitch = 0; this.rested = 0;
+    this.centering = false;
   }
   resize(aspect) {
     this.camera.aspect = aspect;
@@ -31,15 +32,23 @@ export class FirstPersonCamera {
     this.camera.updateProjectionMatrix();
   }
   // Turns the view by these many radians: to the right, and down
-  look(yaw, pitch) { this.lookYaw += yaw; this.lookPitch -= pitch; this.rested = 0; }
+  look(yaw, pitch) { if (yaw || pitch) this.centering = false; this.lookYaw += yaw; this.lookPitch -= pitch; this.rested = 0; }
+  recenter(car, immediate = false) {
+    this.centering = !immediate;
+    if (immediate) this.lookYaw = this.lookPitch = 0;
+  }
   // (looking ahead again)
-  snap() { this.initialized = false; this.lookYaw = 0; this.lookPitch = 0; }
+  snap() { this.initialized = false; this.lookYaw = 0; this.lookPitch = 0; this.centering = false; }
   // `steady` leaves out the bob of someone's walk (see Walker's `eyeBob`): in a headset, and for reduced motion
   update(car, dt, steady = false) {
     const pitch = THREE.MathUtils.clamp(car.rotation.x, -.5, .5), own = Boolean(car.userData.leash);
     this.pitch = this.initialized ? THREE.MathUtils.damp(this.pitch, pitch, 7, dt) : pitch;
     if (!this.initialized) this.heading = -car.rotation.y;
     this.initialized = true;
+    if (this.centering) {
+      this.lookYaw = settle(this.lookYaw, 0, 8, dt); this.lookPitch = settle(this.lookPitch, 0, 8, dt);
+      if (!this.lookYaw && !this.lookPitch) this.centering = false;
+    }
     if (own) {
       this.heading = wrap(this.heading + this.lookYaw); this.lookYaw = 0;
       this.lookPitch = THREE.MathUtils.clamp(this.lookPitch, FOOT_DOWN, FOOT_UP);

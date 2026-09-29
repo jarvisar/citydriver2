@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX } from './camera-preferences.js';
 
 // How far the chase lens opens between a standstill and full speed.
 const RUSH_FOV = 1.09;
@@ -16,7 +17,7 @@ const DIP_RISE = 4, DIP_DROP = 10;
 const TILT_LOW = -.25, TILT_HIGH = 1.05;
 export const LOOK_REST = 1.5, LOOK_MOVING = 2, LOOK_RETURN = 2.5;
 // The wheel takes it this much nearer or farther, easing there at ZOOM_RATE
-const ZOOM_NEAR = .45, ZOOM_FAR = 6, ZOOM_RATE = 10;
+const ZOOM_RATE = 10;
 // However it is turned, it keeps this far over the ground under it (and
 // this far under a bridge's deck, see `lid`)
 const GROUND_CLEAR = .6, LID_CLEAR = .5;
@@ -68,10 +69,12 @@ export class ThirdPersonCamera {
     // the lift it has come to, and how far it has risen over something low (see CRANE)
     this.scale = 1; this.lift = 0; this.crane = 0; this.craning = false;
     this.raised = new THREE.Vector3();
+    this.centering = false; this.clearance = null;
   }
   // Turns the camera round the car by these many radians: to the right, and
   // up to look down on it
   look(yaw, pitch) {
+    if (yaw || pitch) this.centering = false;
     this.lookYaw = Math.atan2(Math.sin(this.lookYaw + yaw), Math.cos(this.lookYaw + yaw));
     this.lookPitch = THREE.MathUtils.clamp(this.lookPitch + pitch, TILT_LOW, TILT_HIGH);
     this.rested = 0;
@@ -79,8 +82,16 @@ export class ThirdPersonCamera {
   // Takes the camera this many times as far out
   zoomBy(factor) {
     if (!Number.isFinite(factor) || factor <= 0) return;
-    this.zoomTarget = THREE.MathUtils.clamp(this.zoomTarget * factor, ZOOM_NEAR, ZOOM_FAR);
+    this.setZoom(this.zoomTarget * factor);
+  }
+  setZoom(value) {
+    if (!Number.isFinite(value)) return;
+    this.zoomTarget = THREE.MathUtils.clamp(value, CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX);
     this.rested = 0;
+  }
+  recenter(car, immediate = false) {
+    this.centering = !immediate;
+    if (immediate) { this.heading = -car.rotation.y; this.headingVelocity = 0; this.lookYaw = this.lookPitch = 0; }
   }
   resize(aspect) {
     this.camera.aspect = aspect;
@@ -94,7 +105,7 @@ export class ThirdPersonCamera {
     this.camera.updateProjectionMatrix();
   }
   // (back behind the car, at the distance the player chose)
-  snap() { this.initialized = false; this.rush = 0; this.dip = 0; this.reach = null; this.lookYaw = 0; this.lookPitch = 0; this.crane = 0; this.craning = false; this.lid = null; }
+  snap() { this.initialized = false; this.rush = 0; this.dip = 0; this.reach = null; this.lookYaw = 0; this.lookPitch = 0; this.crane = 0; this.craning = false; this.lid = null; this.centering = false; }
   update(car, dt) {
     // Past two fifths of the car's top speed the lens opens up and the chase
     // seat slides back, so a boulevard at full throttle feels quick and a
@@ -149,6 +160,12 @@ export class ThirdPersonCamera {
         }
       }
     }
+    if (this.centering) {
+      this.lookYaw = settle(this.lookYaw, 0, 8, dt); this.lookPitch = settle(this.lookPitch, 0, 8, dt);
+      const turn = car.userData.leash ? Math.atan2(Math.sin(-car.rotation.y - this.heading), Math.cos(-car.rotation.y - this.heading)) : 0;
+      if (turn) this.heading += turn - settle(turn, 0, 8, dt);
+      if (!this.lookYaw && !this.lookPitch && Math.abs(turn) < 1e-4) this.centering = false;
+    }
     const yaw = this.heading + this.lookYaw;
     this.forward.set(Math.sin(yaw), 0, -Math.cos(yaw));
     const scale = this.scale, distance = (14 + 2.2 * this.rush) * scale;
@@ -181,6 +198,11 @@ export class ThirdPersonCamera {
     } else this.craning = false;
     this.crane = settle(this.crane, this.craning ? CRANE : 0, CRANE_RATE, dt);
     if (this.crane) { this.camera.position.y += this.crane; this.pivot.y += this.crane; }
+    // Cast toward the position the lens can actually occupy. Clamping under
+    // a bridge after casting an unobstructed high ray could put it in a wall.
+    const lid = this.lid = car.userData.lid ?? (this.lid && this.decked?.(this.camera.position.x, this.camera.position.z) ? this.lid : null);
+    this.clampHeight(this.camera.position, lid);
+    if (lid != null) { this.pivot.y = Math.min(this.pivot.y, lid - LID_CLEAR); this.target.y = Math.min(this.target.y, lid - LID_CLEAR); }
     // A building between the car and the camera brings it in along that line,
     // at once so no frame looks out from inside a wall, then lets it back out
     // gently once the view clears, as most driving games' chase cameras do.
@@ -200,24 +222,29 @@ export class ThirdPersonCamera {
     }
     // How far it was just pulled in, and how fast it is easing out, for the
     // headset's comfort vignette (see ComfortVignette)
+    // A pull-in can land on a different hillside. Both ends already lie under
+    // the lid, so this correction only raises the lens; raising a clear ray
+    // cannot enter one of sightLine's footprints bounded by a roof height.
+    this.clampHeight(this.camera.position, lid);
     this.camera.userData.jump = Math.max(0, Math.min(before, previousDistance) - this.reachDistance);
     this.camera.userData.glide = dt > 0 ? Math.max(0, this.reachDistance - before) / dt : 0;
-    // Nor, turned down low, does it go into the ground, nor, following a
-    // flying machine under a bridge, up into the deck (`lid`, its underside),
-    // until it is out from under the deck itself (`decked`): let go as the
-    // machine flew out, it rose through the deck behind it
     const floor = (this.ground?.(this.camera.position.x, this.camera.position.z) ?? -Infinity) + GROUND_CLEAR;
-    if (this.camera.position.y < floor) this.camera.position.y = floor;
-    const lid = this.lid = car.userData.lid ?? (this.lid && this.decked?.(this.camera.position.x, this.camera.position.z) ? this.lid : null);
-    if (lid) { this.camera.position.y = Math.min(this.camera.position.y, lid - LID_CLEAR); this.target.y = Math.min(this.target.y, lid - LID_CLEAR); }
     // Zoomed out or flying, give thin road and paving layers more depth precision.
     // Fit after collision/ground clamps so a wall pulling us in cannot clip the car.
     const wantedNear = .1 + (this.dip < .005 ? 0 : this.dip * .9) + Math.max(0, this.zoom - 1) * .5;
     const groundRoom = this.camera.position.y - floor + GROUND_CLEAR;
-    const roofRoom = lid ? lid - this.camera.position.y : Infinity;
-    const near = Math.max(.1, Math.min(wantedNear, this.camera.position.distanceTo(this.pivot) * .1, groundRoom * .5, roofRoom * .5));
+    const roofRoom = lid != null ? lid - this.camera.position.y : Infinity;
+    const slope = Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2);
+    const lensRoom = wantedNear > .1 ? (this.clearance?.(this.camera.position) ?? Infinity) / Math.hypot(1, slope, slope * this.camera.aspect) : Infinity;
+    const near = Math.max(.1, Math.min(wantedNear, this.camera.position.distanceTo(this.pivot) * .1, groundRoom * .5, roofRoom * .5, lensRoom));
     if (near < this.camera.near || near - this.camera.near > .02) { this.camera.near = near; this.camera.updateProjectionMatrix(); }
     this.camera.lookAt(this.target);
     this.camera.updateMatrixWorld();
+  }
+  clampHeight(point, lid) {
+    const before = point.y, floor = (this.ground?.(point.x, point.z) ?? -Infinity) + GROUND_CLEAR;
+    point.y = Math.max(point.y, floor);
+    if (lid != null) point.y = Math.min(point.y, lid - LID_CLEAR);
+    return point.y !== before;
   }
 }

@@ -252,6 +252,17 @@ function block(extra = {}) {
   return { collisionBounds: { minX: -5, maxX: 5, minZ: -25, maxZ: -15 }, features: { colliders: [building] } };
 }
 
+test('camera sight intersects roofs in 3D, including descending from above a footprint and pitched ridges', () => {
+  for (const origin of [0, 1024]) {
+    const from = { x: 0, y: 20, z: origin - 20 }, to = { x: 0, y: 5, z: origin - 20 };
+    assert.ok(Math.abs(sightLine([block()], from, to, origin) - 9.5 / 15) < 1e-9, 'vertical descent stops above the roof');
+    assert.ok(Math.abs(sightLine([block({ ridge: 15 })], from, to, origin) - 4.5 / 15) < 1e-9, 'pitched roof includes the ridge');
+    assert.equal(sightLine([block()], { ...from, y: 30 }, { ...to, y: 20 }, origin), 1, 'high flight clears the footprint');
+    const across = sightLine([block()], { x: 0, y: 20, z: origin }, { x: 0, y: 5, z: origin - 30 }, origin);
+    assert.ok(Math.abs(across - 9.5 / 15) < 1e-9, 'above-roof entry does not pull the camera back to the wall unnecessarily');
+  }
+});
+
 test('camera clearance keeps close clipping near walls, roof ridges and after rebasing', () => {
   const chunks = [block()];
   assert.equal(cameraClearance(chunks, { x: 0, y: 100, z: -20 }), 1, 'open air above the building');

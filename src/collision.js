@@ -202,11 +202,18 @@ export function sightLine(chunks, from, to, origin = 0, cars = null) {
   const block = (solid, top, clear) => {
     let crossing = lineThrough(solid, x, z, dx, dz, clear);
     if (crossing?.[0] < 0 && clear > CLOSE) crossing = lineThrough(solid, x, z, dx, dz, CLOSE);
-    // (a line that starts inside even that, with the car in the wall, has nowhere better to be)
-    if (!crossing || crossing[0] < 0 || crossing[0] >= open) return;
-    // Rising or falling, the line is lowest where it enters or leaves
-    const enters = from.y + crossing[0] * (to.y - from.y), leaves = from.y + Math.min(crossing[1], 1) * (to.y - from.y);
-    if (Math.min(enters, leaves) < top + CLOSE) open = crossing[0];
+    if (!crossing) return;
+    // Intersect the height interval as well as the footprint. A descending
+    // lens can hit a roof after entering above it, even starting over the roof.
+    // Returning the 2D entry either missed that roof or pulled in much too far.
+    let [enter, leave] = crossing;
+    const dy = to.y - from.y, ceiling = top + CLOSE;
+    if (Math.abs(dy) < 1e-9) { if (from.y >= ceiling) return; }
+    else if (dy < 0) enter = Math.max(enter, (ceiling - from.y) / dy);
+    else leave = Math.min(leave, (ceiling - from.y) / dy);
+    // If the player starts inside the actual volume there is nowhere better
+    // along this ray; a roof entry from above still has a positive fraction.
+    if (enter >= 0 && enter <= Math.min(leave, 1) && enter < open) open = enter;
   };
   const outside = (at, reach) => at.x - reach > maxX || at.x + reach < minX || at.z - reach > maxZ || at.z + reach < minZ;
   for (const chunk of chunks) {
@@ -219,7 +226,7 @@ export function sightLine(chunks, from, to, origin = 0, cars = null) {
       // comes in to just before it, rather than look out through it)
       if (cars && solid.heading === undefined && !solid.corners) { if (!outside(solid, solid.reach)) open = Math.min(open, postEnd(solid, x, z, dx, dz)); continue; }
       if ((solid.top === undefined && !car) || outside(solid, solid.reach)) continue;
-      block(solid, car ? cars.ground + ROOF : solid.top, car ? CAR_CLEAR : CLEAR);
+      block(solid, car ? cars.ground + ROOF : solid.ridge ?? solid.top, car ? CAR_CLEAR : CLEAR);
     }
   }
   for (const body of cars?.bodies ?? []) {

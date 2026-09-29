@@ -67,13 +67,16 @@ Every visit generates a new city. Add `?seed=4817` to the URL to load the same c
 | Jump (on foot) | Space | A / Cross or LB / L1 |
 | Fullscreen | F, or Fullscreen in the pause menu | D-pad Down (while driving), or Fullscreen in the pause menu |
 | Look around (chase and first-person view) | Mouse, after a click on the view (at once in fullscreen) | Right stick (sideways only when flying) |
-| Camera distance (chase view) | Mouse wheel | |
+| Camera distance (chase view) | Mouse wheel or [ / ] | D-pad left / right |
+| Recenter camera | Q | R3 / right stick click |
 | Sound | Pause menu | Pause menu |
 | City map | M, or City map on the street map | View / Share |
 | Street map (show / hide) | Its arrow button | |
 | Menus | Tab, Enter | D-pad or left stick to choose, A / Cross to select, B / Circle to go back |
 
 On touch screens, use the stick to drive, hold Boost, and tap Drift while steering in chase view. Release the stick to stop. In first or third person, keep one thumb on the stick and drag a second thumb across the scene to look around. In the helicopter and the plane, hold Climb or Descend. On foot, drag the stick the way to walk and push it further to run. Tap or hold Jump, hold Sprint, and tap Get out or Get in.
+
+The camera buttons at the lower right recenter the view and move the third-person camera closer or farther away. Pause → Display → Camera has view, distance, sensitivity and vertical inversion settings. Mouse, touch and controller each keep their own look settings; driving and walking remember separate views and distances. Recenter keeps the chosen distance. F3 toggles the FPS counter.
 
 ### VR
 

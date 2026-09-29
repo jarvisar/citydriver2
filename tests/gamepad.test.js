@@ -87,7 +87,7 @@ test('stick deadzone, analog triggers, D-pad and face-button fallbacks', () => {
 
 test('shortcuts fire once per press and Start works while paused', () => {
   const { input, device, actions } = fixture();
-  for (const [index, action] of [[9, 'pause'], [2, 'view'], [3, 'reset'], [5, 'nextJourney'], [8, 'map'], [13, 'fullscreen'], [11, 'fps']]) {
+  for (const [index, action] of [[9, 'pause'], [2, 'view'], [3, 'reset'], [5, 'nextJourney'], [8, 'map'], [13, 'fullscreen'], [11, 'recenter'], [14, 'zoomIn'], [15, 'zoomOut']]) {
     hold(device, index); input.update(); input.update(); input.update();
     assert.equal(actions.filter(item => item === action).length, 1);
     hold(device, index, 0); input.update();
@@ -97,7 +97,7 @@ test('shortcuts fire once per press and Start works while paused', () => {
   hold(device, 9, 0); hold(device, 7); input.update({ paused: true });
   assert.deepEqual(input.state, {}); assert.equal(actions.includes('drive'), false);
   hold(device, 11); input.update({ paused: true }); input.update({ paused: true });
-  assert.equal(actions.filter(item => item === 'fps').length, 2, 'R3 toggles FPS once while paused');
+  assert.equal(actions.filter(item => item === 'recenter').length, 2, 'R3 recenters once while paused');
 });
 
 test('scene shortcut works paused and consumes presses made in a modal', () => {
@@ -194,7 +194,7 @@ test('the pause screen takes the pad as a menu while its shortcuts stay live', (
   assert.equal(actions.length, 6);
   // The pause screen is a layer over the drive, not a modal, so its shortcuts
   // still work.
-  for (const [index, action] of [[9, 'pause'], [8, 'map'], [10, 'car'], [5, 'nextJourney'], [11, 'fps']]) {
+  for (const [index, action] of [[9, 'pause'], [8, 'map'], [10, 'car'], [5, 'nextJourney'], [11, 'recenter']]) {
     hold(device, index); input.update(pauseMenu); input.update(pauseMenu);
     assert.equal(actions.at(-1), action);
     hold(device, index, 0); input.update(pauseMenu);
