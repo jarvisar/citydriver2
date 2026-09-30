@@ -115,7 +115,7 @@ function street() {
 // Pieces at rest on their own, with no car (the player lying down, a body themselves)
 const alone = { groundedPosition: new THREE.Vector3(), spec: {}, walker: { down: true } };
 
-test('the truck ploughs through a tree and a bus shelter, the monster truck only the shelter; to other cars they are walls', () => {
+test('every car knocks over a tree and a bus shelter, and the heavy ones plough on through', () => {
   // (bus shelters stand on main roads, not always near the start: a second city round the nearest)
   const piece = [...world().world.furnitureByChunk.values()].flat().filter(p => p.kind === 'shelter')
     .sort((a, b) => Math.hypot(a.u - world().start.u, a.s - world().start.s) - Math.hypot(b.u - world().start.u, b.s - world().start.s))[0];
@@ -135,16 +135,14 @@ test('the truck ploughs through a tree and a bus shelter, the monster truck only
   try {
     for (const [target, kind, city] of [[nearest('tree'), 'tree', world()], [shelter, 'shelter', { scene, world: there }]]) {
       assert.ok(target, `a ${kind} to drive into`);
-      for (const [id, through] of [['rig', true], ['bus', true], ['monster', kind === 'shelter'], ['taxi', false]]) {
+      for (const [id, heavy] of [['rig', true], ['bus', true], ['monster', true], ['taxi', false], ['buggy', false], ['taxiFormula', false]]) {
         const { props, car, before, after } = drive(target, id, 18, 3, false, city);
         try {
-          assert.equal(Boolean(target.woken), through, `${id} into a ${kind}`);
-          if (through) {
-            const [body] = target.prop.bodies;
-            assert.ok(tilt(body) > 45 || Math.hypot(body.p.x - target.x, body.p.z - target.z) > 2, `${id}: the ${kind} goes over or flies (${tilt(body).toFixed(0)}°, ${Math.hypot(body.p.x - target.x, body.p.z - target.z).toFixed(1)} m)`);
-            assert.ok(after > before * .75, `${id} carries on (${before.toFixed(1)} -> ${after.toFixed(1)} m/s)`);
-          } else assert.ok(car.speed < 9, `${id} is stopped by the ${kind} (${car.speed.toFixed(1)} m/s)`);
-          
+          assert.ok(target.woken, `${id} into a ${kind}`);
+          const [body] = target.prop.bodies;
+          assert.ok(tilt(body) > 45 || Math.hypot(body.p.x - target.x, body.p.z - target.z) > 2, `${id}: the ${kind} goes over or flies (${tilt(body).toFixed(0)}°, ${Math.hypot(body.p.x - target.x, body.p.z - target.z).toFixed(1)} m)`);
+          // (a light car loses about half its speed to a tree, the buggy three quarters, but is never stopped dead)
+          assert.ok(after > before * (heavy ? .75 : .15), `${id} carries on (${before.toFixed(1)} -> ${after.toFixed(1)} m/s)`);
         } finally { props.reset(); props.dispose(); car.disposeModel(); }
       }
     }
@@ -301,7 +299,7 @@ test('a hydrant knocked off its stump sprays a jet of water a while, no more tha
   } finally { props.dispose(); car.disposeModel(); }
 });
 
-test('buildings stand firm, and trees and shelters do against all but the cars that break them; lamps, signals, signs, bins, benches and the kerbside fittings can be knocked loose', () => {
+test('buildings stand firm, and trees and shelters do against someone on foot; lamps, signals, signs, bins, benches and the kerbside fittings can be knocked loose', () => {
   const all = colliders(), loose = all.filter(c => c.prop);
   const kinds = new Set(loose.map(c => c.prop.pieces[0].kind));
   for (const kind of ['lamp', 'lantern', 'sign', 'bin', 'bench', 'tree', 'hydrant']) assert.ok(kinds.has(kind), `${kind} can be knocked loose`);
@@ -314,10 +312,10 @@ test('buildings stand firm, and trees and shelters do against all but the cars t
   }
   assert.ok(trees > 50, `${trees} trees checked`);
   assert.ok(all.some(c => c.corners && !c.prop), 'buildings stand firm');
-  // Driven into at 15 m/s by each car: only a car that breaks it moves it
+  // Driven into at 15 m/s by each car, it goes; walked into, it doesn't
   const tree = loose.find(c => c.prop.pieces[0].kind === 'tree' && c.prop.ready);
   const shelter = { prop: { pieces: [{ kind: 'shelter', geometry: cityAssets.shelter }], ready: true, matrix: m => m.makeTranslation(tree.x, PAVEMENT_LEVEL, tree.z), hide() {} }, x: tree.x, z: tree.z };
-  for (const [car, breaks] of [['taxi', []], ['monster', ['shelter']], ['rig', ['tree', 'shelter']], ['bus', ['tree', 'shelter']]]) {
+  for (const [car, breaks] of [['taxi', ['tree', 'shelter']], ['monster', ['tree', 'shelter']], ['rig', ['tree', 'shelter']], ['walker', []]]) {
     const vehicle = new DrivingController(citydriverRoute, journeyStart(), car);
     vehicle.groundedPosition.set(tree.x - 3, ROAD_LEVEL, tree.z); vehicle.heading = Math.PI / 2;
     for (const collider of [tree, shelter]) {

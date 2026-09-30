@@ -207,6 +207,8 @@ export function createCar(id = DEFAULT_CAR) {
   if (entry.kind === 'plane') return createPlane(entry);
   return entry.kind === 'classic' ? createClassicCar(entry) : createShapeCar(entry);
 }
+// Every machine the player drives or flies knocks over trees and bus shelters (see LooseProps)
+const BREAKS = ['tree', 'shelter'];
 // Who flies each kind of flying machine (see fit)
 const PILOTS = { helicopter: Helicopter, plane: Plane };
 
@@ -319,7 +321,7 @@ export class ActorMotion {
     const profile = carProfile(model.car, length);
     // (and for someone getting in and out, where its door is, metres ahead of
     // its middle, how high its seat, and where to step down: see OnFoot)
-    this.spec = this.drivingSpec = { name: carId, width, length, height: profile.height, profile, mass: entry.mass ?? footprintMass(width, length), breaks: entry.breaks ?? [], door, seat, exit };
+    this.spec = this.drivingSpec = { name: carId, width, length, height: profile.height, profile, mass: entry.mass ?? footprintMass(width, length), breaks: BREAKS, door, seat, exit };
     this.stats = carStats(carId);
     this.setLights(Number(this.night)); this.setAppearance(this.journeyId); this.setPaint(paint);
     Object.assign(model.car.userData, this.car.userData);

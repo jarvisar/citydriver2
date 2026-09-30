@@ -112,7 +112,7 @@ export const CARS = {
   },
   // Goes anywhere at the same unhurried pace, and leans on its tyres to stop or turn.
   monster: {
-    name: 'Monster Truck', mass: 4.5, kind: 'special', paint: '#3f7fb5', shape: SPECIAL_SHAPES.monster, breaks: ['shelter'],
+    name: 'Monster Truck', mass: 4.5, kind: 'special', paint: '#3f7fb5', shape: SPECIAL_SHAPES.monster,
     stats: { topSpeed: 23.5, acceleration: 10.4, braking: 16.5, grip: .8, offRoad: 21.5 },
   },
   // All engine: quicker in a straight line than the coupe, and nowhere else.
@@ -122,13 +122,13 @@ export const CARS = {
   },
   // Eight tonnes of tractor unit. It gets there, and it needs the room to stop.
   rig: {
-    name: 'Truck', mass: 8, kind: 'special', paint: '#a3312c', shape: SPECIAL_SHAPES.rig, breaks: ['tree', 'shelter'],
+    name: 'Truck', mass: 8, kind: 'special', paint: '#a3312c', shape: SPECIAL_SHAPES.rig,
     stats: { topSpeed: 27, acceleration: 8.6, braking: 15.5, grip: .78, offRoad: 16.2, turnRadius: 5.4 },
   },
   // The city's bus, as heavy as the truck and bigger: it goes through what
   // the truck does, is nearly as slow away, and swings wide at a corner.
   bus: {
-    name: 'City Bus', mass: BUS_MODEL.mass, kind: 'special', paint: BUS_PAINT, shape: SPECIAL_SHAPES.bus, breaks: ['tree', 'shelter'],
+    name: 'City Bus', mass: BUS_MODEL.mass, kind: 'special', paint: BUS_PAINT, shape: SPECIAL_SHAPES.bus,
     stats: { topSpeed: 25, acceleration: 9.2, braking: 16.2, grip: .8, offRoad: 16, turnRadius: 6.8 },
   },
   // Out of breath by 48 mph, but it changes lanes like a thought.
@@ -142,11 +142,10 @@ export const CARS = {
     stats: { topSpeed: 100, acceleration: 60, braking: 30, grip: 2.25, offRoad: 20, turnRadius: 3.6 },
   },
   // Not a car at all: it flies (see helicopter.js), so the road never slows
-  // it. Its stats set its top speed, its pull and how hard it can stop. Like
-  // the truck it smashes through trees and bus shelters, and it weighs in
-  // heavy enough to keep going: a tree takes about a tenth of its speed.
+  // it. Its stats set its top speed, its pull and how hard it can stop. It
+  // weighs in heavy enough to keep going: a tree takes about a tenth of its speed.
   helicopter: {
-    name: 'Helicopter', mass: 4, kind: 'helicopter', flies: true, paint: '#c9362f', shape: HELICOPTER_SHAPE, breaks: ['tree', 'shelter'],
+    name: 'Helicopter', mass: 4, kind: 'helicopter', flies: true, paint: '#c9362f', shape: HELICOPTER_SHAPE,
     stats: { topSpeed: 40, acceleration: 13, braking: 16, grip: 1.2, offRoad: 40 },
   },
   // A light plane on big soft tyres (see plane.js): it needs a run at it to
@@ -154,7 +153,7 @@ export const CARS = {
   // weighed in heavier than it is, as the helicopter is, so a tree it flies
   // through only costs it a bite of its speed.
   plane: {
-    name: 'Plane', mass: 2.2, kind: 'plane', flies: true, paint: '#2f6fa8', shape: PLANE_SHAPE, breaks: ['tree', 'shelter'],
+    name: 'Plane', mass: 2.2, kind: 'plane', flies: true, paint: '#2f6fa8', shape: PLANE_SHAPE,
     stats: { topSpeed: 56, acceleration: 12, braking: 14, grip: 1.1, offRoad: 56 },
   },
 };
