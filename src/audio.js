@@ -7,12 +7,14 @@ import { cueFrequency, cueNotes } from './audio/cues.js';
 const STORAGE_KEY = 'citydriver-audio-v1', SOUND_KEY = 'citydriver-sound';
 const storage = () => { try { return globalThis.localStorage ?? null; } catch { return null; } };
 const clamp01 = value => Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0));
+// How long after getting in or out (s) the engine takes its slower fade
+const SWAP = 1.2;
 
 // One lazy graph for the entire visit. Sources and event voices are bounded;
 // all transitions use the audio clock, and silent contexts sleep after fading.
 export class DriveAudio {
   constructor() {
-    this.enabled = false; this.context = null; this.graph = null; this.car = 'auto'; this.cruise = 0;
+    this.enabled = false; this.context = null; this.graph = null; this.car = 'auto'; this.cruise = 0; this.swapped = -Infinity;
     this.paused = false; this.hidden = false; this.disposed = false;
     this.model = new DriveSoundModel(); this.director = new SoundDirector(); this.targets = new WeakMap();
     this.revision = 0; this.lastUpdate = -Infinity; this.suspendTimer = null;
@@ -66,7 +68,7 @@ export class DriveAudio {
   // `cruise` is the speed the car holds (carStats), which sets its gearing
   setCar(id, force = false, cruise = this.cruise) {
     if (!force && this.car === id && this.cruise === cruise) return;
-    this.car = id; this.cruise = cruise; this.profile = engineFor(id);
+    this.car = id; this.cruise = cruise; this.profile = engineFor(id); this.swapped = this.context?.currentTime ?? 0;
     this.model.setProfile(this.profile, cruise || 28); this.graph?.setEngine(this.profile); this.shiftSerial = 0; this.liftSerial = 0;
     this.targets = new WeakMap();
   }
@@ -170,19 +172,27 @@ export class DriveAudio {
     const g = this.graph, profile = this.profile ?? engineFor(this.car);
     const set = (param, value, seconds) => this.target(param, value, seconds);
     const layer = (target, value, seconds) => this.layer(target, value, seconds);
+    // Just out of a car, its engine (a rotor's chop too) dies away over about
+    // a second rather than cutting out, and just in, the next one comes up
+    // rather than starting at full idle (see SWAP)
+    const swap = now - this.swapped < SWAP, fade = swap ? profile.silent ? .4 : .2 : undefined;
     // The car: engine, then tyres, wind and whatever it is scraping along
     g.engineBank.update(state.rpm, state.load, set);
-    set(g.engineLevel, state.engineLevel * 3.2); set(g.engineFilter, state.engineCutoff * 1.5, .18);
-    layer(g.combustion, (.004 + state.load * .01) * profile.rasp); set(g.combustion.frequency, 380 + state.load * 700);
-    layer(g.intake, state.load ** 2 * .022 * profile.intake); set(g.intake.frequency, 800 + state.rpm * .22);
+    set(g.engineLevel, state.engineLevel * 3.2, fade); set(g.engineFilter, state.engineCutoff * 1.5, .18);
+    layer(g.combustion, (.004 + state.load * .01) * profile.rasp, fade); set(g.combustion.frequency, 380 + state.load * 700);
+    layer(g.intake, state.load ** 2 * .022 * profile.intake, fade); set(g.intake.frequency, 800 + state.rpm * .22);
     layer(g.boost, state.boost * (.03 + state.motion * .03), state.boost ? .15 : .3); set(g.boost.frequency, 900 + state.motion * 1700, .4);
     layer(g.reverse, state.reverseLevel); set(g.reverse.frequency, state.reverseFrequency);
     const wetness = clamp01(scene?.wetness ?? scene?.rain);
     layer(g.road, state.roadLevel * (1.4 + wetness * .3)); set(g.road.frequency, 480 + state.motion * (1000 + wetness * 2600), .25);
     // (the same judder, low and deep, is a helicopter's blades beating)
     const roughness = state.roughLevel * 1.8, chop = state.chop;
-    layer(g.rough, roughness); set(g.roughPulse, roughness * (chop ? .9 : .16)); set(g.roughMod.frequency, chop || 12 + state.motion * 31);
-    set(g.rough.frequency, chop ? 190 : 1000);
+    layer(g.rough, roughness, fade);
+    // (a rotor dying away keeps its beat while it fades, rather than turning to a hiss)
+    if (!(swap && profile.silent)) {
+      set(g.roughPulse, roughness * (chop ? .9 : .16)); set(g.roughMod.frequency, chop || 12 + state.motion * 31);
+      set(g.rough.frequency, chop ? 190 : 1000);
+    }
     // In first person the cabin muffles the world, unless the car has none
     const cabin = Boolean(scene?.interior && !profile.open);
     set(g.cabin.engine, cabin ? 2200 : 20000, .35); set(g.cabin.world, cabin ? 1600 : 20000, .35);

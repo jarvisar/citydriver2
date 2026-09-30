@@ -8,7 +8,8 @@ const stick = (left, right, axis) => {
 
 // XR controllers belong to the session, not navigator.getGamepads(). These
 // indices are the xr-standard layout, including its empty touchpad slots.
-// The grips are the pad's bumpers: left drifts, right boosts. B pauses, and
+// The grips are the pad's bumpers: left drifts and climbs, right boosts and
+// descends. B pauses, and
 // so does Y except in free drive, where it gets in and out of cars, so no
 // single press leaves the headset; Exit VR is in the pause menu. The right
 // stick turns the view, round the car or the player. On foot the left stick
@@ -48,9 +49,9 @@ export class XRInput {
       left: Math.max(0, -steer), right: Math.max(0, steer),
       handbrake: button(left, 1) > .5,
       boost: button(right, 1) > .5,
-      // The helicopter climbs and descends on the right stick, or the right and left grips
-      climb: Math.max(rise, button(right, 1) > .5 ? 1 : 0, 0),
-      descend: Math.max(-rise, button(left, 1) > .5 ? 1 : 0, 0),
+      // The helicopter climbs and descends on the right stick, or the left and right grips
+      climb: Math.max(rise, button(left, 1) > .5 ? 1 : 0, 0),
+      descend: Math.max(-rise, button(right, 1) > .5 ? 1 : 0, 0),
       // (the right stick only turns: the headset looks up and down, and its
       // up and down climbs in the helicopter)
       moveX: steer, moveY: ahead, lookX: left && right ? deadzone(right.axes[2]) : 0, lookY: left && right ? deadzone(right.axes[3]) : 0,

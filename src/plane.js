@@ -67,7 +67,8 @@ const TAP = .28, DOUBLE = .36, LOOP_RADIUS = 22, LOOP_SPEED = 24, LOOP_ROOM = 5,
 // ahead of the middle, and its chord
 const FEET = [[0, 0], [-1.02, .15], [1.02, .15], [0, 2.85]];
 const WING = { y: 2.25, along: .75, chord: 1.6 };
-const TOUCH = 1;
+// A blow this hard (m/s) is a crash, as a car's is (see vehicle.js): the pad rumbles
+const TOUCH = 1, CRASH = 6;
 const TWO_PI = Math.PI * 2;
 // How tall it stands, wheels to fin, for going under a bridge
 const TOP = 2.8;
@@ -433,6 +434,7 @@ export class Plane {
     if (impact > TOUCH) {
       telemetry.impact = impact; telemetry.impactSerial++;
       v.trauma = Math.min(1, v.trauma + (impact - TOUCH) / 28);
+      if (impact >= CRASH) telemetry.crashSerial++;
     }
     telemetry.scrape = Math.max(telemetry.scrape, scrape);
     const cos = Math.cos(v.heading), sin = Math.sin(v.heading), along = dvx * sin - dvz * cos, flat = Math.cos(this.pitch);

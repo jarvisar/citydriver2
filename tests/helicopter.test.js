@@ -269,6 +269,31 @@ test('a blow from traffic or furniture shoves it, and the camera looks down from
   } finally { heli.disposeModel(); }
 });
 
+test('set down by itself from high up it drops quickly, then settles softly', () => {
+  const heli = helicopter();
+  try {
+    heli.pilot.takeOver(0, 0, GROUND + 60); heli.pilot.landed = false; heli.update(0, {});
+    let seconds = 0, touchdown = 0;
+    for (; seconds < 12 && !heli.pilot.landed; seconds += 1 / 120) { touchdown = -heli.pilot.vy; heli.update(1 / 120, { land: true }); }
+    assert.ok(heli.pilot.landed && seconds < 7, `down from 60 m in ${seconds.toFixed(1)} s`);
+    assert.ok(touchdown < 1.5, `touched down at ${touchdown.toFixed(2)} m/s`);
+  } finally { heli.disposeModel(); }
+});
+
+test('down on a roof after a flight, it says so, as the plane does', () => {
+  const heli = helicopter(), chunks = new Map([[0, block(GROUND + 12)]]);
+  heli.scenery = chunks;
+  try {
+    heli.pilot.takeOver(0, 0, GROUND + 30); heli.pilot.landed = false; heli.update(0, {});
+    heli.s = 60; heli.u = 0; heli.update(0, {});
+    fly(heli, 4);
+    const said = [];
+    for (let i = 0; i < 120 * 12 && !heli.pilot.landed; i++) { heli.update(1 / 120, { descend: 1 }); said.push(...heli.pilot.drain().map(event => event.text)); }
+    assert.ok(heli.pilot.landed && height(heli) > 11, `on the roof at ${height(heli).toFixed(1)} m`);
+    assert.deepEqual(said, ['Rooftop landing']);
+  } finally { heli.disposeModel(); }
+});
+
 test('controllers and headsets climb and descend without touching the car controls', () => {
   const pad = (axes, pressed = []) => ({ connected: true, index: 0, mapping: 'standard', axes, buttons: Array.from({ length: 17 }, (_, i) => ({ pressed: pressed.includes(i), value: pressed.includes(i) ? 1 : 0 })) });
   let device = pad([0, 0, 0, 0]);
@@ -278,10 +303,11 @@ test('controllers and headsets climb and descend without touching the car contro
   assert.equal(input.state.climb, 1); assert.equal(input.state.descend, 0);
   device = pad([0, 0, 0, .8]); input.update();
   assert.ok(input.state.descend > .7 && input.state.climb === 0);
-  device = pad([0, 0, 0, 0], [5]); input.update();
-  assert.equal(input.state.climb, 1); assert.equal(input.state.boost, 1, 'RB still boosts a car');
+  // (LB climbs as Space does, and jumps on foot; RB descends as Shift does)
   device = pad([0, 0, 0, 0], [4]); input.update();
-  assert.equal(input.state.descend, 1); assert.equal(input.state.handbrake, 1, 'LB still drifts a car');
+  assert.equal(input.state.climb, 1); assert.equal(input.state.handbrake, 1, 'LB still drifts a car'); assert.equal(input.state.jump, 1, 'and jumps on foot');
+  device = pad([0, 0, 0, 0], [5]); input.update();
+  assert.equal(input.state.descend, 1); assert.equal(input.state.boost, 1, 'RB still boosts a car');
 
   // (the same controllers throughout: a new one must be let go of first)
   const controller = handedness => ({ handedness, gamepad: { mapping: 'xr-standard', axes: [0, 0, 0, 0], buttons: [{ value: 0 }, { value: 0 }, {}, {}, {}, {}] } });
@@ -290,7 +316,9 @@ test('controllers and headsets climb and descend without touching the car contro
   right.gamepad.axes[3] = -1; xr.update([left, right]);
   assert.equal(xr.state.climb, 1, 'right stick up');
   right.gamepad.axes[3] = 0; left.gamepad.buttons[1].value = 1; xr.update([left, right]);
-  assert.equal(xr.state.descend, 1, 'left grip'); assert.equal(xr.state.handbrake, true, 'which still drifts a car');
+  assert.equal(xr.state.climb, 1, 'left grip'); assert.equal(xr.state.handbrake, true, 'which still drifts a car');
+  left.gamepad.buttons[1].value = 0; right.gamepad.buttons[1].value = 1; xr.update([left, right]);
+  assert.equal(xr.state.descend, 1, 'right grip'); assert.equal(xr.state.boost, true, 'which still boosts a car');
   // With only the right controller, its stick steers, so it does not also climb
   const only = controller('right'), alone = new XRInput(() => {});
   alone.update([only]); alone.update([only]);

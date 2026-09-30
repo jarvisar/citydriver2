@@ -25,6 +25,9 @@ const GRAVITY = 9.8;
 const colour = new THREE.Color(), matrix = new THREE.Matrix4(), turn = new THREE.Quaternion(), size = new THREE.Vector3();
 const point = new THREE.Vector3(), way = new THREE.Vector3(), side = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0), forward = new THREE.Vector3(0, 0, 1);
 const WHITE = new THREE.Color('#ffffff');
+// A jetpack's nozzles on the walker's figure (x right, z back, from its feet),
+// and turning a flame from pointing back to pointing down
+const NOZZLES = [-.09, .09], NOZZLE_Y = .93, NOZZLE_Z = .2, DOWNWARD = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
 
 function glowMaterial() {
   return new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: .92, depthWrite: false, toneMapped: false, fog: false });
@@ -84,7 +87,8 @@ export class DriftEffects {
     const drift = vehicle.drift, car = vehicle.car;
     if (!running || !dt) return;
     this.age(dt);
-    if (!drift || vehicle.pilot || vehicle.walker) { this.flames.count = this.flares.count = 0; this.seen = null; this.laid = [null, null]; this.draw(); return; }
+    if (vehicle.walker) { this.jetpack(vehicle.walker, dt); this.draw(); return; }
+    if (!drift || vehicle.pilot) { this.flames.count = this.flares.count = 0; this.seen = null; this.laid = [null, null]; this.draw(); return; }
     const air = vehicle.carAir, layout = air.layout, drifting = vehicle.drifting;
     // What has happened since the last frame (counts, so nothing is missed between frames)
     const seen = this.seen ?? { stages: drift.stagesReached, losses: drift.losses };
@@ -186,6 +190,32 @@ export class DriftEffects {
     }
     this.flames.count = n;
     this.flames.instanceMatrix.needsUpdate = true; this.flames.instanceColor.needsUpdate = true;
+  }
+  // A jetpack burning (see Walker's IGNITE): two gold flames down out of the
+  // pack along the figure, however it leans or flips, and a trail of smoke
+  jetpack(walker, dt) {
+    const figure = walker.figure, burn = walker.jet;
+    this.flares.count = 0; this.seen = null; this.laid = [null, null];
+    if (burn < .05) { this.flames.count = 0; return; }
+    figure.updateWorldMatrix(true, false);
+    figure.getWorldQuaternion(turn).multiply(DOWNWARD);
+    this.flicker += dt * 38;
+    let n = 0;
+    for (const x of NOZZLES) for (const core of [false, true]) {
+      const flicker = 1 + Math.sin(this.flicker + x * 40 + (core ? 2 : 0)) * .16;
+      matrix.compose(point.set(x, NOZZLE_Y, NOZZLE_Z).applyMatrix4(figure.matrixWorld), turn, size.set(core ? .2 : .38, core ? .2 : .38, (core ? .55 : 1.15) * burn * flicker));
+      this.flames.setMatrixAt(n, matrix);
+      this.flames.setColorAt(n, core ? colour.set(BOOST_COLOUR).lerp(WHITE, .45) : colour.set(BOOST_COLOUR));
+      n++;
+    }
+    this.flames.count = n;
+    this.flames.instanceMatrix.needsUpdate = true; this.flames.instanceColor.needsUpdate = true;
+    this.fume += dt * 18 * burn;
+    for (const r = this.random; this.fume >= 1; this.fume--) {
+      if (this.smoke.length >= PUFFS) this.smoke.shift();
+      const p = point.set((r() - .5) * .2, NOZZLE_Y - .45, NOZZLE_Z).applyMatrix4(figure.matrixWorld).clone();
+      this.smoke.push({ p, v: new THREE.Vector3(walker.vx * .3 + (r() - .5) * .8, -3 - r() * 2, walker.vz * .3 + (r() - .5) * .8), age: 0, life: .35 + r() * .2, size: .09 + r() * .07, grey: .8 + r() * .12 });
+    }
   }
   draw() {
     const list = this.list;

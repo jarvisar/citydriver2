@@ -77,7 +77,7 @@ const STICK_LOOK = 2.4;
 let paused = false, started = false, time = 0, hudTime = 0, gameMode = 'taxi';
 document.body.dataset.mode = gameMode;
 const frameClock = new FrameClock(), pacer = new FramePacer();
-let toastTimer; let sceneReady = false;
+let toastTimer, toastShown = -Infinity; let sceneReady = false;
 // The chosen car outlives the visit; positions and mileage do not.
 const carStorageKey = 'citydriver-car';
 let carId = DEFAULT_CAR;
@@ -95,7 +95,7 @@ const toast = (message, tone = '') => {
   const parent = gameMode !== 'free' && started && !paused ? $('.taxi-task-main') : $('#app');
   if (element.parentElement !== parent) parent.append(element);
   // Taxi arrivals take their rating's colour: Speedy green, Normal yellow, Slow red.
-  element.textContent = message; element.dataset.tone = tone; element.classList.add('show'); clearTimeout(toastTimer);
+  element.textContent = message; element.dataset.tone = tone; element.classList.add('show'); clearTimeout(toastTimer); toastShown = performance.now();
   toastTimer = setTimeout(() => element.classList.remove('show'), 2200);
 };
 
@@ -584,7 +584,7 @@ async function boot() {
     }
     // Free drive's two buttons climb and descend in the helicopter, and jump
     // and sprint on foot (Space and Shift do, see Input), and are named for it
-    const driveButtons = { driving: [['Drift', 'Hold + steer'], ['Boost']], flying: [['Climb', 'Hold'], ['Descend']], walking: [['Jump', 'Tap'], ['Sprint']] };
+    const driveButtons = { driving: [['Drift', 'Hold + steer'], ['Boost']], flying: [['Climb', 'Hold'], ['Descend']], walking: [['Jump', 'Hold to fly'], ['Sprint']] };
     let driveMode = null, driveMachine = null, driveTap = null;
     function updateDriveUi() {
       const free = started && gameMode === 'free', mode = free && vehicle.pilot ? 'flying' : free && vehicle.walker ? 'walking' : 'driving';
@@ -646,56 +646,76 @@ async function boot() {
       rendering.update(vehicle.car, 0, world.origin);
       updateCarUi(); updateHud(); needsRender = true;
       // (how to fly, on whatever the player is holding: the plane needs a run at it first)
-      const device = vr?.active ? 'vr' : document.body.dataset.controller === 'true' ? 'pad' : matchMedia('(pointer: coarse)').matches ? 'touch' : 'keys';
+      const device = inputDevice();
       const takeOff = { vr: 'Right trigger', pad: 'RT', touch: 'Push the stick up', keys: 'Hold W' }[device];
-      const climbing = { vr: 'Right stick: climb / descend', pad: 'Right stick or RB / LB: climb / descend', touch: 'Hold Climb or Descend', keys: 'Space / Shift: climb / descend' }[device];
+      const climbing = { vr: 'Right stick: climb / descend', pad: 'Right stick or LB / RB: climb / descend', touch: 'Hold Climb or Descend', keys: 'Space / Shift: climb / descend' }[device];
       const flight = !CARS[id].flies ? '' : CARS[id].kind === 'plane' ? ` · ${takeOff} to take off · ${climbing}` : ` · ${climbing}`;
       toast(`${carEntry(id).name} selected${flight}`);
     }
+    // What the player is holding, for anything that names a button
+    const inputDevice = () => vr?.active ? 'vr' : document.body.dataset.controller === 'true' ? 'pad' : matchMedia('(pointer: coarse)').matches ? 'touch' : 'keys';
+    // Once-only hints (how to drift, spin, roll, fly the jetpack) wait their
+    // turn: never over another toast and a few seconds apart, so what just
+    // happened is said first and one hint never wipes out another. One that
+    // no longer applies when its turn comes (`still`) is dropped, to be asked
+    // again, and `told` keeps it from being said again once it shows.
+    const HINT_AFTER = 3000, HINT_GAP = 7000, hints = [];
+    let hintShown = -Infinity;
+    function hint(text, still, told) {
+      if (!hints.some(queued => queued.text === text)) hints.push({ text, still, told });
+    }
+    function showHints(now) {
+      if (!started || paused || !hints.length || now - toastShown < HINT_AFTER || now - hintShown < HINT_GAP) return;
+      while (hints.length) {
+        const next = hints.shift();
+        if (!next.still()) continue;
+        toast(next.text); next.told(); hintShown = now;
+        return;
+      }
+    }
+    const free = () => started && gameMode === 'free';
+    const driving = () => free() && !vehicle.pilot && !vehicle.walker;
+    // (the button a car drifts with, which also tricks and spins it in the air)
+    const driftButton = () => ({ keys: 'Space', pad: 'LB', vr: 'the left grip', touch: 'Drift' })[inputDevice()];
     // The plane's stunts (see Plane), told once each: the roll after a while
     // up in the air, and the loop after the first roll
     const flightHintKey = 'citydriver-flight-hints';
     let flightHints = {};
     try { flightHints = JSON.parse(localStorage.getItem(flightHintKey)) ?? {}; } catch { /* Storage is optional. */ }
+    const flying = () => free() && vehicle.carId === 'plane' && Boolean(vehicle.pilot) && !vehicle.pilot.landed;
     function hintFlight(stunt = null) {
       const pilot = vehicle.pilot;
-      if (!pilot || vehicle.carId !== 'plane' || !started || gameMode !== 'free') return;
-      const hint = !flightHints.roll && pilot.aloft > 6 && !pilot.stunt ? 'roll' : !flightHints.loop && stunt === 'Barrel roll' ? 'loop' : null;
-      if (!hint) return;
-      // (this runs every step in the plane: the device only once there is something to say)
-      const device = vr?.active ? 'vr' : document.body.dataset.controller === 'true' ? 'pad' : matchMedia('(pointer: coarse)').matches ? 'touch' : 'keys';
-      if (hint === 'roll') toast({ keys: 'Double-tap A or D to barrel roll', pad: 'Flick the left stick twice to barrel roll', vr: 'Flick the left stick twice to barrel roll', touch: 'Flick the stick twice sideways to barrel roll' }[device]);
-      else setTimeout(() => { if (vehicle.pilot && !paused) toast({ keys: 'Double-tap Space to loop the loop', pad: 'Double-tap RB to loop the loop', vr: 'Double-tap the right grip to loop the loop', touch: 'Double-tap Climb to loop the loop' }[device]); }, 2400);
-      flightHints[hint] = true;
-      try { localStorage.setItem(flightHintKey, JSON.stringify(flightHints)); } catch { /* Told for this visit. */ }
+      if (!pilot || !flying()) return;
+      const which = !flightHints.roll && pilot.aloft > 6 && !pilot.stunt ? 'roll' : !flightHints.loop && stunt === 'Barrel roll' ? 'loop' : null;
+      if (!which) return;
+      const device = inputDevice();
+      const text = which === 'roll' ? { keys: 'Double-tap A or D to barrel roll', pad: 'Flick the left stick twice to barrel roll', vr: 'Flick the left stick twice to barrel roll', touch: 'Flick the stick twice sideways to barrel roll' }[device]
+        : { keys: 'Double-tap Space to loop the loop', pad: 'Double-tap LB to loop the loop', vr: 'Double-tap the left grip to loop the loop', touch: 'Double-tap Climb to loop the loop' }[device];
+      hint(text, flying, () => {
+        flightHints[which] = true;
+        try { localStorage.setItem(flightHintKey, JSON.stringify(flightHints)); } catch { /* Told for this visit. */ }
+      });
     }
     // Jumps in free drive, told once each after a landing: how to spin, once a
     // jump has had the air for it, then how to do a trick, and where the
     // city's jumps are kept
     const airHintKey = 'citydriver-air-hints';
-    let airHints = {}, airHintDue = null;
+    let airHints = {};
     try { airHints = JSON.parse(localStorage.getItem(airHintKey)) ?? {}; } catch { /* Storage is optional. */ }
-    const toldAir = hint => { airHints[hint] = true; try { localStorage.setItem(airHintKey, JSON.stringify(airHints)); } catch { /* Told for this visit. */ } };
+    const toldAir = which => { airHints[which] = true; try { localStorage.setItem(airHintKey, JSON.stringify(airHints)); } catch { /* Told for this visit. */ } };
     function hintAir(event) {
-      if (!started || gameMode !== 'free' || event.landing === 'splash') return;
+      if (!free() || event.landing === 'splash') return;
       // (a player who spins or tricks already needs no telling)
       if (event.turns && !airHints.spin) toldAir('spin');
       if (event.trick && !airHints.trick) toldAir('trick');
-      const hint = !airHints.spin && event.air >= 1 ? 'spin' : airHints.spin && !airHints.trick && event.air >= .8 ? 'trick'
+      const which = !airHints.spin && event.air >= 1 ? 'spin' : airHints.spin && !airHints.trick && event.air >= .8 ? 'trick'
         : !airHints.book && event.jump?.stars ? 'book' : null;
-      if (!hint || airHintDue) return;
-      const device = vr?.active ? 'vr' : document.body.dataset.controller === 'true' ? 'pad' : matchMedia('(pointer: coarse)').matches ? 'touch' : 'keys';
-      const button = { keys: 'Space', pad: 'LB', vr: 'the left grip', touch: 'Drift' }[device];
+      if (!which) return;
       // (held from the ground it does not spin: see Drift.spinning)
-      const text = hint === 'spin' ? `In the air, press and hold ${button} and steer to spin`
-        : hint === 'trick' ? `Tap ${button} as you leave a ramp for a trick and a boost`
+      const text = which === 'spin' ? `In the air, press and hold ${driftButton()} and steer to spin`
+        : which === 'trick' ? `Tap ${driftButton()} as you leave a ramp for a trick and a boost`
         : 'Pause to see the city\'s jumps and your stars';
-      // (after the landing's own news, and told only once it has been seen)
-      airHintDue = setTimeout(() => {
-        airHintDue = null;
-        if (!started || paused || gameMode !== 'free' || airHints[hint]) return;
-        toast(text); toldAir(hint);
-      }, 2400);
+      hint(text, () => driving() && !airHints[which], () => toldAir(which));
     }
     // Drifting in free drive, told once each: how to, once the car has been
     // going fast for a while and hasn't drifted, and after the first blue
@@ -703,25 +723,35 @@ async function boot() {
     const driftHintKey = 'citydriver-drift-hints';
     let driftHints = {}, fastTime = 0;
     try { driftHints = JSON.parse(localStorage.getItem(driftHintKey)) ?? {}; } catch { /* Storage is optional. */ }
-    const toldDrift = hint => { driftHints[hint] = true; try { localStorage.setItem(driftHintKey, JSON.stringify(driftHints)); } catch { /* Told for this visit. */ } };
+    const toldDrift = which => { driftHints[which] = true; try { localStorage.setItem(driftHintKey, JSON.stringify(driftHints)); } catch { /* Told for this visit. */ } };
     function hintDrift(event = null, dt = 0) {
-      if (!started || gameMode !== 'free' || vehicle.pilot || vehicle.walker || !vehicle.drift) return;
-      const device = vr?.active ? 'vr' : document.body.dataset.controller === 'true' ? 'pad' : matchMedia('(pointer: coarse)').matches ? 'touch' : 'keys';
-      const button = { keys: 'Space', pad: 'LB', vr: 'the left grip', touch: 'Drift' }[device];
+      if (!driving() || !vehicle.drift) return;
       if (event) {
         // (a first turbo past blue, and there is nothing to tell)
         if (event.stage > 1) toldDrift('stages');
-        if (driftHints.stages) return;
-        toldDrift('stages');
-        setTimeout(() => { if (started && !paused && gameMode === 'free') toast('Drift for longer: orange, then pink sparks, bigger boosts'); }, 1800);
+        if (!driftHints.stages) hint('Drift for longer: orange, then pink sparks, bigger boosts', () => driving() && !driftHints.stages, () => toldDrift('stages'));
         return;
       }
       if (driftHints.drift) return;
       if (vehicle.drifting) { toldDrift('drift'); return; }
       fastTime += Math.abs(vehicle.speed) > 12 ? dt : 0;
       if (fastTime < 8) return;
-      toldDrift('drift');
-      toast(vehicle.driftMode === 'tap' ? `Tap ${button} while steering to drift · tap again to boost` : `Hold ${button} and steer to drift · let go to boost`);
+      const button = driftButton();
+      hint(vehicle.driftMode === 'tap' ? `Tap ${button} while steering to drift · tap again to boost` : `Hold ${button} and steer to drift · let go to boost`, () => driving() && !driftHints.drift, () => toldDrift('drift'));
+    }
+    // On foot in free drive, told once after a moment: the jetpack and the
+    // parachute are both on jump
+    let jetHinted = false, footTime = 0;
+    try { jetHinted = localStorage.getItem('citydriver-jetpack-hint') === 'shown'; } catch { /* Storage is optional. */ }
+    const walkingFree = () => free() && Boolean(vehicle.walker) && !jetHinted;
+    function hintJetpack(dt) {
+      if (!walkingFree()) { footTime = 0; return; }
+      if ((footTime += dt) < 1.5) return;
+      const button = { keys: 'Space', pad: 'A', vr: 'the left grip', touch: 'Jump' }[inputDevice()];
+      hint(`Hold ${button} to fly the jetpack · tap it up high for the parachute`, walkingFree, () => {
+        jetHinted = true;
+        try { localStorage.setItem('citydriver-jetpack-hint', 'shown'); } catch { /* Told for this visit. */ }
+      });
     }
     function openCars() {
       if (started && gameMode === 'taxi') { openFleet(); return; }
@@ -964,7 +994,7 @@ async function boot() {
       lookHint += dt;
       if (lookHint < 5) return;
       lookHinted = true;
-      toast('Click to look around with the mouse');
+      hint('Click to look around with the mouse', () => looking() && !mouseLook.locked && !lookKnown, () => {});
     }
     // On foot through their own eyes, movement strafes when the mouse, right
     // stick or second thumb owns the view; keyboard alone turns it.
@@ -1193,12 +1223,12 @@ async function boot() {
       if (started) updateControlHelp(vehicle.speed);
       // (a flying machine's stunts and landings)
       if (vehicle.pilot) {
-        for (const event of vehicle.pilot.drain()) { toast(event.text, event.kind === 'stunt' ? 'stunt' : ''); if (event.kind === 'stunt') hintFlight(event.text); }
+        for (const event of vehicle.pilot.drain()) pilotEvent(event);
         hintFlight();
       }
       // (a car's jumps, and the river it came down in: see CarAir)
       for (const event of vehicle.drain()) carEvent(event);
-      hintDrift(null, dt);
+      hintDrift(null, dt); hintJetpack(dt);
       if (vehicle.audioTelemetry.crashSerial !== crashesFelt) { crashesFelt = vehicle.audioTelemetry.crashSerial; rumble(.8, .6, .2); }
       // Furniture the player hits may be knocked flying, and a parked car
       // knocked loose while there is traffic to take it; on foot, nothing is
@@ -1230,6 +1260,16 @@ async function boot() {
         tickClock(demolition.timeLeft);
       }
     };
+    // A flying machine's stunts and landings are said as a car's jumps are: a
+    // word, a label rising off it, a chime for a stunt, and a jolt through the
+    // pad for a hard landing
+    function pilotEvent(event) {
+      const p = vehicle.groundedPosition, stunt = event.kind === 'stunt';
+      if (event.kind === 'bounce') { toast(event.text); rumble(.6, .4, .15); return; }
+      toast(event.text, 'stunt');
+      taxiView.labels.pop({ x: p.x, y: p.y, z: p.z, amount: event.text, caption: stunt ? 'STUNT' : 'LANDING', colour: stunt ? '#ffe07a' : '#9ff2e6', size: 3 });
+      if (stunt) { audio.cue('bonus'); rumble(0, .35, .1); hintFlight(event.text); }
+    }
     // A jump landed counts for whichever run is on, or goes in free drive's
     // book of jumps. A car come down on takes the blow. Down in the river,
     // the car is fished out at the run it took at the jump, to have another go.
@@ -1249,6 +1289,8 @@ async function boot() {
       } else if (event.kind === 'drift') { if (taxi.running) taxi.drifted(event, vehicle); rumble(0, .2 + event.stage * .12, .06); }
       else if (event.kind === 'turbo') { hintDrift(event); rumble(.3 + event.stage * .15, .5, .12 + event.stage * .08); }
       else if (event.kind === 'stomp') { traffic.stomp(event.on, event.impact, event); rumble(.7, .5, .18); }
+      // (on foot, down on their feet from high up: see Walker's HARD_LANDING)
+      else if (event.kind === 'thud') rumble(Math.min(.7, event.impact / 40), .4, .15);
       else if (event.kind === 'sunk') {
         const run = taxi.running || demolition.running, from = event.from, h = from?.heading ?? vehicle.heading;
         const at = from?.jump?.runup ?? (from ? { s: from.s - Math.cos(h) * 30, u: from.u - Math.sin(h) * 30, heading: h } : null);
@@ -1325,7 +1367,7 @@ async function boot() {
           if (vehicle.walker && rendering.firstPersonView && !strafing()) rendering.look((input.state.moveX || 0) * STICK_LOOK * dt, 0);
           if (yaw || pitch) cameraPreferences.look('controller', yaw * STICK_LOOK * dt, pitch * STICK_LOOK * dt, rendering.look);
         }
-        hintMouseLook(dt);
+        hintMouseLook(dt); showHints(performance.now());
         if (input.touchStick.lookPointer !== null && looking()) rendering.look(0, 0);
         world.update(vehicle.s, vehicle.u, { budgetMs: 3 }); vehicle.render(frameClock.alpha, world.origin); onFoot.render(frameClock.alpha, world.origin);
         // (on foot, what catches their eye, the camera included, as the colliders lie, and the car they would get into)

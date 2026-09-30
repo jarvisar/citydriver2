@@ -221,11 +221,14 @@ export function createHelicopter(entry) {
 //   CEILING          its highest, over the road
 //   IDLE             the rotor's share of full speed while it sits on the ground
 //   SETTLE, STILL    setting down by itself (see `land` in update): how fast it comes
-//                    down, and how fast it takes the way off
+//                    down, and how fast it takes the way off. High up it drops
+//                    faster, SETTLE_HIGH at most, easing to SETTLE by SETTLE_HIGH /
+//                    SETTLE_SLOPE m over what it lands on, so E from high up
+//                    isn't ten seconds of waiting
 //   WASH             how high over the ground its downwash kicks up dust or spray
 const CLIMB = 8, SINK = 9, LIFT = 3, LOW = 1.2, FLARE = 2.2, VERTICAL = 3.5;
 const YAW = 1.9, YAW_FAST = 1.1, YAW_EASE = 5, SIDE = 1.6, HOVER = .45, BACKWARD = 12, SKIDS = 4;
-const STEP = .7, AIRBORNE = 2.5, WATER = 1.2, CEILING = 120, IDLE = .3, SPOOL = 1.5, SETTLE = 6.5, STILL = 1.2, WASH = 8;
+const STEP = .7, AIRBORNE = 2.5, WATER = 1.2, CEILING = 120, IDLE = .3, SPOOL = 1.5, SETTLE = 6.5, SETTLE_HIGH = 15, SETTLE_SLOPE = .5, STILL = 1.2, WASH = 8;
 // How tall it stands, skids to rotor, for going under a bridge; a deck a
 // little too low to pass under (by no more than DUCK) it ducks under at DUCKING m/s
 const TOP = 3, DUCK = 1.2, DUCKING = 10;
@@ -237,7 +240,8 @@ const SHORE = 16;
 const FEET = [[0, 0], [-1.05, 2.85], [1.05, 2.85], [-1.05, -.55], [1.05, -.55]];
 // A touchdown faster than this (m/s) thumps; one faster than HARD shakes it
 const TOUCHDOWN = .6, HARD = 5;
-const TOUCH = 1;
+// A blow this hard (m/s) is a crash, as a car's is (see vehicle.js): the pad rumbles
+const TOUCH = 1, CRASH = 6;
 
 const wrap = angle => Math.atan2(Math.sin(angle), Math.cos(angle));
 
@@ -309,6 +313,8 @@ export class Helicopter {
     // and, down, its rotor winds to a stop. (When the downwash last kicked
     // something up, and what it has to tell the player: see drain.)
     this.unmanned = false; this.time = 0; this.washed = 0; this.events = [];
+    // How long it has been up this time (a landing on a roof after a flight is worth a word, as the plane's is)
+    this.aloft = 0;
   }
   get velocity() { return { x: this.vx, z: this.vz }; }
   // Its height over what is under it
@@ -420,7 +426,7 @@ export class Helicopter {
     // Up and down: held height hands off, a flare near the ground, a ceiling.
     // (the height is over what it stood on at the end of the last step)
     const height = this.y - this.below;
-    let lift = climb > descend ? climb * CLIMB : -descend * (landing ? SETTLE : SINK);
+    let lift = climb > descend ? climb * CLIMB : -descend * (landing ? THREE.MathUtils.clamp(height * SETTLE_SLOPE, SETTLE, SETTLE_HIGH) : SINK);
     if ((forward || back) && !descend && height < LOW && !this.water) lift = Math.max(lift, LIFT);
     if (lift > 0) lift *= spooled * clamp((CEILING - (this.y - this.ground)) / 12, 0, 1);
     this.vy = dt ? THREE.MathUtils.damp(this.vy, lift, VERTICAL, dt) : this.vy;
@@ -459,6 +465,8 @@ export class Helicopter {
       }
     }
     this.landed = this.y === floor && !water;
+    if (this.landed && !wasLanded && dt && this.aloft > 3 && !this.unmanned && floor > this.ground + 1) this.events.push({ kind: 'landing', text: 'Rooftop landing' });
+    this.aloft = this.landed ? 0 : this.aloft + dt;
     v.airborne = this.y - this.ground > AIRBORNE;
     v.distance += Math.hypot(v.s - fromS, v.u - fromU);
     rock(v.jolt, dt);
@@ -527,6 +535,7 @@ export class Helicopter {
     if (impact > TOUCH) {
       telemetry.impact = impact; telemetry.impactSerial++;
       v.trauma = Math.min(1, v.trauma + (impact - TOUCH) / 28);
+      if (impact >= CRASH) telemetry.crashSerial++;
     }
     telemetry.scrape = Math.max(telemetry.scrape, scrape);
     this.vx += dvx; this.vz += dvz;

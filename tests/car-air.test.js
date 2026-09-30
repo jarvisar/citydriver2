@@ -260,7 +260,10 @@ test('the chase camera looks the way a car flies, and follows its jump loosely',
   for (let i = 0; i < 240; i++) camera.update(target, 1 / 60);
   const look = new THREE.Vector3(); camera.camera.getWorldDirection(look);
   assert.ok(Math.abs(Math.atan2(look.x, -look.z)) < .05, 'along the flight, not the nose');
-  target.position.y = GROUND + 4; camera.update(target, 1 / 60);
+  target.position.y = GROUND + 1.5; camera.update(target, 1 / 60);
   const rose = camera.height - GROUND;
   assert.ok(rose > 0 && rose < .2, `a jump's height it follows gently (${rose.toFixed(3)} m in a frame)`);
+  // (but never so far behind that the car leaves the frame)
+  target.position.y = GROUND + 12; camera.update(target, 1 / 60);
+  assert.ok(target.position.y - camera.height < 14 * .14 + 1e-9, `${(target.position.y - camera.height).toFixed(2)} m behind`);
 });

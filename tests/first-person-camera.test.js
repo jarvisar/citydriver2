@@ -82,3 +82,17 @@ test('cockpit depth precision increases in open air and restores close clipping 
   car.userData.chaseDip = 1; rig.clearance = null; rig.update(car, 0);
   assert.equal(rig.camera.near, .1, 'missing scenery information keeps conservative clipping');
 });
+
+test('into a car through their eyes, the view turns from where they looked to the road ahead', () => {
+  for (const fps of [30, 60, 120]) {
+    const rig = new FirstPersonCamera(), walker = new THREE.Object3D(), car = new THREE.Object3D(), euler = new THREE.Euler(0, 0, 0, 'YXZ');
+    walker.userData.leash = true; walker.position.set(1.4, 0, 0);
+    rig.update(walker, 0); rig.look(1.2, 0); rig.update(walker, 1 / fps);
+    const yaw = () => euler.setFromQuaternion(rig.camera.quaternion).y, looked = yaw(), eye = rig.camera.position.clone();
+    rig.update(car, 1 / fps);
+    assert.ok(Math.abs(yaw() - looked) < .3, `turned ${(yaw() - looked).toFixed(2)} rad in a frame`);
+    assert.ok(rig.camera.position.distanceTo(eye) < .5, 'and the eye glides to the seat');
+    for (let i = 0; i < fps * 2; i++) rig.update(car, 1 / fps);
+    assert.ok(Math.abs(yaw()) < 1e-3, 'looking ahead once in');
+  }
+});

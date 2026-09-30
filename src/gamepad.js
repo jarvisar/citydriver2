@@ -65,9 +65,10 @@ export class GamepadInput {
       boost: buttonValue(pad, 5),
       // L1 / LB drifts
       handbrake: buttonValue(pad, 4),
-      // The helicopter climbs and descends on the right stick, or R1 / RB and L1 / LB
-      climb: Math.max(rise, buttonValue(pad, 5), 0),
-      descend: Math.max(-rise, buttonValue(pad, 4), 0),
+      // The helicopter and the plane climb and descend on the right stick, or
+      // L1 / LB and R1 / RB: up on the button that jumps on foot, as Space is
+      climb: Math.max(rise, buttonValue(pad, 4), 0),
+      descend: Math.max(-rise, buttonValue(pad, 5), 0),
       // On foot the left stick walks, the right looks round, A / Cross or
       // L1 / LB jumps and RT / R2 or R1 / RB sprints (see walkingInput)
       moveX: Math.max(-1, Math.min(1, steer + dpad)), moveY: -deadzone(pad.axes[1]),

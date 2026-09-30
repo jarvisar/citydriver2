@@ -250,16 +250,16 @@ test('on foot they jog, walk at a gentle push, sprint, turn to face the way they
     assert.ok(vehicle.boosting, 'the sprint shows as the Boost button');
     walk(vehicle, 1, {});
     assert.equal(vehicle.speed, 0, 'and stop when let go');
-    // A jump, once per press: a tap hops, and holding the button on the way up jumps higher
+    // A jump, once per press: a tap hops, and holding the button fires the jetpack
     const jump = held => {
       let top = 0;
-      for (let i = 0; i < 240; i++) { vehicle.update(step, { jump: i * step < held }); top = Math.max(top, vehicle.groundedPosition.y - GROUND); }
+      for (let i = 0; i < 720; i++) { vehicle.update(step, { jump: i * step < held }); top = Math.max(top, vehicle.groundedPosition.y - GROUND); }
       return top;
     };
-    const hop = jump(.06), high = jump(2);
+    const hop = jump(.06), flown = jump(1.2);
     assert.ok(hop > .4 && hop < .7, `a tap hops ${hop.toFixed(2)} m`);
-    assert.ok(high > .9 && high < 1.15, `a held press jumps ${high.toFixed(2)} m`);
-    assert.ok(vehicle.walker.grounded && vehicle.groundedPosition.y === GROUND, 'and landed, however long it was held');
+    assert.ok(flown > 5, `a held press flies ${flown.toFixed(2)} m up`);
+    assert.ok(vehicle.walker.grounded && vehicle.groundedPosition.y === GROUND && !vehicle.walker.chute, 'and landed on their feet, with no parachute of its own accord');
     // Through their own eyes they face where the view looks, and back is a step back
     walk(vehicle, 1, { walk: { x: 0, z: 1 }, face: false, aim: .5 });
     assert.ok(Math.abs(vehicle.heading - .5) < 1e-9 && vehicle.speed > 4, 'backed up, facing where they look');
@@ -301,17 +301,47 @@ test('a press just before landing jumps as they land, one just after stepping of
     vehicle.update(step, { walk: { x: 1, z: 0 }, jump: true });
     assert.ok(off >= 0 && walker.vy > 4 && walker.jumped && !walker.flipped, 'jumped from the edge they had just left');
     for (let i = 0; i < 240; i++) vehicle.update(step, {});
-    // A second press in the air: a flip, higher, once
+    // A second press in the air: a flip, higher, once (every press shorter
+    // than the jetpack takes to light: see IGNITE)
     vehicle.u = 8; vehicle.update(0, {});
     const floor = height();
     let top = 0;
     for (let i = 0; i < 240; i++) {
-      const press = i < 40 || (i >= 50 && i < 80) || (i >= 90 && i < 100);
+      const press = i < 20 || (i >= 32 && i < 54) || (i >= 90 && i < 100);
       vehicle.update(step, { jump: press }); top = Math.max(top, height() - floor);
-      if (i === 60) assert.ok(walker.flipped && walker.vy > 3, 'flipped on up');
+      if (i === 42) assert.ok(walker.flipped && walker.vy > 3, 'flipped on up');
     }
-    assert.ok(top > 1.5 && top < 2.2, `jumped and flipped ${top.toFixed(2)} m up`);
+    assert.ok(!walker.jetting, 'the jetpack never lit');
+    assert.ok(top > 1.2 && top < 2.2, `jumped and flipped ${top.toFixed(2)} m up`);
     assert.ok(walker.grounded, 'and landed, the third press doing nothing');
+  } finally { vehicle.disposeModel(); }
+});
+
+test('holding jump flies the jetpack up to a hover under the ceiling, and high up a tap opens the parachute and another folds it', () => {
+  const { vehicle } = onFoot();
+  vehicle.stepOut();
+  const walker = vehicle.walker, height = () => vehicle.groundedPosition.y - GROUND;
+  try {
+    // Held: off the ground, lit, climbing, faster across than they run
+    for (let i = 0; i < 120 * 3; i++) vehicle.update(step, { jump: true, walk: { x: 0, z: -1 }, sprint: true });
+    assert.ok(walker.jetting && walker.burning && height() > 15, `flew ${height().toFixed(1)} m up`);
+    assert.ok(vehicle.speed > 12 && vehicle.airborne, `flying at ${vehicle.speed.toFixed(1)} m/s, over the traffic`);
+    assert.equal(vehicle.audioTelemetry.boost, 1, 'roaring as the boost does');
+    // Long enough, it hovers under the ceiling
+    for (let i = 0; i < 120 * 12; i++) vehicle.update(step, { jump: true });
+    assert.ok(Math.abs(walker.vy) < .5 && height() < 91, `hovering ${height().toFixed(1)} m up`);
+    // Let go: they fall, no faster than a dive, and no parachute opens itself
+    for (let i = 0; i < 120 * 2; i++) vehicle.update(step, {});
+    assert.ok(!walker.burning && walker.vy < -10 && walker.vy >= -22 - 1e-9 && !walker.chute, `falling at ${walker.vy.toFixed(1)} m/s`);
+    // A tap opens the parachute, and holding jump again folds it and flies
+    vehicle.update(step, { jump: true }); for (let i = 0; i < 60; i++) vehicle.update(step, {});
+    assert.ok(walker.chute && !walker.chute.folding, 'a tap opened the parachute');
+    for (let i = 0; i < 120; i++) vehicle.update(step, {});
+    assert.ok(walker.vy > -5, 'and it slows the fall');
+    vehicle.update(step, { jump: true }); vehicle.update(step, {});
+    assert.ok(walker.chute.folding, 'another tap folds it');
+    for (let i = 0; i < 120 * 30 && !walker.grounded; i++) vehicle.update(step, {});
+    assert.ok(walker.grounded && height() === 0 && !walker.jetting, 'down on their feet');
   } finally { vehicle.disposeModel(); }
 });
 
@@ -972,7 +1002,7 @@ test('an unattended aircraft keeps its physical heading separate from its interp
   } finally { feet.clear(); vehicle.disposeModel(); }
 });
 
-test('out on a roof they stand on it and walk it, and off its edge their parachute opens and brings them down', () => {
+test('out on a roof they stand on it and walk it, and off its edge a tap of jump opens their parachute and it brings them down', () => {
   const chunks = chunkOf(tower), { vehicle, traffic, feet, run } = flying('helicopter', { s: 58, u: 2, heading: 0 }, chunks);
   try {
     vehicle.pilot.y = GROUND + 40; vehicle.pilot.landed = false; vehicle.update(0, {});
@@ -985,9 +1015,12 @@ test('out on a roof they stand on it and walk it, and off its edge their parachu
     const heli = feet.parked;
     assert.ok(heli.perch === GROUND + 30 && traffic.playerCars.includes(heli), 'the helicopter stays up there');
     // Walking north, off the far edge (s = 70)
-    let opened = null, lowest = Infinity;
+    let opened = null, lowest = Infinity, tapped = 0;
     for (let i = 0; i < 120 * 14 && !(vehicle.walker.grounded && vehicle.groundedPosition.y === GROUND); i++) {
-      vehicle.update(step, feet.control(vehicle.s < 72 ? north : {})); collideScenery(vehicle, chunks, step); feet.update(step, chunks);
+      // (a tenth of a second's tap once they are falling)
+      const tap = !vehicle.walker.grounded && vehicle.walker.vy < -3 && tapped < .1;
+      if (tap) tapped += step;
+      vehicle.update(step, feet.control({ ...(vehicle.s < 72 ? north : {}), jump: tap })); collideScenery(vehicle, chunks, step); feet.update(step, chunks);
       if (vehicle.walker.chute && opened === null) opened = vehicle.groundedPosition.y - GROUND;
       lowest = Math.min(lowest, vehicle.groundedPosition.y);
     }
@@ -1000,7 +1033,7 @@ test('out on a roof they stand on it and walk it, and off its edge their parachu
   } finally { feet.clear(); vehicle.disposeModel(); }
 });
 
-test('high up, a second press jumps out with a parachute, and the plane lands itself with nobody aboard', () => {
+test('high up, a second press jumps out, a tap of jump opens the parachute, and the plane lands itself with nobody aboard', () => {
   const { vehicle, traffic, feet, run } = flying('plane', { s: -300, u: 0, heading: 0 });
   try {
     vehicle.pilot.takeOver(0, 34, GROUND + 50); vehicle.pilot.landed = false; vehicle.pilot.speed = 34; vehicle.update(0, {});
@@ -1008,7 +1041,9 @@ test('high up, a second press jumps out with a parachute, and the plane lands it
     assert.ok(feet.leaving && feet.offer().bail);
     feet.use();
     assert.ok(feet.walking && !vehicle.walker.grounded, 'out, in the air');
-    run(1);
+    run(.5);
+    assert.equal(vehicle.walker.chute, null, 'falling, with no parachute until asked');
+    run(.1, { jump: true }); run(.5);
     assert.ok(vehicle.walker.chute, 'under a parachute');
     const plane = feet.parked;
     assert.ok(plane.actor.control === 'landing' && !plane.actor.motion.pilot.landed);

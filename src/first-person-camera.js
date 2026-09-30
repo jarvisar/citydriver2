@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { LOOK_REST, LOOK_MOVING, LOOK_RETURN, settle } from './third-person-camera.js';
+import { Handoff, LOOK_REST, LOOK_MOVING, LOOK_RETURN, settle } from './third-person-camera.js';
 
 // The mouse and the right stick look round through the player's eyes (see
 // MouseLook and `look`). In a car they turn the driver's head, at most
@@ -24,6 +24,8 @@ export class FirstPersonCamera {
     // mouse has turned and tilted it
     this.heading = 0; this.lookYaw = 0; this.lookPitch = 0; this.rested = 0;
     this.centering = false;
+    // Getting in or out, the eye glides over to its new seat (see Handoff)
+    this.handoff = new Handoff(); this.followed = null;
   }
   resize(aspect) {
     this.camera.aspect = aspect;
@@ -38,7 +40,7 @@ export class FirstPersonCamera {
     if (immediate) this.lookYaw = this.lookPitch = 0;
   }
   // (looking ahead again)
-  snap() { this.initialized = false; this.lookYaw = 0; this.lookPitch = 0; this.centering = false; }
+  snap() { this.initialized = false; this.lookYaw = 0; this.lookPitch = 0; this.centering = false; this.handoff.reset(); this.followed = null; }
   // `steady` leaves out the bob of someone's walk (see Walker's `eyeBob`): in a headset, and for reduced motion
   update(car, dt, steady = false) {
     // (in a headset a car in the air keeps the view level and looking the way
@@ -46,8 +48,14 @@ export class FirstPersonCamera {
     const flying = steady && car.userData.travel != null;
     const pitch = flying ? 0 : THREE.MathUtils.clamp(car.rotation.x, -.5, .5), own = Boolean(car.userData.leash);
     this.pitch = this.initialized ? THREE.MathUtils.damp(this.pitch, pitch, 7, dt) : pitch;
-    if (!this.initialized) this.heading = -car.rotation.y;
-    this.initialized = true;
+    if (!this.initialized) { this.heading = -car.rotation.y; this.handoff.reset(); }
+    // Into a car, the view turns from where they were looking round to the
+    // road ahead, rather than cutting to it
+    else if (this.followed !== car && !own && !flying) {
+      this.lookYaw = THREE.MathUtils.clamp(wrap(car.rotation.y + this.heading + this.lookYaw), -HEAD_TURN, HEAD_TURN);
+      this.centering = true;
+    }
+    this.initialized = true; this.followed = car;
     if (this.centering) {
       this.lookYaw = settle(this.lookYaw, 0, 8, dt); this.lookPitch = settle(this.lookPitch, 0, 8, dt);
       if (!this.lookYaw && !this.lookPitch) this.centering = false;
@@ -82,7 +90,7 @@ export class FirstPersonCamera {
       this.eye.sub(body.position).applyEuler(body.rotation).add(body.position);
     }
     // Keep the eye fixed at the windshield as the chassis tilts.
-    this.camera.position.copy(this.eye.applyQuaternion(car.quaternion)).add(car.position);
+    this.camera.position.copy(this.handoff.follow(car, this.eye.applyQuaternion(car.quaternion).add(car.position), dt));
     // Only widen clipping in open air; a nearby wall or roof needs the close view.
     const dip = THREE.MathUtils.clamp(car.userData.chaseDip ?? 0, 0, 1);
     const wanted = .1 + dip * .9, lid = car.userData.lid;

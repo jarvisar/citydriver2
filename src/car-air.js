@@ -23,6 +23,11 @@ const BELLY = .2, AIRBORNE = 2.5;
 // than PITCH_MOST) and comes round to the ground under it over the last LEVEL
 // metres, so it lands on its wheels. Slower than TIPS m/s over an edge it tips.
 const FOLLOW = .55, PITCH_MOST = .6, ROLL_MOST = .45, LEVEL = 2.2, TIPS = 6;
+// It swings there on a soft spring (stiffness AIR_SWING, LAND_SWING by the
+// ground, damped to AIR_DAMPING of critical) that starts from the turn the
+// ramp gave it, so the car carries its rotation off the lip and eases round
+// rather than nodding as it leaves and snapping level just before it lands
+const AIR_SWING = 7, LAND_SWING = 45, AIR_DAMPING = .8;
 // Steering in the air turns the nose up to LEAN off the way it flies, and it
 // comes straight again at STRAIGHTEN. With drift held it spins at SPIN rad/s
 const LEAN = .42, STRAIGHTEN = 5, SPIN = 6.8;
@@ -36,8 +41,8 @@ const STOMP = 2;
 // What counts as a jump: this long in the air
 export const JUMP_AIR = .45;
 // The body on its springs: it rides up EXTEND over its wheels in the air and
-// squats into a landing
-const EXTEND = .09, SPRING = 170, DAMP = 16, SQUAT = .3;
+// squats into a landing, the nose dipping NOD rad/s for each m/s it came down
+const EXTEND = .09, SPRING = 170, DAMP = 16, SQUAT = .3, NOD = .045;
 // In the water it sinks, and after SINK seconds it is fished out (see main.js)
 const SINK = 1.6;
 // A trick (see Drift): the nose wags one way and the other and back, FLAIR
@@ -77,6 +82,7 @@ export class CarAir {
     const m = this.motion;
     m.y = NaN; m.vy = 0; m.aloft = false; m.air = 0; m.lift = 0; m.liftRate = 0; m.sinking = null;
     this.turn = 0; this.spinRate = 0; this.spinning = 0; this.flair = -1; this.free = 0; this.flight = null; this.settle = SETTLE;
+    this.pitchRate = 0; this.rollRate = 0;
     this.water = false; this.splashed = false; this.under = null; this.floor = NaN; this.held = NaN; this.rate = 0; this.street = true; this.last.fill(NaN);
   }
   // Steering in the air: the nose leans off the way the car flies, and with
@@ -254,6 +260,7 @@ export class CarAir {
     const m = this.motion, telemetry = m.audioTelemetry, flight = this.flight;
     if (impact > .6) {
       m.liftRate -= impact * SQUAT;
+      if (m.jolt) m.jolt.pitchRate -= Math.min(impact, 14) * NOD;
       telemetry.bump = Math.min(.5, .06 + impact * .045); telemetry.bumpSerial++;
       if (impact > HARD_LANDING) m.trauma = Math.min(1, m.trauma + (impact - HARD_LANDING) / 40);
     }
@@ -317,16 +324,22 @@ export class CarAir {
   // the air, and round to the ground coming down to it
   tilt(dt, speed) {
     const m = this.motion, ground = this.groundTilt(speed);
-    if (!m.aloft || m.sinking) {
-      if (m.sinking) return;
-      m.pitch = THREE.MathUtils.damp(m.pitch, ground.pitch, 10, dt || 1);
-      m.roll = THREE.MathUtils.damp(m.roll, ground.roll, 9, dt || 1);
+    if (m.sinking) return;
+    if (!m.aloft) {
+      const pitch = THREE.MathUtils.damp(m.pitch, ground.pitch, 10, dt || 1), roll = THREE.MathUtils.damp(m.roll, ground.roll, 9, dt || 1);
+      this.pitchRate = dt ? (pitch - m.pitch) / dt : 0; this.rollRate = dt ? (roll - m.roll) / dt : 0;
+      m.pitch = pitch; m.roll = roll;
       return;
     }
     const flying = clamp(Math.atan2(m.vy, Math.max(1, Math.abs(speed))) * FOLLOW, -PITCH_MOST, PITCH_MOST);
     const near = clamp(1 - (m.y - this.support()) / LEVEL, 0, 1) ** 2;
-    m.pitch = THREE.MathUtils.damp(m.pitch, flying + (ground.pitch - flying) * near, 2.6 + 6 * near, dt);
-    m.roll = THREE.MathUtils.damp(m.roll, ground.roll * near, 2 + 6 * near, dt);
+    const stiff = AIR_SWING + (LAND_SWING - AIR_SWING) * near, damp = 2 * AIR_DAMPING * Math.sqrt(stiff);
+    this.pitchRate += (stiff * (flying + (ground.pitch - flying) * near - m.pitch) - damp * this.pitchRate) * dt;
+    this.rollRate += (stiff * (ground.roll * near - m.roll) - damp * this.rollRate) * dt;
+    m.pitch += this.pitchRate * dt; m.roll += this.rollRate * dt;
+    // (held at the most it may lean, it stops turning that way)
+    if (Math.abs(m.pitch) > PITCH_MOST) { m.pitch = Math.sign(m.pitch) * PITCH_MOST; this.pitchRate = 0; }
+    if (Math.abs(m.roll) > ROLL_MOST) { m.roll = Math.sign(m.roll) * ROLL_MOST; this.rollRate = 0; }
   }
   // Whether the car clears a standing thing (see collideScenery): up on a
   // ramp or over a roof, over furniture, a railing or a parked car, or for

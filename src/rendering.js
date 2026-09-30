@@ -3,7 +3,7 @@ import { fitSunShadow, fitSunShadowAround } from './shadows.js';
 import { stabilizeShadowFiltering, rendererPrograms, precompileShadowPrograms, installPlayerFog } from './rendering-compat.js';
 import { PlayerFog, fitFogDistance } from './player-fog.js';
 import { CAMERA_VIEWS, CameraPreferences } from './camera-preferences.js';
-import { ThirdPersonCamera } from './third-person-camera.js';
+import { Handoff, ThirdPersonCamera } from './third-person-camera.js';
 import { FirstPersonCamera } from './first-person-camera.js';
 import { AmbientOcclusion } from './ambient-occlusion.js';
 import { CarSilhouette } from './car-silhouette.js';
@@ -118,6 +118,8 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   applyQuality(graphics.settings);
   graphics.onChange(applyQuality);
   const target = new THREE.Vector3(), head = new THREE.Vector3();
+  // (the overhead views glide from one body to the next too, getting in or out)
+  const overhead = new Handoff();
   const cameraOffset = new THREE.Vector3(-220, 245, 260);
   const touchScreen = window.matchMedia('(any-pointer: coarse)');
   const sunOffset = new THREE.Vector3(-110, 240, 100);
@@ -157,6 +159,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
     if (initialized) fitShadow(activeCamera(), previousOrigin);
   }
   function update(car, dt, origin) {
+    if (!initialized) overhead.reset();
     followedCar = car;
     previousOrigin = origin; initialized = true;
     // (someone on foot is seen from nearer: see Walker)
@@ -164,7 +167,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
     if (Math.abs(nextHeight - viewHeight) > .01) { viewHeight = nextHeight; resize(); }
     // The car is already interpolated for this frame. Following that position
     // directly keeps it centered while driving, zooming and rebasing the world.
-    target.copy(car.position);
+    target.copy(overhead.follow(car, car.position, dt));
     // A fixed azimuth and elevation keep the miniature city easy to read.
     camera.position.copy(target).add(cameraOffset); camera.lookAt(target);
     camera.userData.focusDistance = cameraOffset.length();

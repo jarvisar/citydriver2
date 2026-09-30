@@ -430,3 +430,52 @@ test('wide and zoomed chase lenses fit their near-plane corners into the availab
     assert.ok(rig.camera.near * Math.hypot(1, slope, slope * aspect) <= .35 + 1e-9);
   }
 });
+
+test('getting in or out, the camera glides from one body to the next rather than cutting', () => {
+  for (const fps of [30, 60, 120]) {
+    const walker = new THREE.Object3D(), car = new THREE.Object3D(), rig = new ThirdPersonCamera(), fresh = new ThirdPersonCamera();
+    Object.assign(walker.userData, { leash: true, chaseScale: .36, chaseLift: .75, velocity: { x: 0, z: 0 } });
+    walker.position.set(1.5, 0, .4);
+    rig.update(walker, 0);
+    for (let i = 0; i < fps; i++) rig.update(walker, 1 / fps);
+    const before = rig.camera.position.clone();
+    rig.update(car, 1 / fps);
+    // (cut straight over, it would move 1.55 m in a frame)
+    assert.ok(rig.camera.position.distanceTo(before) < .45, `moved ${rig.camera.position.distanceTo(before).toFixed(2)} m getting in at ${fps} fps`);
+    for (let i = 0; i < fps * 3; i++) rig.update(car, 1 / fps);
+    fresh.update(car, 0);
+    assert.ok(rig.camera.position.distanceTo(fresh.camera.position) < 1e-3, 'then frames the car just as it would have');
+  }
+});
+
+test('a long fall stays in frame and lands without the camera whipping down after it', () => {
+  for (const fps of [30, 60, 120]) {
+    const body = new THREE.Object3D(), rig = new ThirdPersonCamera(), subject = new THREE.Vector3();
+    Object.assign(body.userData, { leash: true, chaseScale: .7, velocity: { x: 0, z: 0 } });
+    body.position.y = 200; rig.update(body, 0);
+    let vy = 0, lowest = 0;
+    const frame = () => { subject.copy(body.position); subject.y += 1; return subject.project(rig.camera).y; };
+    for (let i = 0; i < fps * 3.5; i++) {
+      vy -= 24 / fps; body.position.y += vy / fps; rig.update(body, 1 / fps);
+      lowest = Math.min(lowest, frame());
+    }
+    assert.ok(lowest > -.85, `at ${-vy.toFixed(0)} m/s it sat at ${lowest.toFixed(2)} of the frame`);
+    // Down: the camera catches up without the subject shooting up the frame
+    let before = frame(), most = 0;
+    for (let i = 0; i < fps; i++) { rig.update(body, 1 / fps); const now = frame(); most = Math.max(most, Math.abs(now - before) * fps / 60); before = now; }
+    assert.ok(most < .06, `moved ${(most * 100).toFixed(1)}% of the frame in a 60th of a second`);
+  }
+});
+
+test('into a car the chase camera swings round behind it gently at first', () => {
+  const walker = new THREE.Object3D(), car = new THREE.Object3D(), rig = new ThirdPersonCamera();
+  Object.assign(walker.userData, { leash: true, chaseScale: .36, velocity: { x: 0, z: 0 } });
+  walker.rotation.y = Math.PI / 2; car.rotation.y = 0;
+  rig.update(walker, 0);
+  const start = rig.heading;
+  rig.update(car, 1 / 60); rig.update(car, 1 / 60);
+  const early = Math.abs(rig.heading - start) * 30;
+  for (let i = 0; i < 180; i++) rig.update(car, 1 / 60);
+  assert.ok(early < 1, `turning ${early.toFixed(2)} rad/s in its first frames`);
+  assert.ok(Math.abs(Math.atan2(Math.sin(rig.heading), Math.cos(rig.heading))) < .01, 'and ends up behind it');
+});

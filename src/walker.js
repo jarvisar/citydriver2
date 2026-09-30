@@ -55,15 +55,26 @@ const AIRBORNE = 2.5;
 // before they land jumps as they land, and one up to COYOTE after they step
 // off an edge still jumps.
 const JUMP = 5.2, FLIP = 4.6, RISE = 13, LET_GO = 34, FALL = 24, BUFFER = .13, COYOTE = .1;
+// Down from high up faster than HARD_LANDING (m/s), still on their feet, the
+// view shakes and the pad thumps, as for a car's hard landing (see CarAir)
+const HARD_LANDING = 12;
 // A flip is once round, forward, about their middle, over FLIP_TIME s
 const FLIP_TIME = .42, MIDDLE = .95;
-// Falling faster than CHUTE_FALL with more than CHUTE_ROOM to go (off a
-// roof, out of a plane) their pack opens into a parachute over CHUTE_OPEN s.
-// Under it they come down at CHUTE_SINK (faster with sprint held), taking
-// CHUTE_BRAKE to slow to it, and the stick steers them at up to CHUTE_GLIDE,
-// the canopy's drag taking CHUTE_PULL m/s² off whatever else they had. Down,
-// it folds away over CHUTE_FOLD s. The camera frames them at CHUTE_FRAME.
-const CHUTE_FALL = 7, CHUTE_ROOM = 4, CHUTE_OPEN = .45, CHUTE_SINK = 4.2, CHUTE_BRAKE = 3.2, CHUTE_GLIDE = 5.5, CHUTE_PULL = 6, CHUTE_FOLD = .5, CHUTE_FRAME = .8;
+// With more than CHUTE_ROOM to go, a tap of jump opens their pack into a
+// parachute over CHUTE_OPEN s, and another folds it away again (the user's
+// request: it used to open by itself). Under it they come down at CHUTE_SINK
+// (faster with sprint held), taking CHUTE_BRAKE to slow to it, and the stick
+// steers them at up to CHUTE_GLIDE, the canopy's drag taking CHUTE_PULL m/s²
+// off whatever else they had. Down, it folds away over CHUTE_FOLD s. The
+// camera frames them at CHUTE_FRAME.
+const CHUTE_ROOM = 4, CHUTE_OPEN = .45, CHUTE_SINK = 4.2, CHUTE_BRAKE = 3.2, CHUTE_GLIDE = 5.5, CHUTE_PULL = 6, CHUTE_FOLD = .5, CHUTE_FRAME = .8;
+// The jetpack: jump held IGNITE s in the air (past a jump's rise, or a tap's
+// length) burns it, pushing up at THRUST m/s² against JET_FALL's gravity to
+// CLIMB m/s, easing off to hover CEILING m over the street. It flies them at
+// up to JET m/s (JET_SPRINT with sprint), turning at JET_GRIP m/s². Let go,
+// they fall at JET_FALL, never faster than DIVE, and land on their feet.
+// The camera frames them at JET_FRAME.
+const IGNITE = .2, THRUST = 34, CLIMB = 9, CEILING = 90, JET = 11, JET_SPRINT = 17, JET_GRIP = 10, JET_FALL = 16, DIVE = 22, JET_FRAME = .7;
 // What a car's stats say, for whatever reads them (the sound's gearing, say)
 export const WALKER_STATS = { topSpeed: SPRINT, acceleration: GRIP, braking: GRIP, grip: 1, offRoad: SPRINT, reverseSpeed: JOG, cruise: SPRINT };
 // Where their eyes are, and how the chase camera frames them: at this share
@@ -175,6 +186,10 @@ export class Walker {
     // pressed, when they last stood on the ground, and whether this time in
     // the air began with a jump and has had its flip
     this.held = false; this.asked = -Infinity; this.footing = 0; this.jumped = false; this.flipped = false; this.flipAt = -Infinity;
+    // The jetpack (see IGNITE): when the press now held began, whether it is
+    // burning, whether it has this time in the air, and how hot (0 to 1, for
+    // the flames)
+    this.heldAt = -Infinity; this.burning = false; this.jetting = false; this.jet = 0;
     // The figure's springs (see SQUASH: `nod` is the chin down, radians),
     // the head's turn from the body, and how fast they are turning,
     // speeding up (m/s²) and skidding
@@ -206,10 +221,10 @@ export class Walker {
     this.skid = this.turnRate = this.accel = 0; this.board = this.alight = null; this.chute = null;
   }
   // Leaping out of something flying (see OnFoot.jump), from `y` going at
-  // (vx, vy, vz): no flip in this jump, and the parachute opens once they fall
+  // (vx, vy, vz): no flip in this jump. A tap of jump opens the parachute
   leap(y, vx, vy, vz) {
     this.takeOver(y);
-    this.grounded = false; this.jumped = this.flipped = true; this.footing = -Infinity;
+    this.grounded = false; this.jumped = this.flipped = true; this.footing = -Infinity; this.jetting = this.burning = false;
     this.vx = vx; this.vy = vy; this.vz = vz;
     this.squash.v += 2; this.nod.v -= 1;
   }
@@ -250,7 +265,8 @@ export class Walker {
     const chute = Boolean(this.chute) && !this.chute.folding;
     // The way they want to go, and how fast: the stick's push, a key's all the
     // way, and under the parachute the way to steer it
-    const amount = walk ? Math.min(1, Math.hypot(walk.x, walk.z)) : 0, top = chute ? CHUTE_GLIDE : input.sprint ? SPRINT : JOG;
+    const amount = walk ? Math.min(1, Math.hypot(walk.x, walk.z)) : 0;
+    const top = chute ? CHUTE_GLIDE : this.jetting ? input.sprint ? JET_SPRINT : JET : input.sprint ? SPRINT : JOG;
     const wx = amount ? walk.x * top : 0, wz = amount ? walk.z * top : 0;
     if (control && Number.isFinite(input.aim)) v.heading = input.aim;
     const before = v.heading, ahead = { x: Math.sin(before), z: -Math.cos(before) };
@@ -259,7 +275,7 @@ export class Walker {
     const against = this.grounded && amount > .5 && moving > 3 && wx * this.vx + wz * this.vz < -.3 * moving * Math.hypot(wx, wz);
     if (against && this.skid === 0) this.puff(3, 1.4, this.vx * .3, this.vz * .3);
     this.skid = dt ? clamp(this.skid + (against ? 8 : -5) * dt, 0, 1) : this.skid;
-    const dx = wx - this.vx, dz = wz - this.vz, gap = Math.hypot(dx, dz), change = Math.min(gap, (chute ? CHUTE_PULL : this.grounded ? GRIP : AIR) * dt);
+    const dx = wx - this.vx, dz = wz - this.vz, gap = Math.hypot(dx, dz), change = Math.min(gap, (chute ? CHUTE_PULL : this.grounded ? GRIP : this.jetting ? JET_GRIP : AIR) * dt);
     if (gap > 1e-9) { this.vx += dx / gap * change; this.vz += dz / gap * change; }
     // They turn to face the way they are asked to go (not through their own
     // eyes, where they face where the view looks and back is a step back),
@@ -271,11 +287,19 @@ export class Walker {
       this.turnRate = THREE.MathUtils.damp(this.turnRate, wrap(v.heading - before) / dt, 12, dt);
       this.accel = THREE.MathUtils.damp(this.accel, (this.vx * ahead.x + this.vz * ahead.z - forward) / dt, 10, dt);
     }
-    // Jumping (see JUMP): a press waits BUFFER for the ground to answer it
-    const pressed = control && !chute && Boolean(input.jump) && !this.held;
+    // Jumping (see JUMP): a press waits BUFFER for the ground to answer it.
+    // High up a tap opens or folds the parachute instead of flipping, and held
+    // anywhere in the air, jump burns the jetpack (see IGNITE)
+    const pressed = control && Boolean(input.jump) && !this.held, released = control && !input.jump && this.held;
     this.held = Boolean(input.jump);
-    if (pressed) this.asked = this.time;
-    if (control && !chute && this.time - this.asked <= BUFFER) {
+    if (pressed) { this.asked = this.time; this.heldAt = this.time; }
+    const high = !this.grounded && this.y - this.floorAt(v.s, v.u) > CHUTE_ROOM;
+    if (released && high && !this.burning && this.time - this.heldAt < IGNITE) {
+      if (chute) this.chute.folding = this.time; else if (!this.chute) this.openChute();
+    }
+    this.burning = control && this.held && !this.grounded && this.time - this.heldAt >= IGNITE;
+    if (this.burning) { this.jetting = true; if (chute) this.chute.folding = this.time; }
+    if (control && !chute && !high && this.time - this.asked <= BUFFER) {
       const footing = this.grounded || (!this.jumped && this.time - this.footing <= COYOTE);
       // (in the air, a press the ground will answer in a moment waits for it, rather than flipping)
       const above = Math.max(0, this.y - this.floorAt(v.s, v.u));
@@ -283,7 +307,8 @@ export class Walker {
       if (footing) {
         this.vy = JUMP; this.grounded = false; this.jumped = true; this.asked = -Infinity;
         this.squash.v += 2.8; this.drop.v -= .45; this.nod.v -= 1.2;
-      } else if (pressed && !this.flipped && !landing) {
+      } else if (pressed && !this.flipped && !this.jetting && !landing) {
+        // (not once the jetpack has been lit: a press just lights it again)
         this.vy = FLIP; this.flipped = true; this.flipAt = this.time; this.asked = -Infinity;
         this.squash.v += 1.5; this.drop.v -= .3;
       }
@@ -306,7 +331,7 @@ export class Walker {
     // fall. Rising with the button held they are slowed least, falling most.
     // Under a parachute they come down at its own pace.
     const ground = this.floorAt(v.s, v.u), wasGrounded = this.grounded;
-    const gravity = this.vy > 0 ? (this.held && (this.jumped || this.flipped) ? RISE : LET_GO) : FALL;
+    const gravity = this.jetting ? JET_FALL : this.vy > 0 ? (this.held && (this.jumped || this.flipped) ? RISE : LET_GO) : FALL;
     let landed = 0;
     if (this.down) this.y = ground;
     else if (this.grounded && Math.abs(ground - this.y) <= STEP) this.y = ground;
@@ -316,14 +341,17 @@ export class Walker {
         this.grounded = false;
         if (chute) this.vy = THREE.MathUtils.damp(this.vy, -CHUTE_SINK * (input.sprint ? 1.8 : 1), CHUTE_BRAKE, dt);
         else this.vy -= gravity * dt;
+        // (burning, up to its climb, easing off to a hover under the ceiling)
+        if (this.burning) this.vy = Math.min(this.vy + THRUST * dt, Math.max(this.vy, CLIMB * clamp((CEILING - (this.y - v.route.height(v.s, v.u))) / 12, 0, 1)));
+        if (this.jetting) this.vy = Math.max(this.vy, -DIVE);
         this.y += this.vy * dt;
       }
       const under = this.floorAt(v.s, v.u, fromY + STEP);
       if (this.y <= under) { landed = Math.max(.5, -this.vy); this.y = under; this.vy = 0; this.grounded = true; }
     }
-    if (this.grounded) { this.footing = this.time; this.jumped = this.flipped = false; }
-    // Falling from a height, the pack opens into a parachute; down, it folds away
-    if (!this.grounded && !this.chute && !this.down && this.vy < -CHUTE_FALL && this.y - this.floorAt(v.s, v.u, this.y) > CHUTE_ROOM) this.openChute();
+    if (this.grounded) { this.footing = this.time; this.jumped = this.flipped = this.jetting = this.burning = false; }
+    this.jet = dt ? THREE.MathUtils.damp(this.jet, this.burning ? 1 : 0, this.burning ? 14 : 7, dt) : 0;
+    // Down, the parachute folds away
     if (this.grounded && chute) this.chute.folding = this.time;
     if (this.chute?.folding && this.time - this.chute.folding > CHUTE_FOLD) this.chute = null;
     // (and down in the water, they are fished out)
@@ -335,6 +363,7 @@ export class Walker {
       this.squash.v -= 1.4 + landed * .6; this.drop.v -= .2 + landed * .07; this.nod.v += 1 + landed * .25;
       telemetry.step = clamp(landed / 8, .35, 1); telemetry.stepSerial++; telemetry.landing = landed; telemetry.surface = this.surface();
       if (landed > 3) this.puff(Math.round(clamp(landed, 4, 9)), .6 + landed * .12);
+      if (landed > HARD_LANDING) { v.trauma = Math.min(1, v.trauma + (landed - HARD_LANDING) / 40); v.events.push({ kind: 'thud', impact: landed }); }
     }
     const sprinted = this.sprinting;
     this.sprinting = input.sprint && speed > JOG + .5;
@@ -366,19 +395,25 @@ export class Walker {
     // Leaning into a run, more as they set off, and back into a skid,
     // swaying with each step, and banking into turns
     // (hanging under a parachute, they swing a little under it instead)
-    const lean = this.down || this.rise || chute ? 0 : clamp(speed * .022 + this.accel * .004, -.08, .22);
+    const lean = this.down || this.rise || chute ? 0 : this.jetting ? clamp(speed * .032, -.05, .45) : clamp(speed * .022 + this.accel * .004, -.08, .22);
     const bank = this.down || this.rise ? 0 : chute ? Math.sin(this.time * 2.1) * .05 : clamp(-this.turnRate * speed * .016, -.2, .2);
     v.bodyPitch = -lean + this.skid * .28; v.bodyRoll = Math.sin(this.phase * .5) * .04 * this.stride + bank;
     const data = v.car.userData;
     data.speed = speed; data.velocity.x = this.down ? 0 : this.vx; data.velocity.z = this.down ? 0 : this.vz;
     // (a sprint opens the chase camera's lens a little, as a car's speed does)
     data.speedRush = this.sprinting ? clamp((speed - JOG) / (SPRINT - JOG), 0, 1) * .6 : 0;
-    // (under a parachute it stands back to take in the canopy, and high up looks down past it)
-    data.chaseScale = this.chute ? CHUTE_FRAME : CHASE_SCALE;
-    data.chaseDip = this.chute ? clamp((this.y - ground - 4) / 30, 0, 1) * .45 : 0;
+    // (under a parachute it stands back to take in the canopy, and on the
+    // jetpack or dropping from high up, out of the helicopter or off a roof,
+    // to take them in, and high up looks down past them)
+    const dropping = this.jetting || (!this.grounded && !this.down && this.y - ground > CHUTE_ROOM);
+    data.chaseScale = this.chute ? CHUTE_FRAME : dropping ? JET_FRAME : CHASE_SCALE;
+    // (and follows their height loosely, as a car's jump, so a landing doesn't jerk it)
+    data.loose = dropping || Boolean(this.chute);
+    data.chaseDip = this.chute || dropping ? clamp((this.y - ground - 4) / 30, 0, 1) * .45 : 0;
     v.trauma = Math.max(0, v.trauma - dt * 1.4); data.trauma = v.trauma;
     telemetry.speed = speed; telemetry.throttle = 0; telemetry.brake = 0; telemetry.offRoad = 0;
-    telemetry.handbrake = 0; telemetry.boost = 0; telemetry.scrape *= Math.exp(-dt * 14);
+    // (the jetpack roars as the boost does, see DriveAudio)
+    telemetry.handbrake = 0; telemetry.boost = this.burning ? 1 : 0; telemetry.scrape *= Math.exp(-dt * 14);
     if (dt === 0) telemetry.impact = 0;
     this.pose(dt === 0);
   }
@@ -413,7 +448,7 @@ export class Walker {
     if (solid.prop) return (!this.grounded || this.vehicle.airborne) && this.y >= propTop(solid);
     return this.vehicle.airborne;
   }
-  // The pack opens (see CHUTE_FALL), with a flutter of cloth
+  // The pack opens (see CHUTE_ROOM), with a flutter of cloth
   openChute() {
     const v = this.vehicle, p = v.groundedPosition;
     this.chute = { at: this.time, folding: 0 };
@@ -606,7 +641,7 @@ export class Walker {
     const car = { x: p.x - dx * 2.6, z: p.z - dz * 2.6, heading: Math.atan2(dx, -dz), halfWidth: 1, halfLength: 2.2, vx, vz, spin: 0, mass: 1.7, y: p.y, height: 1.5 };
     this.down = { body: props.person(cityWalker, world, car).body };
     this.stop(); this.vy = 0; this.grounded = true; this.rise = null;
-    v.trauma = Math.min(1, v.trauma + .5); v.audioTelemetry.impact = speed; v.audioTelemetry.impactSerial++;
+    v.trauma = Math.min(1, v.trauma + .5); v.audioTelemetry.impact = speed; v.audioTelemetry.impactSerial++; v.audioTelemetry.crashSerial++;
   }
   // A car against them (see CityTraffic.collidePlayer): they are put back
   // outside it. One that came at them hard knocks them over; one that
