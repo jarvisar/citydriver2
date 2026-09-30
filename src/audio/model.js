@@ -38,12 +38,15 @@ export class DriveSoundModel {
     const throttle = clamp(finite(telemetry.throttle), 0, 1);
     const brake = clamp(finite(telemetry.brake), 0, 1);
     const boost = telemetry.boost ? 1 : 0;
+    // In the air the wheels spin free: the engine revs with the pedal, the
+    // gearbox holds its gear and the tyres go quiet (see CarAir)
+    const aloft = telemetry.aloft ? 1 : 0;
     // The gearbox reads a settled pedal: a stab kicks down a moment later
     this.drive = damp(this.drive, Math.max(throttle, boost), dt, .25);
     if (speed < 1 || reverse !== this.reverse) { this.gear = 0; this.shift = 0; }
     this.reverse = reverse;
     this.shift = Math.max(0, this.shift - dt);
-    if (!reverse && speed >= 1 && this.shift === 0) {
+    if (!reverse && speed >= 1 && this.shift === 0 && !aloft) {
       const up = redline * (.36 + .54 * this.drive), wheel = speed * ratios[this.gear];
       const previous = this.gear;
       if (this.gear < last && wheel > up) this.gear++;
@@ -57,7 +60,8 @@ export class DriveSoundModel {
     const wheel = speed * (reverse ? ratios[0] * .85 : ratios[this.gear]);
     // Standing on the gas at a standstill takes the engine a third of the way up its range
     const slip = idle + (redline - idle) * .36 * Math.max(throttle, boost);
-    const targetRpm = clamp(Math.max(wheel, slip) + boost * (redline - idle) * .03, idle, redline);
+    const free = idle + (redline - idle) * (.2 + .72 * Math.max(throttle, boost));
+    const targetRpm = aloft ? free : clamp(Math.max(wheel, slip) + boost * (redline - idle) * .03, idle, redline);
     this.rpm = damp(this.rpm, targetRpm, dt, this.shift ? .07 : .16);
     this.load = damp(this.load, Math.max(throttle * (1 - brake), boost) * clutch, dt, .12);
     const motion = clamp(speed / 28, 0, 1);
@@ -67,8 +71,8 @@ export class DriveSoundModel {
       shiftSerial: this.shiftSerial, liftSerial: this.liftSerial, clutch,
       engineLevel: (.085 + this.load * .09 + motion * .018) * (this.shift > 0 ? .8 : 1),
       engineCutoff: 380 + this.load * 1350 + motion * 550 + (redline > 8000 ? 1100 : 0),
-      roadLevel: Math.pow(motion, .85) * .18 * (1 - offRoad * .65),
-      roughLevel: Math.sqrt(motion) * offRoad * .17,
+      roadLevel: Math.pow(motion, .85) * .18 * (1 - offRoad * .65) * (1 - aloft),
+      roughLevel: Math.sqrt(motion) * offRoad * .17 * (1 - aloft),
       windLevel: Math.pow(motion, 1.7) * .12,
       reverseLevel: reverse ? Math.min(1, speed / 5) * .035 : 0,
       reverseFrequency: 260 + speed * 65,

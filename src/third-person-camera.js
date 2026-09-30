@@ -122,7 +122,9 @@ export class ThirdPersonCamera {
     if (Math.abs(fov - this.camera.fov) > .01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
     // Look partly along travel during a slide so the exit stays in view and
     // the player can see the car's angle. The pose supplies interpolated slip.
-    const heading = -car.rotation.y - (car.userData.slip ?? 0) * .65;
+    // (a car in the air says which way it flies, and the camera looks that
+    // way whatever its nose is doing: see CarAir)
+    const heading = car.userData.travel ?? -car.rotation.y - (car.userData.slip ?? 0) * .65;
     // Let the horizon suggest the slope without copying every chassis movement.
     // (a plane says how far to lean with its climb or dive: see Plane)
     const pitch = car.userData.chasePitch ?? THREE.MathUtils.clamp(car.rotation.x * .45, -.18, .18);
@@ -151,7 +153,9 @@ export class ThirdPersonCamera {
         remaining -= step;
       }
       this.pitch = THREE.MathUtils.damp(this.pitch, pitch, 2.5, dt);
-      this.height = THREE.MathUtils.damp(this.height, car.position.y, 9, dt);
+      // (and it follows a jump up and down loosely, so the car rises in the
+      // frame and the view doesn't bob with every arc)
+      this.height = THREE.MathUtils.damp(this.height, car.position.y, car.userData.travel == null ? 9 : 1.6, dt);
       this.zoom = settle(this.zoom, this.zoomTarget, ZOOM_RATE, dt);
       if (this.lookYaw || this.lookPitch) {
         this.rested += dt;

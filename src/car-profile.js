@@ -35,3 +35,9 @@ export function carProfile(model, length) {
   if (!height) heights.fill(height = 1.5);
   return { heights, slice: SLICE, length, height };
 }
+// How high a car stands `along` metres from its middle toward its nose, or
+// -Infinity off either end
+export function profileHeight(profile, along) {
+  const k = Math.floor((along + profile.length / 2) / profile.slice);
+  return k >= 0 && k < profile.heights.length ? profile.heights[k] : -Infinity;
+}

@@ -3,6 +3,7 @@ import { ConvexHull } from 'three/addons/math/ConvexHull.js';
 import { surfaceAt, ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL } from './world/city-route.js';
 import { MEDIAN_KERB } from './world/city-medians.js';
 import { collisionImpulse } from './impact.js';
+import { insideConvex, shapeHeight } from './collision.js';
 import { stableShadowDepth } from './world/shadow-depth.js';
 
 // Street furniture a car can knock loose, the way the arcade driving games
@@ -291,6 +292,26 @@ function scaledShape(unit, s) {
 export function level(x, z) {
   const surface = surfaceAt(-z, x);
   return surface === 'pavement' ? PAVEMENT_LEVEL : surface === 'median' ? ROAD_LEVEL + MEDIAN_KERB : surface === 'water' ? NaN : ROAD_LEVEL;
+}
+// Where ramps and mounds (`raised`, see city-jumps.js) are near, the ground
+// under a point at height y is the top of one it is over. A point well under
+// one's top is in its side, and the wall puts it out (see over).
+const spot = { x: 0, z: 0 };
+function raisedLevel(raised, x, y, z) {
+  let ground = level(x, z);
+  spot.x = x; spot.z = z;
+  for (const solid of raised) {
+    if (!insideConvex(spot, solid.corners)) continue;
+    const top = shapeHeight(solid.shape, spot);
+    if (top <= y + .5 && !(top <= ground)) ground = top;
+  }
+  return ground;
+}
+// A ramp or a mound is no wall to a point on it or above it
+function over(solid, x, y, z) {
+  if (!solid.shape) return false;
+  spot.x = x; spot.z = z;
+  return y >= shapeHeight(solid.shape, spot) - .05;
 }
 
 // How far a point (x, z) stands inside a collider, and the way out of it:
@@ -964,7 +985,7 @@ export class LooseProps {
       if ((t1.x - at.x) ** 2 + (t1.z - at.z) ** 2 > BEHIND ** 2) continue;
       const x = body.p.x + t1.x + nx * PIN, z = body.p.z + t1.z + nz * PIN;
       for (const solid of near) {
-        if (solid.woken || solid.prop || solid.parked) continue;
+        if (solid.woken || solid.prop || solid.parked || over(solid, x, body.p.y + t1.y, z)) continue;
         const way = inside(solid, x, z);
         if (way && against(way)) return true;
       }
@@ -997,8 +1018,9 @@ export class LooseProps {
       if (p.y < WATER_LEVEL - 3) { body.sunk = true; body.pool.dirty = true; }
       return;
     }
+    if (chunks) this.gather(body, chunks);
     this.land(body);
-    if (chunks) this.walls(body, chunks);
+    if (chunks) this.walls(body);
     // The air wears it down, and on the ground its turn, and its roll (a bin
     // on its side would otherwise roll on down the street). Lying on another
     // piece is lying on the ground (see meet).
@@ -1028,16 +1050,18 @@ export class LooseProps {
     const { p, q, shape } = body, points = shape.points, ground = body.ground;
     let deepest = 0, hardest = 0;
     body.grounded = false;
-    const at = landing;
+    const at = landing, raised = body.near?.raised, top = raised?.length ? Math.max(TOP, body.near.top) : TOP;
     for (let i = 0; i < points.length; i += 3) {
       r.set(points[i], points[i + 1], points[i + 2]).applyQuaternion(q);
       const y = p.y + r.y;
-      if (y > TOP) continue;
+      if (y > top) continue;
       const x = p.x + r.x, z = p.z + r.z;
       // (looked up again once it has moved 30 cm, and wherever it is no higher
       // over the ground than a kerb: a kerb is a sharp step, and a point that
-      // had looked from the road just beyond it sank into the pavement)
-      if (y - ground[i + 2] < .2 || !(Math.abs(x - ground[i]) < .3 && Math.abs(z - ground[i + 1]) < .3)) { ground[i] = x; ground[i + 1] = z; ground[i + 2] = level(x, z); }
+      // had looked from the road just beyond it sank into the pavement. Over
+      // a ramp or a mound, every step: they slope.)
+      if (raised?.length) { ground[i] = x; ground[i + 1] = z; ground[i + 2] = raisedLevel(raised, x, y, z); }
+      else if (y - ground[i + 2] < .2 || !(Math.abs(x - ground[i]) < .3 && Math.abs(z - ground[i + 1]) < .3)) { ground[i] = x; ground[i + 1] = z; ground[i + 2] = level(x, z); }
       // (none over the water; and a piece fallen below a bridge's deck stays below it)
       const depth = ground[i + 2] - y;
       if (!(depth > 0 && depth < 1)) continue;
@@ -1058,24 +1082,31 @@ export class LooseProps {
     if (hardest > 3 && !body.clatter) { body.clatter = .25; this.sound(body.kind.sound, hardest * .6, at.x, at.z); }
     if (hardest > 3 && body.kind.topples && body.kind.bits && !body.shed) { body.shed = true; this.bits.burst(body.kind.bits, at.x, at.y, at.z, body.v.x * .3, body.v.z * .3); }
   }
+  // What stands near a piece, gathered again once it has moved a couple of
+  // metres, and the ramps and mounds among it, which are ground to it (see
+  // raisedLevel) as well as walls where it is below their tops
+  gather(body, chunks) {
+    const p = body.p;
+    if (body.near && Math.abs(p.x - body.near.x) <= NEAR && Math.abs(p.z - body.near.z) <= NEAR) return;
+    const reach = body.shape.radius + NEAR, list = [], raised = [];
+    let top = -Infinity;
+    for (const chunk of chunks.values()) {
+      const bounds = chunk.collisionBounds;
+      if (!bounds || p.x + reach < bounds.minX || p.x - reach > bounds.maxX || p.z + reach < bounds.minZ || p.z - reach > bounds.maxZ) continue;
+      for (const solid of chunk.features.colliders) {
+        if (Math.abs(solid.x - p.x) >= reach + solid.reach || Math.abs(solid.z - p.z) >= reach + solid.reach) continue;
+        list.push(solid);
+        if (solid.shape) { raised.push(solid); top = Math.max(top, solid.top); }
+      }
+    }
+    body.near = { x: p.x, z: p.z, list, raised, top };
+  }
   // Walls, trees, railings, posts and parked cars stand in its way: the
   // deepest of its points inside one is put back out and takes a blow there,
   // so a post falling against a wall slides down it
-  walls(body, chunks) {
-    const { p, shape } = body;
-    // (what stands near it, gathered again once it has moved a couple of metres)
-    if (!body.near || Math.abs(p.x - body.near.x) > NEAR || Math.abs(p.z - body.near.z) > NEAR) {
-      const reach = shape.radius + NEAR, list = [];
-      for (const chunk of chunks.values()) {
-        const bounds = chunk.collisionBounds;
-        if (!bounds || p.x + reach < bounds.minX || p.x - reach > bounds.maxX || p.z + reach < bounds.minZ || p.z - reach > bounds.maxZ) continue;
-        for (const solid of chunk.features.colliders) {
-          if (Math.abs(solid.x - p.x) < reach + solid.reach && Math.abs(solid.z - p.z) < reach + solid.reach) list.push(solid);
-        }
-      }
-      body.near = { x: p.x, z: p.z, list };
-    }
-    const near = body.near.list;
+  walls(body) {
+    const near = body.near?.list;
+    if (!near) return;
     // (a point at a time, the deepest first: a fallen tree's crown against a wall has several in it)
     for (let pass = 0; pass < PASSES && near.length && this.wall(body, near); pass++);
   }
@@ -1089,7 +1120,7 @@ export class LooseProps {
       // (and where it was a step ago)
       t2.set(points[i], points[i + 1], points[i + 2]).applyQuaternion(last.q).add(last.p);
       for (const solid of near) {
-        if (solid.woken) continue;
+        if (solid.woken || over(solid, p.x + r.x, p.y + r.y, p.z + r.z)) continue;
         const way = inside(solid, p.x + r.x, p.z + r.z, t2.x, t2.z);
         if (way && way.depth > depth) { depth = way.depth; best = i; nx = way.x; nz = way.z; met = solid; }
       }

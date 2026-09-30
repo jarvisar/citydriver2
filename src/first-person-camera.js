@@ -41,7 +41,10 @@ export class FirstPersonCamera {
   snap() { this.initialized = false; this.lookYaw = 0; this.lookPitch = 0; this.centering = false; }
   // `steady` leaves out the bob of someone's walk (see Walker's `eyeBob`): in a headset, and for reduced motion
   update(car, dt, steady = false) {
-    const pitch = THREE.MathUtils.clamp(car.rotation.x, -.5, .5), own = Boolean(car.userData.leash);
+    // (in a headset a car in the air keeps the view level and looking the way
+    // it flies, however its nose pitches and spins: see CarAir)
+    const flying = steady && car.userData.travel != null;
+    const pitch = flying ? 0 : THREE.MathUtils.clamp(car.rotation.x, -.5, .5), own = Boolean(car.userData.leash);
     this.pitch = this.initialized ? THREE.MathUtils.damp(this.pitch, pitch, 7, dt) : pitch;
     if (!this.initialized) this.heading = -car.rotation.y;
     this.initialized = true;
@@ -53,7 +56,7 @@ export class FirstPersonCamera {
       this.heading = wrap(this.heading + this.lookYaw); this.lookYaw = 0;
       this.lookPitch = THREE.MathUtils.clamp(this.lookPitch, FOOT_DOWN, FOOT_UP);
     } else {
-      this.heading = -car.rotation.y;
+      this.heading = flying ? car.userData.travel : -car.rotation.y;
       this.lookYaw = THREE.MathUtils.clamp(this.lookYaw, -HEAD_TURN, HEAD_TURN);
       this.lookPitch = THREE.MathUtils.clamp(this.lookPitch, HEAD_DOWN, HEAD_UP);
       if (this.lookYaw || this.lookPitch) {
@@ -65,7 +68,7 @@ export class FirstPersonCamera {
     }
     // Follow the interpolated heading directly so steering never swings the
     // driver's view sideways. Ignore chassis roll and soften changes in slope.
-    this.orientation.set(this.pitch + this.lookPitch, own ? -this.heading : car.rotation.y - this.lookYaw, 0);
+    this.orientation.set(this.pitch + this.lookPitch, own ? -this.heading : (flying ? -this.heading : car.rotation.y) - this.lookYaw, 0);
     this.camera.quaternion.setFromEuler(this.orientation);
     if (car.userData.driverEye) this.eye.copy(car.userData.driverEye);
     else this.eye.set(0, 1.73, -1.01);

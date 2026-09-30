@@ -4,7 +4,7 @@ Demolition is a timed run in the truck. The goal is to cause as much property da
 
 ## The Clock
 
-A run starts at 60 seconds. Finishing a contract adds 10 seconds, and wrecking a moving car (a takedown) adds 3. The clock holds at most 120 seconds. Parked cars don't add time, since a street lined with them would keep the clock going forever. Resetting the truck costs 5 seconds. The last 10 seconds tick.
+A run starts at 60 seconds. Finishing a contract adds 10 seconds, and wrecking a moving car (a takedown) adds 3. The clock holds at most 120 seconds. Parked cars don't add time, since a street lined with them would keep the clock going forever. Resetting the truck costs 5 seconds, and so does driving it into the river. The last 10 seconds tick.
 
 If time runs out while a chain is going, the chain keeps going. The clock says LAST CHAIN, and the run ends once the chain is banked or lost. Nothing adds time after that, but every hit still counts.
 
@@ -60,6 +60,8 @@ Everything the truck knocks into something else counts too. A car sent into a pa
 Each hit starts or continues a chain. Every fourth hit raises the chain's multiplier, up to ×5, and each hit pays its price times the multiplier it lands at. The chain's total is added to the score when it ends.
 
 A chain at ×1 waits 2.5 seconds for the next hit, and each step of the multiplier takes 0.2 seconds off that, so at ×5 the next hit has to come within 1.7 seconds. The bar along the top of the task card shows the wait. To bank a chain on purpose, stop hitting things until it runs out.
+
+The wait stops while the truck is in the air, and a jump landed starts it again, like a stunt in Burnout Paradise's Stunt Run. So a ramp in the Warehouse district is a way to carry a chain down the street. Spinning out on landing doesn't keep the chain. Landing on a car hits it as hard as a crash at 1.6 times the speed the truck came down at, so a big jump onto a car wrecks it.
 
 Every hit also tops up the boost meter, and a wrecked car tops it up more.
 

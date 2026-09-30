@@ -15,6 +15,7 @@ import { frontSetback, treeRoom } from './city-buildings.js';
 import { yardParking, yardDrive, YARD_BAY, PARKED_MODELS } from './city-yards.js';
 import { BUS_ROADS } from '../traffic-models.js';
 import { difference, solids } from '../mapgen/booleans.js';
+import { cityJumps, inJumpZone, onJumpQuay } from './city-jumps.js';
 import { simplify } from '../mapgen/simplify.js';
 
 // The streets as the city draws and furnishes them. Everything here is laid
@@ -446,7 +447,7 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
   // Elsewhere a stone coping runs along its top: a low kerb on the promenade,
   // overhanging the wall a little, solid on every side
   for (const run of CITY.walls) for (const { points, road } of shoreStretches(run)) {
-    walls.wall(points, road ? ROAD_LEVEL - .03 : PAVEMENT_LEVEL, WATER_LEVEL - 1.6, '#9b9789');
+    walls.wall(points, road === true ? ROAD_LEVEL - .03 : PAVEMENT_LEVEL, WATER_LEVEL - 1.6, '#9b9789');
     // (not a scrap of coping on a metre or two of shore left between roads)
     if (road || polylineLength(points) < 2) continue;
     const top = PAVEMENT_LEVEL + .2, outer = offsetPolyline(points, -.05), inner = offsetPolyline(points, .55);
@@ -878,7 +879,9 @@ export function onDeck(x, y, margin = .05) {
 // over: a carriageway on it, or a deck carried on from it over the water
 // (or a kerb corner rounded off a walk, which is road on the land side). So
 // where a bank meets a deck's edge at a slant, its coping runs on to the deck.
-const shoreCovered = (p, tx, ty) => Boolean(onRoadAt(p.y, p.x)) || onDeck(p.x, p.y) || surfaceAt(p.y + tx * .6, p.x - ty * .6) === 'road';
+const shoreCovered = (p, tx, ty) => Boolean(onRoadAt(p.y, p.x)) || onDeck(p.x, p.y) || surfaceAt(p.y + tx * .6, p.x - ty * .6) === 'road'
+  // (or a river jump's ramp or far end, which stand on the wall: see city-jumps.js)
+  || (onJumpQuay(p.x, p.y) ? 'jump' : false);
 // A shore run in stretches, each either built over or not, split where it
 // passes the edge of what covers it (found to a couple of centimetres, so a
 // coping stops at the kerb rather than running on into the road)
@@ -994,6 +997,10 @@ export function* lawnSpots(lawn, gate, width = 3.6) {
 // Street furniture for the whole city, as pieces the chunks stand up:
 // { kind, u, s, yaw, ... } with yaw an item yaw (see city-layout-render.js).
 export function placeStreetFurniture(nav, bridges, add) {
+  // Nothing stands where a jump is, nor in the bays and water kept clear
+  // round it (see city-jumps.js). The jumps themselves go in last
+  const place = add;
+  add = piece => { if (!inJumpZone(piece.u, piece.s)) place(piece); };
   const geometry = junctionGeometry(nav), controls = junctionControls(nav);
   // Junction zones: nothing stands on a corner or in a crosswalk's path
   const zones = [...geometry.values()].map(shape => ({ x: shape.node.x, y: shape.node.y, r: shape.arms.reduce((sum, arm) => sum + arm.clear, 0) / shape.arms.length + CROSSWALK + 2.5, corner: Math.min(...shape.arms.map(arm => arm.clear)) }));
@@ -1086,6 +1093,7 @@ export function placeStreetFurniture(nav, bridges, add) {
     });
   };
   const put = (piece, radius = 1.5) => {
+    if (inJumpZone(piece.u, piece.s)) return false;
     // on a pavement, and not where a road or park path runs across it
     if ((PAVED.has(piece.kind) || piece.street) && (!CITY.pavement.find(piece.u, piece.s) || onRoadAt(piece.s, piece.u))) return false;
     if (piece.kind !== 'parking-sign' && acrossDrive(piece.u, piece.s, SIDEWALK + .5, .6)) return false;
@@ -1548,6 +1556,11 @@ export function placeStreetFurniture(nav, bridges, add) {
         }
       }
     });
+  }
+  for (const site of cityJumps().sites) {
+    place({ kind: 'jump', u: site.u, s: site.s, site });
+    // (the far end of the river jump's bridge, in its own cell)
+    if (site.abutment) place({ kind: 'jump', u: site.abutment.u, s: site.abutment.s, site, part: 'far' });
   }
 }
 

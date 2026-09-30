@@ -5,6 +5,7 @@ import { HarbourBoats } from './city-boats.js';
 import { BusStops } from './bus-stops.js';
 import { cityAssets, cityTrees, CONIFER, looseTree, twinLamp, signalMastPiece, LANTERN_HEIGHT, SIGNAL_LENSES, MAST_HEIGHT, parkedCars, PARKED_PAINTS, boatModels } from './city-assets.js';
 import { TRAFFIC_MODELS } from '../traffic-models.js';
+import { carProfile } from '../car-profile.js';
 import { seededRandom, randomAt } from './route.js';
 import { residentWindow } from './resident.js';
 import { buildCityBuildingSteps } from './city-buildings.js';
@@ -25,6 +26,7 @@ import { buildMonument } from './city-monuments.js';
 import { cityPlaces } from '../city-exploration.js';
 import { basinRim, basinWater } from './city-public-space-geometry.js';
 import { buildStreetSurfaces, placeStreetFurniture, findBridges, bridgePiers, PARAPET } from './city-streets.js';
+import { buildJump } from './city-jump-models.js';
 import { cityParks } from './city-parks.js';
 import { offsetPolygon, calcPolygonArea, averagePoint } from '../mapgen/polygon-util.js';
 
@@ -306,6 +308,19 @@ function* renderBatchSteps(group, batches, east = 0, start = 0, distant = false)
   }
 }
 
+// How tall a parked car stands along its length (see carProfile), for a car
+// jumping over it or coming down on its roof (see CarAir)
+const parkedProfiles = new Map();
+function parkedProfile(model) {
+  if (!parkedProfiles.has(model)) {
+    const car = new THREE.Group(), spec = TRAFFIC_MODELS.find(m => m.name === model);
+    for (const geometry of [parkedCars[model].paint, parkedCars[model].trim]) car.add(new THREE.Mesh(geometry));
+    parkedProfiles.set(model, carProfile(car, spec.length));
+  }
+  return parkedProfiles.get(model);
+}
+// A bridge's parapet carries its truss (see TRUSS_TOP)
+const TRUSS_HEIGHT = 6.9;
 // A parked car knocked loose leaves its bay empty: its instance, or its stretch
 // of a merged mesh, is folded to a point until it is put back.
 const folded = new THREE.Matrix4().makeScale(0, 0, 0);
@@ -528,6 +543,8 @@ export class CityChunk {
         continue;
       }
       if (buildMonument(this, piece, x, s)) continue;
+      // A ramp or a mound to jump (see city-jumps.js)
+      if (piece.kind === 'jump') { buildJump(this, piece.site, piece.part); continue; }
       // Posts, signs, bins, benches and mast signals can be knocked loose,
       // trees and shelters only by a car that breaks them (see LooseProps).
       // Railings stand firm
@@ -567,8 +584,9 @@ export class CityChunk {
         const length = piece.length ?? 4;
         // (and a bridge's parapet, drawn with the streets, only stops the car)
         if (!piece.parapet) this.prop('railing', x, s, piece.yaw, piece.y ?? PAVEMENT_LEVEL, [1, 1, length / 4]);
-        // (`base`, what it stands on: a deck's edge is no wall to something flying under the deck)
-        this.rigid(x, s, () => { const solid = this.solid(x, s, piece.parapet ? PARAPET : .24, length); if (solid) solid.base = piece.y ?? PAVEMENT_LEVEL; }, itemFrame(piece.s, piece.u, piece.yaw));
+        // (`base`, what it stands on: a deck's edge is no wall to something flying under the deck.
+        // And how tall it stands, a bridge's with its truss, for a car jumping over it)
+        this.rigid(x, s, () => { const solid = this.solid(x, s, piece.parapet ? PARAPET : .24, length); if (solid) { solid.base = piece.y ?? PAVEMENT_LEVEL; solid.height = piece.parapet ? TRUSS_HEIGHT : 1.15; } }, itemFrame(piece.s, piece.u, piece.yaw));
       }
       else if (piece.kind === 'sign') this.standingSign(discoverySignFor(piece.type, piece.variant), x, s, piece.yaw, piece.width ?? 4.2, piece.bottom ?? 1.9);
       else if (piece.kind === 'stop' || piece.kind === 'yield') {
@@ -657,6 +675,7 @@ export class CityChunk {
         for (const item of items) item.wakeable = true;
         this.features.colliders.at(-1).parked = {
           model: piece.model, colour, nose: { u: -Math.sin(piece.yaw), s: Math.cos(piece.yaw) },
+          profile: parkedProfile(piece.model), height: parkedProfile(piece.model).height, base: ROAD_LEVEL,
           get ready() { return items.every(item => item.render?.mesh); },
           get hidden() { return items.every(item => item.render?.hidden); },
           hide(hidden = true) { for (const item of items) hideItem(item, hidden); },

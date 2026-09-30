@@ -4,7 +4,7 @@ import { navGraph } from './world/nav-graph.js';
 import { createTrafficModels, TRAFFIC_MODELS, TRAFFIC_COLORS, BUS_PAINT, BUS_ROADS } from './traffic-models.js';
 import { collisionImpulse, contactPoint, footprintMass, heft, rock, rockFrom, skid, LOOSE_GRIP, HANDBRAKE_GRIP, SCENERY_SURFACE } from './impact.js';
 import { trafficContact, sceneryContacts } from './collision.js';
-import { carProfile } from './car-profile.js';
+import { carProfile, profileHeight } from './car-profile.js';
 import { Actor } from './actors.js';
 import { JunctionTraffic, approachControl } from './city-junctions.js';
 import { turnPath, approachSpeed, wayOn, bendSpeed, hasTurnPath, turnPathSteps, bendSpeedSteps, isLink, HAIRPIN } from './world/lane-paths.js';
@@ -32,6 +32,9 @@ const LOOSE = 2.5, LOOSE_SPIN = .6, STRANDED = 3, WAIT = 4, OUT_OF_SIGHT = 120;
 // A shaken driver lifts off and rolls to a stop before driving on, for this
 // many seconds per m/s the blow changed the car's speed, and at most MOST.
 const DAZE = .1, DAZE_MOST = 1.6;
+// A car come down on (see stomp) is crushed as by a blow this many times as
+// hard as the landing, and dips by STOMP_ROCK a metre off its middle
+const STOMP = 1.6, STOMP_ROCK = .12;
 // Stand-ins for parked cars knocked loose, of each model: made at the start,
 // and at most (more are made as a rampage needs them); and how far off the
 // player must be before one is put back in its bay (once no other car is in it)
@@ -611,13 +614,18 @@ export class CityTraffic {
   // The player against a car. They share the blow by weight and, once the car
   // is free to move, are parted by weight too: a heavy car shoves a light one.
   // A helicopter up above the traffic (`airborne`) is not in its way at all,
-  // and someone on foot (`walker`) moves no car: they are only put back
-  // outside it, and take the car's blow (see Walker.resolveTrafficCollision).
-  // A loose car pinned against the scenery (see pinned) is part of it to them.
+  // nor a car jumping clear over its roof (or sunk in the harbour under a
+  // bridge it is crossing), and someone on foot (`walker`) moves no car: they
+  // are only put back outside it, and take the car's blow (see
+  // Walker.resolveTrafficCollision). A loose car pinned against the scenery
+  // (see pinned) is part of it to them.
   collidePlayer(car, player) {
     if (player.airborne) return;
     const p = player.groundedPosition;
     if (Math.abs(car.position.x - p.x) > 7 || Math.abs(car.position.z - p.z) > 7) return;
+    if (p.y >= car.position.y + (car.profile?.height ?? 1.5) || p.y + (player.spec.height ?? 1.5) <= car.position.y) return;
+    // (nor a car come down on its bonnet or roof, standing on it)
+    if (player.carAir?.on(this.roofOf(car))) return;
     const a = player.motion(), b = this.motion(car), contact = trafficContact(a, b), walking = Boolean(player.walker);
     if (!contact) return;
     const free = car.loose && !walking && !this.pinned(car, -contact.x, -contact.z);
@@ -627,6 +635,47 @@ export class CityTraffic {
     const share = free ? b.mass / (a.mass + b.mass) : 1, depth = contact.depth + .005;
     player.resolveTrafficCollision(contact.x * depth * share, contact.z * depth * share, blow?.a.x ?? 0, blow?.a.z ?? 0, blow?.a.spin ?? 0, blow?.closing ?? 0, blow?.slide ?? 0);
     if (share < 1) this.nudge(car, -contact.x * depth * (1 - share), -contact.z * depth * (1 - share));
+  }
+  // The cars' roofs, for a car coming down on them (see CarAir.sample): each
+  // of `points` ({ x, z }) over a car in the traffic, a stand-in or the
+  // player's own parked car gets its height there, along the car's length as
+  // its profile has it, where that is over what it has and under its limit.
+  // `solids` gets the car's roof (see roofOf). Kerb-parked cars still in
+  // their bays are their colliders' (see parkedRoof in collision.js).
+  roofsUnder(points, limits, heights, solids) {
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const p of points) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z); }
+    for (const list of [this.vehicles, this.woken, this.playerCars]) for (const car of list) {
+      const reach = car.spec.length / 2 + 1;
+      if (!car.car.visible || !(list === this.playerCars || car.edge || car.parked) || car.position.x + reach < minX || car.position.x - reach > maxX || car.position.z + reach < minZ || car.position.z - reach > maxZ) continue;
+      const sin = Math.sin(car.heading), cos = Math.cos(car.heading), half = car.spec.width / 2;
+      for (let i = 0; i < points.length; i++) {
+        const dx = points[i].x - car.position.x, dz = points[i].z - car.position.z;
+        if (Math.abs(dx * cos + dz * sin) > half) continue;
+        const top = car.position.y + profileHeight(car.profile, dx * sin - dz * cos);
+        if (top > heights[i] && top <= limits[i]) { heights[i] = top; solids[i] = this.roofOf(car); }
+      }
+    }
+  }
+  // What stands for a car's roof as something to stand on (see roofsUnder),
+  // kept here rather than on the car (see DRIVER)
+  roofOf(car) {
+    this.roofs ??= new WeakMap();
+    if (!this.roofs.has(car)) this.roofs.set(car, { car });
+    return this.roofs.get(car);
+  }
+  // A car come down on from above (see CarAir.land), `on` its roof (see
+  // roofOf) or a kerb-parked car's collider, which is woken to take it. Its
+  // body dips under the blow at the end or side it was hit, its driver stops
+  // dazed, and it is crushed: a blow STOMP times as hard as the landing.
+  stomp(on, impact, at) {
+    let car = on?.car ?? null;
+    if (!car && on?.parked) car = this.wake(on) ? this.woken.find(each => each.parked === on) : null;
+    if (!car) return;
+    const sin = Math.sin(car.heading), cos = Math.cos(car.heading), dx = at.x - car.position.x, dz = at.z - car.position.z;
+    rockFrom(car.rock ??= { pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 }, -(dx * sin - dz * cos) * impact * STOMP_ROCK, (dx * cos + dz * sin) * impact * STOMP_ROCK);
+    if (!car.parked && !this.playerCars.includes(car)) { car.dazed = Math.max(car.dazed, DAZE_MOST); car.bumped = .5; }
+    this.onDamage?.(car, impact * STOMP);
   }
   // A loose car, or one just shoved along its lane, can be knocked into
   // another, which takes its share of the blow in turn; the two are parted

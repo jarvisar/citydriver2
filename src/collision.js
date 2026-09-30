@@ -1,5 +1,6 @@
 import { CHUNK_LENGTH, clamp } from './world/route.js';
 import { leadingPoint } from './impact.js';
+import { profileHeight } from './car-profile.js';
 
 // Four separating axes give a forgiving rectangular footprint even when the
 // player is sideways. All collision coordinates are independent of render origin.
@@ -127,7 +128,7 @@ function boxOutline(box) {
   })) };
 }
 // Whether a point stands inside (or within 2 cm of) a convex outline, whichever way round it runs.
-function insideConvex(p, polygon) {
+export function insideConvex(p, polygon) {
   let sign = 0;
   for (let i = 0; i < polygon.length; i++) {
     const a = polygon[i], b = polygon[(i + 1) % polygon.length], length = Math.hypot(b.x - a.x, b.z - a.z);
@@ -175,6 +176,7 @@ export function cameraClearance(chunks, point, origin = 0) {
     if (!bounds || circle.x + radius < bounds.minX || circle.x - radius > bounds.maxX
       || circle.z + radius < bounds.minZ || circle.z - radius > bounds.maxZ) continue;
     for (const solid of chunk.features.colliders) {
+      if (solid.shape) continue;
       const above = Math.max(0, point.y - (solid.ridge ?? solid.top ?? Infinity));
       if (above >= room || Math.abs(circle.x - solid.x) > solid.reach + radius || Math.abs(circle.z - solid.z) > solid.reach + radius) continue;
       const contact = circleContact(circle, solid);
@@ -225,7 +227,8 @@ export function sightLine(chunks, from, to, origin = 0, cars = null) {
       // (and a post, a trunk or a lamp, the camera would stand inside: it
       // comes in to just before it, rather than look out through it)
       if (cars && solid.heading === undefined && !solid.corners) { if (!outside(solid, solid.reach)) open = Math.min(open, postEnd(solid, x, z, dx, dz)); continue; }
-      if ((solid.top === undefined && !car) || outside(solid, solid.reach)) continue;
+      // (a ramp or a mound is low enough to see over)
+      if ((solid.top === undefined && !car) || solid.shape || outside(solid, solid.reach)) continue;
       block(solid, car ? cars.ground + ROOF : solid.ridge ?? solid.top, car ? CAR_CLEAR : CLEAR);
     }
   }
@@ -288,6 +291,17 @@ export function roofUnder(chunks, points, below, machine = false) {
     if (!bounds || maxX < bounds.minX || minX > bounds.maxX || maxZ < bounds.minZ || minZ > bounds.maxZ) continue;
     for (const solid of chunk.features.colliders) {
       if (solid.top === undefined || (machine && solid.clutter) || solid.x - solid.reach > maxX || solid.x + solid.reach < minX || solid.z - solid.reach > maxZ || solid.z + solid.reach < minZ) continue;
+      // (a ramp or a mound by its slope under each point)
+      if (solid.shape) {
+        let inside = 0, top = -Infinity;
+        for (let i = 0; i < points.length; i++) {
+          if (!insideConvex(points[i], solid.corners)) continue;
+          const h = shapeHeight(solid.shape, points[i]);
+          if (h <= below) { inside |= 1 << i; top = Math.max(top, h); }
+        }
+        if (inside) { held |= inside; best = Math.max(best, top); }
+        continue;
+      }
       const top = solid.ridge ?? solid.top;
       if (top > below || (!machine && top <= best)) continue;
       let inside = 0;
@@ -299,8 +313,10 @@ export function roofUnder(chunks, points, below, machine = false) {
 }
 // How high a building's roof is at p ({ x, z }), for someone standing on it:
 // a flat roof at its top, a pitched one on its slope (`pitch`, see roofPitch
-// in city-buildings.js), from its ridge down to its eaves
+// in city-buildings.js), from its ridge down to its eaves. A ramp or a mound
+// (`shape`, see shapeHeight) is its own slope.
 export function roofSurface(solid, p) {
+  if (solid.shape) return shapeHeight(solid.shape, p);
   const pitch = solid.pitch;
   if (!pitch) return solid.ridge ?? solid.top;
   const { from: a, to: b, run, eaves, gable } = pitch, dx = b.x - a.x, dz = b.z - a.z, length = dx * dx + dz * dz;
@@ -309,6 +325,75 @@ export function roofSurface(solid, p) {
   // a plane, and measured straight from the ridge they sank into the hips)
   const across = Math.hypot(p.x - a.x - dx * t, p.z - a.z - dz * t), past = gable ? 0 : Math.max(0, -t, t - 1) * Math.sqrt(length);
   return eaves + (solid.ridge - eaves) * Math.max(0, 1 - Math.max(across, past) / run);
+}
+// A ramp or a mound to drive over (see city-jumps.js), as its collider's
+// `shape`. A ramp climbs `rise` over `run` from its foot (`x`, `z`, the middle
+// of its low edge, at `base`) the way (`dx`, `dz`) points, steepening toward
+// its lip by `curve` (0 a plain wedge, .5 twice as steep at the lip as at the
+// foot), with a level top `flat` long beyond. A mound is a smooth hump
+// `height` high over an ellipse (`rx` along `angle`, `rz` across it).
+export function shapeHeight(shape, p) {
+  const ex = p.x - shape.x, ez = p.z - shape.z;
+  if (shape.kind === 'mound') {
+    const a = (ex * shape.cos + ez * shape.sin) / shape.rx, b = (ez * shape.cos - ex * shape.sin) / shape.rz, q = a * a + b * b;
+    return q >= 1 ? shape.base : shape.base + shape.height * (1 - q) * (1 - q);
+  }
+  const t = ex * shape.dx + ez * shape.dz;
+  if (t <= 0) return shape.base;
+  if (t >= shape.run) return shape.base + shape.rise;
+  const f = t / shape.run;
+  return shape.base + shape.rise * f * (1 + shape.curve * (f - 1));
+}
+// Which way and how steeply a shape climbs at p: the height's rise per metre
+// east (`x`) and south (`z`), written into `out`
+export function shapeSlope(shape, p, out = { x: 0, z: 0 }) {
+  const ex = p.x - shape.x, ez = p.z - shape.z;
+  out.x = out.z = 0;
+  if (shape.kind === 'mound') {
+    const c = shape.cos, s = shape.sin, a = (ex * c + ez * s) / shape.rx, b = (ez * c - ex * s) / shape.rz, q = a * a + b * b;
+    if (q >= 1) return out;
+    const k = -4 * shape.height * (1 - q);
+    out.x = k * (a * c / shape.rx - b * s / shape.rz); out.z = k * (a * s / shape.rx + b * c / shape.rz);
+    return out;
+  }
+  const t = ex * shape.dx + ez * shape.dz;
+  if (t <= 0 || t >= shape.run) return out;
+  const grade = shape.rise / shape.run * (1 - shape.curve + 2 * shape.curve * t / shape.run);
+  out.x = shape.dx * grade; out.z = shape.dz * grade;
+  return out;
+}
+// What a car's wheels stand on: for each of `points` ({ x, z }, as the
+// colliders lie), the highest roof, ramp or mound top under it no higher than
+// its `limits`, written into `heights` (-Infinity where there is none) with the
+// solid in `solids`, and with `cars` a kerb-parked car's roof too (see
+// parkedRoof). One pass over the colliders for all of them.
+export function surfacesUnder(chunks, points, limits, heights, solids, cars = false) {
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    heights[i] = -Infinity; solids[i] = null;
+    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
+  }
+  for (const chunk of chunks) {
+    const bounds = chunk?.collisionBounds;
+    if (!bounds || maxX < bounds.minX || minX > bounds.maxX || maxZ < bounds.minZ || minZ > bounds.maxZ) continue;
+    for (const solid of chunk.features.colliders) {
+      const car = cars && solid.parked?.profile && !solid.woken;
+      if ((solid.top === undefined && !car) || solid.x - solid.reach > maxX || solid.x + solid.reach < minX || solid.z - solid.reach > maxZ || solid.z + solid.reach < minZ) continue;
+      for (let i = 0; i < points.length; i++) {
+        const p = points[i];
+        if (!insideConvex(p, solid.corners)) continue;
+        const top = car ? parkedRoof(solid, p) : roofSurface(solid, p);
+        if (top <= limits[i] && top > heights[i]) { heights[i] = top; solids[i] = solid; }
+      }
+    }
+  }
+}
+// A kerb-parked car's roof over p ({ x, z }, inside its footprint): its
+// height there along its length, as its model has it (see carProfile)
+export function parkedRoof(solid, p) {
+  const info = solid.parked, along = (p.x - solid.x) * info.nose.u - (p.z - solid.z) * info.nose.s;
+  return info.base + profileHeight(info.profile, along);
 }
 // The roof under someone at p ({ x, z }, as the colliders lie) no higher than
 // `below`, where it is under them, or -Infinity
@@ -329,14 +414,14 @@ export function roofAt(chunks, p, below) {
 // street furniture it touches may be knocked loose (`wake(solid, contact)`,
 // see CityTraffic.wake and LooseProps.hit), and then it is no longer a wall.
 // Whatever the player's machine clears (`passes`: a flying machine over it,
-// someone on foot on a roof) is left alone. Someone on foot is round
-// (`spec.radius`, see Walker).
+// a car up on a ramp or in the air over it, someone on foot on a roof) is
+// left alone. Someone on foot is round (`spec.radius`, see Walker).
 export function collideScenery(player, chunks, dt, wake = null) {
   const halfWidth = player.spec.width / 2, halfLength = player.spec.length / 2, radius = player.spec.radius, center = Math.floor(player.s / CHUNK_LENGTH);
   const nearby = player.route.grid ? chunks.values() : [chunks.get(center - 1), chunks.get(center), chunks.get(center + 1)];
   const box = () => ({ x: player.groundedPosition.x, z: player.groundedPosition.z, heading: player.heading, halfWidth, halfLength, radius });
   sceneryContacts(box, nearby, (contact, solid) => {
-    if (player.passes?.(solid)) return;
+    if (player.passes?.(solid, contact)) return;
     if ((solid.parked || solid.prop) && wake?.(solid, contact)) return;
     player.resolveSceneryCollision(contact.x, contact.z, contact.depth, dt, contact.point);
   });

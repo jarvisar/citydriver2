@@ -4,9 +4,12 @@ import { CityExploration, cityPlaces } from './city-exploration.js';
 import { taxiRoute, STOP_RADIUS } from './taxi-run.js';
 import { goalProgress } from './taxi-goals.js';
 import { contractProgress } from './demolition-run.js';
+import { starText } from './jump-book.js';
 import { $, attribute, hide } from './hud-dom.js';
 
 const MAP_SCALE = .36;
+// A ramp, for the notebook's jumps
+const RAMP_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18h18V9Z" fill="currentColor"/></svg>';
 const EMPTY = [];
 export class CityGuide {
   constructor(notify, position) {
@@ -59,6 +62,26 @@ export class CityGuide {
       row.querySelector('.notebook-check').textContent = names.length ? '✓' : '○';
       row.setAttribute('aria-label', `${kind.label}, ${names.length ? `found: ${names.join(' and ')}${more ? `, ${more} more in the city` : ''}` : 'not found yet'}`);
     }
+  }
+  // The city's named jumps (see JumpBook), how far each has been taken, and
+  // the best ever. The rows are made once, when the book is first asked.
+  refreshJumps() {
+    const book = this.jumps, list = $('city-jumps');
+    if (!book || !list) return;
+    const sites = book.sites;
+    if (!list.childElementCount && sites.length) list.innerHTML = sites.map(site => `<div class="notebook-place" data-jump="${site.id}" style="--place-color:${site.kind === 'river' ? '#e3b02c' : '#5fd0c0'}"><span class="notebook-stamp">${RAMP_ICON}</span><span><strong>${site.name}</strong><small></small></span><span class="notebook-check" aria-hidden="true"></span></div>`).join('');
+    for (const row of list.children) {
+      const site = sites.find(each => each.id === Number(row.dataset.jump)), best = book.best.get(site.id), stars = book.stars(site);
+      const where = site.kind === 'river' ? 'Off the half-built bridge, over the water' : `By ${site.where}`;
+      row.dataset.found = String(best !== undefined);
+      row.querySelector('small').textContent = best === undefined ? where : `${where} · best ${best} m`;
+      row.querySelector('.notebook-check').textContent = starText(stars);
+      row.setAttribute('aria-label', `${site.name}, ${where}: ${best === undefined ? 'not jumped yet' : `best ${best} metres, ${stars} of 3 stars`}`);
+    }
+    $('city-jumps-progress').textContent = sites.length ? `${book.landed} / ${sites.length} landed. Take a run at a ramp: stars for how far you fly.` : 'This city has no named jumps.';
+    const r = book.records, records = $('city-jump-records');
+    records.hidden = !r.longest;
+    records.textContent = r.longest ? ['Best ever', `${r.longest} m`, `${r.air.toFixed(1)} s in the air`, r.turns ? `${r.turns * 360} spin` : ''].filter(Boolean).join(' · ') : '';
   }
   // Every new place is news: the first of a kind stamps the notebook, and
   // another of a kind says how many there are
@@ -139,12 +162,14 @@ export class CityGuide {
       const parked = this.onFoot?.parked;
       const targets = this.demolition?.running ? this.targets?.() ?? EMPTY : EMPTY;
       const known = run?.running || this.demolition?.running ? [] : this.foundPlaces();
-      this.mapState = { target, nextStop, parked, targets, known, stopIndex: run?.stopIndex,
+      // (and in free drive, the city's named jumps: gold once landed)
+      const jumps = run?.running || this.demolition?.running || !this.jumps ? EMPTY : this.jumps.sites;
+      this.mapState = { target, nextStop, parked, targets, known, jumps, landed: this.jumps?.landed, stopIndex: run?.stopIndex,
         places: run?.status === 'pickup' ? run.customers : target ? [{ ...target, color: '#ffd238' }] : [],
         route: taxiRoute(vehicle, target && run.approach(vehicle)), nextRoute: nextStop ? taxiRoute(target, nextStop) : [],
-        key: [run, run?.status, run?.status === 'pickup' ? run.customers : null, target, nextStop, run?.stopIndex, parked, parked?.s, parked?.u, targets, known.length] };
+        key: [run, run?.status, run?.status === 'pickup' ? run.customers : null, target, nextStop, run?.stopIndex, parked, parked?.s, parked?.u, targets, known.length, jumps, this.jumps?.landed] };
     }
-    const { target, nextStop, parked, targets, known, places, route, nextRoute, stopIndex, key } = this.mapState;
+    const { target, nextStop, parked, targets, known, jumps, places, route, nextRoute, stopIndex, key } = this.mapState;
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
     // Everything the map shows comes from these (the route from the car's
     // position and its drop-off). While none has changed, as when paused or
@@ -198,6 +223,14 @@ export class CityGuide {
       if (x < 4 || y < 4 || x > width - 4 || y > height - 4) continue;
       ctx.fillStyle = CITY_PLACES[place.type].color;
       ctx.beginPath(); ctx.arc(x, y, 3.4, 0, Math.PI * 2); ctx.stroke(); ctx.fill();
+    }
+    // A jump: a wedge pointing the way to take it
+    for (const site of jumps) {
+      const [x, y] = point(site);
+      if (x < 6 || y < 6 || x > width - 6 || y > height - 6) continue;
+      ctx.save(); ctx.translate(x, y); ctx.rotate(site.heading - heading);
+      ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(4.5, 4); ctx.lineTo(-4.5, 4); ctx.closePath();
+      ctx.fillStyle = this.jumps.best.has(site.id) ? '#e3b02c' : '#5fd0c0'; ctx.strokeStyle = '#17262f'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.fill(); ctx.restore();
     }
     ctx.fillStyle = '#ff9433'; ctx.strokeStyle = '#17262f'; ctx.lineWidth = 1.5;
     for (const place of targets) {

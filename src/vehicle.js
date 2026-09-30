@@ -16,6 +16,7 @@ import { collisionImpulse, footprintMass, heft, leadingPoint, rock, rockFrom, SC
 import { steerCurve, steeringResponse, driftDirection, turnRate, corneringLoad, travelHeading } from './handling.js';
 import { carProfile } from './car-profile.js';
 import { Actor, actorBody } from './actors.js';
+import { CarAir, GRAVITY } from './car-air.js';
 
 const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: .74, flatShading: true, ...extra });
 function box(group, size, location, material) {
@@ -241,6 +242,10 @@ const DRIFT_ARM = .3;
 // collision correction (the one step that is not smooth motion) cannot throw
 // the body ahead of itself.
 const LEAD_REACH = .5;
+// The share of the game's air drag a car in the air feels
+const AIR_DRAG = .12;
+// What a pose carries besides where the car is and which way it faces
+const POSE_KEYS = ['bodyPitch', 'bodyRoll', 'bodyLift', 'wheelSpin', 'steer', 'slip'];
 
 export class ActorMotion {
   // (`model`: one createCar already built, to drive instead of building another)
@@ -257,22 +262,27 @@ export class ActorMotion {
     // above the traffic, and `scenery` (the world's chunks) holds the roofs
     // it can set down on. A person has a Walker (see walker.js), and
     // `props` (LooseProps) takes
-    // them when a car knocks them over.
-    this.pilot = null; this.airborne = false; this.scenery = null; this.walker = null; this.props = null;
+    // them when a car knocks them over. `traffic` (CityTraffic) has the cars
+    // a car can come down on (see CarAir).
+    this.pilot = null; this.airborne = false; this.scenery = null; this.walker = null; this.props = null; this.traffic = null;
+    // A car on its wheels goes up and down with what it drives over, and off
+    // a ramp into the air (see CarAir). `events` is what happened, for the
+    // game to hear (see drain)
+    this.carAir = null; this.events = [];
     this.fit(walking ? carId : CARS[carId] ? carId : DEFAULT_CAR, model ?? (walking ? createWalkerModel() : createCar(carId)), { paint });
     this.s = state.s ?? 24; this.u = state.u ?? 2.4; this.speed = 0; this.steer = 0; this.heading = state.heading ?? route.frame(this.s).angle;
     this.distance = state.distance ?? 0; this.pitch = 0; this.roll = 0;
     this.reverseDelay = 0; this.driftAmount = 0; this.driftDirection = 0; this.drifting = false; this.boosting = false; this.driftReady = true; this.driftArmed = 0; this.slip = 0;
     // Where the car's weight is: -1 over the back under power, +1 over the nose on the brakes.
     this.weight = 0; this.load = 0;
-    this.bodyPitch = 0; this.bodyRoll = 0; this.wheelSpin = 0;
+    this.bodyPitch = 0; this.bodyRoll = 0; this.bodyLift = 0; this.wheelSpin = 0;
     // Motion a collision leaves the car with that its own drive did not make,
     // and the swing it leaves the body with.
     this.knock = { x: 0, z: 0, spin: 0 }; this.jolt = { pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 };
     // The turn the driver is making, and how shaken the view is (0 to 1).
     this.yawRate = 0; this.trauma = 0; this.lost = 0; this.pushing = 0;
     this.audioTelemetry = { speed: 0, throttle: 0, brake: 0, offRoad: 0, handbrake: 0, impact: 0, impactSerial: 0, crashSerial: 0, scrape: 0, boost: 0, bump: 0, bumpSerial: 0, step: 0, stepSerial: 0 };
-    const pose = () => ({ position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), bodyPitch: 0, bodyRoll: 0, wheelSpin: 0, steer: 0, slip: 0 });
+    const pose = () => ({ position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), bodyPitch: 0, bodyRoll: 0, bodyLift: 0, wheelSpin: 0, steer: 0, slip: 0 });
     this.previousPose = pose(); this.currentPose = pose();
     this.previousPose.position = this.actor.body.previousPosition; this.previousPose.quaternion = this.actor.body.previousQuaternion;
     this.currentPose.position = this.actor.body.position; this.currentPose.quaternion = this.actor.body.quaternion;
@@ -291,6 +301,11 @@ export class ActorMotion {
     const Pilot = PILOTS[entry.kind];
     this.pilot = Pilot && this.rotors ? new Pilot(this, this.rotors) : null; this.walker = null; this.airborne = false;
     const { width, length, cabin, cabinZ, cabinY = 1.22, drop = 0, eye, chaseLift = 0, door, seat, exit } = entry.shape;
+    // (only a car on its wheels: a flying machine and someone on foot keep their own height)
+    const wheeled = !this.pilot && carId !== WALKER_SPEC.name;
+    this.carAir = wheeled ? this.carAir ?? new CarAir(this) : null;
+    this.carAir?.fit(model.wheels, width, length);
+    this.bodyBase = model.body?.position.y ?? 0;
     // Center the view just in front of the windshield for every body shape.
     // Traffic-shaped cabins slope back by .24 m at the top of the glass, and a
     // car that is not cut from a road-car cabin says where its driver sits.
@@ -320,7 +335,7 @@ export class ActorMotion {
     } else this.paintCar(this.paintColor);
   }
   reset() {
-    this.pilot?.land();
+    this.pilot?.land(); this.carAir?.reset();
     this.speed = 0; this.steer = 0; this.weight = 0; this.load = 0; this.driftArmed = 0; this.knock.x = this.knock.z = this.knock.spin = 0;
     Object.assign(this.jolt, { pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 }); this.yawRate = 0; this.trauma = 0; this.lost = 0; this.pushing = 0; this.audioTelemetry.scrape = 0;
     // A generated street network has no lane at u = 2.4: settle into the nearest lane instead.
@@ -352,8 +367,10 @@ export class ActorMotion {
   }
   copyPose(target, source) {
     target.position.copy(source.position); target.quaternion.copy(source.quaternion);
-    for (const key of ['bodyPitch', 'bodyRoll', 'wheelSpin', 'steer', 'slip']) target[key] = source[key];
+    for (const key of POSE_KEYS) target[key] = source[key];
   }
+  // What happened to the car since last asked (a jump landed, a splash: see CarAir)
+  drain() { const events = this.events; this.events = []; return events; }
   // Which way the car is really going: its own drive, and any knock on top.
   get velocity() { if (this.pilot) return this.pilot.velocity; if (this.walker) return this.walker.velocity; const heading = this.slideHeading ?? this.heading; return { x: Math.sin(heading) * this.speed + this.knock.x, z: -Math.cos(heading) * this.speed + this.knock.z }; }
   // A move in world metres, in the road's terms, as a step of driving is.
@@ -363,10 +380,12 @@ export class ActorMotion {
     this.u += dx * Math.cos(frame.angle) + dz * Math.sin(frame.angle);
   }
   // A slide and a turn fade as the tyres bite, and then are gone altogether.
-  carryKnock(dt) {
+  // In the air (`grip` false) there is nothing to bite, and a knock carries on.
+  carryKnock(dt, grip = true) {
     const knock = this.knock;
     if (!knock.x && !knock.z && !knock.spin) return;
     this.shift(knock.x * dt, knock.z * dt); this.heading += knock.spin * dt;
+    if (!grip) return;
     const slide = Math.exp(-dt * SLIDE_GRIP);
     knock.x *= slide; knock.z *= slide; knock.spin *= Math.exp(-dt * SPIN_GRIP);
     if (Math.hypot(knock.x, knock.z) < .05 && Math.abs(knock.spin) < .01) knock.x = knock.z = knock.spin = 0;
@@ -400,7 +419,8 @@ export class ActorMotion {
   placeAfterCollision() {
     if (this.pilot) { this.pilot.pose(); return; }
     if (this.walker) { this.walker.pose(); return; }
-    const p = this.route.position(this.s, this.u);
+    // (at the height it is at: on a ramp, or in the air)
+    const p = this.route.position(this.s, this.u, Number.isFinite(this.y) ? this.y : undefined);
     this.groundedPosition.set(p.x, p.y, p.z);
     this.currentPose.position.copy(this.groundedPosition);
     this.currentPose.bodyPitch = this.bodyPitch + this.jolt.pitch; this.currentPose.bodyRoll = this.bodyRoll + this.jolt.roll;
@@ -442,15 +462,22 @@ export class ActorMotion {
     const at = (s, u) => this.route.position(s, u, 0), p = at(this.s, this.u), a = at(this.s + 1, this.u), b = at(this.s, this.u + 1);
     const sx = a.x - p.x, sz = a.z - p.z, ux = b.x - p.x, uz = b.z - p.z, det = sx * uz - sz * ux, push = depth + .005;
     const s = this.s + (nx * uz - nz * ux) * push / det, u = this.u + (sx * nz - sz * nx) * push / det;
-    // A trunk on a quay must not shove the car over the edge behind it.
-    if (!impassable(this.ground(s, u)) || impassable(this.ground(this.s, this.u))) { this.s = s; this.u = u; }
+    // A trunk on a quay must not shove the car over the edge behind it (in
+    // the air, there is no edge to keep it from).
+    if (this.aloft || !impassable(this.ground(s, u)) || impassable(this.ground(this.s, this.u))) { this.s = s; this.u = u; }
     if (!this.freeDriving) this.u = clamp(this.u, ...this.route.bounds(this.s));
     this.placeAfterCollision();
   }
   // Whether the player's machine clears a standing thing rather than hitting
-  // it (see collideScenery): a flying machine over it, or someone on foot on
-  // a roof, standing on it or above it
-  passes(solid) { return Boolean(this.pilot?.passes(solid) || this.walker?.passes(solid)); }
+  // it (see collideScenery): a flying machine over it, a car up on a ramp or
+  // jumping over it (`contact`, where they would meet: see CarAir.passes), or
+  // someone on foot on a roof, standing on it or above it. A car sinking in
+  // the harbour meets nothing more.
+  passes(solid, contact = null) {
+    if (this.pilot) return this.pilot.passes(solid);
+    if (this.walker) return this.walker.passes(solid);
+    return Boolean(this.sinking || this.carAir?.passes(solid, contact));
+  }
   // The ground under the car: its height, and its fall along and across the
   // road over about a wheelbase and a track. Free driving also asks whether
   // the car may stand here: not on water or a cliff face, nor with either of
@@ -478,6 +505,8 @@ export class ActorMotion {
     this.car.userData.slip = THREE.MathUtils.lerp(a.slip, b.slip, t);
     this.body.rotation.x = THREE.MathUtils.lerp(a.bodyPitch, b.bodyPitch, t);
     this.body.rotation.z = THREE.MathUtils.lerp(a.bodyRoll, b.bodyRoll, t);
+    // (riding up on its springs in the air, squatting into a landing)
+    if (this.carAir) this.body.position.y = this.bodyBase + THREE.MathUtils.lerp(a.bodyLift, b.bodyLift, t);
     const steer = THREE.MathUtils.lerp(a.steer, b.steer, t);
     const spin = THREE.MathUtils.lerp(a.wheelSpin, b.wheelSpin, t);
     for (const w of this.wheels) {
@@ -493,7 +522,11 @@ export class ActorMotion {
     this.copyPose(this.previousPose, this.currentPose);
     const { frame: roadFrame, position: positionAt } = this.route;
     const stats = this.stats;
-    const touch = input.touchDrive;
+    // Off its wheels the tyres have nothing to push against (see CarAir), and
+    // sinking in the harbour nothing answers the controls
+    const aloft = this.aloft && dt > 0;
+    if (this.sinking) input = {};
+    const touch = aloft ? null : input.touchDrive;
     const arcade = Boolean(this.arcade);
     const forward = clamp(Number(input.forward) || 0, 0, 1); const brake = clamp(Number(input.brake) || 0, 0, 1);
     // Boost needs the gas. A taxi run meters it (TaxiRun.controls); free drive
@@ -510,7 +543,7 @@ export class ActorMotion {
     // ramped across about half a car's width so putting two wheels on the verge
     // costs a fraction of what leaving altogether does. The same number sets
     // the surface's resistance, grip and sound.
-    const looseness = this.route.looseness?.(this.s, this.u) ?? clamp((Math.abs(this.u) - 4.8) / 1.1, 0, 1);
+    const looseness = aloft ? 0 : this.route.looseness?.(this.s, this.u) ?? clamp((Math.abs(this.u) - 4.8) / 1.1, 0, 1);
     // Loose ground takes the speed rather than the game capping it: resistance
     // that full throttle balances at the off-road figure, plus a little more
     // the further above it the car arrives, so leaving the road at speed bleeds
@@ -525,18 +558,18 @@ export class ActorMotion {
     const grip = stats.grip * (1 - .25 * looseness);
     if (!input.handbrake || !dt) this.driftReady = true;
     this.driftArmed = input.handbrake && this.driftReady ? DRIFT_ARM : Math.max(0, this.driftArmed - dt);
-    this.driftDirection = dt && !touch ? driftDirection(this.driftDirection, this.speed, steering, input, this.driftArmed > 0) : 0;
+    this.driftDirection = dt && !touch && !aloft ? driftDirection(this.driftDirection, this.speed, steering, input, this.driftArmed > 0) : 0;
     if (this.driftDirection) { this.driftReady = false; this.driftArmed = 0; }
     const drifting = this.driftDirection !== 0;
     this.drifting = drifting;
     this.driftAmount = dt && !touch ? THREE.MathUtils.damp(this.driftAmount, drifting ? 1 : 0, drifting ? 10 : 22, dt) : 0;
     let acceleration = 0;
-    const parkingBrake = input.handbrake && !drifting;
+    const parkingBrake = !aloft && input.handbrake && !drifting;
     // A little extra low-speed pull makes starts and corner exits lively. It
     // fades out before cruising and leaves each car's top speed intact.
     const launch = 1 + .22 * (1 - looseness) * clamp(1 - this.speed / 12, 0, 1);
-    if (forward && !brake && !parkingBrake) acceleration += forward * (this.speed < -.3 ? stats.launch : stats.acceleration * launch);
-    if (brake && !parkingBrake) acceleration -= brake * (this.speed > .3 ? stats.braking : stats.creep);
+    if (forward && !brake && !parkingBrake && !aloft) acceleration += forward * (this.speed < -.3 ? stats.launch : stats.acceleration * launch);
+    if (brake && !parkingBrake && !aloft) acceleration -= brake * (this.speed > .3 ? stats.braking : stats.creep);
     if (parkingBrake) acceleration -= Math.sign(this.speed) * stats.handbrake;
     // What the driver is asking of the car, before the tires, the air and the
     // grass take their share. Weight transfer reads this rather than the total:
@@ -546,9 +579,14 @@ export class ActorMotion {
     // enough that a slide costs something, not so much that the tighter line it
     // buys is never worth taking. Full throttle can carry the slide; lifting
     // lets the tires catch quickly.
-    acceleration -= Math.sign(this.speed) * stats.handbrake * .1 * this.driftAmount;
+    if (!aloft) acceleration -= Math.sign(this.speed) * stats.handbrake * .1 * this.driftAmount;
+    // Up a ramp takes speed, and down one gives it back
+    const grade = aloft ? 0 : this.carAir?.grade(this.heading) ?? 0;
+    if (grade) acceleration -= GRAVITY * grade / Math.hypot(1, grade);
+    // (in the air only the air holds the car back, and the game's air drag is
+    // there to cap top speed: a jump keeps nearly all its way)
     const drag = DRAG.rolling + DRAG.air * this.speed * this.speed + surface;
-    if (Math.abs(this.speed) > .015) acceleration -= Math.sign(this.speed) * drag;
+    if (Math.abs(this.speed) > .015) acceleration -= Math.sign(this.speed) * (aloft ? DRAG.air * AIR_DRAG * this.speed * this.speed : drag);
     if (touch) {
       this.speed = Math.abs(this.speed);
       // Raise the stick's speed target too, or its braking cancels the boost.
@@ -557,7 +595,7 @@ export class ActorMotion {
       pedals = acceleration;
       if (touch.amount) this.heading = touch.heading;
     }
-    this.boosting = boosting && !parkingBrake && !brake;
+    this.boosting = boosting && !parkingBrake && !brake && !aloft;
     if (this.boosting) { acceleration += stats.acceleration * .9; pedals += stats.acceleration * .9; }
     if (this.pushing > 0) {
       this.pushing = Math.max(0, this.pushing - dt);
@@ -565,7 +603,9 @@ export class ActorMotion {
     }
     const oldSpeed = this.speed;
     const boostCoast = Math.max(0, this.speed - stats.topSpeed - stats.braking * .4 * dt);
-    this.speed = clamp(this.speed + acceleration * dt, touch ? 0 : -stats.reverseSpeed, stats.topSpeed + (boosting ? 10 : boostCoast));
+    // (a boosted car keeps its way in the air: no tyres to shed it)
+    if (aloft) this.speed += acceleration * dt;
+    else this.speed = clamp(this.speed + acceleration * dt, touch ? 0 : -stats.reverseSpeed, stats.topSpeed + (boosting ? 10 : boostCoast));
     // A held brake should settle the cab long enough to board/drop off before
     // backing up. Releasing and pressing again still selects reverse immediately.
     if (arcade && brake && !touch) {
@@ -581,12 +621,18 @@ export class ActorMotion {
     const effort = pedals * Math.sign(this.speed);
     const transfer = clamp(-effort / (effort > 0 ? stats.acceleration : stats.braking), -1, 1);
     this.weight = dt ? THREE.MathUtils.damp(this.weight, transfer, 9, dt) : transfer;
-    const yaw = turnRate(this.speed, this.steer, stats, looseness, this.driftAmount, this.weight);
+    const yaw = aloft ? 0 : turnRate(this.speed, this.steer, stats, looseness, this.driftAmount, this.weight);
     this.yawRate = touch ? 0 : yaw;
-    this.load = corneringLoad(this.speed, yaw, stats, looseness, this.weight);
+    this.load = aloft ? 0 : corneringLoad(this.speed, yaw, stats, looseness, this.weight);
     const frame = roadFrame(this.s);
-    const assist = this.route.laneAssist !== false && (!this.freeDriving || looseness === 0);
-    if (!touch) this.heading += yaw * dt;
+    const assist = !aloft && this.route.laneAssist !== false && (!this.freeDriving || looseness === 0);
+    if (aloft) {
+      // In the air the nose leans or spins with the steering while the car
+      // flies on the way it left the ground (see CarAir.steer)
+      const before = this.heading;
+      this.heading = this.carAir.steer(dt, steering, Boolean(input.handbrake), this.slideHeading);
+      this.yawRate = (this.heading - before) / dt;
+    } else if (!touch) this.heading += yaw * dt;
     let difference = Math.atan2(Math.sin(this.heading - frame.angle), Math.cos(this.heading - frame.angle));
     // Free driving keeps the chosen heading off-road; normal driving assists bends.
     if (!touch && assist && Math.abs(this.steer) < .08 && Math.abs(this.speed) > .2 && Math.abs(difference) < 1.15) {
@@ -595,12 +641,15 @@ export class ActorMotion {
       difference = this.heading - frame.angle;
     }
     const step = this.speed * dt, fromS = this.s, fromU = this.u;
-    if (!dt || touch || oldSpeed * this.speed <= 0 || !Number.isFinite(this.slideHeading)) this.slideHeading = this.heading;
-    this.slideHeading = travelHeading(this.slideHeading, this.heading, dt, grip, this.driftAmount, this.load);
+    // (a landing a little off the way the car is going slides a moment before the tyres bite: see CarAir.grip)
+    if (!aloft) {
+      if (!dt || touch || oldSpeed * this.speed <= 0 || !Number.isFinite(this.slideHeading)) this.slideHeading = this.heading;
+      this.slideHeading = travelHeading(this.slideHeading, this.heading, dt, grip * (this.carAir?.grip ?? 1), this.driftAmount, this.load);
+    }
     const travelAngle = this.slideHeading - frame.angle;
     this.s += touch?.amount ? touch.along * step : Math.cos(travelAngle) * step / frame.scale;
     this.u += touch?.amount ? touch.across * step : Math.sin(travelAngle) * step;
-    this.carryKnock(dt); rock(this.jolt, dt);
+    this.carryKnock(dt, !aloft); rock(this.jolt, dt);
     if (!touch && assist && Math.abs(difference) < 1.15) this.heading += (roadFrame(this.s).angle - frame.angle) * (1 - Math.abs(this.steer)) * .92;
     this.distance += Math.abs(step);
     if (!this.freeDriving) {
@@ -614,7 +663,8 @@ export class ActorMotion {
     // water and cliffs stop it instead. Whichever half of the move stays on
     // firm ground is kept, so the car runs along a shore rather than sticking
     // to it; a car already standing somewhere impassable may always leave.
-    if (this.freeDriving && impassable(ground)) {
+    // (in the air, or up on a ramp out over the water, the water is no wall)
+    if (this.freeDriving && !aloft && !this.carAir?.raised && impassable(ground)) {
       const from = this.ground(fromS, fromU);
       if (!impassable(from)) {
         let kept = this.ground(this.s, fromU);
@@ -623,26 +673,27 @@ export class ActorMotion {
         this.s = ground.s; this.u = ground.u; this.speed *= ground === from ? 0 : Math.exp(-dt * 4);
       }
     }
-    // Models put their tyre bottoms at zero; the route already gives the surface height.
-    const p = positionAt(this.s, this.u, ground.height);
-    // The step of a kerb under the wheels, for the sound (see DriveAudio.bump)
-    const kerb = Math.abs(p.y - this.groundedPosition.y);
-    if (dt > 0 && kerb > .05 && kerb < .5 && Math.abs(this.speed) > 1) { this.audioTelemetry.bump = kerb; this.audioTelemetry.bumpSerial++; }
+    // Up and down with what the wheels drive over, or off it into the air
+    // (see CarAir). Models put their tyre bottoms at zero.
+    const v = this.velocity;
+    this.carAir.update(dt, -v.z, v.x);
+    const p = positionAt(this.s, this.u, this.y);
     this.groundedPosition.set(p.x, p.y, p.z); this.car.position.copy(this.groundedPosition);
-    const { slope, lateralSlope } = ground;
-    this.pitch = THREE.MathUtils.damp(this.pitch, Math.atan(slope * Math.cos(difference) + lateralSlope * Math.sin(difference)), 10, dt || 1);
-    this.roll = THREE.MathUtils.damp(this.roll, Math.atan(lateralSlope * Math.cos(difference) - slope * Math.sin(difference)), 9, dt || 1);
+    this.carAir.tilt(dt, this.speed);
     this.car.rotation.set(0, -this.heading, 0, 'YXZ'); this.car.rotateX(this.pitch); this.car.rotateZ(this.roll);
-    // Lean and dive read the same numbers the tyres do.
-    this.bodyRoll = THREE.MathUtils.damp(this.bodyRoll, -clamp(yaw * this.speed * .0042, -LEAN, LEAN), 11, dt);
-    this.bodyPitch = THREE.MathUtils.damp(this.bodyPitch, -clamp(acceleration, -15, 12) * .0034, 7, dt);
+    // Lean and dive read the same numbers the tyres do (in the air there are none).
+    this.bodyRoll = THREE.MathUtils.damp(this.bodyRoll, aloft ? 0 : -clamp(yaw * this.speed * .0042, -LEAN, LEAN), 11, dt);
+    this.bodyPitch = THREE.MathUtils.damp(this.bodyPitch, aloft ? 0 : -clamp(acceleration, -15, 12) * .0034, 7, dt);
+    this.bodyLift = this.lift;
     this.wheelSpin -= step / .48;
     // The chase camera widens and drops back once the car is really moving.
     // Nothing below two fifths of its top speed, everything by the time the
     // needle is against the stop. Once the car moves, a camera the mouse
-    // turned swings back behind it.
+    // turned swings back behind it. In the air it looks the way the car
+    // flies, not the way a spinning nose points.
     this.car.userData.speedRush = clamp((Math.abs(this.speed) / stats.topSpeed - .4) / .6, 0, 1);
     this.car.userData.speed = this.speed;
+    this.car.userData.travel = this.aloft ? this.slideHeading : null; this.car.userData.chasePitch = this.aloft ? 0 : null;
     // A crash shakes the view, and that fades within about a second.
     this.trauma = Math.max(0, this.trauma - dt * 1.4); this.car.userData.trauma = this.trauma;
     this.lost *= Math.exp(-dt / CRASH_FADE);
@@ -654,12 +705,14 @@ export class ActorMotion {
     this.audioTelemetry.offRoad = looseness;
     this.audioTelemetry.handbrake = input.handbrake ? 1 : 0;
     this.audioTelemetry.boost = this.boosting ? 1 : 0;
+    // (in the air the wheels spin free: the engine revs and the tyres go quiet)
+    this.audioTelemetry.aloft = this.aloft ? 1 : 0;
     this.slip = Math.atan2(Math.sin(this.heading - this.slideHeading), Math.cos(this.heading - this.slideHeading));
     // Scraping along a wall or a car sounds only while it goes on.
     this.audioTelemetry.scrape *= Math.exp(-dt * 14);
     if (dt === 0) { this.audioTelemetry.impact = 0; this.reverseDelay = 0; this.drifting = false; }
     this.currentPose.position.copy(this.groundedPosition); this.currentPose.quaternion.copy(this.car.quaternion);
-    for (const key of ['bodyPitch', 'bodyRoll', 'wheelSpin', 'steer', 'slip']) this.currentPose[key] = this[key];
+    for (const key of POSE_KEYS) this.currentPose[key] = this[key];
     this.currentPose.bodyPitch += this.jolt.pitch; this.currentPose.bodyRoll += this.jolt.roll;
     // Resets and route changes are teleports, so never blend from the old location.
     if (dt === 0) this.copyPose(this.previousPose, this.currentPose);
@@ -675,7 +728,7 @@ for (const [name, field] of Object.entries({ s: 's', u: 'u', speed: 'speed', hea
   });
 }
 
-const CONTEXT = ['route', 'freeDriving', 'arcade', 'scenery', 'props', 'night', 'journeyId', 'rainbow', 'rainbowHue', 'distance'];
+const CONTEXT = ['route', 'freeDriving', 'arcade', 'scenery', 'props', 'traffic', 'night', 'journeyId', 'rainbow', 'rainbowHue', 'distance'];
 
 // The player holds a controller, not a replaceable car body. Camera, input and
 // HUD callers keep this handle while cars and the pedestrian live independently.
@@ -757,10 +810,10 @@ export class PlayerController {
 
 // These are the player-facing movement fields used by the simulation, menus
 // and review tools. Forwarding on the prototype avoids a Proxy in hot loops.
-const PLAYER_FIELDS = ['airborne', 'arcade', 'audioTelemetry', 'body', 'bodyPitch', 'bodyRoll', 'boosting', 'canopy', 'car', 'carId', 'currentPose', 'distance', 'figure',
+const PLAYER_FIELDS = ['air', 'airborne', 'aloft', 'arcade', 'audioTelemetry', 'body', 'bodyLift', 'bodyPitch', 'bodyRoll', 'boosting', 'canopy', 'car', 'carAir', 'carId', 'currentPose', 'distance', 'figure', 'sinking', 'vy', 'y',
   'driftAmount', 'driftArmed', 'driftDirection', 'drifting', 'driftReady', 'freeDriving', 'groundedPosition', 'heading', 'jolt', 'journeyId', 'knock',
   'load', 'lost', 'model', 'night', 'nightLights', 'paintColor', 'pilot', 'pitch', 'previousPose', 'props', 'pushing', 'rainbow', 'rainbowColor',
-  'rainbowHue', 'reverseDelay', 'roll', 'rotors', 'route', 's', 'scenery', 'slideHeading', 'slip', 'spec', 'speed', 'stats', 'steer', 'trauma', 'u',
+  'rainbowHue', 'reverseDelay', 'roll', 'rotors', 'route', 's', 'scenery', 'slideHeading', 'slip', 'spec', 'speed', 'stats', 'steer', 'traffic', 'trauma', 'u',
   'velocity', 'walker', 'weight', 'wheels', 'wheelSpin', 'yawRate'];
 for (const name of PLAYER_FIELDS) Object.defineProperty(PlayerController.prototype, name, {
   get() { return this.actor.motion[name]; }, set(value) { this.actor.motion[name] = value; },

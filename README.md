@@ -16,6 +16,7 @@ This is the sequel to [Citydriver](https://github.com/jarvisar/citydriver). The 
 - Traffic that follows signals, stop signs and give-way signs
 - Traffic that changes lanes on the boulevards and drives around crashed and stopped cars
 - A bus that comes by now and then and stops at the bus shelters to let people on and off
+- Ramps and jumps, including a half-built bridge to jump the river
 - Landmarks and shops that passengers can ask to go to
 - Taxi mode with group fares, shift goals, driver ranks and cabs to buy
 - Demolition mode with a truck, damage chains, contracts, ratings and high scores
@@ -27,11 +28,13 @@ This is the sequel to [Citydriver](https://github.com/jarvisar/citydriver). The 
 
 ## How to Play
 
-Start a Taxi run to pick up passengers and earn money. Stop in a pickup ring, follow the arrow, then stop in the yellow drop-off zone before the fare clock runs out. Buildings have a short zone outside the entrance. Parks and squares let passengers out anywhere along their side of the street. Some passengers are in a hurry, want stunts or are nervous. An icon on their ring shows which. If time runs out with passengers aboard, the shift ends after the last one gets out. Earnings can be spent on faster cabs in the taxi fleet. See [progression and balance](docs/taxi-progression.md) and [taxi fleet](docs/taxi-fleet.md) for more details.
+Start a Taxi run to pick up passengers and earn money. Stop in a pickup ring, follow the arrow, then stop in the yellow drop-off zone before the fare clock runs out. Buildings have a short zone outside the entrance. Parks and squares let passengers out anywhere along their side of the street. Some passengers are in a hurry, want stunts or are nervous. An icon on their ring shows which. Drifts, jumps and near misses earn tips. If time runs out with passengers aboard, the shift ends after the last one gets out. Earnings can be spent on faster cabs in the taxi fleet. See [progression and balance](docs/taxi-progression.md) and [taxi fleet](docs/taxi-fleet.md) for more details.
 
-Demolition puts you in a truck with one minute to cause as much property damage as possible. Lamp posts, benches, signs, trees, bus shelters and cars all have a price, and cars in traffic are worth the most. Hits in quick succession build a chain. Every fourth hit raises the chain's multiplier, up to ×5, and the chain's damage is added to the total when it ends. Each run has three contracts, like felling five trees, and each one finished adds 10 seconds to the clock. Wrecking a moving car adds 3. If time runs out mid-chain, the chain keeps going until it ends. Pedestrians dive out of the way if you give them the chance. Running one over costs a $10,000 fine and the chain in progress. Each run gets a rating, and the best five runs are kept as high scores. See [demolition](docs/demolition.md) for the prices, contracts and ratings.
+Demolition puts you in a truck with one minute to cause as much property damage as possible. Lamp posts, benches, signs, trees, bus shelters and cars all have a price, and cars in traffic are worth the most. Hits in quick succession build a chain. Every fourth hit raises the chain's multiplier, up to ×5, and the chain's damage is added to the total when it ends. Each run has three contracts, like felling five trees, and each one finished adds 10 seconds to the clock. Wrecking a moving car adds 3. A jump doesn't break the chain, and landing on a car does a lot of damage. If time runs out mid-chain, the chain keeps going until it ends. Pedestrians dive out of the way if you give them the chance. Running one over costs a $10,000 fine and the chain in progress. Each run gets a rating, and the best five runs are kept as high scores. See [demolition](docs/demolition.md) for the prices, contracts and ratings.
 
 Free drive has no timer. All three taxis are available in the garage, and weather settings and the places you've found are in the pause menu. Driving past a landmark or dropping a passenger at one marks it as found, and found places show up on the city map. The garage also has a helicopter and a plane for seeing the city from the air, and the city bus. Press forward on the main menu to enter free drive. Press R or select New city in the pause menu to generate a new city.
+
+There are jumps around the city. Loading ramps sit in parking spaces in the Warehouse district, parks have dirt mounds, and a half-built bridge reaches out over the river. The river jump needs a fast car and a long run up. Fall short and you're put back at the start of the run up. In a run that also costs 5 seconds. In the air, steer to turn the nose, or hold Space and steer to spin. Land roughly straight or the car spins out. You can also land on other cars. The ramps and the river jump get up to three stars for distance, and the pause menu lists them with your best for the current city. They're marked on both maps.
 
 In free drive, press E to get out of the car and walk around. Press E near your car, a car in traffic or a car parked along the street to get in. A marker shows which car. If it's a few metres away you walk over to it on your own, and a car in traffic stops to wait for you. Moving the stick or pressing a movement key cancels it. A car taken from traffic drives off on its own when you get out. A parked car stays where you leave it and goes back to its space once you are far away. Your own car stays where you left it and is marked on both maps. Picking a car in the garage puts you in it. If the car is still going fast, press E a second time to jump out while it slows down.
 
@@ -54,6 +57,7 @@ Every visit generates a new city. Add `?seed=4817` to the URL to load the same c
 | Steer | A D / Left Right | Left stick |
 | Boost | Shift | RB / R1 |
 | Drift / handbrake | Space | LB / L1 |
+| Spin (in the air) | Hold Space and steer | Hold LB / L1 and steer |
 | Climb / descend (helicopter, plane) | Space / Shift | Right stick, or RB / R1 and LB / L1 |
 | Barrel roll / loop (plane) | Double-tap A or D / double-tap Space | Flick the left stick twice / double-tap RB / R1 |
 | Camera | V | X / Square |
@@ -74,7 +78,7 @@ Every visit generates a new city. Add `?seed=4817` to the URL to load the same c
 | Street map (show / hide) | Its arrow button | |
 | Menus | Tab, Enter | D-pad or left stick to choose, A / Cross to select, B / Circle to go back |
 
-On touch screens, use the stick to drive, hold Boost, and tap Drift while steering in chase view. Release the stick to stop. In first or third person, keep one thumb on the stick and drag a second thumb across the scene to look around. In the helicopter and the plane, hold Climb or Descend. On foot, drag the stick the way to walk and push it further to run. Tap or hold Jump, hold Sprint, and tap Get out or Get in.
+On touch screens, use the stick to drive, hold Boost, and tap Drift while steering in chase view. Hold Drift and steer in the air to spin. Release the stick to stop. In first or third person, keep one thumb on the stick and drag a second thumb across the scene to look around. In the helicopter and the plane, hold Climb or Descend. On foot, drag the stick the way to walk and push it further to run. Tap or hold Jump, hold Sprint, and tap Get out or Get in.
 
 The camera buttons at the lower right recenter the view and move the third-person camera closer or farther away. Pause → Display → Camera has view, distance, sensitivity and vertical inversion settings. Mouse, touch and controller each keep their own look settings; driving and walking remember separate views and distances. Recenter keeps the chosen distance. F3 toggles the FPS counter.
 
@@ -89,6 +93,7 @@ In a headset's browser, such as the Meta Quest Browser, select `Enter VR` on the
 | Steer | Left thumbstick |
 | Boost | Right grip |
 | Drift / handbrake | Left grip |
+| Spin (in the air) | Hold left grip and steer |
 | Climb / descend (helicopter, plane) | Right thumbstick, or right and left grip |
 | Get out / get in (free drive) | Y |
 | Walk (on foot) | Left thumbstick |

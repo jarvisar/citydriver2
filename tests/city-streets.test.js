@@ -115,7 +115,8 @@ test('lamps, trees, signs and signals stand on the pavement, never on a carriage
   const kinds = new Set(furniture.map(piece => piece.kind));
   for (const kind of ['lamp', 'median-lamp', 'lantern', 'tree', 'stop', 'signal', 'shelter', 'bin', 'railing', 'bench', 'parked']) assert.ok(kinds.has(kind), `${kind} placed`);
   for (const piece of furniture) {
-    if (piece.kind === 'railing' || piece.kind === 'rim') continue;
+    // (a jump stands in a parking bay, on a lawn or over the river: see city-jumps.test.js)
+    if (piece.kind === 'railing' || piece.kind === 'rim' || piece.kind === 'jump') continue;
     // (a boat lies on the water: see below)
     if (piece.kind === 'boat' || piece.kind === 'mooring') { assert.equal(surfaceAt(piece.s, piece.u), 'water', `${piece.kind} at ${piece.u.toFixed(1)},${piece.s.toFixed(1)}`); continue; }
     // A car in a yard's car park stands in its block's yard, off every road
@@ -141,7 +142,7 @@ test('lamps, trees, signs and signals stand on the pavement, never on a carriage
   for (const shape of geometry.values()) {
     const radius = Math.min(...shape.arms.map(arm => arm.clear));
     for (const piece of furniture) {
-      if (['stop', 'yield', 'signal', 'railing', 'rim'].includes(piece.kind)) continue;
+      if (['stop', 'yield', 'signal', 'railing', 'rim', 'jump'].includes(piece.kind)) continue;
       assert.ok(Math.hypot(piece.u - shape.node.x, piece.s - shape.node.y) > radius - .5, `${piece.kind} in the junction at ${shape.node.x.toFixed(0)},${shape.node.y.toFixed(0)}`);
     }
   }
@@ -151,7 +152,7 @@ test('kerbside fittings stand on the lamps\' line, clear of the rest and of the 
   const fittings = ['hydrant', 'post-box', 'cabinet', 'news-boxes', 'bike-rack'], placed = furniture.filter(piece => fittings.includes(piece.kind));
   for (const kind of fittings) assert.ok(placed.some(piece => piece.kind === kind), `${kind} placed`);
   // (last, so every other piece stands where it did before they came)
-  assert.ok(furniture.findIndex(piece => fittings.includes(piece.kind)) > furniture.findLastIndex(piece => !fittings.includes(piece.kind) && piece.kind !== 'grass'), 'placed last');
+  assert.ok(furniture.findIndex(piece => fittings.includes(piece.kind)) > furniture.findLastIndex(piece => !fittings.includes(piece.kind) && piece.kind !== 'grass' && piece.kind !== 'jump'), 'placed last');
   const kerbs = CITY.blocks.map(block => [...block.kerb, block.kerb[0]]);
   const shelters = furniture.filter(piece => piece.kind === 'shelter'), others = furniture.filter(piece => !['grass', 'rim', 'railing', 'parked', 'boat', 'mooring'].includes(piece.kind));
   for (const piece of placed) {

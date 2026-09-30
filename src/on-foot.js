@@ -90,12 +90,12 @@ export class OnFoot {
   get parked() { return this.garage && this.garage.control !== 'player' ? this.garage.body : null; }
   get borrowed() { const actor = this.vehicle.actor; return actor.source === 'traffic' && actor.control === 'player' ? actor.body : null; }
   get bay() { const actor = this.vehicle.actor; return actor.source === 'parked' && actor.control === 'player' ? actor.home : null; }
-  // Whether a second press now jumps out: of a car going fast, or of
-  // something flying, high enough for the parachute (or on its wheels in
-  // the street going fast)
+  // Whether a second press now jumps out: of a car going fast (once it is
+  // back on its wheels, off a jump), or of something flying, high enough for
+  // the parachute (or on its wheels in the street going fast)
   get leaping() {
     const v = this.vehicle, pilot = v.pilot;
-    if (!pilot) return Math.abs(v.speed) > BAIL;
+    if (!pilot) return Math.abs(v.speed) > BAIL && !v.aloft;
     return pilot.landed ? Math.abs(v.speed) > BAIL && v.groundedPosition.y < v.route.height(v.s, v.u) + .3 : pilot.height > LEAP;
   }
   // What getting in or out would do now, for the HUD: { out, stopping, bail,
@@ -113,7 +113,7 @@ export class OnFoot {
   use() {
     const v = this.vehicle, pilot = v.pilot;
     if (!this.walking) {
-      if (Math.abs(v.speed) < HALT && (!pilot || pilot.landed)) return this.getOut();
+      if (Math.abs(v.speed) < HALT && (!pilot || pilot.landed) && !v.aloft) return this.getOut();
       if (this.leaving && this.leaping) return pilot && !pilot.landed ? this.jump() : this.bail();
       if (this.leaving) return '';
       this.leaving = true;
@@ -158,7 +158,7 @@ export class OnFoot {
     const v = this.vehicle;
     let said = '';
     if (this.leaving && this.walking) this.leaving = false;
-    if (this.leaving && Math.abs(v.speed) < HALT && (!v.pilot || v.pilot.landed)) said = this.getOut();
+    if (this.leaving && Math.abs(v.speed) < HALT && (!v.pilot || v.pilot.landed) && !v.aloft) said = this.getOut();
     if (this.approach) {
       const { target, since } = this.approach, shape = v.walker?.standing ? this.shapeOf(target) : null;
       if (!shape || v.walker.time - since > APPROACH) this.approach = null;

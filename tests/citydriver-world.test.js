@@ -405,7 +405,8 @@ test('the chase camera stays out of the buildings whichever way the car faces', 
   try {
     const start = journeyStart();
     world.update(start.s, start.u); while (world.pending.length) world.update(start.s, start.u);
-    const buildings = [...world.chunks.values()].flatMap(c => c.features.colliders.filter(s => s.top !== undefined));
+    // (not a jump's ramp or mound, whose top is a `shape` the camera passes over)
+    const buildings = [...world.chunks.values()].flatMap(c => c.features.colliders.filter(s => s.top !== undefined && !s.shape));
     assert.ok(buildings.length > 100 && buildings.every(b => b.corners && b.top > PAVEMENT_LEVEL + 3), 'every building has its roof height');
     const outline = b => b.corners.map(p => ({ x: p.x, y: p.z }));
     const sight = (from, to) => sightLine(world.chunks.values(), from, to, world.origin);

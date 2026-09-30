@@ -75,6 +75,10 @@
 .notebook-stamp { display: grid; place-items: center; width: 34px; height: 34px; border: 1px dashed #7c8d8370; border-radius: 50%; font: 12px Georgia, serif; }
 .notebook-place[data-found=true] .notebook-stamp { background: var(--place-color); border-style: solid; }
 .notebook-check { color: #597c66; font-size: 16px; }
+.notebook-jumps-heading { margin-top: 18px; }
+#city-jumps-progress { font-size: 12px; line-height: 1.6; margin: 0 0 8px; }
+#city-jumps .notebook-stamp svg { width: 18px; height: 18px; }
+#city-jumps .notebook-check { font-size: 12px; letter-spacing: 1px; white-space: nowrap; }
 @media (max-width: 760px) {
   .city-guide { width: 166px; padding: 8px; border-radius: 12px; top: calc(var(--ui-top) + 64px); bottom: auto; }
   .city-guide-header { gap: 2px; margin-bottom: 5px; }
@@ -129,6 +133,8 @@ body[data-mode=free] #app #city-location { max-width: none; white-space: normal;
 /* The player's own car, where they left it (see OnFoot), as the map rings it */
 .world-map-marker { width: 14px; height: 14px; border-radius: 50%; background: #17262f; box-shadow: inset 0 0 0 2px #5fd0c0; }
 .world-map-place { width: 12px; height: 12px; border-radius: 50%; background: conic-gradient(#ef997e 0 25%, #94c9c7 0 50%, #d5a3cb 0 75%, #b5c798 0); box-shadow: 0 0 0 2px #17262f; }
+/* A jump's wedge, half landed (gold) and half not yet (teal), as the map draws them */
+.world-map-jump { width: 14px; height: 13px; background: linear-gradient(90deg, #5fd0c0 50%, #e3b02c 50%); clip-path: polygon(50% 0, 100% 100%, 0 100%); }
 .world-map-note { margin: 0 0 8px; font-size: 11px; line-height: 1.5; text-align: center; color: var(--city-muted); }
 .world-map-dialog .controller-hint { text-align: center; }
 /* The key sits beside the map wherever the screen is wider than it is tall. */

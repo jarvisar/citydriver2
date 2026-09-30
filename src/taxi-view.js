@@ -23,7 +23,7 @@ export const HINTS = {
   rings: 'Stop in any ring for a fare · green rings pay most',
   drive: 'Follow the arrow · arrive while the pill is green',
   group: 'Each rider has a stop · the group pays at the last',
-  tips: 'Drifts and near misses earn tips · a crash ends the combo',
+  tips: 'Drifts, jumps and near misses tip · crashes end the combo',
 };
 const HINT_SECONDS = 7, HINTS_KEY = 'citydriver-taxi-hints';
 // Rating colours, as in taxi.css

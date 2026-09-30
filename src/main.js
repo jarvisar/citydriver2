@@ -44,6 +44,7 @@ import { goalProgress } from './taxi-goals.js';
 import { TaxiView } from './taxi-view.js';
 import { DemolitionRun, DEMOLITION_CAR, DEMOLITION_PAINT } from './demolition-run.js';
 import { DemolitionView } from './demolition-view.js';
+import { JumpBook, starText } from './jump-book.js';
 import { setResidentWindow } from './world/resident.js';
 import { PlayerController } from './vehicle.js';
 import { OnFoot, EnterMarker } from './on-foot.js';
@@ -200,8 +201,9 @@ async function boot() {
     // Street furniture knocked loose (see loose-props.js), which loose traffic can knock over too
     const props = new LooseProps(scene, world.materials.props);
     traffic.props = props;
-    // (and takes the player on foot, when a car knocks them over)
-    vehicle.props = props;
+    // (and takes the player on foot, when a car knocks them over. The
+    // traffic's roofs are there for a car to come down on)
+    vehicle.props = props; vehicle.traffic = traffic;
     // Getting out of the car and into another, in free drive (see on-foot.js),
     // and on foot, a marker over the car they would get into
     const onFoot = new OnFoot(vehicle, traffic), enterMarker = new EnterMarker(scene);
@@ -239,6 +241,9 @@ async function boot() {
     // traffic knocking someone over is not.
     const demolition = new DemolitionRun(taxiStorage), demolitionView = new DemolitionView(scene, taxiStorage);
     props.onSmash = (kinds, at) => demolition.smash(kinds, at);
+    // Free drive's jumps: what a landing is worth saying, and how far the
+    // city's named jumps have been taken (see jump-book.js)
+    const jumpBook = new JumpBook(taxiStorage); cityGuide.jumps = jumpBook; cityGuide.refreshJumps();
     traffic.onDamage = (car, closing) => demolition.damageCar(car, closing);
     pedestrianContacts.onKnock = (by, at, kind) => { if (by !== 'traffic') demolition.pedestrian(at, by, kind); };
     // The street map marks what the open contracts ask for where the city
@@ -299,8 +304,14 @@ async function boot() {
       const chrome = worldMapDialog.offsetHeight - body.offsetHeight + (below ? key.offsetHeight + parseFloat(getComputedStyle(body).rowGap) : 0);
       const room = Math.max(140, parseFloat(getComputedStyle(worldMapDialog).maxHeight) - chrome - 2);
       worldMapCanvas.style.width = `${Math.floor(Math.min(worldMapCanvas.parentElement.clientWidth, room * worldMap.aspect))}px`;
-      worldMap.draw(worldMapCanvas, vehicle, onFoot.parked, cityGuide.foundPlaces());
+      worldMap.draw(worldMapCanvas, vehicle, onFoot.parked, cityGuide.foundPlaces(), mapJumps());
     }
+    // The city's named jumps for the city map, gold once landed (see JumpBook)
+    const mapJumps = () => jumpBook.sites.map(site => ({ u: site.u, s: site.s, heading: site.heading, landed: jumpBook.best.has(site.id), site }));
+    const jumpName = ({ site }) => {
+      const best = jumpBook.best.get(site.id);
+      return [site.kind === 'river' ? site.name : `${site.name} by ${site.where}`, best === undefined ? '' : `best ${best} m ${starText(jumpBook.stars(site))}`].filter(Boolean).join(' · ');
+    };
     function openWorldMap() {
       if (!holdForChooser()) return;
       if (!worldMap) {
@@ -312,25 +323,29 @@ async function boot() {
         $('#world-map-legend').innerHTML = Object.keys(DISTRICT_COLORS).filter(style => blocks.has(style)).map(style =>
           `<li><span class="world-map-swatch" style="--district-color:${DISTRICT_COLORS[style]}"></span>${style}<small>${Math.round(blocks.get(style) / total * 100)}%</small></li>`).join('')
           + '<li id="world-map-places"><span class="world-map-place"></span>Places found<small></small></li>'
+          + '<li id="world-map-jumps"><span class="world-map-jump"></span>Jumps landed<small></small></li>'
           + '<li id="world-map-car" hidden><span class="world-map-marker"></span>Your car<small></small></li>';
       }
       // and the player's own car, where they left it, and how far off
       const parked = onFoot.parked;
       $('#world-map-car').hidden = !parked;
       $('#world-map-places small').textContent = String(cityGuide.foundPlaces().length);
+      $('#world-map-jumps').hidden = !jumpBook.sites.length;
+      $('#world-map-jumps small').textContent = `${jumpBook.landed} / ${jumpBook.sites.length}`;
       if (parked) $('#world-map-car small').textContent = `${Math.round(Math.hypot(parked.s - vehicle.s, parked.u - vehicle.u) / 10) * 10} m`;
       worldMapCanvas.style.aspectRatio = String(worldMap.aspect);
       $('#world-map-status').textContent = hereText();
       worldMapDialog.showModal(); chooserName = 'map';
       drawWorldMap();
       // (and once more for the headset's panel, which cannot show the page)
-      if (vr?.active) { vrMapCanvas ??= document.createElement('canvas'); vrMapCanvas.width = 940; worldMap.draw(vrMapCanvas, vehicle, onFoot.parked, cityGuide.foundPlaces()); vrMapKey++; }
+      if (vr?.active) { vrMapCanvas ??= document.createElement('canvas'); vrMapCanvas.width = 940; worldMap.draw(vrMapCanvas, vehicle, onFoot.parked, cityGuide.foundPlaces(), mapJumps()); vrMapKey++; }
       $('#close-world-map').focus();
     }
     window.addEventListener('resize', drawWorldMap);
     worldMapCanvas.addEventListener('pointermove', event => {
       const box = worldMapCanvas.getBoundingClientRect(), x = event.clientX - box.left, y = event.clientY - box.top;
-      const place = worldMap?.placeAt(x, y, box.width, cityGuide.foundPlaces()), name = place ? `${place.name} · ${CITY_PLACES[place.type].label}` : worldMap?.districtAt(x, y, box.width);
+      const place = worldMap?.placeAt(x, y, box.width, cityGuide.foundPlaces()), jump = !place && worldMap?.jumpAt(x, y, box.width, mapJumps());
+      const name = place ? `${place.name} · ${CITY_PLACES[place.type].label}` : jump ? jumpName(jump) : worldMap?.districtAt(x, y, box.width);
       $('#world-map-status').textContent = name ?? hereText();
     });
     worldMapCanvas.addEventListener('pointerleave', () => { $('#world-map-status').textContent = hereText(); });
@@ -398,8 +413,9 @@ async function boot() {
       pedestrianContacts.dodge = gameMode === 'demolition';
       renderGoals(); updateCarUi();
     }
-    function recoverCar(penalty = false) {
-      const pose = nearestLanePose(vehicle.s, vehicle.u, vehicle.heading);
+    // (`at`, where to put it back instead: the run at a jump that ended in the river)
+    function recoverCar(penalty = false, at = null) {
+      const pose = at ? nearestLanePose(at.s, at.u, at.heading) : nearestLanePose(vehicle.s, vehicle.u, vehicle.heading);
       vehicle.s = pose.s; vehicle.u = pose.u; vehicle.heading = pose.heading;
       // (on foot, stood on the lane: from a roof they were left up at its height, and fell)
       vehicle.pilot?.land(); vehicle.walker?.takeOver(); haltCar();
@@ -619,6 +635,28 @@ async function boot() {
       else setTimeout(() => { if (vehicle.pilot && !paused) toast({ keys: 'Double-tap Space to loop the loop', pad: 'Double-tap RB to loop the loop', vr: 'Double-tap the right grip to loop the loop', touch: 'Double-tap Climb to loop the loop' }[device]); }, 2400);
       flightHints[hint] = true;
       try { localStorage.setItem(flightHintKey, JSON.stringify(flightHints)); } catch { /* Told for this visit. */ }
+    }
+    // Jumps in free drive, told once each after a landing: how to spin, once a
+    // jump has had the air for it, and where the city's jumps are kept
+    const airHintKey = 'citydriver-air-hints';
+    let airHints = {}, airHintDue = null;
+    try { airHints = JSON.parse(localStorage.getItem(airHintKey)) ?? {}; } catch { /* Storage is optional. */ }
+    const toldAir = hint => { airHints[hint] = true; try { localStorage.setItem(airHintKey, JSON.stringify(airHints)); } catch { /* Told for this visit. */ } };
+    function hintAir(event) {
+      if (!started || gameMode !== 'free' || event.landing === 'splash') return;
+      // (a player who spins already needs no telling)
+      if (event.turns && !airHints.spin) toldAir('spin');
+      const hint = !airHints.spin && event.air >= 1 ? 'spin' : !airHints.book && event.jump?.stars ? 'book' : null;
+      if (!hint || airHintDue) return;
+      const device = vr?.active ? 'vr' : document.body.dataset.controller === 'true' ? 'pad' : matchMedia('(pointer: coarse)').matches ? 'touch' : 'keys';
+      const text = hint === 'spin' ? { keys: 'In the air, hold Space and steer to spin', pad: 'In the air, hold LB and steer to spin', vr: 'In the air, hold the left grip and steer to spin', touch: 'In the air, hold Drift and steer to spin' }[device]
+        : 'Pause to see the city\'s jumps and your stars';
+      // (after the landing's own news, and told only once it has been seen)
+      airHintDue = setTimeout(() => {
+        airHintDue = null;
+        if (!started || paused || gameMode !== 'free' || airHints[hint]) return;
+        toast(text); toldAir(hint);
+      }, 2400);
     }
     function openCars() {
       if (started && gameMode === 'taxi') { openFleet(); return; }
@@ -1058,6 +1096,8 @@ async function boot() {
         for (const event of vehicle.pilot.drain()) { toast(event.text, event.kind === 'stunt' ? 'stunt' : ''); if (event.kind === 'stunt') hintFlight(event.text); }
         hintFlight();
       }
+      // (a car's jumps, and the river it came down in: see CarAir)
+      for (const event of vehicle.drain()) carEvent(event);
       // Furniture the player hits may be knocked flying, and a parked car
       // knocked loose while there is traffic to take it; on foot, nothing is
       collideScenery(vehicle, world.chunks, dt, vehicle.walker ? null : (collider, contact) => collider.prop ? props.hit(collider, contact, vehicle) : traffic.enabled && traffic.wake(collider));
@@ -1083,11 +1123,34 @@ async function boot() {
         tickClock(taxi.timeLeft);
       }
       if (started && demolition.running) {
-        demolition.update(dt);
+        demolition.update(dt, Boolean(vehicle.aloft));
         demolitionEvents(demolition.drainEvents());
         tickClock(demolition.timeLeft);
       }
     };
+    // A jump landed counts for whichever run is on, or goes in free drive's
+    // book of jumps. A car come down on takes the blow. Down in the river,
+    // the car is fished out at the run it took at the jump, to have another go.
+    function carEvent(event) {
+      if (event.kind === 'jump') {
+        if (taxi.running) taxi.jumped(event, vehicle);
+        else if (demolition.running) demolition.jumped(event);
+        else if (started && gameMode === 'free') {
+          const news = jumpBook.land(event), p = vehicle.groundedPosition;
+          hintAir(event);
+          if (!news) return;
+          toast(news.text, 'stunt'); if (news.gold) audio.cue('bonus');
+          taxiView.labels.pop({ x: p.x, y: p.y, z: p.z, amount: news.amount, caption: news.caption, colour: news.gold ? '#ffe07a' : '#9ff2e6', size: 2.6 });
+          cityGuide.refreshJumps();
+        }
+      } else if (event.kind === 'stomp') traffic.stomp(event.on, event.impact, event);
+      else if (event.kind === 'sunk') {
+        const run = taxi.running || demolition.running, from = event.from, h = from?.heading ?? vehicle.heading;
+        const at = from?.jump?.runup ?? (from ? { s: from.s - Math.cos(h) * 30, u: from.u - Math.sin(h) * 30, heading: h } : null);
+        recoverCar(run, at);
+        if (!run) toast('Into the river · back for another go');
+      }
+    }
     // A run's last ten seconds tick away
     function tickClock(timeLeft) {
       const left = Math.ceil(timeLeft);
@@ -1182,7 +1245,8 @@ async function boot() {
       // (a flying machine's climbs and dives count as surges too, and so does a
       // fall on foot, past the 7 m/s a jump lands at: counting a hop's take-off,
       // the vignette pulsed with every jump)
-      const walker = vehicle.walker, vy = vehicle.pilot ? vehicle.pilot.vy : walker ? Math.max(0, Math.abs(walker.vy) - 8) : null;
+      // (and a car's jumps, from a ramp's lip to the landing)
+      const walker = vehicle.walker, vy = vehicle.pilot ? vehicle.pilot.vy : walker ? Math.max(0, Math.abs(walker.vy) - 8) : vehicle.carAir && Math.abs(vehicle.vy) > 2 ? Math.abs(vehicle.vy) - 2 : null;
       comfort.update(rendering.camera, vy === null ? vehicle.speed : Math.hypot(vehicle.speed, vy), running ? dt : 0, vr.active && running && started);
       soundScene.interior = rendering.viewLabel === 'First-person view' && !vehicle.walker;
       soundScene.lightning = weather.flash; soundScene.rain = weather.state.rain; soundScene.wetness = weather.state.wetness;

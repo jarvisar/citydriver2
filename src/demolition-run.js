@@ -55,6 +55,8 @@ const CAR_PRICE = 18000;
 // DENT_SPEED it is a touch, and a car counts one blow per DENT_GAP seconds,
 // so leaning on one earns nothing.
 export const WRECK_SPEED = 16, DENT_SPEED = 2.5, DENT_GAP = .35;
+// A jump that keeps a chain going says so from this far (m)
+const AIR_NEWS = 8;
 export const carDamage = (price, closing) => closing < DENT_SPEED ? 0 : Math.max(10, Math.round(price * Math.min(1, (closing / WRECK_SPEED) ** 2) / 10) * 10);
 
 // Contracts: three jobs a run, drawn from these, each worth CONTRACT_SECONDS
@@ -302,15 +304,24 @@ export class DemolitionRun {
     this.checkContracts();
     return amount;
   }
-  update(dt) {
+  // (`aloft`: the truck is in the air off a ramp, and a chain waits for it to come down)
+  update(dt, aloft = false) {
     if (!this.running || !Number.isFinite(dt) || dt <= 0) return;
     this.elapsed += dt; this.timeLeft = Math.max(0, this.timeLeft - dt);
-    if (this.chain && (this.chainTime -= dt) <= 0) this.bank();
+    if (this.chain && !aloft && (this.chainTime -= dt) <= 0) this.bank();
     if (this.timeLeft > 0) return;
     // Time up mid-chain: the chain plays on, as a combo does in Tony Hawk's,
     // and the run ends when it banks or is lost
     if (!this.chain) this.finish();
     else if (!this.overtime) { this.overtime = true; this.events.push({ kind: 'overtime', text: 'Time up · keep the chain going' }); }
+  }
+  // A jump landed keeps a chain going, as a stunt does in Burnout's Stunt Run
+  // (see CarAir): its wait starts again. A spin out doesn't.
+  jumped(event) {
+    if (!this.running || !this.chain || event.landing === 'spun' || event.landing === 'splash') return;
+    this.chainTime = Math.max(this.chainTime, chainSeconds(this.multiplier));
+    // (a drop off something, onto a car, is kept quietly)
+    if (event.distance >= AIR_NEWS) this.events.push({ kind: 'progress', text: `Air · ${Math.round(event.distance)} m · chain ×${this.multiplier} kept` });
   }
   finish() {
     this.bank();

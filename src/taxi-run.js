@@ -81,7 +81,7 @@ export const TIP_PROGRESS = 6;
 // tips its base times the chain, times the riders aboard.
 export const COMBO_MAX = 10;
 export const COMBO_SECONDS = 4;
-export const TIPS = { drift: 2, nearMiss: 5, crazyStop: 5 };
+export const TIPS = { drift: 2, nearMiss: 5, crazyStop: 5, jump: 3, spin: 6 };
 const STUNT_STATS = { Drift: 'drifts', 'Near miss': 'nearMisses', 'Crazy stop': 'crazyStops' };
 // Every tip also tops up the boost, so stunts feed speed.
 export const STUNT_BOOST = .08;
@@ -377,7 +377,7 @@ export class TaxiRun {
     this.ratings = Object.fromEntries(RATINGS.map(rating => [rating.id, 0])); this.previousBest = this.best;
     // What this shift can be measured by: the goals watch these, and the
     // career keeps the best of them.
-    this.bestStreak = 0; this.bestCombo = 1; this.tipsBanked = 0; this.nearMisses = 0; this.crazyStops = 0; this.drifts = 0;
+    this.bestStreak = 0; this.bestCombo = 1; this.tipsBanked = 0; this.nearMisses = 0; this.crazyStops = 0; this.drifts = 0; this.jumps = 0;
     this.groups = 0; this.fullCabs = 0; this.longRides = 0; this.pleased = 0; this.goalCash = 0; this.summary = null;
     this.goals = shiftGoals(this.career.shifts, this.career.rank.index);
     this.lastImpact = player.audioTelemetry?.impactSerial ?? 0; this.lastCrash = player.audioTelemetry?.crashSerial ?? 0; this.makeCustomers(player);
@@ -452,10 +452,26 @@ export class TaxiRun {
     this.checkGoals();
     return tip;
   }
+  // A jump with a fare aboard is Crazy Taxi's Crazy Jump: a tip for the air
+  // it got, more for a spin landed (see CarAir), and a spin out costs the
+  // combo as a crash does. Coming down hard shakes a nervous rider.
+  jumped(event, player) {
+    if (this.status !== 'driving' || !this.fare) return;
+    if (event.landing === 'spun' || event.landing === 'splash') {
+      if (this.combo > 1) this.events.push({ kind: 'crash', text: `Spun out · ×${this.combo} combo lost` });
+      this.combo = 1; this.comboTime = 0;
+      return;
+    }
+    if (event.landing === 'hard' && this.fare.mood === 'nervous' && !this.shaken) { this.shaken = true; this.events.push({ kind: 'shaken', tone: 'slow', text: 'Hard landing · no smooth-ride bonus' }); }
+    if (this.crashCooldown > 0 || !this.onTheWay(player)) return;
+    const turns = Math.abs(event.turns ?? 0);
+    this.jumps++;
+    this.reward(turns ? `Crazy ${turns * 360}` : 'Crazy jump', Math.max(TIPS.jump, Math.round(TIPS.jump * 2 * event.air)) + turns * TIPS.spin);
+  }
   // The shift so far, in the terms the goals and career records use.
   get stats() {
     return { delivered: this.delivered, riders: this.deliveredPassengers, groups: this.groups, speedy: this.ratings?.speedy ?? 0,
-      streak: this.bestStreak, combo: this.bestCombo, tips: this.tipsBanked, nearMisses: this.nearMisses, crazyStops: this.crazyStops,
+      streak: this.bestStreak, combo: this.bestCombo, tips: this.tipsBanked, nearMisses: this.nearMisses, crazyStops: this.crazyStops, jumps: this.jumps,
       longRides: this.longRides, fullCabs: this.fullCabs, pleased: this.pleased };
   }
   // A finished goal banks its bonus with the fleet at once, so the money is

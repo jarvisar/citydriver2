@@ -4,8 +4,9 @@ import { CITY_PLACES } from './world/city-places.js';
 
 // The whole city on one page for the pause screen: every block tinted by its
 // district, each neighbourhood named where its blocks are, downtown, the
-// places found so far in their notebook colours, and the car. The streets,
-// water, parks and venues' grounds come from the street map's cached paths.
+// places found so far in their notebook colours, the jumps, and the car. The
+// streets, water, parks and venues' grounds come from the street map's cached
+// paths.
 export const DISTRICT_COLORS = {
   'Old town': '#c9785b', 'Market district': '#d9a441', 'Garden quarter': '#86b35e',
   'Warehouse district': '#9a93ad', 'Civic quarter': '#d9cfae', Midtown: '#6fa2d8',
@@ -72,15 +73,26 @@ export class WorldMap {
     }
     return best;
   }
+  // The jump under a canvas point, if its marker is there (see draw)
+  jumpAt(x, y, width, jumps) {
+    const { toCanvas } = this.frame(width);
+    let best = null, nearest = 10;
+    for (const jump of jumps) {
+      const [px, py] = toCanvas(jump.u, jump.s), distance = Math.hypot(px - x, py - y);
+      if (distance < nearest) { best = jump; nearest = distance; }
+    }
+    return best;
+  }
   // The district under a canvas point, as the HUD would name it there
   districtAt(x, y, width) {
     const { u, s } = this.frame(width).toWorld(x, y), b = this.bounds;
     if (u < b.minX || u > b.maxX || s < b.minY || s > b.maxY || this.city.mask.at(u, s)) return null;
     return cityDistrict(s, u);
   }
-  // (`parked`: the car the player left, { s, u }, if there is one: see OnFoot;
-  // `found`: the places found)
-  draw(canvas, vehicle, parked = null, found = []) {
+  // (`parked`: the car the player left, { s, u }, if there is one: see OnFoot.
+  // `found`: the places found. `jumps`: the city's named jumps, each
+  // { u, s, heading, landed })
+  draw(canvas, vehicle, parked = null, found = [], jumps = []) {
     const width = canvas.clientWidth || canvas.width, { scale, height, toCanvas } = this.frame(width);
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
     const pixelWidth = Math.round(width * ratio), pixelHeight = Math.round(height * ratio);
@@ -108,6 +120,14 @@ export class WorldMap {
       const [x, y] = toCanvas(place.u, place.s);
       ctx.beginPath(); ctx.arc(x, y, small ? 4.5 : 6, 0, Math.PI * 2);
       ctx.fillStyle = CITY_PLACES[place.type]?.color ?? '#f5f4e9'; ctx.strokeStyle = '#17262f'; ctx.lineWidth = small ? 1.5 : 2; ctx.stroke(); ctx.fill();
+    }
+    // The jumps: a wedge pointing the way to take each, gold once landed
+    for (const jump of jumps) {
+      const [x, y] = toCanvas(jump.u, jump.s), size = small ? 5 : 7;
+      ctx.save(); ctx.translate(x, y); ctx.rotate(jump.heading);
+      ctx.beginPath(); ctx.moveTo(0, -size); ctx.lineTo(size * .8, size * .7); ctx.lineTo(-size * .8, size * .7); ctx.closePath();
+      ctx.fillStyle = jump.landed ? '#e3b02c' : '#5fd0c0'; ctx.strokeStyle = '#17262f'; ctx.lineWidth = small ? 1.5 : 2; ctx.stroke(); ctx.fill();
+      ctx.restore();
     }
     // Names, downtown's first; one that would overlap a name already drawn is
     // left out, as a small map runs out of room

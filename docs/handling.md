@@ -1,6 +1,6 @@
 # Handling
 
-The driving uses arcade grip handling with a powerslide for drifting. The handling comes from a speed-dependent turning radius, separate headings for where the car points and where it travels, and a limited slip angle. There's no suspension or tire simulation.
+The driving uses arcade grip handling with a powerslide for drifting. The handling comes from a speed-dependent turning radius, separate headings for where the car points and where it travels, and a limited slip angle. There's no tire simulation, and the suspension is just a spring on the body for landings (see [Jumps and Landings](#jumps-and-landings)).
 
 ## Steering and Drifting
 
@@ -35,6 +35,21 @@ Full-lock radius in metres on tarmac, from `node scripts/handling-sweep.mjs`:
 | Truck | 5.77 | 9.29 | 16.08 |
 
 A Formula at 50 m/s still needs about 35 m to turn, so slow down before sharp junctions. The game doesn't steer toward roads or brake for corners.
+
+## Jumps and Landings
+
+Cars go up and down with what they drive over and can leave the ground off ramps, mounds and crests. It's still arcade physics, not a vehicle simulation. The code is in [src/car-air.js](../src/car-air.js).
+
+- The four wheels and the middle of the car each check what's under them: the street, or the top of a ramp, a mound, a roof or another car. The car sits on the highest of those it can reach, pitched and rolled to match.
+- A wheel climbs up to 0.45 m, like a kerb or the foot of a ramp. Anything taller is a wall.
+- Kerbs never lift a car off its tyres. A drop of up to 0.3 m is followed straight away and the body settles after it.
+- The car leaves the ground wherever the ground falls away faster than it can fall, like a ramp's lip or a crest taken fast. It also counts as off the ground once both front wheels are over an edge, so it can't keep steering on its back wheels.
+- Gravity is 13 m/s², a bit more than real, so jumps come down with some weight. A car keeps nearly all its speed in the air.
+- In the air the nose follows the arc and comes round to the ground over the last couple of metres, so the car lands on its wheels. Going slowly over an edge, it tips over it instead.
+- Steering in the air turns the nose up to about 24° off the way the car is flying, and it straightens up when you let go. Hold Drift and steer to spin it. Let go and it carries on round to the next full turn.
+- Landing more than about 30° off the way it's going spins the car out. A bit off, it slides for a moment while the tyres grip again. Coming down faster than 5 m/s scrubs off some speed, up to 15%, and faster than 12 m/s shakes the camera a little.
+- A car can come down on another car's bonnet or roof and drive off it. The car underneath gets knocked about and its driver stops for a moment.
+- A car that falls in the river sinks and is put back at the start of its run-up.
 
 ## Helicopter
 
