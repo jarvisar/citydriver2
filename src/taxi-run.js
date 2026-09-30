@@ -81,11 +81,14 @@ export const TIP_PROGRESS = 6;
 // tips its base times the chain, times the riders aboard.
 export const COMBO_MAX = 10;
 export const COMBO_SECONDS = 4;
-export const TIPS = { drift: 2, nearMiss: 5, crazyStop: 5, jump: 3, spin: 6 };
-const STUNT_STATS = { Drift: 'drifts', 'Near miss': 'nearMisses', 'Crazy stop': 'crazyStops' };
+export const TIPS = { drift: 2, superDrift: 4, ultraDrift: 7, nearMiss: 5, crazyStop: 5, jump: 3, spin: 6 };
+// (a drift tips as its sparks change: blue, orange, pink, see Drift)
+const DRIFT_TIPS = [['Drift', TIPS.drift], ['Super drift', TIPS.superDrift], ['Ultra drift', TIPS.ultraDrift]];
+const STUNT_STATS = { Drift: 'drifts', 'Super drift': 'drifts', 'Ultra drift': 'drifts', 'Near miss': 'nearMisses', 'Crazy stop': 'crazyStops' };
 // Every tip also tops up the boost, so stunts feed speed.
 export const STUNT_BOOST = .08;
-// A handbrake stop from this speed or more, inside the ring, is a Crazy stop.
+// Coming into the ring this fast or more and drifting or handbraking to a
+// stop in it is a Crazy stop.
 export const CRAZY_STOP_SPEED = 12;
 const distance = (a, b) => Math.hypot(a.s - b.s, a.u - b.u);
 // The point of a stop's stretch nearest `p`, and its distance. A stop with no
@@ -369,7 +372,7 @@ export class TaxiRun {
   start(player) {
     this.status = 'pickup'; this.timeLeft = SHIFT_SECONDS; this.cash = 0; this.delivered = 0; this.failed = 0;
     this.boost = 1; this.boostActive = false; this.elapsed = 0; this.combo = 1; this.comboTime = 0;
-    this.tips = 0; this.hold = 0; this.fare = null; this.events = []; this.driftTime = 0; this.crashCooldown = 0;
+    this.tips = 0; this.hold = 0; this.fare = null; this.events = []; this.scrapedAt = -Infinity; this.crashCooldown = 0;
     this.customers = []; this.boarding = null; this.blockedPickup = null; this.ahead = null; this.nextLookAhead = 0;
     this.servedCustomers = new Map();
     this.stopIndex = 0; this.onboard = 0; this.deliveredPassengers = 0; this.held = 0; this.lastDropOff = null;
@@ -423,14 +426,14 @@ export class TaxiRun {
   }
   controls(dt, input) {
     const gas = input.forward > 0 || input.touchDrive?.amount > .1;
-    this.boostActive = this.running && Boolean(input.boost) && gas && !input.brake && !input.handbrake && this.boost > .01;
+    this.boostActive = this.running && Boolean(input.boost) && gas && !input.brake && !input.stop && this.boost > .01;
     if (this.running) this.boost = Math.max(0, Math.min(1, this.boost + dt * (this.boostActive ? -.44 : input.boost ? 0 : .16)));
     return { ...input, boost: this.boostActive };
   }
   // Crazy Taxi 2 multiplies every stunt tip by the riders aboard, so a full
   // cab is the moment to drive wild.
   get tipMultiplier() { return this.combo * Math.max(1, this.onboard); }
-  // Remembers how the cab came into the ring it is stopping in, so a sliding
+  // Remembers how the cab came into the ring it is stopping in, so a drift or
   // handbrake stop can be told from a gentle one.
   trackRing(stop, player) {
     if (stop !== this.ring?.stop) this.ring = stop ? { stop, speed: Math.abs(player.speed), slid: false } : null;
@@ -451,6 +454,13 @@ export class TaxiRun {
     const stat = STUNT_STATS[kind]; if (stat) this[stat]++;
     this.checkGoals();
     return tip;
+  }
+  // A drift's sparks changing colour (see Drift) with a fare aboard tips,
+  // more at each stage, unless the drift has touched anything since it began
+  drifted(event, player) {
+    if (this.status !== 'driving' || !this.fare || this.crashCooldown > 0 || this.elapsed - this.scrapedAt < event.time) return;
+    const [kind, tip] = DRIFT_TIPS[event.stage - 1];
+    if (this.onTheWay(player)) this.reward(kind, tip);
   }
   // A jump with a fare aboard is Crazy Taxi's Crazy Jump: a tip for the air
   // it got, more for a spin landed (see CarAir), and a spin out costs the
@@ -508,16 +518,16 @@ export class TaxiRun {
     const telemetry = player.audioTelemetry, impact = telemetry?.impactSerial ?? 0, crash = telemetry?.crashSerial ?? 0;
     const collided = impact !== this.lastImpact, crashed = crash !== this.lastCrash;
     this.lastImpact = impact; this.lastCrash = crash;
-    // Scrapes and sideswipes aren't crashes (see CRASH in vehicle.js), but they
-    // restart a drift's count, so grinding along a wall earns nothing
-    if (collided) this.driftTime = 0;
+    // Scrapes and sideswipes aren't crashes (see CRASH in vehicle.js), but a
+    // drift that touched anything tips nothing, so grinding along a wall earns nothing
+    if (collided) this.scrapedAt = this.elapsed;
     if (crashed && this.status === 'driving') {
       // A crash breaks the stunt chain but keeps the tips already earned, as
       // in Crazy Taxi. A pileup can report crashes every tick, so stunts stay
       // suspended until the cab is clear.
       if (this.crashCooldown === 0 && this.combo > 1) this.events.push({ kind: 'crash', text: `Crash · ×${this.combo} combo lost` });
       if (this.fare.mood === 'nervous' && !this.shaken) { this.shaken = true; this.events.push({ kind: 'shaken', tone: 'slow', text: 'Crash · no smooth-ride bonus' }); }
-      this.combo = 1; this.comboTime = 0; this.driftTime = 0; this.crashCooldown = .8;
+      this.combo = 1; this.comboTime = 0; this.crashCooldown = .8;
     }
     this.lookAhead();
     if (this.status === 'pickup') {
@@ -541,7 +551,7 @@ export class TaxiRun {
         this.stopIndex = 0; this.onboard = passenger.passengers;
         this.customers = this.customers.filter(customer => customer !== passenger);
         this.servedCustomers.set(passenger.id, this.elapsed + 60);
-        this.hold = 0; this.tips = 0; this.combo = 1; this.driftTime = 0; this.passed = new WeakSet(); this.revision++;
+        this.hold = 0; this.tips = 0; this.combo = 1; this.passed = new WeakSet(); this.revision++;
         // Look round the last stop. The cab can stop anywhere along its stretch.
         const last = passenger.stops.at(-1).destination, stretch = last.stretch ?? [last];
         this.lookAround({ s: last.s, u: last.u }, CUSTOMER_RANGE + STOP_RADIUS + Math.max(...stretch.map(p => distance(p, last))));
@@ -564,10 +574,6 @@ export class TaxiRun {
       if (this.overtime) this.finish();
       return;
     }
-    if (player.drifting && Math.abs(player.speed) > 10 && this.crashCooldown === 0) {
-      this.driftTime += dt;
-      if (this.driftTime >= .65) { this.driftTime -= .65; if (this.onTheWay(player)) this.reward('Drift', TIPS.drift); }
-    } else this.driftTime = 0;
     if (Math.abs(player.speed) > 14 && !collided && this.crashCooldown === 0) {
       for (const car of traffic) {
         const carHeading = car.heading;
@@ -624,7 +630,7 @@ export class TaxiRun {
         // their own allowance as the one before steps out, so time saved on an
         // early stop carries forward.
         this.stopIndex++; this.fareLeft += this.currentStop.limit; this.legElapsed = 0; this.tipMark = Infinity;
-        this.hold = 0; this.driftTime = 0; this.revision++;
+        this.hold = 0; this.revision++;
         // Preserve the stunt combo, with enough grace to pull away.
         this.comboTime = Math.max(this.comboTime, COMBO_SECONDS);
         // (a goal can complete on a rider's stop too, and must bank if the group fails later)

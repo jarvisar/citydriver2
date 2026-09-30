@@ -247,3 +247,14 @@ test('vehicle honors partial throttle and steering while preserving digital inpu
   for (let frame = 0; frame < 60; frame++) reverse.update(1 / 60, { brake: .5 });
   assert.ok(reverse.speed < 0);
 });
+
+test('the pad in use rumbles, where it has motors, and one without them is left alone', () => {
+  const effects = [], devices = [{ ...pad(0), vibrationActuator: { playEffect: (kind, options) => { effects.push({ kind, ...options }); return Promise.resolve(); } } }, pad(1)];
+  const input = new GamepadInput(() => {}, () => {}, () => devices);
+  input.update();
+  input.rumble(.6, .4, .15);
+  assert.deepEqual(effects, [{ kind: 'dual-rumble', duration: 150, strongMagnitude: .6, weakMagnitude: .4 }]);
+  input.index = 1;
+  assert.doesNotThrow(() => input.rumble(1, 1, .1));
+  assert.equal(effects.length, 1);
+});

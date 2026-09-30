@@ -10,6 +10,7 @@ All sounds are generated with the Web Audio API. There are no audio files.
 - The helicopter has no gears. Its turbine follows the rotor as it speeds up, and the blades beat about 17 times a second.
 - The plane has no gears either. Its engine follows the throttle rather than the speed, and the propeller beats up to 38 times a second.
 - Boost, crashes, kerbs and bridge joints each have their own sound.
+- A drift crackles and chimes each time its sparks change colour, a step higher each time. Letting go fires the drift boost with a rush of air and a thump, bigger for each colour.
 - On foot, footsteps click on pavements, sound duller on the road and knock on bridge decks. They splash on wet streets and crunch in snow, and a landing thuds harder the further you fell. Pigeons flutter when they take off.
 - Traffic is panned in stereo. Cars idle quietly and get louder as they pull away. A driver you hit or hold up will sound the horn.
 - The city sounds different from place to place. Downtown is busier. Parks have birds by day and crickets at night. The harbour has gulls and lapping water.

@@ -7,6 +7,10 @@ export function renderRunHud(model) {
   if (model.buttons) {
     text('taxi-boost-state', model.boostState);
     data('taxi-buttons', 'boosting', model.boosting); data('taxi-buttons', 'drifting', model.drifting);
+    data('taxi-buttons', 'stage', String(model.driftStage)); data('taxi-buttons', 'turbo', model.turbo);
+    width('drift-charge-fill', `${Math.round(model.driftCharge * 100)}%`);
+    const state = $('drift-state');
+    text('drift-state', model.driftState ?? state.dataset.idle ?? '');
   }
   if (!model.running) return;
   text('taxi-clock-label', model.clockLabel); text('taxi-clock', model.clock);
@@ -19,6 +23,7 @@ export function renderRunHud(model) {
   text('taxi-stage', model.stage); text('taxi-fare-status', model.fareStatus);
   text('taxi-task-title', model.title); text('taxi-task-detail', model.detail);
   data('taxi-task', 'stage', model.status); data('taxi-task', 'urgent', model.taskUrgent); data('taxi-task', 'arriving', model.arriving);
+  data('taxi-task', 'info', model.info);
   text('taxi-combo', model.combo); text('taxi-party', model.party); data('taxi-party', 'band', model.band);
   text('taxi-next-stop', model.nextStop); data('taxi-next-stop', 'mood', model.mood);
   const progress = model.stopProgress, track = $('taxi-stop-progress').parentElement;

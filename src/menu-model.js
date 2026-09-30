@@ -21,6 +21,7 @@ export function menuControls(state, actions) {
     garage: control('Garage', actions.garage, { value: state.carName, disabled: locked }),
     autodrive: control('Autodrive', actions.autodrive, { toggle: state.autodrive, disabled: locked }),
     traffic: control('Traffic', actions.traffic, { toggle: state.traffic, disabled: locked }),
+    driftTap: control('Tap to drift', actions.driftTap, { toggle: state.driftTap }),
     reset: control('Reset car', actions.reset, { value: state.running ? '−5 seconds' : '' }),
     map: control('City map', actions.map, { value: state.location.place }),
     weather: control('Weather', actions.weather, { value: WEATHER_CHOICES.find(([id]) => id === state.weather)?.[1] }),
@@ -30,6 +31,7 @@ export function menuControls(state, actions) {
     graphics: control('Graphics', actions.graphics, { value: state.graphics }),
     rate: control('Refresh rate', actions.rate, { value: state.rateChoice === null ? state.frameRate ? `Auto · ${Math.round(state.frameRate)} Hz` : 'Auto' : `${state.rateChoice} Hz` }),
     sound: control('Sound', actions.sound, { toggle: state.sound }),
+    vibration: control('Vibration', actions.vibration, { toggle: state.vibration }),
     mix: control('Sound mix', actions.mix, { value: state.mix[0].toUpperCase() + state.mix.slice(1) }),
   };
 }
@@ -54,8 +56,8 @@ export function menuModel(state, controls, { garage, fleet, result, mapImage, ma
     hint: state.mode === 'free' ? `${VR_CONTROLS} · Y: get out` : VR_CONTROLS, items: [
       item('resume', { primary: true, header: true }),
       ...(state.mode === 'taxi' ? ['restart', 'free', 'demolition', 'fleet'] : state.mode === 'demolition' ? ['restart', 'free', 'taxi'] : ['taxi', 'demolition', 'garage', 'autodrive', 'traffic']).map(drive),
-      drive('reset'), item('map', { group: 'The city' }), item('weather', { group: 'The city' }),
+      drive('driftTap'), drive('reset'), item('map', { group: 'The city' }), item('weather', { group: 'The city' }),
       ...['view', 'recenter', 'lookSensitivity', 'comfort', 'graphics'].map(view), ...(state.rates.length ? [view('rate')] : []),
-      item('sound', { column: 1, group: 'Sound' }), item('mix', { column: 1, group: 'Sound' }), item('exit', { footer: true }),
+      item('sound', { column: 1, group: 'Sound' }), item('mix', { column: 1, group: 'Sound' }), item('vibration', { column: 1, group: 'Sound' }), item('exit', { footer: true }),
     ] };
 }

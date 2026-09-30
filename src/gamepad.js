@@ -20,6 +20,14 @@ export class GamepadInput {
     this.state = {}; this.requireNeutral = true;
     if (!preserveKonami) this.konami.reset();
   }
+  // A rumble on the pad in use, if it has motors: `strong` and `weak` 0 to 1,
+  // for `seconds`. Browsers without the Vibration Actuator API do nothing.
+  rumble(strong, weak, seconds) {
+    try {
+      const pad = Array.from(this.getGamepads()).find(pad => pad?.connected && pad.index === this.index);
+      pad?.vibrationActuator?.playEffect?.('dual-rumble', { duration: Math.round(seconds * 1000), strongMagnitude: strong, weakMagnitude: weak })?.catch?.(() => {});
+    } catch { /* No motors to drive. */ }
+  }
   // `menu` is 'pause' for the pause screen and the results card, 'welcome' for
   // the title screen, truthy for a modal chooser, and false during a drive.
   // In free drive (`freeDrive`) Y gets in and out of cars; in a run it resets the car.

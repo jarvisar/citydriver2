@@ -73,7 +73,7 @@ test('repeated boarding retains separate car and pedestrian actors without rebui
   let person, figure;
   try {
     for (let i = 0; i < 20; i++) {
-      vehicle.steer = 1; vehicle.trauma = .8; vehicle.lost = 3; vehicle.pushing = .15; vehicle.driftArmed = .3;
+      vehicle.steer = 1; vehicle.trauma = .8; vehicle.lost = 3; vehicle.pushing = .15; Object.assign(vehicle.drift, { dir: 1, charge: 1.4, stage: 2, turbo: .5 });
       assert.equal(vehicle.stepOut(), garage);
       person ??= vehicle.actor; figure ??= vehicle.figure;
       assert.equal(vehicle.actor, person); assert.equal(vehicle.figure, figure);
@@ -84,7 +84,8 @@ test('repeated boarding retains separate car and pedestrian actors without rebui
       vehicle.stepIn(garage);
       assert.equal(vehicle.car, root); assert.equal(vehicle.groundedPosition, position);
       assert.equal(vehicle.u, 0); assert.equal(person.control, 'inactive');
-      for (const key of ['steer', 'trauma', 'lost', 'pushing', 'driftArmed']) assert.equal(vehicle[key], 0, `boarding cannot resume old ${key}`);
+      for (const key of ['steer', 'trauma', 'lost', 'pushing']) assert.equal(vehicle[key], 0, `boarding cannot resume old ${key}`);
+      assert.ok(!vehicle.drift.active && !vehicle.drift.charge && !vehicle.drift.turbo, 'nor an old drift or its turbo');
       assert.equal(person.visual.parent, null); assert.equal(root.parent, scene);
       assert.equal(vehicle.owned.size, 2);
     }
@@ -611,7 +612,7 @@ test('a borrowed traffic car is driven as it was going, and given back drives on
     assert.ok(feet.parked, 'their own car still parked');
     // Drive it on a little, stop, and get out
     for (let i = 0; i < 120; i++) { vehicle.update(step, { forward: 1 }); traffic.update(step, vehicle); }
-    for (let i = 0; i < 360; i++) { vehicle.update(step, { handbrake: 1 }); traffic.update(step, vehicle); }
+    for (let i = 0; i < 360; i++) { vehicle.update(step, { stop: 1 }); traffic.update(step, vehicle); }
     const left = { s: vehicle.s, u: vehicle.u, heading: vehicle.heading };
     feet.use();
     assert.ok(feet.walking && !feet.borrowed);
@@ -813,7 +814,7 @@ test('a car parked along the kerb can be borrowed while there is traffic, and le
     assert.ok(Math.abs(vehicle.heading - h) < 1e-9 && Math.hypot(vehicle.s - home.s, vehicle.u - home.u) < 1e-9, 'driven from where it stood');
     // Away and out: it stands where they left it, as a car knocked loose would
     for (let i = 0; i < 120; i++) vehicle.update(step, { forward: 1 });
-    for (let i = 0; i < 360; i++) vehicle.update(step, { handbrake: 1 });
+    for (let i = 0; i < 360; i++) vehicle.update(step, { stop: 1 });
     const left = { s: vehicle.s, u: vehicle.u };
     feet.use();
     const standIn = traffic.woken.find(car => car.parked === bay);

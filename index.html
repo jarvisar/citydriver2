@@ -102,10 +102,7 @@
         </div>
         <div class="taxi-task-copy">
           <div class="taxi-task-heading"><span id="taxi-stage">Pick up</span><span id="taxi-timer" hidden></span><span id="taxi-fare-status"></span></div>
-          <strong id="taxi-task-title">Find a passenger</strong>
-          <span id="taxi-party"></span>
-          <span id="taxi-next-stop"></span>
-          <span id="taxi-task-detail" role="status"></span>
+          <div class="taxi-task-main"><strong id="taxi-task-title">Find a passenger</strong><span class="taxi-task-info"><span id="taxi-party"></span><span id="taxi-next-stop"></span></span><span id="taxi-task-detail" role="status"></span></div>
         </div>
         <div class="taxi-timer-track" hidden aria-hidden="true"><span id="taxi-timer-fill"></span></div>
         <div class="taxi-stop-track" hidden role="progressbar" aria-label="Passenger boarding" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="taxi-stop-progress"></span></div>
@@ -113,7 +110,7 @@
       <div id="taxi-dash" class="taxi-dash" hidden><span><b id="taxi-speed">0</b> mph</span><span id="taxi-combo"></span><span class="taxi-controller-charge">Boost<progress id="taxi-controller-boost" max="1" value="1" aria-label="Boost available"></progress></span></div>
       <div id="taxi-buttons" hidden>
         <div class="taxi-boost-control"><button type="button" data-drive-button="boost" aria-describedby="taxi-boost-state"><kbd>SHIFT</kbd><span>Boost</span><small id="taxi-boost-state">Hold</small></button><div id="taxi-boost" role="progressbar" aria-label="Boost available" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><span id="taxi-boost-fill"></span></div></div>
-        <button type="button" data-drive-button="handbrake"><kbd>SPACE</kbd><span>Drift</span><small>Tap + steer</small></button>
+        <button type="button" data-drive-button="handbrake" aria-describedby="drift-state"><kbd>SPACE</kbd><span>Drift</span><small id="drift-state" data-idle="Hold + steer">Hold + steer</small><span class="drift-charge" aria-hidden="true"><span id="drift-charge-fill"></span></span></button>
         <button type="button" id="use-car" title="Get in or out (E / Y)" hidden><kbd class="key-hint">E</kbd><kbd class="pad-hint">Y</kbd><span>Get out</span><small></small></button>
       </div>
       <section id="taxi-results" class="taxi-results" hidden role="dialog" aria-modal="true" aria-labelledby="taxi-result-title">
@@ -185,6 +182,7 @@
                 <button type="button" id="change-car" class="panel-button" aria-haspopup="dialog" title="Garage (G)"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3.5 16h17v-4.2l-1.6-4A2 2 0 0 0 17 6.5H7a2 2 0 0 0-1.9 1.3l-1.6 4V16Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M3.5 11.8h17M4.8 16v1.8M19.2 16v1.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span class="panel-button-label">Garage</span><span id="current-car" class="panel-button-value"></span></button>
                 <button type="button" id="autodrive" class="panel-button panel-toggle" aria-pressed="false" title="Autodrive (H / D-pad Up while driving)"><span class="panel-button-label">Autodrive</span><span class="panel-switch" aria-hidden="true"></span></button>
                 <button type="button" id="traffic" class="panel-button panel-toggle" aria-pressed="true"><span class="panel-button-label">Traffic</span><span class="panel-switch" aria-hidden="true"></span></button>
+                <button type="button" id="drift-tap" class="panel-button panel-toggle" aria-pressed="false" title="Tap Drift to start a drift and tap it again to boost, instead of holding it"><span class="panel-button-label">Tap to drift</span><span class="panel-switch" aria-hidden="true"></span></button>
               </section>
               <section class="pause-panel goals-panel" id="goals-panel" aria-labelledby="goals-heading" hidden>
                 <h3 id="goals-heading">Shift goals</h3>
@@ -269,6 +267,7 @@
                 <button type="button" id="sound" class="panel-button panel-toggle" title="Sound" aria-label="Turn sound on" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M11 5L6 9H3v6h3l5 4V5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path class="sound-off" d="m16 9 6 6m0-6-6 6" stroke="currentColor" stroke-width="1.5"/><path class="sound-on" d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14" stroke="currentColor" stroke-width="1.5"/></svg><span class="panel-button-label">Sound</span><span class="panel-switch" aria-hidden="true"></span></button>
                 <button type="button" id="audio-mixer-toggle" class="panel-button audio-mixer-toggle" aria-expanded="false" aria-controls="audio-mixer"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 3v4m0 4v10M12 3v10m0 4v4M19 3v3m0 4v11M2 9h6M9 15h6M16 8h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span class="panel-button-label">Audio settings<small id="audio-mix-label">Balanced</small></span><svg class="audio-chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 10 5 5 5-5" stroke="currentColor" stroke-width="1.8"/></svg></button>
                 <div id="audio-mixer" class="audio-mixer" hidden></div>
+                <button type="button" id="vibration" class="panel-button panel-toggle" aria-pressed="true" title="Controller, headset and phone vibration: drift sparks, turbos, crashes and hard landings"><span class="panel-button-label">Vibration</span><span class="panel-switch" aria-hidden="true"></span></button>
               </section>
               <button id="enter-vr-pause" class="panel-button vr-entry" type="button" hidden><svg class="vr-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3.8 7.5h16.4a1.8 1.8 0 0 1 1.8 1.8v5.4a1.8 1.8 0 0 1-1.8 1.8h-3.6a2 2 0 0 1-1.7-.9l-1.2-1.8a2 2 0 0 0-3.4 0l-1.2 1.8a2 2 0 0 1-1.7.9H3.8A1.8 1.8 0 0 1 2 14.7V9.3a1.8 1.8 0 0 1 1.8-1.8Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg><span class="vr-entry-label">Enter VR</span></button>
             </div>
@@ -282,9 +281,9 @@
       <div class="touch-controls" role="group" aria-label="Touch driving controls"><div id="touch-stick" role="group" aria-label="Virtual joystick" aria-describedby="stick-help"><span class="stick-guide" aria-hidden="true"></span><span class="stick-thumb" aria-hidden="true"></span></div><span id="stick-help"><span class="stick-help-copy">Drag anywhere to drive<br><span class="stick-help-line">Release to stop</span></span></span></div>
       <div id="toast" role="status"></div>
       <div id="camera-tools" role="group" aria-label="Camera controls" hidden>
-        <button type="button" data-camera-action="zoomIn" aria-label="Move camera closer" title="Move camera closer"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="6" stroke="currentColor" stroke-width="1.5"/><path d="m15 15 6 6M7 10h6m-3-3v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-        <button type="button" data-camera-action="recenter" aria-label="Recenter camera" title="Recenter camera"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.5"/></svg></button>
         <button type="button" data-camera-action="zoomOut" aria-label="Move camera farther away" title="Move camera farther away"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="6" stroke="currentColor" stroke-width="1.5"/><path d="m15 15 6 6M7 10h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button type="button" data-camera-action="recenter" aria-label="Recenter camera" title="Recenter camera"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.5"/></svg></button>
+        <button type="button" data-camera-action="zoomIn" aria-label="Move camera closer" title="Move camera closer"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="6" stroke="currentColor" stroke-width="1.5"/><path d="m15 15 6 6M7 10h6m-3-3v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
       </div>
       <dialog id="world-map-dialog" class="chooser world-map-dialog" aria-labelledby="world-map-heading">
         <div class="chooser-heading"><h2 id="world-map-heading" class="garage-title">City map</h2><button type="button" id="close-world-map" class="icon-button" aria-label="Close city map"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>

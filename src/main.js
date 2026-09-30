@@ -44,6 +44,7 @@ import { goalProgress } from './taxi-goals.js';
 import { TaxiView } from './taxi-view.js';
 import { DemolitionRun, DEMOLITION_CAR, DEMOLITION_PAINT } from './demolition-run.js';
 import { DemolitionView } from './demolition-view.js';
+import { DriftEffects } from './drift-effects.js';
 import { JumpBook, starText } from './jump-book.js';
 import { setResidentWindow } from './world/resident.js';
 import { PlayerController } from './vehicle.js';
@@ -90,8 +91,8 @@ let echoToast = null;
 const toast = (message, tone = '') => {
   echoToast?.(message, tone);
   const element = $('#toast');
-  // Run feedback (taxi or demolition) shares the instruction slot, keeping notifications off the road.
-  const parent = gameMode !== 'free' && started && !paused ? $('.taxi-task-copy') : $('#app');
+  // Run feedback (taxi or demolition) shares the task card's second line, keeping notifications off the road.
+  const parent = gameMode !== 'free' && started && !paused ? $('.taxi-task-main') : $('#app');
   if (element.parentElement !== parent) parent.append(element);
   // Taxi arrivals take their rating's colour: Speedy green, Normal yellow, Slow red.
   element.textContent = message; element.dataset.tone = tone; element.classList.add('show'); clearTimeout(toastTimer);
@@ -240,6 +241,8 @@ async function boot() {
     // truck's doing, directly or through what it sent flying; ordinary
     // traffic knocking someone over is not.
     const demolition = new DemolitionRun(taxiStorage), demolitionView = new DemolitionView(scene, taxiStorage);
+    // A drift's smoke, sparks and tyre marks, and the flames of a turbo or the boost (see drift.js)
+    const driftEffects = new DriftEffects(scene);
     props.onSmash = (kinds, at) => demolition.smash(kinds, at);
     // Free drive's jumps: what a landing is worth saying, and how far the
     // city's named jumps have been taken (see jump-book.js)
@@ -379,6 +382,33 @@ async function boot() {
       try { localStorage.setItem(trafficStorageKey, String(traffic.enabled)); } catch { /* Keep the setting for this visit. */ }
       needsRender = true;
     }
+    // Drifting held or tapped (see Drift): tapped, one press starts a drift
+    // and the next lets it go, for anyone who can't hold it while steering
+    const driftModeKey = 'citydriver-drift-mode';
+    function setDriftMode(mode) {
+      vehicle.driftMode = mode === 'tap' ? 'tap' : 'hold';
+      try { localStorage.setItem(driftModeKey, vehicle.driftMode); } catch { /* Keep the setting for this visit. */ }
+      renderMenuControls(controls()); updateDriveUi();
+    }
+    try { vehicle.driftMode = localStorage.getItem(driftModeKey) === 'tap' ? 'tap' : 'hold'; } catch { /* Storage is optional. */ }
+    // Rumble in a controller, a headset's controllers or a phone (see
+    // GamepadInput.rumble): a tick at each drift stage, a push with a turbo, a
+    // jolt for a crash or a hard landing. The switch is under Sound.
+    const vibrationKey = 'citydriver-vibration';
+    let vibration = true, crashesFelt = 0;
+    try { vibration = localStorage.getItem(vibrationKey) !== 'off'; } catch { /* Storage is optional. */ }
+    function setVibration(on) {
+      vibration = on;
+      try { localStorage.setItem(vibrationKey, on ? 'on' : 'off'); } catch { /* Keep the setting for this visit. */ }
+      renderMenuControls(controls());
+    }
+    function rumble(strong, weak, seconds) {
+      if (!vibration || !started || paused) return;
+      if (vr?.active) input.xr.rumble(Math.max(strong, weak), seconds);
+      else if (input.gamepad.connected) input.gamepad.rumble(strong, weak, seconds);
+      // (a phone buzzes, a little longer the harder)
+      else if (matchMedia('(pointer: coarse)').matches) navigator.vibrate?.(Math.round(seconds * 1000 * Math.max(strong, weak)));
+    }
     function primeMenuDrive() {
       if (started) return;
       // Reveal the menu already cruising, at a speed that respects traffic.
@@ -398,7 +428,7 @@ async function boot() {
       // (free drive's makes a new city, as R does: a controller's Y gets in and out of cars there,
       // and it comes last, well away from Resume)
       renderMenuControls(controls());
-      if (run) $('#switch-mode').before($('#restart-run')); else $('#traffic').after($('#restart-run'));
+      if (run) $('#switch-mode').before($('#restart-run')); else $('#drift-tap').after($('#restart-run'));
       $('#goals-panel').hidden = !run; $('#goals-heading').textContent = gameMode === 'demolition' ? 'Contracts' : 'Shift goals';
       $('#shift-goals').setAttribute('aria-label', $('#goals-heading').textContent);
       $('#scores-panel').hidden = gameMode !== 'demolition';
@@ -427,7 +457,7 @@ async function boot() {
     function beginTaxi() {
       if (changingJourney) return;
       demolition.stop(); enterRun('taxi', taxi.fleet.selected, taxi.fleet.liveryColor);
-      taxi.start(vehicle); taxiView.reset(); renderGoals(); cityGuide.lately = [];
+      taxi.start(vehicle); taxiView.reset(); driftEffects.reset(); renderGoals(); cityGuide.lately = [];
       showRun();
     }
     // Demolition: the truck, a minute on the clock, and a city to wreck. The
@@ -435,7 +465,7 @@ async function boot() {
     function beginDemolition() {
       if (changingJourney) return;
       taxi.stop(); props.reset(); enterRun('demolition', DEMOLITION_CAR, DEMOLITION_PAINT);
-      demolition.start(); demolitionView.reset();
+      demolition.start(); demolitionView.reset(); driftEffects.reset();
       showRun();
       toast('Wreck everything · Mind the pedestrians');
     }
@@ -554,19 +584,22 @@ async function boot() {
     }
     // Free drive's two buttons climb and descend in the helicopter, and jump
     // and sprint on foot (Space and Shift do, see Input), and are named for it
-    const driveButtons = { driving: [['Drift', 'Tap + steer'], ['Boost']], flying: [['Climb', 'Hold'], ['Descend']], walking: [['Jump', 'Tap'], ['Sprint']] };
-    let driveMode = null, driveMachine = null;
+    const driveButtons = { driving: [['Drift', 'Hold + steer'], ['Boost']], flying: [['Climb', 'Hold'], ['Descend']], walking: [['Jump', 'Tap'], ['Sprint']] };
+    let driveMode = null, driveMachine = null, driveTap = null;
     function updateDriveUi() {
       const free = started && gameMode === 'free', mode = free && vehicle.pilot ? 'flying' : free && vehicle.walker ? 'walking' : 'driving';
       // (the helicopter and the plane fly on the same buttons, but the stick's help differs)
-      if (mode === driveMode && vehicle.carId === driveMachine) return;
-      driveMode = mode; driveMachine = vehicle.carId; document.body.dataset.flying = String(mode === 'flying'); document.body.dataset.walking = String(mode === 'walking');
+      if (mode === driveMode && vehicle.carId === driveMachine && vehicle.driftMode === driveTap) return;
+      driveMode = mode; driveMachine = vehicle.carId; driveTap = vehicle.driftMode; document.body.dataset.flying = String(mode === 'flying'); document.body.dataset.walking = String(mode === 'walking');
       if (started) rendering.useCameraProfile(mode === 'walking' ? 'walking' : 'driving');
       updateViewUi();
       ['handbrake', 'boost'].forEach((key, i) => {
-        const button = $(`[data-drive-button="${key}"]`), [label, hint] = driveButtons[mode][i];
+        const button = $(`[data-drive-button="${key}"]`), [label, given] = driveButtons[mode][i];
+        // (drifting tapped rather than held, see setDriftMode)
+        const hint = mode === 'driving' && key === 'handbrake' && vehicle.driftMode === 'tap' ? 'Tap + steer' : given;
         button.querySelector('span').textContent = label;
-        if (hint) button.querySelector('small').textContent = hint;
+        // (and what the Drift button says when it has no drift to show: see renderRunHud)
+        if (hint) { const small = button.querySelector('small'); small.textContent = hint; small.dataset.idle = hint; }
       });
       $('.controls .control-label').textContent = mode === 'walking' ? 'walk' : mode === 'flying' ? 'fly' : 'drive';
     }
@@ -637,19 +670,25 @@ async function boot() {
       try { localStorage.setItem(flightHintKey, JSON.stringify(flightHints)); } catch { /* Told for this visit. */ }
     }
     // Jumps in free drive, told once each after a landing: how to spin, once a
-    // jump has had the air for it, and where the city's jumps are kept
+    // jump has had the air for it, then how to do a trick, and where the
+    // city's jumps are kept
     const airHintKey = 'citydriver-air-hints';
     let airHints = {}, airHintDue = null;
     try { airHints = JSON.parse(localStorage.getItem(airHintKey)) ?? {}; } catch { /* Storage is optional. */ }
     const toldAir = hint => { airHints[hint] = true; try { localStorage.setItem(airHintKey, JSON.stringify(airHints)); } catch { /* Told for this visit. */ } };
     function hintAir(event) {
       if (!started || gameMode !== 'free' || event.landing === 'splash') return;
-      // (a player who spins already needs no telling)
+      // (a player who spins or tricks already needs no telling)
       if (event.turns && !airHints.spin) toldAir('spin');
-      const hint = !airHints.spin && event.air >= 1 ? 'spin' : !airHints.book && event.jump?.stars ? 'book' : null;
+      if (event.trick && !airHints.trick) toldAir('trick');
+      const hint = !airHints.spin && event.air >= 1 ? 'spin' : airHints.spin && !airHints.trick && event.air >= .8 ? 'trick'
+        : !airHints.book && event.jump?.stars ? 'book' : null;
       if (!hint || airHintDue) return;
       const device = vr?.active ? 'vr' : document.body.dataset.controller === 'true' ? 'pad' : matchMedia('(pointer: coarse)').matches ? 'touch' : 'keys';
-      const text = hint === 'spin' ? { keys: 'In the air, hold Space and steer to spin', pad: 'In the air, hold LB and steer to spin', vr: 'In the air, hold the left grip and steer to spin', touch: 'In the air, hold Drift and steer to spin' }[device]
+      const button = { keys: 'Space', pad: 'LB', vr: 'the left grip', touch: 'Drift' }[device];
+      // (held from the ground it does not spin: see Drift.spinning)
+      const text = hint === 'spin' ? `In the air, press and hold ${button} and steer to spin`
+        : hint === 'trick' ? `Tap ${button} as you leave a ramp for a trick and a boost`
         : 'Pause to see the city\'s jumps and your stars';
       // (after the landing's own news, and told only once it has been seen)
       airHintDue = setTimeout(() => {
@@ -657,6 +696,32 @@ async function boot() {
         if (!started || paused || gameMode !== 'free' || airHints[hint]) return;
         toast(text); toldAir(hint);
       }, 2400);
+    }
+    // Drifting in free drive, told once each: how to, once the car has been
+    // going fast for a while and hasn't drifted, and after the first blue
+    // turbo, that there is more to a drift than blue sparks
+    const driftHintKey = 'citydriver-drift-hints';
+    let driftHints = {}, fastTime = 0;
+    try { driftHints = JSON.parse(localStorage.getItem(driftHintKey)) ?? {}; } catch { /* Storage is optional. */ }
+    const toldDrift = hint => { driftHints[hint] = true; try { localStorage.setItem(driftHintKey, JSON.stringify(driftHints)); } catch { /* Told for this visit. */ } };
+    function hintDrift(event = null, dt = 0) {
+      if (!started || gameMode !== 'free' || vehicle.pilot || vehicle.walker || !vehicle.drift) return;
+      const device = vr?.active ? 'vr' : document.body.dataset.controller === 'true' ? 'pad' : matchMedia('(pointer: coarse)').matches ? 'touch' : 'keys';
+      const button = { keys: 'Space', pad: 'LB', vr: 'the left grip', touch: 'Drift' }[device];
+      if (event) {
+        // (a first turbo past blue, and there is nothing to tell)
+        if (event.stage > 1) toldDrift('stages');
+        if (driftHints.stages) return;
+        toldDrift('stages');
+        setTimeout(() => { if (started && !paused && gameMode === 'free') toast('Drift for longer: orange, then pink sparks, bigger boosts'); }, 1800);
+        return;
+      }
+      if (driftHints.drift) return;
+      if (vehicle.drifting) { toldDrift('drift'); return; }
+      fastTime += Math.abs(vehicle.speed) > 12 ? dt : 0;
+      if (fastTime < 8) return;
+      toldDrift('drift');
+      toast(vehicle.driftMode === 'tap' ? `Tap ${button} while steering to drift · tap again to boost` : `Hold ${button} and steer to drift · let go to boost`);
     }
     function openCars() {
       if (started && gameMode === 'taxi') { openFleet(); return; }
@@ -933,7 +998,7 @@ async function boot() {
     window.addEventListener('focus', () => audio.setHidden(hidden()));
     window.addEventListener('pointerdown', () => audio.unlock(), { capture: true, passive: true });
     window.addEventListener('keydown', () => audio.unlock(), { capture: true });
-    window.addEventListener('pagehide', event => { audio.setHidden(true); if (!event.persisted) { onFoot.clear(); vehicle.disposeModel(); enterMarker.dispose(); nightLighting.dispose(); props.dispose(); world.dispose(); weather.dispose(); traffic.dispose(); taxiView.dispose(); demolitionView.dispose(); void audio.dispose().catch(() => {}); } });
+    window.addEventListener('pagehide', event => { audio.setHidden(true); if (!event.persisted) { onFoot.clear(); vehicle.disposeModel(); enterMarker.dispose(); nightLighting.dispose(); props.dispose(); world.dispose(); weather.dispose(); traffic.dispose(); taxiView.dispose(); demolitionView.dispose(); driftEffects.dispose(); void audio.dispose().catch(() => {}); } });
     window.addEventListener('pageshow', () => { audio.setHidden(document.hidden); needsRender = true; });
     $('#scene').addEventListener('webglcontextlost', event => { event.preventDefault(); setPaused(true); toast('Graphics lost. Reload to restart.'); });
     $('#scene').addEventListener('webglcontextrestored', () => { needsRender = true; });
@@ -1000,9 +1065,43 @@ async function boot() {
       updateHud(); needsRender = true;
     }
     const locationModel = () => locationHudModel(vehicle, cityDistrict(vehicle.s, vehicle.u), weather.state.label);
+    // The district card (heading, district and weather) only comes up for a
+    // few seconds on driving into a district, and at the start of a drive.
+    // A new name has to hold for a moment first, and one shown in the last
+    // half minute isn't shown again: along the water the name flicks between
+    // Harbour or Riverfront and the district behind it.
+    const district = { current: null, next: null, since: 0, until: -Infinity, shown: new Map() };
+    const cityHud = $('.city-hud');
+    function announceDistrict(place) {
+      district.current = place; district.next = null; district.shown.set(place, time); district.until = time + 4;
+    }
+    function updateDistrictCard(place) {
+      const driving = gameMode === 'free' && started && !paused && !changingJourney;
+      if (!started || gameMode !== 'free') district.current = null;
+      else if (driving) {
+        if (district.current === null) announceDistrict(place);
+        else if (place === district.current) district.next = null;
+        else if (place !== district.next) { district.next = place; district.since = time; }
+        else if (time - district.since >= 1.5) {
+          if (time - (district.shown.get(place) ?? -Infinity) > 30) announceDistrict(place);
+          else district.current = place;
+        }
+      }
+      const show = String(driving && time < district.until);
+      if (cityHud.dataset.show !== show) cityHud.dataset.show = show;
+    }
+    // (a phone only offers reset in a run once the car has sat still for a
+    // few seconds, see taxi.css)
+    let movedAt = 0;
+    function updateStuck() {
+      if (!(taxi.running || demolition.running) || paused || Math.abs(vehicle.speed) > 1.5) movedAt = time;
+      const stuck = String(time - movedAt > 3);
+      if (document.body.dataset.stuck !== stuck) document.body.dataset.stuck = stuck;
+    }
     function updateHud() {
       const location = locationModel();
       renderLocationHud(location);
+      updateDistrictCard(location.place); updateStuck();
       renderMenuControls(controls());
       cityGuide.update(started && !paused && !changingJourney, { draw: !vr?.active });
       const run = gameMode === 'demolition' ? demolitionView.buildHud(demolition, vehicle)
@@ -1027,7 +1126,8 @@ async function boot() {
     const menuActions = {
       start: () => vr.active ? beginTaxi() : start(), taxi: beginTaxi, demolition: beginDemolition, free: beginFree, resume: () => setPaused(false),
       back: () => openChooser()?.close(), exit: () => action('exitVR'), fleet: openFleet, garage: openCars,
-      autodrive: () => action('autodrive'), traffic: toggleTraffic, reset: () => action('reset'), map: openWorldMap,
+      autodrive: () => action('autodrive'), traffic: toggleTraffic, driftTap: () => setDriftMode(vehicle.driftMode === 'tap' ? 'hold' : 'tap'),
+      vibration: () => setVibration(!vibration), reset: () => action('reset'), map: openWorldMap,
       weather: () => chooseWeather(cycleChoice(WEATHER_CHOICES.map(([id]) => id), weather.mode)),
       view: () => action('view'), recenter: () => action('recenter'), comfort: toggleComfort,
       lookSensitivity: () => cameraPreferences.setInput('controller', { sensitivity: cycleChoice([.25, .5, .75, 1, 1.25, 1.5, 2], cameraPreferences.inputs.controller.sensitivity) }),
@@ -1039,7 +1139,7 @@ async function boot() {
     function menuState() {
       return { loading: changingJourney, started, paused, mode: gameMode, chooser: chooserName, over: runOver(),
         running: taxi.running || demolition.running, location: locationModel(), carName: carEntry(started && gameMode !== 'free' ? vehicle.carId : carId).name,
-        fleetName: carEntry(taxi.fleet.selected).name, autodrive: autodrive.enabled, traffic: traffic.enabled,
+        fleetName: carEntry(taxi.fleet.selected).name, autodrive: autodrive.enabled, traffic: traffic.enabled, driftTap: vehicle.driftMode === 'tap', vibration,
         weather: weather.mode, view: rendering.viewLabel, lookSensitivity: cameraPreferences.inputs.controller.sensitivity, comfort: comfort.enabled, graphics: graphics.auto ? 'Auto' : graphics.settings.label,
         rates: headsetRates(), rateChoice: graphics.rateChoice, frameRate: vr.session?.frameRate, sound: audio.enabled, mix: audio.preset };
     }
@@ -1098,6 +1198,8 @@ async function boot() {
       }
       // (a car's jumps, and the river it came down in: see CarAir)
       for (const event of vehicle.drain()) carEvent(event);
+      hintDrift(null, dt);
+      if (vehicle.audioTelemetry.crashSerial !== crashesFelt) { crashesFelt = vehicle.audioTelemetry.crashSerial; rumble(.8, .6, .2); }
       // Furniture the player hits may be knocked flying, and a parked car
       // knocked loose while there is traffic to take it; on foot, nothing is
       collideScenery(vehicle, world.chunks, dt, vehicle.walker ? null : (collider, contact) => collider.prop ? props.hit(collider, contact, vehicle) : traffic.enabled && traffic.wake(collider));
@@ -1133,6 +1235,7 @@ async function boot() {
     // the car is fished out at the run it took at the jump, to have another go.
     function carEvent(event) {
       if (event.kind === 'jump') {
+        if (event.landing === 'hard' || event.landing === 'spun') rumble(.6, .4, .15);
         if (taxi.running) taxi.jumped(event, vehicle);
         else if (demolition.running) demolition.jumped(event);
         else if (started && gameMode === 'free') {
@@ -1143,7 +1246,9 @@ async function boot() {
           taxiView.labels.pop({ x: p.x, y: p.y, z: p.z, amount: news.amount, caption: news.caption, colour: news.gold ? '#ffe07a' : '#9ff2e6', size: 2.6 });
           cityGuide.refreshJumps();
         }
-      } else if (event.kind === 'stomp') traffic.stomp(event.on, event.impact, event);
+      } else if (event.kind === 'drift') { if (taxi.running) taxi.drifted(event, vehicle); rumble(0, .2 + event.stage * .12, .06); }
+      else if (event.kind === 'turbo') { hintDrift(event); rumble(.3 + event.stage * .15, .5, .12 + event.stage * .08); }
+      else if (event.kind === 'stomp') { traffic.stomp(event.on, event.impact, event); rumble(.7, .5, .18); }
       else if (event.kind === 'sunk') {
         const run = taxi.running || demolition.running, from = event.from, h = from?.heading ?? vehicle.heading;
         const at = from?.jump?.runup ?? (from ? { s: from.s - Math.cos(h) * 30, u: from.u - Math.sin(h) * 30, heading: h } : null);
@@ -1236,6 +1341,7 @@ async function boot() {
         vehicle.walker?.clearView(rendering.camera.position);
         taxiView.render(taxi, vehicle, world.origin, time, pedestrianContacts, vr.active ? null : rendering.camera);
         demolitionView.render(world.origin, time, vr.active ? null : rendering.camera);
+        driftEffects.update(vehicle, dt, started);
         const at = vehicle.groundedPosition;
         pigeons.gather(world.chunks.values(), at.x, at.z, time, pigeonGround);
         pigeons.scare({ x: at.x, y: at.y, z: at.z, speed: Math.abs(vehicle.speed), car: !vehicle.walker, airborne: Boolean(vehicle.walker && !vehicle.walker.grounded) }, time, world.chunks.values());
@@ -1293,7 +1399,7 @@ async function boot() {
     await signSheet;
     // (someone on foot, and their parachute)
     const onFootWarmup = createWalkerModel(); onFootWarmup.canopy.visible = true;
-    await rendering.precompile([...world.warmupObjects(), ...taxiView.warmupObjects(), ...demolitionView.warmupObjects(), ...enterMarker.warmupObjects(), ...pigeons.warmupObjects(), onFootWarmup.figure, onFootWarmup.canopy]);
+    await rendering.precompile([...world.warmupObjects(), ...taxiView.warmupObjects(), ...demolitionView.warmupObjects(), ...driftEffects.warmupObjects(), ...enterMarker.warmupObjects(), ...pigeons.warmupObjects(), onFootWarmup.figure, onFootWarmup.canopy]);
     try { taxiView.navigation.prepare(); } catch { /* The first fare tries again. */ }
     // Soft shading too, where it is on: loaded and drawn once behind the
     // loading screen, since its first frame compiles for ~200 ms.

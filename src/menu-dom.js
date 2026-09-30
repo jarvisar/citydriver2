@@ -6,6 +6,7 @@ const LABELS = {
   '#taxi-fleet-results': 'fleet', '#pause-fleet > span:first-child': 'fleet',
   '#restart-run span': 'restart', '#switch-mode span': 'switchMode', '#other-run span': 'otherRun',
   '#change-car .panel-button-label': 'garage', '#autodrive .panel-button-label': 'autodrive', '#traffic .panel-button-label': 'traffic',
+  '#drift-tap .panel-button-label': 'driftTap', '#vibration .panel-button-label': 'vibration',
   '#sound .panel-button-label': 'sound', '#open-world-map .panel-button-label': 'map', '#city-map-open span': 'map',
 };
 
@@ -14,7 +15,7 @@ export function bindMenuControls(getControls) {
     'taxi-retry': 'retry', 'taxi-free': 'free', 'demolition-retry': 'retry', 'demolition-taxi': 'taxi', 'demolition-free': 'free',
     'restart-run': 'restart', 'switch-mode': 'switchMode', 'other-run': 'otherRun', 'change-car': 'garage',
     'close-cars': 'back', 'close-fleet': 'back', 'close-world-map': 'back', 'open-world-map': 'map', 'city-map-open': 'map', 'city-map': 'map',
-    autodrive: 'autodrive', traffic: 'traffic', sound: 'sound', reset: 'reset' };
+    autodrive: 'autodrive', traffic: 'traffic', 'drift-tap': 'driftTap', vibration: 'vibration', sound: 'sound', reset: 'reset' };
   for (const [id, key] of Object.entries(bindings)) document.getElementById(id).addEventListener('click', () => {
     const control = getControls()[key];
     if (!control.disabled) control.activate();
@@ -31,6 +32,6 @@ export function renderMenuControls(controls) {
     const button = document.getElementById(id);
     if (button.disabled !== controls[key].disabled) button.disabled = controls[key].disabled;
   }
-  for (const id of ['autodrive', 'traffic', 'sound']) attribute(document.getElementById(id), 'aria-pressed', controls[id].toggle);
+  for (const [id, key] of [['autodrive', 'autodrive'], ['traffic', 'traffic'], ['drift-tap', 'driftTap'], ['vibration', 'vibration'], ['sound', 'sound']]) attribute(document.getElementById(id), 'aria-pressed', controls[key].toggle);
   text('current-car', controls.garage.value);
 }

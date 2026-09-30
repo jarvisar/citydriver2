@@ -26,8 +26,8 @@ test('menu choices and commands cover the title, pause modes, choosers and resul
   assert.equal(menuControls(state(), commands).garage.disabled, true, 'an active taxi run keeps its cab');
   assert.equal(build(state({ paused: false })), null);
   assert.equal(build(state({ loading: true })).id, 'loading');
-  for (const [mode, driving] of [['taxi', ['Restart run', 'Free drive', 'Demolition', 'Taxi fleet', 'Reset car']],
-    ['demolition', ['Restart run', 'Free drive', 'Taxi run', 'Reset car']], ['free', ['Taxi run', 'Demolition', 'Garage', 'Autodrive', 'Traffic', 'Reset car']]]) {
+  for (const [mode, driving] of [['taxi', ['Restart run', 'Free drive', 'Demolition', 'Taxi fleet', 'Tap to drift', 'Reset car']],
+    ['demolition', ['Restart run', 'Free drive', 'Taxi run', 'Tap to drift', 'Reset car']], ['free', ['Taxi run', 'Demolition', 'Garage', 'Autodrive', 'Traffic', 'Tap to drift', 'Reset car']]]) {
     model = build(state({ mode }));
     assert.deepEqual(model.items.filter(item => item.group === 'Driving').map(item => item.label), driving);
     assert.equal(model.items[0].label, 'Resume'); assert.equal(model.items[0].primary, true);

@@ -12,29 +12,36 @@
 #taxi-cash { font-size: 24px; font-weight: 800; line-height: 1.1; }
 #taxi-fares { font-size: 12px; color: #d9e4e8; }
 
-.taxi-task { position: absolute; top: var(--ui-top); left: 50%; transform: translateX(-50%); width: 410px; max-width: calc(100% - var(--ui-left) - var(--ui-right)); display: grid; grid-template-columns: 56px minmax(0, 1fr); align-items: center; gap: 12px; padding: 12px; border: 1px solid #ffffff40; border-radius: 14px; background: #17262ff5; color: #fff8e7; box-shadow: 0 3px 12px #07111926; }
+.taxi-task { position: absolute; top: var(--ui-top); left: 50%; transform: translateX(-50%); width: 410px; max-width: calc(100% - var(--ui-left) - var(--ui-right)); display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid #ffffff40; border-radius: 14px; background: #17262ff5; color: #fff8e7; box-shadow: 0 3px 12px #07111926; }
 .taxi-task:has(.taxi-nav[hidden]) { grid-template-columns: minmax(0, 1fr); }
-.taxi-nav { display: grid; justify-items: center; align-content: center; gap: 6px; }
-#taxi-arrow { display: block; width: 38px; height: 38px; }
+.taxi-nav { display: grid; justify-items: center; align-content: center; gap: 2px; }
+#taxi-arrow { display: block; width: 30px; height: 30px; }
 #taxi-nav-distance { font-size: 12px; font-weight: 750; white-space: nowrap; }
-.taxi-task-copy { min-width: 0; display: grid; gap: 5px; }
-.taxi-task-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 3px 10px; font-size: 12px; line-height: 1.3; }
-#taxi-stage { color: var(--city-accent); font-weight: 800; }
-#taxi-fare-status { color: #d9e4e8; white-space: nowrap; }
-#taxi-task-title { font-size: 18px; line-height: 1.2; font-weight: 750; overflow-wrap: anywhere; }
-#taxi-task-detail { font-size: 14px; line-height: 1.35; color: #d9e4e8; }
-#taxi-task-detail:empty { display: none; }
-#taxi-party { color: #c3f4bb; font-size: 13px; line-height: 1.3; }
-#taxi-next-stop { color: #d9e4e8; font-size: 12px; line-height: 1.3; overflow-wrap: anywhere; }
-#taxi-party:empty, #taxi-next-stop:empty { display: none; }
+/* Two lines and no more: the stage, clock and money, then where to or what
+   to hit with one extra after it (see info in run-hud-model.js). A hint or
+   prompt takes the extra's place while it shows, and a toast takes theirs. */
+.taxi-task-copy { min-width: 0; display: grid; gap: 3px; }
+.taxi-task-heading { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 12px; line-height: 1.3; white-space: nowrap; }
+#taxi-stage { min-width: 0; margin-right: auto; overflow: hidden; text-overflow: ellipsis; color: var(--city-accent); font-weight: 800; }
+#taxi-fare-status { color: #d9e4e8; }
+.taxi-task-main { display: flex; align-items: baseline; gap: 8px; min-width: 0; white-space: nowrap; }
+.taxi-task-main > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#taxi-task-title { flex: 0 1 auto; font-size: 17px; line-height: 1.25; font-weight: 750; }
+/* (the extra has what room the title leaves) */
+.taxi-task-main > :not(#taxi-task-title) { flex: 1 1 0; }
+.taxi-task-main > :is(.taxi-task-info, #taxi-task-detail, #toast) { font-size: 13px; line-height: 1.3; color: #d9e4e8; }
+#taxi-task-detail:empty, #taxi-party:empty, #taxi-next-stop:empty,
+.taxi-task[data-info=next] #taxi-party, .taxi-task[data-info=party] #taxi-next-stop,
+.taxi-task-main:has(#taxi-task-detail:not(:empty)) .taxi-task-info,
+.taxi-task:not([data-arriving=true]) .taxi-task-main:has(#toast.show) :is(#taxi-task-detail, .taxi-task-info) { display: none; }
+#taxi-party { color: #c3f4bb; }
 /* Special rider line */
 #taxi-next-stop[data-mood]:not([data-mood='']):not(:empty) { color: #fff8e7; font-weight: 700; }
-/* A toast replaces the instruction, except an arrival prompt */
-.taxi-task:not([data-arriving=true]) .taxi-task-copy:has(#toast.show) #taxi-task-detail { display: none; }
-body:not([data-mode=free]) .taxi-task #toast { display: none; position: static; transform: none; max-width: 100%; width: auto; padding: 0; margin: 0; border-radius: 0; background: none; color: var(--city-accent-soft); font-size: 14px; line-height: 1.35; letter-spacing: 0; text-align: left; }
+body:not([data-mode=free]) .taxi-task #toast { display: none; position: static; transform: none; max-width: none; width: auto; padding: 0; margin: 0; border-radius: 0; background: none; color: var(--city-accent-soft); font-size: 13px; line-height: 1.3; letter-spacing: 0; text-align: left; white-space: nowrap; }
 body:not([data-mode=free]) .taxi-task #toast.show { display: block; }
 body:not([data-mode=free]) .taxi-task[data-arriving=true] #toast { display: none; }
-.taxi-task[data-arriving=true] .taxi-task-copy #taxi-task-detail { display: block; }
+/* (but an arrival prompt keeps its words and the title gives way) */
+.taxi-task[data-arriving=true] #taxi-task-detail { flex: none; }
 .taxi-task[data-arriving=true] { border-color: #b9edb1; }
 .taxi-task[data-arriving=true] #taxi-task-detail { color: #c3f4bb; }
 #city-map-toggle:focus-visible, #city-map-open:focus-visible, #taxi-buttons button:focus-visible { outline: 3px solid #fff8e7; outline-offset: 3px; }
@@ -47,7 +54,7 @@ body:not([data-mode=free]) .taxi-task[data-arriving=true] #toast { display: none
 [data-rating=normal], [data-band=medium], [data-tone=normal] { --rating-color: #ffd238; }
 [data-band=short] { --rating-color: #ffa44a; }
 [data-rating=slow], [data-band=hop], [data-tone=slow] { --rating-color: #ff8a7a; }
-#taxi-timer { margin-left: auto; padding: 1px 8px; border-radius: 999px; color: #172229; background: var(--rating-color); font-weight: 800; white-space: nowrap; }
+#taxi-timer { flex: none; padding: 1px 8px; border-radius: 999px; color: #172229; background: var(--rating-color); font-weight: 800; white-space: nowrap; }
 .taxi-task[data-urgent=true] #taxi-timer { animation: taxi-timer-pulse .45s ease-in-out infinite alternate; }
 @keyframes taxi-timer-pulse { to { transform: scale(1.08); } }
 @media (prefers-reduced-motion: reduce) { .taxi-task[data-urgent=true] #taxi-timer { animation: none; outline: 2px solid #fff8e7; } }
@@ -83,12 +90,24 @@ body[data-controller=true] .taxi-dash { bottom: var(--ui-bottom); left: 50%; tra
 #taxi-boost-fill { display: block; height: 100%; background: #172229; }
 #taxi-buttons[data-boosting=true] [data-drive-button=boost] { background: var(--city-accent-soft); box-shadow: inset 0 0 0 2px #fff8e7; }
 #taxi-buttons[data-drifting=true] [data-drive-button=handbrake] { background: #405760; box-shadow: inset 0 0 0 2px #fff8e7; }
+/* Through a drift the Drift button fills toward the next stage in the sparks' colour (see Drift), then shows the turbo running down */
+[data-drive-button=handbrake] { position: relative; }
+.drift-charge { position: absolute; left: 8px; right: 8px; bottom: 6px; height: 4px; border-radius: 4px; background: #ffffff26; overflow: hidden; pointer-events: none; visibility: hidden; color: #e6edef; }
+#drift-charge-fill { display: block; width: 0; height: 100%; background: currentColor; transition: width .1s linear; }
+#taxi-buttons:is([data-drifting=true], [data-turbo=true]) .drift-charge { visibility: visible; }
+#taxi-buttons[data-stage='1'] .drift-charge { color: #57c3ff; }
+#taxi-buttons[data-stage='2'] .drift-charge { color: #ffa12e; }
+#taxi-buttons[data-stage='3'] .drift-charge { color: #ff58d8; }
+#taxi-buttons[data-stage='1'] [data-drive-button=handbrake] { box-shadow: inset 0 0 0 2px #57c3ff; }
+#taxi-buttons[data-stage='2'] [data-drive-button=handbrake] { box-shadow: inset 0 0 0 2px #ffa12e; }
+#taxi-buttons[data-stage='3'] [data-drive-button=handbrake] { box-shadow: inset 0 0 0 2px #ff58d8; }
 /* In the helicopter they climb and descend, longer names set a little smaller */
 body[data-flying=true] #taxi-buttons span { font-size: 13px; }
 
 body:not([data-mode=free]) :is(.city-hud, .notebook-panel, .controls) { display: none; }
 body:not([data-mode=free]) .topbar { justify-content: flex-end; }
-body:not([data-mode=free]) #city-stamps { display: none; }
+/* (a run has no places count, so the map's header is just its buttons) */
+body:not([data-mode=free]) .city-guide-header > span { display: none; }
 /* A controller has its own buttons for these, but is still told it can get in or out */
 body[data-controller=true] #taxi-buttons > :not(#use-car) { display: none; }
 #use-car .pad-hint, body[data-controller=true] #use-car .key-hint { display: none; }
@@ -159,10 +178,12 @@ body[data-controller=true] #city-map-open svg { display: none; }
   #taxi-clock { font-size: 26px; }
   .taxi-score { padding: 4px 9px; }
   #taxi-cash { font-size: 21px; }
-  .taxi-task { top: calc(var(--ui-top) + 60px); width: auto; left: var(--ui-left); right: var(--ui-right); max-width: none; transform: none; grid-template-columns: 44px minmax(0, 1fr); gap: 9px; padding: 11px; }
-  #taxi-task-title { font-size: 17px; }
-  #taxi-arrow { width: 34px; height: 34px; }
-  .taxi-task-heading { gap: 3px 6px; }
+  .taxi-task { top: calc(var(--ui-top) + 58px); width: auto; left: var(--ui-left); right: var(--ui-right); max-width: none; transform: none; grid-template-columns: 36px minmax(0, 1fr); gap: 8px; padding: 7px 10px; border-radius: 12px; }
+  #taxi-task-title { font-size: 15px; }
+  #taxi-arrow { width: 26px; height: 26px; }
+  #taxi-nav-distance { font-size: 11px; }
+  .taxi-task-heading { gap: 6px; font-size: 11px; }
+  .taxi-task-main > :is(.taxi-task-info, #taxi-task-detail), body:not([data-mode=free]) .taxi-task #toast { font-size: 12px; }
   .city-guide, body:not([data-mode=free]) .city-guide { --map-bottom: calc(var(--ui-bottom) + 140px); top: auto; bottom: var(--map-bottom); left: var(--ui-left); right: auto; width: min(260px, calc(100% - var(--ui-left) - var(--ui-right))); }
   .city-guide[data-expanded=false], body:not([data-mode=free]) .city-guide[data-expanded=false] { width: auto; }
   #app:has(.city-guide[data-expanded=true]) #stick-help { visibility: hidden; }
@@ -172,7 +193,7 @@ body[data-controller=true] #city-map-open svg { display: none; }
 @media (max-width: 360px) {
   #taxi-buttons button { width: 64px; min-width: 64px; }
   #taxi-buttons { gap: 8px; }
-  .taxi-task { gap: 7px; padding: 9px; }
+  .taxi-task { gap: 7px; padding: 7px 9px; }
   .taxi-dash { left: var(--ui-left); bottom: calc(var(--ui-bottom) + 82px); transform: none; }
   #taxi-speed { font-size: 20px; }
   .city-guide[data-expanded=true], body:not([data-mode=free]) .city-guide[data-expanded=true] { --map-bottom: calc(var(--ui-bottom) + 132px); width: 208px; }
@@ -181,16 +202,17 @@ body[data-controller=true] #city-map-open svg { display: none; }
 
 /* Landscape uses the horizontal space, leaving the middle of the road open. */
 @media (max-height: 560px) and (orientation: landscape) {
-  .taxi-task { top: var(--ui-top); left: calc(var(--ui-left) + 148px); right: calc(var(--ui-right) + 148px); width: auto; max-width: none; transform: none; gap: 8px; padding: 9px; grid-template-columns: 40px minmax(0, 1fr); }
+  .taxi-task { top: var(--ui-top); left: calc(var(--ui-left) + 148px); right: calc(var(--ui-right) + 148px); width: auto; max-width: none; transform: none; gap: 8px; padding: 7px 10px; grid-template-columns: 36px minmax(0, 1fr); border-radius: 12px; }
   .taxi-hud { height: 50px; }
   .taxi-clock-box { min-width: 56px; padding: 4px 8px; }
   #taxi-clock { font-size: 26px; }
   .taxi-score { padding: 4px 8px; }
   #taxi-cash { font-size: 21px; }
-  #taxi-task-title { font-size: 16px; }
-  #taxi-arrow { width: 30px; height: 30px; }
-  #taxi-task-detail { font-size: 13px; }
-  .taxi-task-heading { font-size: 12px; }
+  #taxi-task-title { font-size: 15px; }
+  #taxi-arrow { width: 26px; height: 26px; }
+  #taxi-nav-distance { font-size: 11px; }
+  .taxi-task-heading { font-size: 11px; }
+  .taxi-task-main > :is(.taxi-task-info, #taxi-task-detail), body:not([data-mode=free]) .taxi-task #toast { font-size: 12px; }
   .city-guide, body:not([data-mode=free]) .city-guide { --map-bottom: calc(var(--ui-bottom) + 86px); display: block; left: var(--ui-left); right: auto; top: auto; bottom: var(--map-bottom); width: 220px; z-index: 2; }
   .city-guide[data-expanded=false], body:not([data-mode=free]) .city-guide[data-expanded=false] { width: auto; }
   .city-guide[data-expanded=true], body:not([data-mode=free]) .city-guide[data-expanded=true] { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 4px 12px; width: 360px; }
@@ -283,4 +305,68 @@ body:not([data-mode=free]) .taxi-task #toast[data-tone=goal] { color: #c3f4bb; f
   .taxi-result-goals li { padding-block: 3px; }
   .taxi-result-more > * { margin-top: 6px; }
   .taxi-result-card button { min-height: 44px; margin-top: 8px; padding-block: 9px; }
+}
+
+/* Touch screens: the left thumb steers anywhere (the stick follows it), so
+   the buttons sit at the bottom right with Boost in the corner and the
+   street map takes the other corner. The camera buttons are up by the pause
+   bar (camera-controls.css). The map keeps --map-room clear beside what is
+   at the bottom right, and --map-lift raises it over the buttons where it
+   can't fit beside them. */
+@media (any-pointer: coarse) {
+  body { --map-room: 164px; --map-lift: 0px; }
+  body[data-mode=free] { --map-room: 246px; }
+  body[data-controller=true]:not([data-mode=free]) { --map-room: 180px; }
+  body[data-mode=free][data-controller=true] { --map-room: 82px; }
+  #taxi-buttons { left: auto; right: var(--ui-right); flex-direction: row-reverse; }
+  /* The speed sits over the buttons, or has their corner with a controller */
+  .taxi-dash { left: auto; right: var(--ui-right); bottom: calc(var(--ui-bottom) + 84px); transform: none; }
+  body[data-controller=true] .taxi-dash { left: auto; right: var(--ui-right); bottom: var(--ui-bottom); transform: none; }
+  #app .city-guide { --map-bottom: calc(var(--ui-bottom) + var(--map-lift)); top: auto; bottom: var(--map-bottom); left: var(--ui-left); right: auto; }
+  #app .city-guide[data-expanded=true] { max-width: calc(100% - var(--ui-left) - var(--ui-right) - var(--map-room)); }
+  body[data-mode=free] #app .city-guide[data-expanded=true] { width: min(var(--free-map-width, 260px), calc(100% - var(--ui-left) - var(--ui-right) - var(--map-room))); }
+  /* The stick's caption waits halfway up the left edge, where the thumb goes */
+  #app #stick-help { position: fixed; top: 50%; right: auto; bottom: auto; left: var(--ui-left); transform: translateY(-50%); }
+  /* (clear of a tablet's camera buttons) */
+  body[data-mode=free] #toast { max-width: calc(100% - 2 * (var(--ui-right) + 150px)); }
+}
+/* A phone keeps its top right to pause and the view. Reset makes a new city
+   in free drive, too much for a stray thumb, so there it's the pause menu's
+   New city, and in a run it only comes up once the car has sat still for a
+   few seconds (data-stuck, main.js). Toasts go just under the top row. */
+@media (any-pointer: coarse) and (max-width: 760px), (any-pointer: coarse) and (max-height: 560px) {
+  body[data-mode=free] #reset, body:not([data-stuck=true]) #reset { display: none; }
+  body[data-mode=free] #toast { top: calc(var(--ui-top) + 58px); max-width: calc(100% - var(--ui-left) - var(--ui-right)); }
+}
+/* An upright phone has no room for the map beside three buttons */
+@media (any-pointer: coarse) and (orientation: portrait) and (max-width: 480px) {
+  body[data-mode=free]:not([data-controller=true]) { --map-lift: 84px; --map-room: 0px; }
+}
+/* nor a narrow one for the map's controller label beside the speed */
+@media (any-pointer: coarse) and (orientation: portrait) and (max-width: 400px) {
+  body[data-controller=true]:not([data-mode=free]) { --map-lift: 56px; --map-room: 0px; }
+}
+@media (any-pointer: coarse) and (max-width: 360px) {
+  body { --map-room: 144px; }
+  body[data-mode=free] { --map-room: 216px; }
+  /* (the map button's icon goes, to fit beside the two in a run) */
+  #city-map-open svg { display: none; }
+  #app .city-guide[data-expanded=true] #city-map { width: 100%; }
+}
+/* On its side a phone keeps the top and bottom rows thin: narrower edges,
+   and the speed beside the buttons rather than over them */
+@media (any-pointer: coarse) and (max-height: 560px) and (orientation: landscape) {
+  :root { --edge: 12px; }
+  body:not([data-mode=free]) { --map-room: 344px; }
+  .taxi-dash { right: calc(var(--ui-right) + 164px); bottom: var(--ui-bottom); }
+  #app:has(.city-guide[data-expanded=true]) #stick-help { visibility: hidden; }
+}
+/* (the map's own column gives way to its buttons beside it) */
+@media (any-pointer: coarse) and (max-height: 560px) and (orientation: landscape) and (min-width: 601px) {
+  #app .city-guide[data-expanded=true] { grid-template-columns: minmax(0, 140px) minmax(min-content, 1fr); }
+}
+/* A narrow one keeps the stage, pill and money on the task card's first line */
+@media (any-pointer: coarse) and (max-height: 560px) and (orientation: landscape) and (max-width: 600px) {
+  .taxi-task { gap: 6px; padding: 7px 8px; grid-template-columns: 32px minmax(0, 1fr); }
+  .taxi-task-heading { gap: 5px; }
 }

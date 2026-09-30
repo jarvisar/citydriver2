@@ -23,6 +23,12 @@ export class XRInput {
     this.requireNeutral = true;
   }
   clear() { this.state = {}; this.requireNeutral = true; }
+  // A pulse in both controllers' hands, 0 to 1 for `seconds`, where they have haptics
+  rumble(intensity, seconds) {
+    for (const source of this.sources) {
+      try { source.gamepad?.hapticActuators?.[0]?.pulse?.(intensity, Math.round(seconds * 1000))?.catch?.(() => {}); } catch { /* No haptics. */ }
+    }
+  }
   // `paused` is true while a headset menu is up: the pause menu, a chooser,
   // the results or the title. The drive is still, and the sticks walk the menu.
   update(sources = [], { blocked = false, paused = false, freeDrive = false } = {}) {

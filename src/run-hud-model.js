@@ -8,14 +8,20 @@ const compact = (value, format = money) => value >= 1000 ? compactCash.format(va
 const distanceLabel = meters => meters >= 1000 ? `${(meters / 1000).toFixed(1)} km` : `${Math.round(meters / 10) * 10} m`;
 const countUp = (shown, total, step) => total < shown ? total : Math.min(total, shown + Math.max(step, (total - shown) * .35));
 const mileageFormat = new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+// What the Drift button says through a drift, as its sparks change (see Drift)
+const DRIFT_STATES = ['Drifting', 'Blue', 'Orange', 'Pink'];
 
 function baseHud(run, vehicle, free = false) {
+  // (the Drift button shows the charge toward the next stage, then the turbo running down)
+  const drift = vehicle.drift, charging = Boolean(drift && vehicle.drifting), turbo = !charging && drift?.boost > 0;
   return { running: run.running, buttons: run.running || free, boostVisible: run.running,
     boosting: run.running ? run.boostActive : vehicle.boosting, drifting: vehicle.drifting,
+    driftStage: charging ? drift.stage : turbo ? drift.turboStage : 0, driftCharge: charging ? drift.progress : turbo ? drift.boost : 0,
+    driftState: charging ? DRIFT_STATES[drift.stage] : turbo ? 'Turbo' : null, turbo,
     boost: run.boost, boostState: run.running ? run.boostActive ? 'Boosting' : run.boost < .1 ? 'Release to fill' : 'Hold'
       : vehicle.boosting ? vehicle.walker ? 'Sprinting' : 'Boosting' : 'Hold',
     speed: Math.round(Math.abs(vehicle.speed) * 2.23694), navigation: null, timer: null, stopProgress: null,
-    combo: '', party: '', band: '', nextStop: '', mood: '', detail: '', arriving: false, taskUrgent: false, overtime: false };
+    combo: '', party: '', band: '', nextStop: '', mood: '', detail: '', info: '', arriving: false, taskUrgent: false, overtime: false };
 }
 
 // Build once per HUD tick. Counting cash and once-only hints must not advance
@@ -45,6 +51,8 @@ export function taxiHudModel(run, vehicle, { free = false, shownCash = 0, hint =
     model.mood = nearby?.mood ?? '';
     const inRing = nearby && nearby.id !== run.blockedPickup?.id && near(nearby) < STOP_RADIUS;
     model.detail = run.boarding ? 'Boarding…' : inRing ? 'Stop to pick up' : hint(!nearby && 'rings');
+    // (a special rider's rule matters more than the band, and the fare is on the line above)
+    model.info = mood ? 'next' : 'party';
     model.fareStatus = nearby ? `Fare ${money(nearby.fare + nearby.groupBonus)}` : '';
     return model;
   }
@@ -62,6 +70,7 @@ export function taxiHudModel(run, vehicle, { free = false, shownCash = 0, hint =
   model.nextStop = next ? `Next · ${next.destination.name} · ${Math.round(next.length / 10) * 10} m` : run.fare.passengers > 1 ? 'Last stop' : '';
   const key = run.tips > 0 ? 'tips' : run.fare.passengers > 1 ? 'group' : 'drive';
   model.detail = nearStop ? Math.abs(vehicle.speed) >= 2.5 ? 'Stop to drop off' : 'Dropping off…' : hint(!run.overtime && key);
+  model.info = model.nextStop ? 'next' : 'party';
   model.arriving = nearStop;
   return model;
 }
@@ -81,7 +90,7 @@ export function demolitionHudModel(run, vehicle, { shownCash = 0, hint = () => '
     model.title = run.last.label;
     model.party = `+${damageMoney(run.last.value)}`; model.band = 'damage';
     model.nextStop = run.nextStep ? `${run.nextStep} more for ×${run.multiplier + 1}` : 'Top multiplier';
-    model.detail = hint(run.multiplier > 1 ? 'bank' : '');
+    model.detail = hint(run.multiplier > 1 ? 'bank' : ''); model.info = 'next';
   } else {
     const next = open[0];
     model.stage = next ? 'Contract' : 'Demolition';
@@ -90,7 +99,7 @@ export function demolitionHudModel(run, vehicle, { shownCash = 0, hint = () => '
     model.fareStatus = ''; model.title = next ? next.text : 'Smash everything';
     model.party = next ? `${contractProgress(next)} · +${CONTRACT_SECONDS}s` : ''; model.band = next ? 'damage' : '';
     model.nextStop = next ? open.slice(1).map(other => `${other.short} ${contractProgress(other)}`).join(' · ') : contracts.length ? 'All contracts done' : '';
-    model.detail = hint(run.bestChain ? 'time' : 'chain') || (next ? 'Mind the pedestrians' : 'Wreck cars and street furniture · Mind the pedestrians');
+    model.detail = hint(run.bestChain ? 'time' : 'chain'); model.info = next ? 'party' : 'next';
   }
   return model;
 }

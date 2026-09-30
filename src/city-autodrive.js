@@ -67,7 +67,7 @@ export class CityAutodrive {
     if (!this.path) {
       this.path = acquire(nav, player);
       this.next = null;
-      if (!this.path) return { handbrake: true };
+      if (!this.path) return { stop: true };
     }
     const path = this.path;
     // Where the car really is along its way, so a slide does not lose it: its

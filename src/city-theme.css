@@ -59,6 +59,17 @@ body[data-controller=true] #app :is(button, input, select):focus {
 #app :is(.city-hud, .drive-actions, .city-guide, .taxi-task, .controls) { border-radius: var(--city-radius); }
 #app .drive-actions { padding: 3px; }
 #app :is(.city-hud, .drive-actions) { min-height: 58px; }
+/* A small screen's top row is as slim as its 44px buttons allow */
+@media (max-width: 760px), (max-height: 560px) {
+  #app .drive-actions { padding: 2px; }
+  #app :is(.city-hud, .drive-actions) { min-height: 50px; }
+}
+/* and on a phone the view and pause buttons are round glass buttons of their
+   own, as most mobile racers have them, rather than a bar */
+@media (any-pointer: coarse) and (max-width: 760px), (any-pointer: coarse) and (max-height: 560px) {
+  #app .drive-actions { gap: 4px; min-height: 0; padding: 0; border: 0; background: none; box-shadow: none; backdrop-filter: none; }
+  #app .drive-actions button { width: 44px; height: 44px; border: 1px solid var(--city-line); border-radius: 50%; background: var(--city-glass); box-shadow: var(--city-shadow); }
+}
 #app .city-hud, #app .city-hud-copy { min-width: 0; }
 #app :is(#city-location, #weather-label) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #app .drive-actions button { color: var(--city-text); border-radius: var(--city-control-radius); font-weight: 650; }
@@ -188,7 +199,7 @@ body[data-controller=true] #app #city-map-open::before { content: 'VIEW'; margin
 @media (min-width: 1600px) and (min-height: 1000px) {
   :root { --ui-scale: 1.15; }
   #app :is(.topbar, .taxi-hud, .taxi-task, .taxi-dash, .city-guide, .controls, .pause-content, .taxi-result-card, .chooser),
-  #app :is(#taxi-buttons, #toast, #fps-counter, #vr-error, #taxi-fleet-dialog) { zoom: var(--ui-scale); }
+  #app :is(#taxi-buttons, #camera-tools, #toast, #fps-counter, #vr-error, #taxi-fleet-dialog) { zoom: var(--ui-scale); }
   #app :is(.chooser, .taxi-result-card), #app #taxi-fleet-dialog { max-height: calc((100svh - var(--ui-top) - var(--ui-bottom)) / var(--ui-scale)); }
 }
 @media (min-width: 2200px) and (min-height: 1300px) { :root { --ui-scale: 1.35; } }

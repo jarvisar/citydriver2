@@ -29,7 +29,7 @@ body[data-mode=demolition] .taxi-hud[data-overtime=true] .taxi-clock-box > span 
 [data-rating=chain], [data-band=damage] { --rating-color: var(--city-accent); }
 .taxi-task[data-stage=demolition] .taxi-timer-track::before, .taxi-task[data-stage=demolition] .taxi-timer-track::after { display: none; }
 #app .taxi-task[data-stage=demolition] #taxi-fare-status { color: var(--city-accent-soft); font-weight: 800; font-size: 13px; }
-#taxi-party[data-band=damage]:not([data-band='']) { font-size: 15px; font-weight: 800; }
+#taxi-party[data-band=damage]:not([data-band='']) { font-weight: 800; }
 #taxi-party[data-band=damage]:not([data-band=''])::before { content: none; }
 body[data-mode=demolition] .taxi-task #toast[data-tone=chain] { color: var(--city-accent); font-weight: 800; letter-spacing: .3px; }
 body[data-mode=demolition] .taxi-task #toast[data-tone=banked] { color: var(--city-accent-soft); font-weight: 700; }

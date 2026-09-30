@@ -97,7 +97,8 @@ export function thirdPersonDrivingInput(stick) {
   return {
     forward: Math.max(0, stick.y), brake: Math.max(0, -stick.y),
     left: Math.max(0, -stick.x), right: Math.max(0, stick.x),
-    handbrake: Math.hypot(stick.x, stick.y) === 0,
+    // (let go, the car stops and holds: the Drift button no longer does at speed)
+    stop: Math.hypot(stick.x, stick.y) === 0,
   };
 }
 

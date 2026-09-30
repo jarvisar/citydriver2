@@ -38,6 +38,11 @@ export function cueNotes(kind, detail = {}) {
     case 'banked': return [note(0, 0, .1), note(.05, 4, .1), note(.1, 7, .12), note(.15, 12, .32, .05), note(.19, 31, .09, .018, 'sine')];
     case 'penalty': return [note(0, -1, .18, .045, 'sine'), note(.14, -5, .22, .04, 'sine'), note(.3, -8, .4, .04, 'sine')];
     case 'bonus': return [note(0, 12, .08, .035), note(.06, 19, .2, .035)];
+    // A drift's sparks change colour: a bright ping a step up the scale at each stage
+    case 'drift': {
+      const stage = Math.min(3, Math.max(1, detail.stage ?? 1)), low = [12, 16, 19][stage - 1];
+      return [note(0, low, .07, .024), note(.045, low + 7, .16 + stage * .04, .026), ...(stage === 3 ? [note(.09, low + 12, .22, .016, 'sine')] : [])];
+    }
     default: return [];
   }
 }

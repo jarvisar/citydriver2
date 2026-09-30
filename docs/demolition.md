@@ -10,7 +10,7 @@ If time runs out while a chain is going, the chain keeps going. The clock says L
 
 ## Contracts
 
-Each run has three contracts, like felling five trees, two takedowns or a 14 hit chain. Between chains the task card shows the next one and how the others stand. The pause menu lists all three. When a contract asks for bus shelters, traffic lights, parked cars or takedowns, the street map marks them with orange dots. Trees and lamp posts are on every street, so they aren't marked.
+Each run has three contracts, like felling five trees, two takedowns or a 14 hit chain. Between chains the task card shows the next one and how far along it is. The pause menu lists all three. When a contract asks for bus shelters, traffic lights, parked cars or takedowns, the street map marks them with orange dots. Trees and lamp posts are on every street, so they aren't marked.
 
 | Contract | Targets |
 | --- | --- |

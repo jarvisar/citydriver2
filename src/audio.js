@@ -22,6 +22,7 @@ export class DriveAudio {
     try { this.remembered = storage()?.getItem(SOUND_KEY) === 'on'; } catch { this.remembered = false; }
     this.trafficSlots = Array(4).fill(null); this.nearby = [];
     this.impactSerial = 0; this.bumpSerial = 0; this.stepSerial = 0; this.shiftSerial = 0; this.liftSerial = 0; this.lastImpact = -Infinity;
+    this.driftStages = 0; this.turbos = 0;
     this.boosting = false; this.deck = null; this.duckUntil = -Infinity; this.lastHonk = -Infinity; this.honks = new WeakMap();
     // Where the car is, eased so the soundscape changes as smoothly as the streets do
     this.place = { urban: .6, green: .1, water: 0, sea: 0 };
@@ -159,6 +160,8 @@ export class DriveAudio {
       if (Number.isFinite(telemetry.impactSerial)) this.impactSerial = telemetry.impactSerial;
       if (Number.isFinite(telemetry.bumpSerial)) this.bumpSerial = telemetry.bumpSerial;
       if (Number.isFinite(telemetry.stepSerial)) this.stepSerial = telemetry.stepSerial;
+      if (Number.isFinite(telemetry.driftStages)) this.driftStages = telemetry.driftStages;
+      if (Number.isFinite(telemetry.turbos)) this.turbos = telemetry.turbos;
       if (scene?.props) scene.props.sounds.length = 0;
     }
     if (!force && (!this.audible || this.context.state !== 'running' || now - this.lastUpdate < 1 / 30)) return;
@@ -222,6 +225,23 @@ export class DriveAudio {
       for (let i = 0, at = .06, n = profile.pops ? 2 + Math.floor(g.random() * 3 * profile.pops) : 0; i < n; i++, at += .07 + g.random() * .16) {
         g.event('engine', { time: now + at, duration: .05 + g.random() * .04, frequency: 900 + g.random() * 700, endFrequency: 260, level: (.05 + g.random() * .04) * profile.pops, attack: .002, q: 1.1 });
       }
+    }
+    // A drift's sparks changing colour (see Drift): a crackle and a chime a
+    // step higher for each stage
+    if (Number.isFinite(telemetry.driftStages) && telemetry.driftStages !== this.driftStages) {
+      this.driftStages = telemetry.driftStages;
+      const stage = Math.max(1, Number(telemetry.driftStage) || 1);
+      for (let i = 0; i < 2 + stage; i++) g.event('smash', { time: now + i * (.025 + g.random() * .03), duration: .03 + g.random() * .03, frequency: 4200 + g.random() * 2600, endFrequency: 3000, level: .009 + stage * .003, attack: .001, q: 3, pan: (g.random() - .5) * .5 });
+      this.cue('drift', { stage });
+    }
+    // A turbo fired: a rush of air, longer and brighter for a bigger one
+    // (and not the boost's own rush on top of it)
+    if (Number.isFinite(telemetry.turbos) && telemetry.turbos !== this.turbos) {
+      this.turbos = telemetry.turbos;
+      const stage = Math.max(1, Number(telemetry.turboStage) || 1);
+      g.event('engine', { duration: .35 + stage * .15, frequency: 360, endFrequency: 1500 + stage * 450, level: .04 + stage * .008, attack: .04, q: 1.4 });
+      g.event('thump', { duration: .18, frequency: 90, endFrequency: 50, level: .05 + stage * .02, attack: .004 });
+      this.boosting = true;
     }
     // Boost comes in with a rush of air and goes with the blow-off's hiss
     const boosting = Boolean(telemetry.boost);

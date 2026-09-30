@@ -59,7 +59,7 @@ const CLEAR = .15, STEP = .45;
 const PASSING = 10, LOOK_NEAR = 9;
 // A car's rock on its springs as someone climbs in or out (m/s across it)
 const CLIMB = 1.4;
-const STOPPING = { handbrake: 1 }, LANDING = { land: true }, STILL = { walk: { x: 0, z: 0 }, jump: false, sprint: false, face: true, aim: NaN };
+const STOPPING = { stop: 1 }, LANDING = { land: true }, STILL = { walk: { x: 0, z: 0 }, jump: false, sprint: false, face: true, aim: NaN };
 // (whether the controls ask anything of something flying: any of it takes over from its landing)
 const FLYING = ['forward', 'brake', 'left', 'right', 'climb', 'descend'];
 const flown = state => FLYING.some(key => state[key]) || Boolean(state.touchStick || state.touchDrive?.amount);

@@ -1,26 +1,43 @@
 # Handling
 
-The driving uses arcade grip handling with a powerslide for drifting. The handling comes from a speed-dependent turning radius, separate headings for where the car points and where it travels, and a limited slip angle. There's no tire simulation, and the suspension is just a spring on the body for landings (see [Jumps and Landings](#jumps-and-landings)).
+The driving uses arcade grip handling. The handling comes from a speed-dependent turning radius, separate headings for where the car points and where it travels, and a limited slip angle. Drifting works separately, loosely based on Mario Kart's inside drift (see [Drifting](#drifting)). There's no tire simulation, and the suspension is just a spring on the body for landings (see [Jumps and Landings](#jumps-and-landings)).
 
-## Steering and Drifting
+## Steering
 
 - Steering reaches 90% in about 38 ms and returns to centre in about 26 ms. Countersteering switches direction on the next simulation tick. If two keyboard directions are held, the newest press wins.
 - The controller deadzone is 12%, and the rest of the stick range is remapped so small movements are precise. Full lock is tight enough for slow city junctions, and the turning circle widens at higher speed.
 - Launch torque is up to 22% stronger on tarmac, fading out by 12 m/s. Top speeds, grip and off-road speed for each car are in `src/cars.js`.
 - Brake takes priority over throttle. After stopping, holding brake waits 0.5 seconds before reversing, so the cab stays still for pickups and drop-offs. Release and press brake again to reverse straight away.
-- Above 7.5 m/s, tap Drift while steering to start a slide. Hold the throttle and steering into the corner to keep sliding after letting go of the button. Holding Drift also works. Centre the steering, countersteer, lift off or brake to recover. Slides end below 6 m/s and can't start in reverse.
-- The slide angle is limited to 0.55 radians (about 32°). Sliding scrubs off some speed, and normal steering gets grip back quickly. Handbraking in a straight line stops the car and holds it, even with throttle or boost held.
+- The tires give a little at the limit of a hard corner, and the car slides for a moment after a drift ends or a crooked landing. The slide angle is limited to 0.55 radians (about 32°), and normal steering gets grip back quickly.
+- Below 8 m/s, holding Drift is the handbrake. It stops the car and holds it, even with throttle or boost held.
 - The chase camera follows small turns quickly and swings round for U-turns. During a slide it looks partly along the direction of travel so the exit stays in view.
 - After a click on the view (straight away in fullscreen) the mouse turns the chase camera around the car, and Escape gives the pointer back. A controller's right stick does the same. The mouse wheel moves the camera closer or further away. While the car is moving, the camera swings back behind it a moment after the mouse or stick stops. It stays out of buildings and above the ground.
-- Collisions, tire sounds, skid marks and taxi drift tips all follow the actual slide.
 
 Keyboard, controller, VR and the chase-view touch stick all use the same steering. Touch boost reaches the same top speed as the keyboard, and letting go of the stick stops the cab even while Boost is held. The overhead view's touch controls stay relative to the screen.
+
+## Drifting
+
+I wanted drifting to work like the inside drift in Mario Kart Wii and Mario Kart 8, where you commit to a drift, hold it through the corner and get a boost on the way out. It isn't a copy of either. The code is in [src/drift.js](../src/drift.js).
+
+- Hold Drift and steer either way above 8 m/s (18 mph). The car hops a little when the button goes down, and the steering at that moment or any time after picks the direction. Holding it without steering does nothing else, so you can press it early.
+- Once it's drifting the car goes round its own arc until you let go. Steering into the drift tightens it and steering out of it widens it, but centring or countersteering doesn't end it. Braking tightens it more.
+- The nose only points 6 to 16° into the corner, so the car follows the inside line instead of swinging its tail out.
+- A drift gets less than half the engine's pull and scrubs off a little speed, so holding one down a straight doesn't pay. At city speeds it isn't tighter than full lock. In the Taxi at 20 m/s it turns on about a 15 m radius, or 10 m steered in, against 9 m for full lock. From about 23 m/s a drift steered in is tighter than the tires can manage. Grippier cars drift tighter and loose ground widens it.
+- Sparks at the back wheels show the charge. They turn blue after 0.6 seconds, orange after 1.35 and pink after 2.3, steered more than halfway into the drift. Steering less than that charges at 40% of the speed.
+- Letting go fires a turbo. Blue lasts 0.55 seconds, orange 1.05 and pink 1.7. Each one kicks the speed up straight away and then pushes on past the car's usual top speed, by up to 15%, 21% or 27%. A small turbo never cuts a bigger one short.
+- Dropping below 5.5 m/s or crashing loses the charge, and a crash ends a turbo too. The next drift needs a fresh press.
+- In the air the drift waits for the landing. Letting go in the air fires the turbo when the wheels touch down.
+- Pressing Drift within 0.35 seconds of leaving a ramp, without steering, is a trick. Landing it gives a blue turbo. A spin landed gives an orange one, and two or more full turns a pink one. Spinning out on landing gets nothing.
+- Tap to drift in the pause menu makes the button a toggle, for anyone who finds holding it tiring. The first tap holds it down and the next lets go.
+- There's no drifting with the overhead views' touch stick, since it points the car straight at where the thumb is.
+
+Sparks, smoke and tire marks come off the back wheels while drifting. A turbo shoots flames out the back in its colour and widens the chase camera's view for a moment, unless reduced motion is on. Each new colour has a crackle and a chime, and controllers and phones buzz with it if Vibration is on.
 
 ## Turning Radius
 
 Side streets are 13 m wide, avenues 18 m and boulevards 24 m. The full-lock radius blends the car's low-speed lock with a grip limit of `speed² / cornering`, where `cornering` is `32 × grip` m/s² (`turningRadius` in `src/handling.js`). The blend follows whichever limit is tighter without a sudden change between them. Loose ground reduces grip, and braking into a corner gives a little extra.
 
-Each car has its own low-speed radius as well as its grip: 3.2 m for the Micro, 3.6 m for the Formula cars and 5.4 m for the truck. The Formula cars have the most grip (2.25 for the Formula and 2.2 for the Formula Taxi, compared to the Taxi's 1.4). Every car only drifts when you press Drift.
+Each car has its own low-speed radius as well as its grip: 3.2 m for the Micro, 3.6 m for the Formula cars and 5.4 m for the truck. The Formula cars have the most grip (2.25 for the Formula and 2.2 for the Formula Taxi, compared to the Taxi's 1.4). Cars only drift when you hold Drift.
 
 Full-lock radius in metres on tarmac, from `node scripts/handling-sweep.mjs`:
 
@@ -46,7 +63,7 @@ Cars go up and down with what they drive over and can leave the ground off ramps
 - The car leaves the ground wherever the ground falls away faster than it can fall, like a ramp's lip or a crest taken fast. It also counts as off the ground once both front wheels are over an edge, so it can't keep steering on its back wheels.
 - Gravity is 13 m/s², a bit more than real, so jumps come down with some weight. A car keeps nearly all its speed in the air.
 - In the air the nose follows the arc and comes round to the ground over the last couple of metres, so the car lands on its wheels. Going slowly over an edge, it tips over it instead.
-- Steering in the air turns the nose up to about 24° off the way the car is flying, and it straightens up when you let go. Hold Drift and steer to spin it. Let go and it carries on round to the next full turn.
+- Steering in the air turns the nose up to about 24° off the way the car is flying, and it straightens up when you let go. Press and hold Drift in the air and steer to spin it. Holding it from before the jump doesn't spin. Let go and it carries on round to the next full turn. Tricks and spins landed cleanly fire a turbo (see [Drifting](#drifting)).
 - Landing more than about 30° off the way it's going spins the car out. A bit off, it slides for a moment while the tyres grip again. Coming down faster than 5 m/s scrubs off some speed, up to 15%, and faster than 12 m/s shakes the camera a little.
 - A car can come down on another car's bonnet or roof and drive off it. The car underneath gets knocked about and its driver stops for a moment.
 - A car that falls in the river sinks and is put back at the start of its run-up.

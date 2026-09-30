@@ -13,10 +13,11 @@ import { createPlane } from './plane-model.js';
 import { Plane } from './plane.js';
 import { createWalkerModel, Walker, WALKER_SPEC, WALKER_STATS } from './walker.js';
 import { collisionImpulse, footprintMass, heft, leadingPoint, rock, rockFrom, SCENERY_SURFACE } from './impact.js';
-import { steerCurve, steeringResponse, driftDirection, turnRate, corneringLoad, travelHeading } from './handling.js';
+import { steerCurve, steeringResponse, turnRate, corneringLoad, travelHeading } from './handling.js';
 import { carProfile } from './car-profile.js';
 import { Actor, actorBody } from './actors.js';
 import { CarAir, GRAVITY } from './car-air.js';
+import { Drift, DRIFT_MIN, BRAKE_SHARE, DRAG as DRIFT_DRAG, POWER as DRIFT_POWER, TURBOS } from './drift.js';
 
 const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: .74, flatShading: true, ...extra });
 function box(group, size, location, material) {
@@ -235,9 +236,6 @@ const CRASH = 6, HARD = 9, CRASH_FADE = .1;
 const PUSH_GRIP = 9, PUSHING = .15;
 // How far the body leans, in radians, when the tyres are giving everything.
 const LEAN = .105;
-// A handbrake tap leaves the slide available for this long, so the button and
-// the steering can be pressed in either order.
-const DRIFT_ARM = .3;
 // How far, in metres, render() may carry the last step forward, so that a
 // collision correction (the one step that is not smooth motion) cannot throw
 // the body ahead of itself.
@@ -266,13 +264,14 @@ export class ActorMotion {
     // a car can come down on (see CarAir).
     this.pilot = null; this.airborne = false; this.scenery = null; this.walker = null; this.props = null; this.traffic = null;
     // A car on its wheels goes up and down with what it drives over, and off
-    // a ramp into the air (see CarAir). `events` is what happened, for the
+    // a ramp into the air (see CarAir), and drifts (see Drift) as
+    // `driftMode` has it, held or tapped. `events` is what happened, for the
     // game to hear (see drain)
-    this.carAir = null; this.events = [];
+    this.carAir = null; this.drift = null; this.driftMode = 'hold'; this.events = []; this.crashSeen = 0;
     this.fit(walking ? carId : CARS[carId] ? carId : DEFAULT_CAR, model ?? (walking ? createWalkerModel() : createCar(carId)), { paint });
     this.s = state.s ?? 24; this.u = state.u ?? 2.4; this.speed = 0; this.steer = 0; this.heading = state.heading ?? route.frame(this.s).angle;
     this.distance = state.distance ?? 0; this.pitch = 0; this.roll = 0;
-    this.reverseDelay = 0; this.driftAmount = 0; this.driftDirection = 0; this.drifting = false; this.boosting = false; this.driftReady = true; this.driftArmed = 0; this.slip = 0;
+    this.reverseDelay = 0; this.driftAmount = 0; this.driftDirection = 0; this.drifting = false; this.boosting = false; this.slip = 0;
     // Where the car's weight is: -1 over the back under power, +1 over the nose on the brakes.
     this.weight = 0; this.load = 0;
     this.bodyPitch = 0; this.bodyRoll = 0; this.bodyLift = 0; this.wheelSpin = 0;
@@ -305,6 +304,8 @@ export class ActorMotion {
     const wheeled = !this.pilot && carId !== WALKER_SPEC.name;
     this.carAir = wheeled ? this.carAir ?? new CarAir(this) : null;
     this.carAir?.fit(model.wheels, width, length);
+    this.drift = wheeled ? this.drift ?? new Drift(this) : null;
+    this.drift?.reset();
     this.bodyBase = model.body?.position.y ?? 0;
     // Center the view just in front of the windshield for every body shape.
     // Traffic-shaped cabins slope back by .24 m at the top of the glass, and a
@@ -335,8 +336,8 @@ export class ActorMotion {
     } else this.paintCar(this.paintColor);
   }
   reset() {
-    this.pilot?.land(); this.carAir?.reset();
-    this.speed = 0; this.steer = 0; this.weight = 0; this.load = 0; this.driftArmed = 0; this.knock.x = this.knock.z = this.knock.spin = 0;
+    this.pilot?.land(); this.carAir?.reset(); this.drift?.reset();
+    this.speed = 0; this.steer = 0; this.weight = 0; this.load = 0; this.knock.x = this.knock.z = this.knock.spin = 0;
     Object.assign(this.jolt, { pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 }); this.yawRate = 0; this.trauma = 0; this.lost = 0; this.pushing = 0; this.audioTelemetry.scrape = 0;
     // A generated street network has no lane at u = 2.4: settle into the nearest lane instead.
     if (this.route.nearestLane) { const pose = this.route.nearestLane(this.s, this.u, this.heading); this.s = pose.s; this.u = pose.u; this.heading = pose.heading; }
@@ -556,30 +557,33 @@ export class ActorMotion {
     // Losing only a quarter keeps the car recoverable, and the alignment assist
     // still works here, so a straightened wheel points the car back at the road.
     const grip = stats.grip * (1 - .25 * looseness);
-    if (!input.handbrake || !dt) this.driftReady = true;
-    this.driftArmed = input.handbrake && this.driftReady ? DRIFT_ARM : Math.max(0, this.driftArmed - dt);
-    this.driftDirection = dt && !touch && !aloft ? driftDirection(this.driftDirection, this.speed, steering, input, this.driftArmed > 0) : 0;
-    if (this.driftDirection) { this.driftReady = false; this.driftArmed = 0; }
-    const drifting = this.driftDirection !== 0;
-    this.drifting = drifting;
+    // Drifting (see Drift): the button hops the car, and steered either way
+    // commits it to a drift until it is let go. A crash ends the drift and
+    // loses its charge.
+    const drift = this.drift, crashes = this.audioTelemetry.crashSerial;
+    if (crashes !== this.crashSeen) { this.crashSeen = crashes; drift.crash(); }
+    drift.control(dt, input, steering, aloft, Boolean(touch));
+    const drifting = drift.active && !aloft;
+    this.drifting = drifting; this.driftDirection = drift.dir;
+    // (let go, the tyres take the slide back over a moment: see travelHeading)
     this.driftAmount = dt && !touch ? THREE.MathUtils.damp(this.driftAmount, drifting ? 1 : 0, drifting ? 10 : 22, dt) : 0;
     let acceleration = 0;
-    const parkingBrake = !aloft && input.handbrake && !drifting;
+    // The handbrake: the drift button when too slow to drift, or `stop`
+    // (the touch stick let go, the car being left) at any speed
+    const parkingBrake = !aloft && (Boolean(input.stop) || (drift.held && !drift.active && Math.abs(this.speed) < DRIFT_MIN));
     // A little extra low-speed pull makes starts and corner exits lively. It
     // fades out before cruising and leaves each car's top speed intact.
     const launch = 1 + .22 * (1 - looseness) * clamp(1 - this.speed / 12, 0, 1);
-    if (forward && !brake && !parkingBrake && !aloft) acceleration += forward * (this.speed < -.3 ? stats.launch : stats.acceleration * launch);
-    if (brake && !parkingBrake && !aloft) acceleration -= brake * (this.speed > .3 ? stats.braking : stats.creep);
+    if (forward && !brake && !parkingBrake && !aloft) acceleration += forward * (this.speed < -.3 ? stats.launch : stats.acceleration * launch) * (drifting ? DRIFT_POWER : 1);
+    // (braking in a drift tightens it and takes speed off more gently: a brake drift)
+    if (brake && !parkingBrake && !aloft) acceleration -= brake * (this.speed > .3 ? stats.braking : stats.creep) * (drifting ? BRAKE_SHARE : 1);
     if (parkingBrake) acceleration -= Math.sign(this.speed) * stats.handbrake;
     // What the driver is asking of the car, before the tires, the air and the
     // grass take their share. Weight transfer reads this rather than the total:
     // a verge is not a brake pedal and must not hand the front tires grip.
     let pedals = acceleration;
-    // Sliding tires scrub a little speed whether the button is held or tapped:
-    // enough that a slide costs something, not so much that the tighter line it
-    // buys is never worth taking. Full throttle can carry the slide; lifting
-    // lets the tires catch quickly.
-    if (!aloft) acceleration -= Math.sign(this.speed) * stats.handbrake * .1 * this.driftAmount;
+    // A drift scrubs a little speed, not enough to make the turbo not worth it
+    if (drifting) acceleration -= Math.sign(this.speed) * DRIFT_DRAG;
     // Up a ramp takes speed, and down one gives it back
     const grade = aloft ? 0 : this.carAir?.grade(this.heading) ?? 0;
     if (grade) acceleration -= GRAVITY * grade / Math.hypot(1, grade);
@@ -597,6 +601,11 @@ export class ActorMotion {
     }
     this.boosting = boosting && !parkingBrake && !brake && !aloft;
     if (this.boosting) { acceleration += stats.acceleration * .9; pedals += stats.acceleration * .9; }
+    // A drift's turbo (see Drift): a kick at once, then a push past top speed
+    // while it lasts, off the ground only once it is down again
+    const turbo = !aloft && drift.turbo > 0 ? TURBOS[drift.turboStage] : null, turboTop = turbo ? stats.topSpeed * (1 + turbo.top) : 0;
+    if (turbo && drift.kick) { this.speed = Math.max(this.speed, Math.min(turboTop, this.speed + stats.topSpeed * drift.kick)); drift.kick = 0; }
+    if (turbo && !brake && !parkingBrake) { acceleration += stats.acceleration * turbo.push; pedals += stats.acceleration * turbo.push; }
     if (this.pushing > 0) {
       this.pushing = Math.max(0, this.pushing - dt);
       if (acceleration * Math.sign(this.speed || acceleration) > PUSH_GRIP) acceleration = Math.sign(acceleration) * PUSH_GRIP;
@@ -605,7 +614,7 @@ export class ActorMotion {
     const boostCoast = Math.max(0, this.speed - stats.topSpeed - stats.braking * .4 * dt);
     // (a boosted car keeps its way in the air: no tyres to shed it)
     if (aloft) this.speed += acceleration * dt;
-    else this.speed = clamp(this.speed + acceleration * dt, touch ? 0 : -stats.reverseSpeed, stats.topSpeed + (boosting ? 10 : boostCoast));
+    else this.speed = clamp(this.speed + acceleration * dt, touch ? 0 : -stats.reverseSpeed, Math.max(stats.topSpeed + (boosting ? 10 : boostCoast), turboTop));
     // A held brake should settle the cab long enough to board/drop off before
     // backing up. Releasing and pressing again still selects reverse immediately.
     if (arcade && brake && !touch) {
@@ -613,7 +622,7 @@ export class ActorMotion {
       if (this.reverseDelay > 0) this.speed = Math.max(0, this.speed);
     }
     if (!forward && !brake && oldSpeed * this.speed < 0) this.speed = 0;
-    if (input.handbrake && oldSpeed * this.speed < 0) this.speed = 0;
+    if ((parkingBrake || input.handbrake) && oldSpeed * this.speed < 0) this.speed = 0;
     // Weight transfer as a share of what this car can do in each direction.
     // Taken along the direction of travel, so the brake pedal used as a reverse
     // throttle lifts the nose rather than pretending to brake. It eases in over
@@ -621,17 +630,23 @@ export class ActorMotion {
     const effort = pedals * Math.sign(this.speed);
     const transfer = clamp(-effort / (effort > 0 ? stats.acceleration : stats.braking), -1, 1);
     this.weight = dt ? THREE.MathUtils.damp(this.weight, transfer, 9, dt) : transfer;
-    const yaw = aloft ? 0 : turnRate(this.speed, this.steer, stats, looseness, this.driftAmount, this.weight);
+    // In a drift the way the car travels turns on the drift's own arc (see
+    // Drift.turn), and the nose leads it into the bend
+    const yaw = aloft ? 0 : drifting ? drift.turn(this.speed, stats, looseness) : turnRate(this.speed, this.steer, stats, looseness, this.driftAmount, this.weight);
     this.yawRate = touch ? 0 : yaw;
     this.load = aloft ? 0 : corneringLoad(this.speed, yaw, stats, looseness, this.weight);
     const frame = roadFrame(this.s);
-    const assist = !aloft && this.route.laneAssist !== false && (!this.freeDriving || looseness === 0);
+    const assist = !aloft && !drifting && this.route.laneAssist !== false && (!this.freeDriving || looseness === 0);
     if (aloft) {
       // In the air the nose leans or spins with the steering while the car
-      // flies on the way it left the ground (see CarAir.steer)
+      // flies on the way it left the ground (see CarAir.steer), spinning with
+      // the drift button pressed again up there
       const before = this.heading;
-      this.heading = this.carAir.steer(dt, steering, Boolean(input.handbrake), this.slideHeading);
+      this.heading = this.carAir.steer(dt, steering, drift.spinning, this.slideHeading);
       this.yawRate = (this.heading - before) / dt;
+    } else if (drifting) {
+      this.slideHeading += yaw * dt;
+      this.heading = this.slideHeading + drift.lead(dt);
     } else if (!touch) this.heading += yaw * dt;
     let difference = Math.atan2(Math.sin(this.heading - frame.angle), Math.cos(this.heading - frame.angle));
     // Free driving keeps the chosen heading off-road; normal driving assists bends.
@@ -642,7 +657,7 @@ export class ActorMotion {
     }
     const step = this.speed * dt, fromS = this.s, fromU = this.u;
     // (a landing a little off the way the car is going slides a moment before the tyres bite: see CarAir.grip)
-    if (!aloft) {
+    if (!aloft && !drifting) {
       if (!dt || touch || oldSpeed * this.speed <= 0 || !Number.isFinite(this.slideHeading)) this.slideHeading = this.heading;
       this.slideHeading = travelHeading(this.slideHeading, this.heading, dt, grip * (this.carAir?.grip ?? 1), this.driftAmount, this.load);
     }
@@ -693,7 +708,11 @@ export class ActorMotion {
     // flies, not the way a spinning nose points.
     this.car.userData.speedRush = clamp((Math.abs(this.speed) / stats.topSpeed - .4) / .6, 0, 1);
     this.car.userData.speed = this.speed;
+    // (a turbo opens the chase lens a moment: see ThirdPersonCamera)
+    this.car.userData.turbo = turbo ? Math.min(1, drift.boost * 1.5) : 0;
     this.car.userData.travel = this.aloft ? this.slideHeading : null; this.car.userData.chasePitch = this.aloft ? 0 : null;
+    // (off the ground on a drift's hop: the chase camera lets it go by, see ThirdPersonCamera)
+    this.car.userData.hopping = !this.aloft && this.carAir.free > 0;
     // A crash shakes the view, and that fades within about a second.
     this.trauma = Math.max(0, this.trauma - dt * 1.4); this.car.userData.trauma = this.trauma;
     this.lost *= Math.exp(-dt / CRASH_FADE);
@@ -703,8 +722,12 @@ export class ActorMotion {
     this.audioTelemetry.throttle = parkingBrake ? 0 : touch ? clamp((acceleration + (this.speed > .015 ? drag : 0)) / stats.acceleration, 0, 1) : this.speed < -.3 ? brake : brake ? 0 : forward;
     this.audioTelemetry.brake = parkingBrake ? 1 : touch ? clamp(-acceleration / stats.touchBraking, 0, 1) : this.speed < -.3 ? forward : brake;
     this.audioTelemetry.offRoad = looseness;
-    this.audioTelemetry.handbrake = input.handbrake ? 1 : 0;
-    this.audioTelemetry.boost = this.boosting ? 1 : 0;
+    // (the handbrake on, not the drift button held)
+    this.audioTelemetry.handbrake = parkingBrake ? 1 : 0;
+    // (a turbo sounds as the boost does, and a drift's stages and turbos have their own: see DriveAudio)
+    this.audioTelemetry.boost = this.boosting || turbo ? 1 : 0;
+    this.audioTelemetry.driftStage = drift.stage; this.audioTelemetry.driftStages = drift.stagesReached;
+    this.audioTelemetry.turbos = drift.turbos; this.audioTelemetry.turboStage = drift.turboStage;
     // (in the air the wheels spin free: the engine revs and the tyres go quiet)
     this.audioTelemetry.aloft = this.aloft ? 1 : 0;
     this.slip = Math.atan2(Math.sin(this.heading - this.slideHeading), Math.cos(this.heading - this.slideHeading));
@@ -728,7 +751,7 @@ for (const [name, field] of Object.entries({ s: 's', u: 'u', speed: 'speed', hea
   });
 }
 
-const CONTEXT = ['route', 'freeDriving', 'arcade', 'scenery', 'props', 'traffic', 'night', 'journeyId', 'rainbow', 'rainbowHue', 'distance'];
+const CONTEXT = ['route', 'freeDriving', 'arcade', 'scenery', 'props', 'traffic', 'driftMode', 'night', 'journeyId', 'rainbow', 'rainbowHue', 'distance'];
 
 // The player holds a controller, not a replaceable car body. Camera, input and
 // HUD callers keep this handle while cars and the pedestrian live independently.
@@ -795,7 +818,7 @@ export class PlayerController {
     body.spec = motion.drivingSpec; body.profile = body.spec.profile; body.perch = undefined;
     motion.speed = clamp(speed || 0, -motion.stats.reverseSpeed, motion.stats.topSpeed);
     motion.knock.x = motion.knock.z = motion.knock.spin = 0;
-    motion.steer = motion.driftArmed = motion.trauma = motion.lost = motion.pushing = 0;
+    motion.steer = motion.trauma = motion.lost = motion.pushing = 0; motion.drift?.reset();
     motion.wheelSpin = 0; motion.bodyPitch = motion.bodyRoll = 0;
     Object.assign(motion.jolt, { pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 });
     if (motion.pilot) { motion.pilot.unmanned = false; motion.pilot.events = []; }
@@ -811,7 +834,7 @@ export class PlayerController {
 // These are the player-facing movement fields used by the simulation, menus
 // and review tools. Forwarding on the prototype avoids a Proxy in hot loops.
 const PLAYER_FIELDS = ['air', 'airborne', 'aloft', 'arcade', 'audioTelemetry', 'body', 'bodyLift', 'bodyPitch', 'bodyRoll', 'boosting', 'canopy', 'car', 'carAir', 'carId', 'currentPose', 'distance', 'figure', 'sinking', 'vy', 'y',
-  'driftAmount', 'driftArmed', 'driftDirection', 'drifting', 'driftReady', 'freeDriving', 'groundedPosition', 'heading', 'jolt', 'journeyId', 'knock',
+  'drift', 'driftAmount', 'driftDirection', 'driftMode', 'drifting', 'freeDriving', 'groundedPosition', 'heading', 'jolt', 'journeyId', 'knock',
   'load', 'lost', 'model', 'night', 'nightLights', 'paintColor', 'pilot', 'pitch', 'previousPose', 'props', 'pushing', 'rainbow', 'rainbowColor',
   'rainbowHue', 'reverseDelay', 'roll', 'rotors', 'route', 's', 'scenery', 'slideHeading', 'slip', 'spec', 'speed', 'stats', 'steer', 'traffic', 'trauma', 'u',
   'velocity', 'walker', 'weight', 'wheels', 'wheelSpin', 'yawRate'];

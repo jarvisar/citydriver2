@@ -386,3 +386,11 @@ test('permission or renderer failure leaves VR retryable and ends a failed sessi
     if (options.failSetup) assert.ok(events.includes('end'));
   }
 });
+
+test("a headset's controllers pulse where they have haptics", () => {
+  const { left, right, input } = inputFixture(), pulses = [];
+  right.gamepad.hapticActuators = [{ pulse: (intensity, ms) => { pulses.push([intensity, ms]); return Promise.resolve(true); } }];
+  input.rumble(.5, .12);
+  assert.deepEqual(pulses, [[.5, 120]]);
+  assert.ok(!left.gamepad.hapticActuators, 'and one without them is fine');
+});

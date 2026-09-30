@@ -9,9 +9,10 @@ Taxi runs work like Crazy Taxi: a shift clock that fares add time to. The number
 - Boarding and drop-off need the cab to be stopped for 0.45 seconds.
 - The drop-off zone is a stretch of the street in front of the destination, and the cab can stop anywhere within 8 m of it. A building's zone covers the middle half of its front. A park or square has no single door, so its zone runs along its side of the street, up to 40 m either way from the gate. Zones stop well short of junctions and never go onto a bridge. Fares are still measured to the entrance, so a long zone can save a few seconds.
 - The timer pill shows the rating the rider would give now and how many seconds are left before it drops. In the last rating it counts down to the rider giving up.
-- Holding a continuous drift for 0.65 seconds earns tips. Separate taps don't add up.
+- A drift tips each time its sparks change colour: Drift ($2) at blue, Super drift ($4) at orange and Ultra drift ($7) at pink. It only counts while heading toward the drop-off.
+- Coming into a pickup ring or drop-off zone at 12 m/s (27 mph) or more and drifting or handbraking to a stop in it is a Crazy stop, worth $5.
 - A jump with a passenger aboard is a Crazy jump, as in Crazy Taxi: $3, or $6 for every second in the air if that's more, plus $6 for each full spin. It only counts while heading toward the drop-off. Spinning out on landing loses the combo, and a hard landing upsets a nervous rider. Going in the river puts the cab back at the start of its run up and costs 5 seconds, the same as a reset.
-- A crash resets the stunt combo but keeps the tips already earned, and stunts don't score again for 0.8 seconds. Only a real hit counts as a crash, a bit like BallisticNG: nosing into a wall, a tree or the back of a car, or getting T-boned. Scraping along a wall or trading paint with traffic isn't a crash, but it does restart the drift count.
+- A crash resets the stunt combo but keeps the tips already earned, and stunts don't score again for 0.8 seconds. Only a real hit counts as a crash, a bit like BallisticNG: nosing into a wall, a tree or the back of a car, or getting T-boned. Scraping along a wall or trading paint with traffic isn't a crash, but a drift that touches anything stops tipping.
 
 ## The Shift Clock
 

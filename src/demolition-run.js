@@ -205,7 +205,7 @@ export class DemolitionRun {
   // Boost is metered, as on a taxi run; smashing fills it
   controls(dt, input) {
     const gas = input.forward > 0 || input.touchDrive?.amount > .1;
-    this.boostActive = this.running && Boolean(input.boost) && gas && !input.brake && !input.handbrake && this.boost > .01;
+    this.boostActive = this.running && Boolean(input.boost) && gas && !input.brake && !input.stop && this.boost > .01;
     if (this.running) this.boost = Math.max(0, Math.min(1, this.boost + dt * (this.boostActive ? -.44 : input.boost ? 0 : .16)));
     return { ...input, boost: this.boostActive };
   }

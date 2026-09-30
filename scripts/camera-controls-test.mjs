@@ -113,7 +113,9 @@ try {
     });
     for (const r of bounds) assert.ok(r.x >= -1 && r.y >= -1 && r.right <= width + 1 && r.bottom <= height + 1, `${width}x${height}: ${r.selector} in bounds`);
     const tools = bounds.find(r => r.selector === '#camera-tools');
-    for (const r of bounds.filter(r => r !== tools)) assert.ok(Math.min(r.right, tools.right) <= Math.max(r.x, tools.x) || Math.min(r.bottom, tools.bottom) <= Math.max(r.y, tools.y), `${width}x${height}: camera tools overlap ${r.selector}`);
+    // (a phone leaves them out: the distance is in the Camera settings)
+    assert.equal(Boolean(tools), width > 760 && height > 560, `${width}x${height}: camera tools only where there is room`);
+    if (tools) for (const r of bounds.filter(r => r !== tools)) assert.ok(Math.min(r.right, tools.right) <= Math.max(r.x, tools.x) || Math.min(r.bottom, tools.bottom) <= Math.max(r.y, tools.y), `${width}x${height}: camera tools overlap ${r.selector}`);
     await mobile.screenshot({ path: `${out}/touch-${width}x${height}.png` });
     await mobile.tap('#pause');
     if (!(await mobile.locator('#camera-settings').isVisible())) await mobile.tap('#camera-toggle');

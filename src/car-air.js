@@ -40,6 +40,9 @@ export const JUMP_AIR = .45;
 const EXTEND = .09, SPRING = 170, DAMP = 16, SQUAT = .3;
 // In the water it sinks, and after SINK seconds it is fished out (see main.js)
 const SINK = 1.6;
+// A trick (see Drift): the nose wags one way and the other and back, FLAIR
+// radians each way over FLAIR_TIME seconds
+const FLAIR = .35, FLAIR_TIME = .45;
 
 const WHOLE = Math.PI * 2;
 
@@ -73,7 +76,7 @@ export class CarAir {
   reset() {
     const m = this.motion;
     m.y = NaN; m.vy = 0; m.aloft = false; m.air = 0; m.lift = 0; m.liftRate = 0; m.sinking = null;
-    this.turn = 0; this.spinRate = 0; this.spinning = 0; this.free = 0; this.flight = null; this.settle = SETTLE;
+    this.turn = 0; this.spinRate = 0; this.spinning = 0; this.flair = -1; this.free = 0; this.flight = null; this.settle = SETTLE;
     this.water = false; this.splashed = false; this.under = null; this.floor = NaN; this.held = NaN; this.rate = 0; this.street = true; this.last.fill(NaN);
   }
   // Steering in the air: the nose leans off the way the car flies, and with
@@ -91,7 +94,28 @@ export class CarAir {
       this.spinRate = clamp((whole + steering * LEAN - this.turn) * STRAIGHTEN, -SPIN, SPIN);
     }
     this.turn += this.spinRate * dt;
-    return travel + this.turn;
+    // (and a trick's wag on top)
+    let flair = 0;
+    if (this.flair >= 0) {
+      this.flair += dt;
+      if (this.flair >= FLAIR_TIME) this.flair = -1;
+      else flair = Math.sin(this.flair / FLAIR_TIME * WHOLE) * FLAIR;
+    }
+    return travel + this.turn + flair;
+  }
+  // A trick in the air (see Drift): landed, it fires a turbo
+  trick() {
+    if (!this.flight || this.flight.trick) return;
+    this.flight.trick = true; this.flair = 0;
+  }
+  // The drift button's hop (see Drift): off the ground on its springs, on
+  // top of whatever the ground was lifting it at (a hop at a ramp's lip goes
+  // higher). False if it is already off the ground.
+  hop(v) {
+    const m = this.motion;
+    if (m.aloft || this.free > 0 || !Number.isFinite(m.y)) return false;
+    m.vy = Math.max(0, m.vy) + v;
+    return true;
   }
   // The ramp or mound under the car's middle, when that is what it stands on
   get shape() { return this.heights[4] >= this.ground[4] ? this.solids[4]?.shape ?? null : null; }
@@ -220,8 +244,8 @@ export class CarAir {
   // named jump it left from (see city-jumps.js)
   takeOff() {
     const m = this.motion, p = m.groundedPosition;
-    this.flight = { x: p.x, z: p.z, s: m.s, u: m.u, heading: m.slideHeading ?? m.heading, y: this.floor, time: 0, peak: m.y, speed: Math.abs(m.speed), jump: this.under?.jump ?? null };
-    this.turn = 0; this.spinRate = 0; this.spinning = 0;
+    this.flight = { x: p.x, z: p.z, s: m.s, u: m.u, heading: m.slideHeading ?? m.heading, y: this.floor, time: 0, peak: m.y, speed: Math.abs(m.speed), jump: this.under?.jump ?? null, trick: false };
+    this.turn = 0; this.spinRate = 0; this.spinning = 0; this.flair = -1;
   }
   // Down on its wheels: the body squats as hard as it came down, the nose
   // comes round to the way it is going (well off it, it spins out), and a
@@ -254,10 +278,13 @@ export class CarAir {
       m.speed = along; m.slideHeading = heading; landing = 'spun';
     } else if (Math.abs(off) > .12) { this.settle = 0; if (landing === 'clean') landing = 'slid'; }
     m.heading = m.slideHeading + (landing === 'spun' ? 0 : off);
-    this.turn = 0; this.spinRate = 0; this.spinning = 0;
+    this.turn = 0; this.spinRate = 0; this.spinning = 0; this.flair = -1;
+    // A trick or a spin landed fires a turbo (see Drift): a trick the first
+    // stage's, a spin the second's, two or more the third's
+    if (landing !== 'spun' && landing !== 'splash') m.drift?.landed(Math.abs(turns) >= 2 ? 3 : turns ? 2 : flight.trick ? 1 : 0);
     if (flight.time >= JUMP_AIR) {
       const p = m.groundedPosition, distance = Math.hypot(p.x - flight.x, p.z - flight.z);
-      m.events.push({ kind: 'jump', air: flight.time, distance, height: Math.max(0, flight.peak - flight.y), turns, landing, impact, speed: flight.speed, jump: flight.jump, from: flight, x: p.x, z: p.z });
+      m.events.push({ kind: 'jump', air: flight.time, distance, height: Math.max(0, flight.peak - flight.y), turns, trick: flight.trick, landing, impact, speed: flight.speed, jump: flight.jump, from: flight, x: p.x, z: p.z });
     }
     this.flight = null;
     if (landing === 'splash') m.sinking.from = flight;

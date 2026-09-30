@@ -1,8 +1,8 @@
 // Arcade handling. Four ideas, and nothing else: the steering angle chases the
 // player instead of a spring, the turning radius is the tighter of what the
 // lock and the tires allow, weight shifts to whichever end the pedals load, and
-// the tires give a little at their limit and a lot when the handbrake asks.
-// No suspension solver and no per-wheel tire model.
+// the tires give a little at their limit and a lot as a drift lets go.
+// No suspension solver and no per-wheel tire model. Drifting is in drift.js.
 
 // What the player asks for. A stick needs fine control either side of centre;
 // a key is always full lock, so the curve is applied to the request rather
@@ -54,18 +54,6 @@ export function turnRate(speed, steer, stats, looseness = 0, drift = 0, bias = 0
 // does come from the same number.
 export function corneringLoad(speed, yaw, stats, looseness = 0, bias = 0) {
   return Math.min(1, Math.abs(yaw * speed) / lateralLimit(stats, looseness, bias));
-}
-
-// A handbrake tap arms a slide for a moment, so the button and the steering
-// can be pressed in either order and neither has to be anticipated. Gas and
-// steering carry the slide through a bend; centring, countersteering, lifting
-// or braking hands control back to the tires. Entry and exit speeds differ so
-// a slow slide cannot flicker on and off.
-export function driftDirection(previous, speed, steer, input, armed) {
-  if (input.brake || speed < 6) return 0;
-  if (previous && steer * previous > .1 && (input.forward > .12 || input.handbrake)) return previous;
-  if (!previous && armed && speed > 7.5 && Math.abs(steer) > .15) return Math.sign(steer);
-  return 0;
 }
 
 export function travelHeading(previous, heading, dt, grip, drift, load = 0) {

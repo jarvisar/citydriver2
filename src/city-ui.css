@@ -1,11 +1,16 @@
-/* Navigation stays quiet enough to leave the streets in view. */
+/* Navigation stays quiet enough to leave the streets in view: the district
+   card only comes up for a few seconds on driving into a district (see
+   updateDistrictCard in main.js). */
 .city-hud {
   max-width: 360px; margin-right: auto;
   display: flex; align-items: center; gap: 13px; padding: 10px 16px 10px 10px;
   background: #20323dde; color: #f5f4e9; border: 1px solid #ffffff26;
   border-radius: 18px; box-shadow: 0 6px 24px #13252c1a; backdrop-filter: blur(16px);
   font-variant-numeric: tabular-nums;
+  opacity: 0; visibility: hidden; translate: 0 -8px; pointer-events: none;
+  transition: opacity .3s, translate .3s, visibility 0s .3s;
 }
+.city-hud[data-show=true] { opacity: 1; visibility: visible; translate: none; transition: opacity .3s, translate .3s; }
 .city-heading {
   display: grid; place-items: center; min-width: 36px; height: 36px;
   border: 1px solid #f3d89966; border-radius: 50%; color: #f3d899;
@@ -91,7 +96,6 @@
   #city-map { max-height: 84px; object-fit: cover; }
 }
 
-body[data-mode=free] .city-hud { flex: 1; }
 body[data-mode=free] .city-hud-copy { flex: 1; }
 body[data-mode=free] #app #city-location { max-width: none; white-space: normal; overflow-wrap: anywhere; }
 

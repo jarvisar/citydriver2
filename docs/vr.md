@@ -44,7 +44,7 @@ The headset lowers its own quality to hold its refresh rate: first the share of 
 
 ## Controls
 
-See the [README](../README.md#vr). B pauses, and so does Y in a run, so no single button leaves VR. In free drive Y gets out of the car, or into the car the player is standing by, and X puts the car back on the road.
+See the [README](../README.md#vr). B pauses, and so does Y in a run, so no single button leaves VR. In free drive Y gets out of the car, or into the car the player is standing by, and X puts the car back on the road. The controllers buzz when a drift's sparks change colour, for a drift boost, a crash and a hard landing. Vibration in the pause menu turns that off.
 
 ## Testing
 

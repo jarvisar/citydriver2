@@ -89,6 +89,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   // A crash shakes the chase and driver's views: never a headset's, nor for
   // anyone who prefers reduced motion.
   const reducedMotion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+  thirdPerson.calm = reducedMotion;
   let shakeTime = 0;
   const vrCamera = new XRCameraRig();
   scene.add(vrCamera.rig);

@@ -103,16 +103,16 @@ test('the chase lens opens with speed and settles back down again', () => {
   } finally { car.disposeModel(); }
 });
 
-test('a handbrake tap and a steering input start a slide in either order', () => {
+test('the drift button and steering start a drift in either order, while the button is held', () => {
   for (const order of ['handbrake first', 'steering first', 'together']) {
     const car = new DrivingController(road, {}, 'taxi');
     try {
       car.speed = 18;
       const step = input => { car.speed = 18; car.update(PHYSICS_STEP, { forward: 1, ...input }); };
       if (order === 'handbrake first') {
-        for (let tick = 0; tick < 6; tick++) step({ handbrake: true });
-        for (let tick = 0; tick < 6; tick++) step({});
-        for (let tick = 0; tick < 12; tick++) step({ right: 1 });
+        // (pressed straight: a hop, then the drift the way it is steered)
+        for (let tick = 0; tick < 30; tick++) step({ handbrake: true });
+        for (let tick = 0; tick < 12; tick++) step({ right: 1, handbrake: true });
       } else if (order === 'steering first') {
         for (let tick = 0; tick < 12; tick++) step({ right: 1 });
         for (let tick = 0; tick < 6; tick++) step({ right: 1, handbrake: true });
@@ -125,7 +125,7 @@ test('a handbrake tap and a steering input start a slide in either order', () =>
   }
 });
 
-test('the armed window closes, so an old handbrake tap cannot start a later slide', () => {
+test('a press let go never starts a later drift', () => {
   const car = new DrivingController(road, {}, 'taxi');
   try {
     car.speed = 18;

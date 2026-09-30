@@ -16,6 +16,7 @@ This is the sequel to [Citydriver](https://github.com/jarvisar/citydriver). The 
 - Traffic that follows signals, stop signs and give-way signs
 - Traffic that changes lanes on the boulevards and drives around crashed and stopped cars
 - A bus that comes by now and then and stops at the bus shelters to let people on and off
+- Mario Kart style drifting with a drift boost that charges in three stages
 - Ramps and jumps, including a half-built bridge to jump the river
 - Landmarks and shops that passengers can ask to go to
 - Taxi mode with group fares, shift goals, driver ranks and cabs to buy
@@ -34,7 +35,9 @@ Demolition puts you in a truck with one minute to cause as much property damage 
 
 Free drive has no timer. All three taxis are available in the garage, and weather settings and the places you've found are in the pause menu. Driving past a landmark or dropping a passenger at one marks it as found, and found places show up on the city map. The garage also has a helicopter and a plane for seeing the city from the air, and the city bus. Press forward on the main menu to enter free drive. Press R or select New city in the pause menu to generate a new city.
 
-There are jumps around the city. Loading ramps sit in parking spaces in the Warehouse district, parks have dirt mounds, and a half-built bridge reaches out over the river. The river jump needs a fast car and a long run up. Fall short and you're put back at the start of the run up. In a run that also costs 5 seconds. In the air, steer to turn the nose, or hold Space and steer to spin. Land roughly straight or the car spins out. You can also land on other cars. The ramps and the river jump get up to three stars for distance, and the pause menu lists them with your best for the current city. They're marked on both maps.
+Hold Space and steer to drift. The car hops and then slides round the corner until you let go. Steer into the corner to tighten the drift or away from it to widen it, and brake to tighten it more. Keep drifting and the sparks at the back wheels turn blue, then orange, then pink. Let go to get a speed boost, bigger for each colour. Steering hard into the drift charges it faster. Crashing or slowing right down loses the charge. Below about 18 mph, Space is a handbrake.
+
+There are jumps around the city. Loading ramps sit in parking spaces in the Warehouse district, parks have dirt mounds, and a half-built bridge reaches out over the river. The river jump needs a fast car and a long run up. Fall short and you're put back at the start of the run up. In a run that also costs 5 seconds. In the air, steer to turn the nose. Press Space just as you leave a ramp to do a trick, or press and hold Space and steer to spin. Land a trick or a spin and you get a boost like a drift's. Land roughly straight or the car spins out. You can also land on other cars. The ramps and the river jump get up to three stars for distance, and the pause menu lists them with your best for the current city. They're marked on both maps.
 
 In free drive, press E to get out of the car and walk around. Press E near your car, a car in traffic or a car parked along the street to get in. A marker shows which car. If it's a few metres away you walk over to it on your own, and a car in traffic stops to wait for you. Moving the stick or pressing a movement key cancels it. A car taken from traffic drives off on its own when you get out. A parked car stays where you leave it and goes back to its space once you are far away. Your own car stays where you left it and is marked on both maps. Picking a car in the garage puts you in it. If the car is still going fast, press E a second time to jump out while it slows down.
 
@@ -56,8 +59,8 @@ Every visit generates a new city. Add `?seed=4817` to the URL to load the same c
 | Brake / reverse | S / Down | LT / L2 or B / Circle |
 | Steer | A D / Left Right | Left stick |
 | Boost | Shift | RB / R1 |
-| Drift / handbrake | Space | LB / L1 |
-| Spin (in the air) | Hold Space and steer | Hold LB / L1 and steer |
+| Drift (hold and steer), handbrake when slow | Space | LB / L1 |
+| Trick / spin (in the air) | Space as you take off / hold Space and steer | LB / L1 as you take off / hold LB / L1 and steer |
 | Climb / descend (helicopter, plane) | Space / Shift | Right stick, or RB / R1 and LB / L1 |
 | Barrel roll / loop (plane) | Double-tap A or D / double-tap Space | Flick the left stick twice / double-tap RB / R1 |
 | Camera | V | X / Square |
@@ -78,9 +81,11 @@ Every visit generates a new city. Add `?seed=4817` to the URL to load the same c
 | Street map (show / hide) | Its arrow button | |
 | Menus | Tab, Enter | D-pad or left stick to choose, A / Cross to select, B / Circle to go back |
 
-On touch screens, use the stick to drive, hold Boost, and tap Drift while steering in chase view. Hold Drift and steer in the air to spin. Release the stick to stop. In first or third person, keep one thumb on the stick and drag a second thumb across the scene to look around. In the helicopter and the plane, hold Climb or Descend. On foot, drag the stick the way to walk and push it further to run. Tap or hold Jump, hold Sprint, and tap Get out or Get in.
+On touch screens, drag anywhere with one thumb to drive and use Boost and Drift at the bottom right with the other. Hold Drift while steering to drift in chase view. The Drift button shows the spark colour and a bar that fills toward the next one. Press and hold Drift in the air and steer to spin. Release the stick to stop. In first or third person, keep one thumb on the stick and drag a second thumb across the scene to look around. In the helicopter and the plane, hold Climb or Descend. On foot, drag the stick the way to walk and push it further to run. Tap or hold Jump, hold Sprint, and tap Get out or Get in.
 
-The camera buttons at the lower right recenter the view and move the third-person camera closer or farther away. Pause → Display → Camera has view, distance, sensitivity and vertical inversion settings. Mouse, touch and controller each keep their own look settings; driving and walking remember separate views and distances. Recenter keeps the chosen distance. F3 toggles the FPS counter.
+On tablets, the camera buttons under the pause button move the third-person camera closer or farther away and recenter it. Phones leave them out to keep the screen clear, and the camera recenters by itself after you look around. On phones the reset button only shows up in a run, after the car has been stopped for a few seconds. Pause → Display → Camera has view, distance, sensitivity and vertical inversion settings. Mouse, touch and controller each keep their own look settings; driving and walking remember separate views and distances. Recenter keeps the chosen distance. F3 toggles the FPS counter.
+
+If holding Drift gets tiring, turn on Tap to drift in the pause menu. Then one tap starts holding the button and the next one lets go. Controllers, VR controllers and Android phones vibrate for drift sparks, boosts, crashes and hard landings. Vibration in the pause menu turns it off.
 
 ### VR
 
@@ -92,8 +97,8 @@ In a headset's browser, such as the Meta Quest Browser, select `Enter VR` on the
 | Brake / reverse | Left trigger |
 | Steer | Left thumbstick |
 | Boost | Right grip |
-| Drift / handbrake | Left grip |
-| Spin (in the air) | Hold left grip and steer |
+| Drift (hold and steer), handbrake when slow | Left grip |
+| Trick / spin (in the air) | Left grip as you take off / hold left grip and steer |
 | Climb / descend (helicopter, plane) | Right thumbstick, or right and left grip |
 | Get out / get in (free drive) | Y |
 | Walk (on foot) | Left thumbstick |

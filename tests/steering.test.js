@@ -98,13 +98,13 @@ test('steering responds within 40 ms and releases or reverses promptly in both m
   }
 });
 
-test('taxi tires recover direction promptly after releasing a handbrake drift', () => {
+test('taxi tires recover direction promptly after letting a drift go', () => {
   for (const hz of [30, 60, 120, 144]) {
     const car = new DrivingController(road, {}, 'taxi'); car.arcade = true;
     try {
       for (let i = 0; i < hz; i++) holdSpeed(car, 15, 1 / hz, { right: 1, handbrake: true });
       const slip = Math.abs(car.heading - car.slideHeading);
-      assert.ok(car.drifting && slip > .1, `${hz} Hz: handbrake still creates a drift`);
+      assert.ok(car.drifting && slip > .1, `${hz} Hz: holding the button drifts`);
       // Center the wheels to isolate tire recovery from steering release.
       car.steer = 0;
       for (let elapsed = 0; elapsed < .2 - 1e-10;) {
@@ -117,7 +117,7 @@ test('taxi tires recover direction promptly after releasing a handbrake drift', 
   }
 });
 
-test('handbrake slides build progressively, stay bounded and reset cleanly in both modes', () => {
+test('a drift swings the nose in progressively, stays bounded and resets cleanly in both modes', () => {
   for (const arcade of [false, true]) {
     const car = new DrivingController(road, {}, 'taxi'); car.arcade = arcade;
     try {
@@ -126,7 +126,7 @@ test('handbrake slides build progressively, stay bounded and reset cleanly in bo
       for (let i = 0; i < 360; i++) {
         holdSpeed(car, 18, 1 / 120, { right: 1, handbrake: true });
         const slip = Math.atan2(Math.sin(car.heading - car.slideHeading), Math.cos(car.heading - car.slideHeading));
-        assert.ok(Math.abs(slip) <= .55 + 1e-12, 'holding drift must not cause an uncontrolled spin');
+        assert.ok(Math.abs(slip) <= .35, 'holding drift must not cause an uncontrolled spin');
       }
       assert.ok(car.drifting && car.heading - car.slideHeading > .15);
       // The velocity used by collisions must agree with actual sliding motion.
@@ -141,9 +141,9 @@ test('handbrake slides build progressively, stay bounded and reset cleanly in bo
       car.reset();
       assert.equal(car.driftAmount, 0); assert.equal(car.drifting, false);
       assert.equal(car.slideHeading, car.heading);
-      car.speed = 18;
+      car.speed = 6;
       for (let i = 0; i < 240; i++) car.update(1 / 120, { handbrake: true });
-      assert.equal(car.speed, 0, 'straight handbrake still stops the car');
+      assert.equal(car.speed, 0, 'too slow to drift, the button is the handbrake');
       assert.equal(car.drifting, false);
     } finally { car.disposeModel(); }
   }

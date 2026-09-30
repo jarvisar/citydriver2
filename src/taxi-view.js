@@ -103,12 +103,7 @@ export class TaxiView {
     this.people = createWalkerMaterial();
     this.partyBadges = new Map();
     this.revision = -1; this.markers = []; this.palette = new Map(); this.spares = new Map();
-    this.skidGeometry = new THREE.PlaneGeometry(.22, 1.2); this.skidGeometry.rotateX(-Math.PI / 2);
-    this.skidMaterial = new THREE.MeshBasicMaterial({ color: '#202526', transparent: true, opacity: .52, depthWrite: false });
-    this.skids = new THREE.InstancedMesh(this.skidGeometry, this.skidMaterial, 160); this.skids.count = 0;
-    this.skids.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.skids.frustumCulled = false; this.skids.userData.ambientOcclusion = false;
-    this.group.add(this.skids); this.trails = []; this.trailIndex = 0; this.lastTrail = 0; this.transform = new THREE.Object3D();
+    this.transform = new THREE.Object3D();
     this.watch = new THREE.Vector3(); this.unplace = new THREE.Matrix4();
     this.labels = new FloatingLabels(scene, 'taxi-labels'); this.shownCash = 0;
   }
@@ -224,7 +219,7 @@ export class TaxiView {
     if (spares.length < SPARE_RIDERS) spares.push(person); else person.dispose();
   }
   reset() {
-    this.trails = []; this.trailIndex = 0; this.lastTrail = 0; this.skids.count = 0; this.revision = -1; this.labels.reset(); this.shownCash = 0;
+    this.revision = -1; this.labels.reset(); this.shownCash = 0;
     for (const marker of this.markers) marker.reactions = null;
   }
   render(run, vehicle, origin, time, contacts = null, camera = null) {
@@ -263,21 +258,6 @@ export class TaxiView {
       const pulse = selected && !marker.shape ? 1 + Math.sin(time * 4) * .035 : 1;
       marker.ring.scale.set(pulse, 1, pulse);
     }
-    if (vehicle.drifting && time - this.lastTrail > .065) {
-      this.lastTrail = time;
-      for (const side of [-1, 1]) {
-        const trail = { x: vehicle.u - Math.sin(vehicle.heading) * 1.3 + Math.cos(vehicle.heading) * side * .8,
-          z: -vehicle.s + Math.cos(vehicle.heading) * 1.3 + Math.sin(vehicle.heading) * side * .8, heading: vehicle.heading };
-        this.trails[this.trailIndex] = trail;
-        this.transform.position.set(trail.x, ROAD_LEVEL + .08, trail.z);
-        this.transform.rotation.set(0, -trail.heading, 0); this.transform.scale.setScalar(1); this.transform.updateMatrix();
-        this.skids.setMatrixAt(this.trailIndex, this.transform.matrix);
-        this.skids.instanceMatrix.addUpdateRange(this.trailIndex * 16, 16);
-        this.trailIndex = (this.trailIndex + 1) % 160;
-      }
-      this.skids.instanceMatrix.needsUpdate = true;
-    }
-    this.skids.count = this.trails.length;
   }
   buildHud(run, vehicle, free = false) {
     this.hudModel = taxiHudModel(run, vehicle, { free, shownCash: this.shownCash, hint: key => this.hint(key) });
@@ -334,8 +314,8 @@ export class TaxiView {
     for (const material of this.partyBadges.values()) { material.map.dispose(); material.dispose(); }
     for (const marker of this.markers) { marker.person?.dispose(); marker.shape?.band.dispose(); marker.shape?.wall.dispose(); }
     for (const spares of this.spares.values()) for (const person of spares) person.dispose();
-    for (const resource of [this.ring, this.beam, this.cone, this.people, this.skidGeometry, this.skidMaterial]) resource.dispose();
+    for (const resource of [this.ring, this.beam, this.cone, this.people]) resource.dispose();
     this.labels.dispose();
-    this.skids.dispose(); this.group.removeFromParent();
+    this.group.removeFromParent();
   }
 }

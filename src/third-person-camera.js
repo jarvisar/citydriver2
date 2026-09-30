@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX } from './camera-preferences.js';
 
-// How far the chase lens opens between a standstill and full speed.
-const RUSH_FOV = 1.09;
+// How far the chase lens opens between a standstill and full speed, and a
+// moment more as a turbo fires (see Drift), unless the player is `calm`
+// (prefers reduced motion)
+const RUSH_FOV = 1.09, TURBO_FOV = 1.06;
 // A building in the way pulls the camera in toward this height over the car
 // (a tall machine's lift on top), and it eases back out at this rate.
 const PIVOT = 1.8, OPEN_RATE = 2.5;
@@ -51,7 +53,7 @@ export class ThirdPersonCamera {
     this.forward = new THREE.Vector3();
     this.target = new THREE.Vector3();
     this.baseFov = 45;
-    this.rush = 0;
+    this.rush = 0; this.punch = 0; this.calm = false;
     this.dip = 0;
     // `sight(from, to)` answers how far from the car toward the camera the view
     // is clear (see sightLine); `reach` is how far out the camera stands.
@@ -100,12 +102,12 @@ export class ThirdPersonCamera {
     // The sun's shadow is fitted to the lens, and has to cover
     // the frame the car will have at full speed rather than the narrower one it
     // has standing still, so say how wide this lens ever gets.
-    this.camera.userData.widestFov = this.baseFov * RUSH_FOV;
+    this.camera.userData.widestFov = this.baseFov * RUSH_FOV * TURBO_FOV;
     this.camera.fov = this.baseFov * (1 + (RUSH_FOV - 1) * this.rush);
     this.camera.updateProjectionMatrix();
   }
   // (back behind the car, at the distance the player chose)
-  snap() { this.initialized = false; this.rush = 0; this.dip = 0; this.reach = null; this.lookYaw = 0; this.lookPitch = 0; this.crane = 0; this.craning = false; this.lid = null; this.centering = false; }
+  snap() { this.initialized = false; this.rush = 0; this.punch = 0; this.dip = 0; this.reach = null; this.lookYaw = 0; this.lookPitch = 0; this.crane = 0; this.craning = false; this.lid = null; this.centering = false; }
   update(car, dt) {
     // Past two fifths of the car's top speed the lens opens up and the chase
     // seat slides back, so a boulevard at full throttle feels quick and a
@@ -118,7 +120,9 @@ export class ThirdPersonCamera {
     const framing = car.userData.chaseScale ?? 1, raised = car.userData.chaseLift ?? 0;
     this.scale = this.initialized ? settle(this.scale, framing, SCALE_RATE, dt) : framing;
     this.lift = this.initialized ? settle(this.lift, raised, SCALE_RATE, dt) : raised;
-    const fov = this.baseFov * (1 + (RUSH_FOV - 1) * this.rush);
+    const turbo = this.calm ? 0 : THREE.MathUtils.clamp(car.userData.turbo ?? 0, 0, 1);
+    this.punch = this.initialized ? THREE.MathUtils.damp(this.punch, turbo, turbo > this.punch ? 14 : 2.5, dt) : 0;
+    const fov = this.baseFov * (1 + (RUSH_FOV - 1) * this.rush) * (1 + (TURBO_FOV - 1) * this.punch);
     if (Math.abs(fov - this.camera.fov) > .01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
     // Look partly along travel during a slide so the exit stays in view and
     // the player can see the car's angle. The pose supplies interpolated slip.
@@ -154,8 +158,9 @@ export class ThirdPersonCamera {
       }
       this.pitch = THREE.MathUtils.damp(this.pitch, pitch, 2.5, dt);
       // (and it follows a jump up and down loosely, so the car rises in the
-      // frame and the view doesn't bob with every arc)
-      this.height = THREE.MathUtils.damp(this.height, car.position.y, car.userData.travel == null ? 9 : 1.6, dt);
+      // frame and the view doesn't bob with every arc, nor with a drift's
+      // hop, a headset's view included)
+      this.height = THREE.MathUtils.damp(this.height, car.position.y, car.userData.travel == null && !car.userData.hopping ? 9 : 1.6, dt);
       this.zoom = settle(this.zoom, this.zoomTarget, ZOOM_RATE, dt);
       if (this.lookYaw || this.lookPitch) {
         this.rested += dt;
