@@ -67,7 +67,7 @@ import { BrowserVR } from './vr.js';
 import { VRStatus } from './vr-status.js';
 import { moveMenuFocus, confirmMenuFocus, scrollMenu } from './menu-focus.js';
 import { setupMenuIdle } from './menu-idle.js';
-import { OnceHints } from './hud-dom.js';
+import { OnceHints, readHintFlags } from './hud-dom.js';
 
 setupControlHelp();
 
@@ -1039,8 +1039,7 @@ async function boot() {
     // The plane's stunts (see Plane), told once each: the roll after a while
     // up in the air, and the loop after the first roll
     const flightHintKey = 'citydriver-flight-hints';
-    let flightHints = {};
-    try { flightHints = JSON.parse(localStorage.getItem(flightHintKey)) ?? {}; } catch { /* Storage is optional. */ }
+    const flightHints = readHintFlags(flightHintKey, taxiStorage);
     const flying = () => free() && vehicle.carId === 'plane' && Boolean(vehicle.pilot) && !vehicle.pilot.landed;
     function hintFlight(stunt = null) {
       const pilot = vehicle.pilot;
@@ -1059,8 +1058,7 @@ async function boot() {
     // jump has had the air for it, then how to do a trick, and where the
     // city's jumps are kept
     const airHintKey = 'citydriver-air-hints';
-    let airHints = {};
-    try { airHints = JSON.parse(localStorage.getItem(airHintKey)) ?? {}; } catch { /* Storage is optional. */ }
+    const airHints = readHintFlags(airHintKey, taxiStorage);
     const toldAir = which => { airHints[which] = true; try { localStorage.setItem(airHintKey, JSON.stringify(airHints)); } catch { /* Told for this visit. */ } };
     function hintAir(event) {
       if (!free() || event.landing === 'splash') return;
@@ -1080,8 +1078,8 @@ async function boot() {
     // going fast for a while and hasn't drifted, and after the first blue
     // turbo, that there is more to a drift than blue sparks
     const driftHintKey = 'citydriver-drift-hints';
-    let driftHints = {}, fastTime = 0;
-    try { driftHints = JSON.parse(localStorage.getItem(driftHintKey)) ?? {}; } catch { /* Storage is optional. */ }
+    const driftHints = readHintFlags(driftHintKey, taxiStorage);
+    let fastTime = 0;
     const toldDrift = which => { driftHints[which] = true; try { localStorage.setItem(driftHintKey, JSON.stringify(driftHints)); } catch { /* Told for this visit. */ } };
     function hintDrift(event = null, dt = 0) {
       if (!driving() || !vehicle.drift) return;
@@ -1122,8 +1120,7 @@ async function boot() {
     // A cab or the demolition truck going by, told once each: it can be
     // taken, and what for (from another car, getting out first)
     const jobHintKey = 'citydriver-job-hints';
-    let jobHints = {};
-    try { jobHints = JSON.parse(localStorage.getItem(jobHintKey)) ?? {}; } catch { /* Storage is optional. */ }
+    const jobHints = readHintFlags(jobHintKey, taxiStorage);
     const working = () => taxi.waiting || demolition.waiting;
     function hintJobs() {
       if (!free() || vehicle.pilot || working() || !traffic.enabled || autodrive.enabled) return;

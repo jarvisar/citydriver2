@@ -12,6 +12,14 @@ export const width = (id, value) => { const style = $(id).style; if (style.width
 export const compactCash = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 1 });
 // Whole seconds as m:ss
 export const clock = seconds => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+// Hint flags must stay writable even when a save holds valid JSON of the wrong kind.
+export function readHintFlags(key, storage) {
+  try {
+    const data = JSON.parse(storage?.getItem(key) ?? 'null');
+    if (data && typeof data === 'object' && !Array.isArray(data)) return data;
+  } catch { /* Optional storage. */ }
+  return {};
+}
 // Hints for new players, `texts` by id: each is shown once, for `seconds`,
 // and remembered in `storage` under `key`
 export class OnceHints {
