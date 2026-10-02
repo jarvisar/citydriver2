@@ -85,3 +85,63 @@ body[data-journey=city] .paint-shop { background: #fff6; }
 /* The garage's sections: cabs, cars, specials and aircraft */
 #garage-sections > .garage-subheading { margin-top: 20px; }
 #garage-sections > .garage-subheading:first-child { margin-top: 0; }
+
+/* The balance and what is next to buy, under the garage's title */
+.garage-heading { min-width: 0; }
+.garage-wallet { display: flex; flex-wrap: wrap; gap: 2px 12px; margin: 6px 0 0; font-size: 12px; line-height: 1.5; }
+.garage-wallet strong { color: var(--city-accent-soft); font-weight: 700; }
+.garage-wallet span { color: var(--city-muted); }
+/* A car the fleet doesn't own wears its price, in the accent once it can be bought */
+.car-card { position: relative; }
+.car-price { position: absolute; top: 9px; right: 9px; z-index: 1; padding: 3px 8px; border-radius: 6px; background: var(--city-recessed); color: var(--city-muted); font-size: 11px; font-weight: 700; letter-spacing: .2px; }
+.car-card[data-affordable=true] .car-price { background: var(--city-accent); color: var(--city-on-accent); }
+
+.garage-heading-actions { display: flex; flex-shrink: 0; align-items: center; gap: 8px; }
+/* An unowned car's offer, in the cards' place: its portrait and price, and
+   buy, test drive or save for it */
+.garage-offer { padding-bottom: 4px; }
+.offer-back { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 14px 0 8px; border: 1px solid var(--city-line); border-radius: var(--city-control-radius); background: var(--city-raised); color: var(--city-text); font-size: 12px; font-weight: 650; }
+.offer-back:hover { background: var(--city-hover); }
+.offer-back svg { width: 18px; height: 18px; }
+.offer-body { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 26px; align-items: center; padding: 20px 22px; border: 1px solid var(--city-line); border-radius: 12px; background: var(--city-raised); }
+.offer-art .car-art { display: block; width: 100%; height: auto; background: radial-gradient(ellipse at center, #ffffff0c, transparent 70%); }
+.offer-copy .garage-subheading { display: block; margin: 0; }
+.offer-copy h3 { margin: 4px 0 2px; font-size: 22px; font-weight: 700; }
+.offer-price { display: block; color: var(--city-accent-soft); font-size: 18px; font-weight: 800; }
+.offer-copy .car-meters { max-width: none; }
+.garage-offer progress { display: block; width: 100%; height: 6px; margin: 16px 0 6px; }
+.offer-progress { margin: 0; color: var(--city-muted); font-size: 12px; }
+.offer-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+.offer-actions button, .offer-goal { min-height: 44px; padding: 8px 10px; border: 1px solid var(--city-line); border-radius: var(--city-control-radius); background: var(--city-panel); color: var(--city-text); font-size: 13px; font-weight: 700; }
+.offer-actions button:hover:not(:disabled), .offer-goal:hover { background: var(--city-hover); }
+.offer-actions button[data-primary=true] { background: var(--city-accent); border-color: var(--city-accent); color: var(--city-on-accent); }
+.offer-actions button[data-primary=true]:hover { background: var(--city-accent-hover); }
+.offer-actions button:disabled { background: var(--city-recessed); color: var(--city-muted); opacity: .75; cursor: default; }
+.offer-goal { width: 100%; margin-top: 8px; font-weight: 600; }
+.offer-goal[aria-pressed=true] { border-color: var(--city-gold); color: var(--city-gold); }
+.offer-note { margin: 10px 0 0; color: var(--city-muted); font-size: 12px; line-height: 1.5; }
+@media (max-width: 600px) {
+  .offer-body { grid-template-columns: 1fr; gap: 6px; padding: 14px; }
+  .offer-art .car-art { max-width: 300px; margin: 0 auto; }
+}
+/* (side by side, a 320px phone breaks both labels in two) */
+@media (max-width: 380px) { .offer-actions { grid-template-columns: 1fr; } }
+.car-card[data-owned=true] .car-price { background: none; box-shadow: inset 0 0 0 1px var(--city-line); font-weight: 600; }
+@media (min-width: 601px) { .offer-art .car-art { max-width: 420px; margin: 0 auto; } }
+/* A colour costs money, so one the balance can't cover is greyed out */
+.paint-swatch:disabled { opacity: .35; cursor: default; }
+.paint-swatch:disabled:hover .paint-chip { transform: none; }
+.paint-custom:has(input:disabled) { opacity: .45; }
+.paint-custom:has(input:disabled) input { cursor: default; }
+/* The Konami code's rainbow paint runs the garage's portraits through every
+   hue, as it does the car (a typed property, so the colour can animate) */
+@property --car-paint { syntax: '<color>'; inherits: true; initial-value: #d96143; }
+@keyframes rainbow-paint {
+  0% { --car-paint: #ff4d4d; } 17% { --car-paint: #ffd84d; } 33% { --car-paint: #5ee05e; } 50% { --car-paint: #4dd8ff; }
+  67% { --car-paint: #6a5cff; } 83% { --car-paint: #ff4dd2; } 100% { --car-paint: #ff4d4d; }
+}
+#car-dialog[data-rainbow=true] :is(.car-card, .garage-offer) { animation: rainbow-paint 2.8s linear infinite; }
+@media (prefers-reduced-motion: reduce) { #car-dialog[data-rainbow=true] :is(.car-card, .garage-offer) { animation: none; } }
+/* Gear says what it does where a car has its meters */
+.gear-about { display: block; margin-top: 8px; max-width: 260px; font-size: 12px; line-height: 1.5; color: var(--city-muted); }
+.offer-copy .gear-about { max-width: none; margin-top: 10px; }

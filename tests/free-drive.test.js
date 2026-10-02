@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { TaxiRun, STOP_SECONDS, SHIFT_SECONDS, pickupSeconds } from '../src/taxi-run.js';
 import { TaxiCareer } from '../src/taxi-career.js';
-import { StuntChain, STUNTS, SMASH_SHARE, nearMiss } from '../src/stunt-chain.js';
-import { CHAIN_SECONDS, PRICES, DemolitionRun, PAY_SHARE } from '../src/demolition-run.js';
+import { StuntChain, STUNTS, SMASH_SHARE, REPEATS, nearMiss } from '../src/stunt-chain.js';
+import { CHAIN_SECONDS, PRICES, CAR_PRICES, PARKED_SHARE, DemolitionRun, demolitionPay, DEMOLITION_RANKS } from '../src/demolition-run.js';
 import { freeHudModel, headsetHudModel } from '../src/run-hud-model.js';
 import { placePay, PLACE_PAY, KIND_PAY } from '../src/city-guide.js';
+import { TestDrive, TEST_DRIVE_ENDING } from '../src/test-drive.js';
 
 const player = () => ({ s: 25, u: 3, heading: 0, speed: 0, audioTelemetry: { impactSerial: 0, crashSerial: 0 }, groundedPosition: { x: 3, y: 0, z: -25 } });
 const step = (stunts, car, dt = .1, options) => stunts.update(dt, car, [], options);
@@ -89,6 +90,18 @@ test('stunts pay by what they are: drift stages, jumps, flying stunts and smashe
   assert.equal(stunts.damaged(parked, 20), 0, 'a car written off pays once');
 });
 
+test('the same smash again in one chain pays less each time, and a new chain starts afresh', () => {
+  const stunts = new StuntChain(), car = player(), row = [];
+  step(stunts, car);
+  for (let i = 0; i < 8; i++) row.push(stunts.damaged({ spec: { name: 'van' }, parked: true, generation: i }, 20) / stunts.multiplier);
+  const whole = Math.round(CAR_PRICES.van * PARKED_SHARE * SMASH_SHARE);
+  assert.deepEqual(row, REPEATS.concat(REPEATS.at(-1), REPEATS.at(-1), REPEATS.at(-1)).map(share => Math.max(1, Math.round(CAR_PRICES.van * PARKED_SHARE * SMASH_SHARE * share))));
+  assert.equal(stunts.chain, 8, 'every one still counts toward the multiplier');
+  assert.equal(stunts.smashed(['tree']) / stunts.multiplier, Math.round(PRICES.tree * SMASH_SHARE), 'something else pays in full');
+  stunts.bank();
+  assert.equal(stunts.damaged({ spec: { name: 'van' }, parked: true, generation: 99 }, 20), whole, 'a new chain pays in full again');
+});
+
 test('a near miss is passing traffic fast and close, not following it or missing it by a street', () => {
   const car = { s: 0, u: 0, heading: 0, speed: 25, spec: { width: 2 } };
   const other = extra => ({ s: 1, u: 3.2, heading: Math.PI, speed: 10, spec: { width: 2 }, ...extra });
@@ -129,6 +142,45 @@ test('demolition pays its cut as each chain banks, and places found pay by kind'
   const run = new DemolitionRun(); run.start();
   run.smash(['lamp']); run.update(CHAIN_SECONDS + .1);
   const banked = run.drainEvents().find(event => event.kind === 'banked');
-  assert.equal(banked.pay, Math.round(PRICES.lamp * PAY_SHARE)); assert.equal(run.paid, banked.pay);
+  assert.equal(banked.pay, Math.round(demolitionPay(PRICES.lamp))); assert.equal(run.paid, banked.pay);
+  run.smash(['mast']); run.smash(['shelter']); run.update(CHAIN_SECONDS + .1);
+  assert.equal(run.paid, Math.round(demolitionPay(run.banked)), 'the payments add up to the cut of all of it');
+  run.pedestrian({ x: 0, y: 0, z: 0 }, 'loose', 'resident');
+  assert.equal(run.paid, Math.round(demolitionPay(run.banked)), 'a fine is off the score, not the pay');
   assert.equal(placePay([{ first: true }, { first: false }]), KIND_PAY + PLACE_PAY);
+});
+
+test('demolition\'s cut tapers: a bigger run pays more, but less of each extra dollar', () => {
+  let last = 0, rate = Infinity;
+  for (let damage = 50000; damage <= 3e6; damage += 50000) {
+    const pay = demolitionPay(damage), step = pay - last;
+    assert.ok(step > 0 && step <= rate + 1e-9, `${damage}`);
+    last = pay; rate = step;
+  }
+  const at = id => demolitionPay(DEMOLITION_RANKS.find(rank => rank.id === id).min);
+  assert.ok(at('c') > 400 && at('c') < 600, 'a first go is worth a few minutes of shift');
+  assert.ok(at('legend') <= 2.6 * at('b'), 'and the best run ever not much more than a good one');
+});
+
+test('a test drive warns before its end, then waits for the car to stop or land before handing it back', () => {
+  const drive = new TestDrive(), here = { inCar: true, still: false };
+  assert.equal(drive.update(1, here), null, 'nothing to do with no test drive');
+  drive.start('plane', 30);
+  assert.equal(drive.clock, '0:30');
+  assert.equal(drive.update(10, here), null);
+  assert.equal(drive.update(10, here), 'warn'); assert.equal(drive.update(1, here), null, 'warned once');
+  assert.equal(drive.update(20, here), 'over'); assert.equal(drive.over, true); assert.equal(drive.clock, '0:00');
+  assert.equal(drive.update(5, here), null, 'still flying');
+  assert.equal(drive.update(.1, { inCar: true, still: true }), 'done'); assert.equal(drive.active, false);
+  drive.start('plane', 30); drive.update(31, here);
+  assert.equal(drive.update(TEST_DRIVE_ENDING, here), 'done', 'swapped wherever it is if it takes too long');
+  drive.start('bus', 30);
+  assert.equal(drive.update(31, { inCar: false, still: true }), 'gone', 'left parked, it goes back to the garage');
+  const card = freeHudModel(new StuntChain(), player(), { test: { label: 'Plane', clock: '1:40', left: 100, fraction: .8, over: false, price: '$140,000', note: '$139,000 to go · Garage' } });
+  assert.equal(card.stage, 'Test drive'); assert.equal(card.title, 'Plane'); assert.equal(card.timer.text, '1:40'); assert.equal(card.party, '$139,000 to go · Garage');
+  const chain = new StuntChain(); chain.add(10, 'Near miss');
+  assert.equal(freeHudModel(chain, player(), { test: { label: 'Plane', clock: '1:40', left: 100, fraction: .8, over: false } }).status, 'chain', 'a chain going comes first');
+  const ending = freeHudModel(chain, player(), { test: { label: 'Plane', clock: '0:00', left: 0, fraction: 0, over: true, landing: true, own: 'Taxi' } });
+  assert.equal(ending.title, 'Landing…'); assert.equal(ending.party, 'Back to your Taxi', 'but not over the end of a test drive');
+  assert.equal(freeHudModel(new StuntChain(), player(), { shop: true, hint: id => id === 'shop' ? 'Enough for your first car · open the Garage' : '' }).title, 'Enough for your first car');
 });

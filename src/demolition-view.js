@@ -78,7 +78,8 @@ export class DemolitionView {
     $('demolition-scores').innerHTML = this.scoreList(records.scores);
     text('scores-summary', records.runs ? `${records.runs} run${records.runs === 1 ? '' : 's'} · ${money(records.lifetime)} of damage in all` : '');
   }
-  results(run) {
+  // (`saving`: what the balance is going toward, see savingFor)
+  results(run, saving = '') {
     const model = demolitionResultModel(run), { rank } = model, summary = run.summary, records = run.records;
     $('demolition-result-time').textContent = clock(Math.round(run.elapsed));
     $('demolition-result-score').textContent = model.cash;
@@ -98,7 +99,7 @@ export class DemolitionView {
       + `<ol class="demolition-score-list">${this.scoreList(records.scores, placement)}</ol>`;
     $('demolition-result-best').textContent = `${records.runs} run${records.runs === 1 ? '' : 's'} · ${compact(records.lifetime)} of damage in all`;
     // (the contractor's cut, paid into the fleet balance as each chain banked)
-    $('demolition-result-total').textContent = run.paid ? `+${money(run.paid)} to your fleet` : '';
+    $('demolition-result-total').textContent = [run.paid && `+${money(run.paid)} to your balance`, saving].filter(Boolean).join(' · ');
     $('demolition-results').hidden = false;
   }
   dispose() {

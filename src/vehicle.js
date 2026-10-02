@@ -15,6 +15,7 @@ import { createWalkerModel, Walker, WALKER_SPEC, WALKER_STATS } from './walker.j
 import { collisionImpulse, footprintMass, heft, leadingPoint, rock, rockFrom, SCENERY_SURFACE } from './impact.js';
 import { steerCurve, steeringResponse, turnRate, corneringLoad, travelHeading } from './handling.js';
 import { carProfile } from './car-profile.js';
+import { RAINBOW_PAINT } from './car-paint.js';
 import { Actor, actorBody } from './actors.js';
 import { CarAir, GRAVITY } from './car-air.js';
 import { Drift, DRIFT_MIN, BRAKE_SHARE, DRAG as DRIFT_DRAG, POWER as DRIFT_POWER, TURBOS } from './drift.js';
@@ -255,7 +256,7 @@ export class ActorMotion {
     this.actor.motion = this;
     this.route = route;
     this.freeDriving = false;
-    this.rainbow = false; this.rainbowHue = 0; this.rainbowColor = new THREE.Color();
+    this.rainbowHue = 0; this.rainbowColor = new THREE.Color();
     this.night = false; this.journeyId = 'coast';
     // A flying machine's pilot stays with it through changes of control
     // (see helicopter.js and plane.js); `airborne` is true once it is up
@@ -270,6 +271,8 @@ export class ActorMotion {
     // `driftMode` has it, held or tapped. `events` is what happened, for the
     // game to hear (see drain)
     this.carAir = null; this.drift = null; this.driftMode = 'hold'; this.events = []; this.crashSeen = 0;
+    // (whether the player has the jetpack on foot: the game sets it from the fleet)
+    this.jetpack = true;
     this.fit(walking ? carId : CARS[carId] ? carId : DEFAULT_CAR, model ?? (walking ? createWalkerModel() : createCar(carId)), { paint });
     this.s = state.s ?? 24; this.u = state.u ?? 2.4; this.speed = 0; this.steer = 0; this.heading = state.heading ?? route.frame(this.s).angle;
     this.distance = state.distance ?? 0; this.pitch = 0; this.roll = 0;
@@ -327,11 +330,12 @@ export class ActorMotion {
     Object.assign(model.car.userData, this.car.userData);
   }
   disposeModel() { this.actor.dispose(); }
-  // A garage colour, or null for the finish the car left the factory in.
+  // A garage colour, the rainbow, or null for the finish the car left the factory in.
   setPaint(color) { this.paintColor = color ?? null; this.updatePaint(); }
+  get rainbow() { return this.paintColor === RAINBOW_PAINT; }
   updatePaint(dt = 0) {
     if (this.rainbow) {
-      // A smooth six-second RGB loop, without changing the garage's chosen paint.
+      // A smooth three-second RGB loop
       this.rainbowHue = (this.rainbowHue + dt / 2.8) % 1;
       this.rainbowColor.setHSL(this.rainbowHue, 1, .5, THREE.SRGBColorSpace);
       this.paintCar(this.rainbowColor);
@@ -347,12 +351,6 @@ export class ActorMotion {
     // (someone on foot stands there, even if they were up on a roof)
     this.walker?.takeOver();
     this.update(0, {});
-  }
-  toggleRainbow() {
-    this.rainbow = !this.rainbow;
-    if (this.rainbow) this.rainbowHue = 0;
-    this.updatePaint();
-    return this.rainbow;
   }
   toggleFreeDriving() {
     this.freeDriving = !this.freeDriving;
@@ -753,7 +751,8 @@ for (const [name, field] of Object.entries({ s: 's', u: 'u', speed: 'speed', hea
   });
 }
 
-const CONTEXT = ['route', 'freeDriving', 'arcade', 'scenery', 'props', 'traffic', 'driftMode', 'night', 'journeyId', 'rainbow', 'rainbowHue', 'distance'];
+// (the rainbow's hue carries over, so a car swapped in picks up the colour where it was)
+const CONTEXT = ['route', 'freeDriving', 'arcade', 'scenery', 'props', 'traffic', 'driftMode', 'jetpack', 'night', 'journeyId', 'rainbowHue', 'distance'];
 
 // The player holds a controller, not a replaceable car body. Camera, input and
 // HUD callers keep this handle while cars and the pedestrian live independently.
@@ -836,8 +835,8 @@ export class PlayerController {
 // These are the player-facing movement fields used by the simulation, menus
 // and review tools. Forwarding on the prototype avoids a Proxy in hot loops.
 const PLAYER_FIELDS = ['air', 'airborne', 'aloft', 'arcade', 'audioTelemetry', 'body', 'bodyLift', 'bodyPitch', 'bodyRoll', 'boosting', 'canopy', 'car', 'carAir', 'carId', 'currentPose', 'distance', 'figure', 'sinking', 'vy', 'y',
-  'drift', 'driftAmount', 'driftDirection', 'driftMode', 'drifting', 'freeDriving', 'groundedPosition', 'heading', 'jolt', 'journeyId', 'knock',
-  'load', 'lost', 'model', 'night', 'nightLights', 'paintColor', 'pilot', 'pitch', 'previousPose', 'props', 'pushing', 'rainbow', 'rainbowColor',
+  'drift', 'driftAmount', 'driftDirection', 'driftMode', 'drifting', 'freeDriving', 'groundedPosition', 'heading', 'jetpack', 'jolt', 'journeyId', 'knock',
+  'load', 'lost', 'model', 'night', 'nightLights', 'paintColor', 'pilot', 'pitch', 'previousPose', 'props', 'pushing', 'rainbowColor',
   'rainbowHue', 'reverseDelay', 'roll', 'rotors', 'route', 's', 'scenery', 'slideHeading', 'slip', 'spec', 'speed', 'stats', 'steer', 'traffic', 'trauma', 'u',
   'velocity', 'walker', 'weight', 'wheels', 'wheelSpin', 'yawRate'];
 for (const name of PLAYER_FIELDS) Object.defineProperty(PlayerController.prototype, name, {

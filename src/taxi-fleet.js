@@ -1,35 +1,68 @@
 import { LIVERIES, liveryById } from './taxi-career.js';
+import { CARS, GARAGE_IDS, STARTING_CAR, carPrice, testDrivePrice } from './cars.js';
+import { PAINT_PRICE, RAINBOW_PAINT, isPaint } from './car-paint.js';
 
 export const FLEET_KEY = 'citydriver-taxi-fleet';
+// The garage's own save (main.js): the car a player last picked. And the
+// jetpack's once-only hint, told to anyone who has been on foot
+const CAR_KEY = 'citydriver-car', JETPACK_HINT_KEY = 'citydriver-jetpack-hint';
 export const TAXI_FLEET = [
-  { id: 'taxi', price: 0, title: 'The original', description: 'A dependable city cab. Plenty of pace to get your fleet started.' },
-  { id: 'taxiGT', price: 1500, title: 'The fast lane', description: 'A sports coupe with quicker launches, sharper turns and stronger brakes.' },
-  { id: 'taxiFormula', price: 4500, title: 'The ultimate fare', description: 'Open wheels and formula power, with the best grip in the fleet.' },
-];
+  { id: 'taxi', title: 'The original', description: 'A dependable city cab. Plenty of pace to get your fleet started.' },
+  { id: 'taxiGT', title: 'The fast lane', description: 'A sports coupe with quicker launches, sharper turns and stronger brakes.' },
+  { id: 'taxiFormula', title: 'The ultimate fare', description: 'Open wheels and formula power, with the best grip in the fleet.' },
+].map(cab => ({ ...cab, price: carPrice(cab.id) }));
 const validMoney = value => Number.isSafeInteger(value) && value >= 0;
+const isCab = id => Boolean(CARS[id]?.taxi);
+// What the Konami code pays, the first time it is entered on a save
+export const KONAMI_PAY = 10000;
 
-// One save for balance, ownership, selection and livery keeps a purchase
-// together. Completed fares and shift goal bonuses bank immediately, including
-// when a run is later abandoned.
+// Everything the player owns: the one balance that every mode pays into, the
+// vehicles bought with it, the cab that works shifts and its livery. One save
+// keeps a purchase together. Completed fares and shift goal bonuses bank
+// immediately, including when a run is later abandoned.
+//
+// Version 1 saves held only cabs, from when the garage lent every other car
+// out for free. A player who had picked a car there keeps it, and one who
+// has been on foot keeps the jetpack, so nobody comes back to find what
+// they used locked.
 export class TaxiFleet {
   constructor(storage = null) {
-    this.storage = storage; this.balance = 0; this.owned = new Set(['taxi']); this.selected = 'taxi'; this.livery = LIVERIES[0].id; this.saved = Boolean(storage);
-    try {
-      const data = JSON.parse(storage?.getItem(FLEET_KEY) ?? 'null');
-      if (data?.version === 1 && validMoney(data.balance)) {
-        this.balance = data.balance;
-        for (const cab of TAXI_FLEET) if (Array.isArray(data.owned) && data.owned.includes(cab.id)) this.owned.add(cab.id);
-        if (this.owned.has(data.selected)) this.selected = data.selected;
-        if (LIVERIES.some(livery => livery.id === data.livery)) this.livery = data.livery;
+    this.storage = storage; this.balance = 0; this.owned = new Set([STARTING_CAR]); this.selected = STARTING_CAR; this.livery = LIVERIES[0].id; this.saved = Boolean(storage);
+    // Test drives used (the first of each car is free) and the car being saved for
+    this.tried = new Set(); this.goal = null;
+    // The garage's paint (null: each car's own) and whether the Konami code has been entered
+    this.paint = null; this.konami = false;
+    let data = null;
+    try { data = JSON.parse(storage?.getItem(FLEET_KEY) ?? 'null'); } catch { /* Corrupt or unavailable storage starts a usable local fleet. */ }
+    const version = data?.version;
+    if ((version === 1 || version === 2) && validMoney(data.balance)) {
+      this.balance = data.balance;
+      const list = value => Array.isArray(value) ? value : [];
+      for (const id of list(data.owned)) if (version === 2 ? carPrice(id) !== null : isCab(id)) this.owned.add(id);
+      if (version === 2) {
+        for (const id of list(data.tried)) if (carPrice(id) !== null) this.tried.add(id);
+        if (carPrice(data.goal) !== null && !this.owned.has(data.goal)) this.goal = data.goal;
+        this.konami = data.konami === true;
+        if (isPaint(data.paint) || (data.paint === RAINBOW_PAINT && this.konami)) this.paint = data.paint;
       }
-    } catch { /* Corrupt or unavailable storage starts a usable local fleet. */ }
+      if (this.owned.has(data.selected) && isCab(data.selected)) this.selected = data.selected;
+      if (LIVERIES.some(livery => livery.id === data.livery)) this.livery = data.livery;
+    }
+    if (version === 2) return;
+    let legacy = null, walked = false;
+    try { legacy = storage?.getItem(CAR_KEY); walked = storage?.getItem(JETPACK_HINT_KEY) === 'shown'; } catch { /* Optional storage. */ }
+    if (walked) this.owned.add('jetpack');
+    // (cabs were always bought, so a cab picked there was only a test drive)
+    if (GARAGE_IDS.includes(legacy) && carPrice(legacy) !== null && !isCab(legacy)) this.owned.add(legacy);
+    if (version === 1 || this.owned.size > 1) this.save();
   }
   // The colour the selected livery paints the cab, or null for factory yellow.
   get liveryColor() { return liveryById(this.livery).color; }
   save() {
     try {
       if (!this.storage) throw new Error('Storage unavailable');
-      this.storage.setItem(FLEET_KEY, JSON.stringify({ version: 1, balance: this.balance, owned: [...this.owned], selected: this.selected, livery: this.livery }));
+      this.storage.setItem(FLEET_KEY, JSON.stringify({ version: 2, balance: this.balance, owned: [...this.owned], selected: this.selected,
+        livery: this.livery, tried: [...this.tried], goal: this.goal, paint: this.paint, konami: this.konami }));
       this.saved = true;
     } catch { this.saved = false; }
   }
@@ -42,13 +75,53 @@ export class TaxiFleet {
     if (!validMoney(amount) || !Number.isSafeInteger(this.balance + amount)) return false;
     this.balance += amount; this.save(); return true;
   }
+  // The cab for shifts
   select(id) {
-    if (!this.owned.has(id)) return false;
+    if (!this.owned.has(id) || !isCab(id)) return false;
     this.selected = id; this.save(); return true;
   }
+  // A cab bought is the one the next shift uses
   buy(id) {
-    const cab = TAXI_FLEET.find(cab => cab.id === id);
-    if (!cab || this.owned.has(id) || this.balance < cab.price) return false;
-    this.balance -= cab.price; this.owned.add(id); this.selected = id; this.save(); return true;
+    const price = carPrice(id);
+    if (price === null || this.owned.has(id) || this.balance < price) return false;
+    this.balance -= price; this.owned.add(id);
+    if (isCab(id)) this.selected = id;
+    if (this.goal === id) this.goal = null;
+    this.save(); return true;
+  }
+  // What a test drive of `id` costs now: 0 for the first, null for one owned or not for sale
+  testDriveCost(id) {
+    if (carPrice(id) === null || this.owned.has(id)) return null;
+    return this.tried.has(id) ? testDrivePrice(id) : 0;
+  }
+  // Pays for a test drive, if it can: true when it may go ahead
+  testDrive(id) {
+    const cost = this.testDriveCost(id);
+    if (cost === null || this.balance < cost) return false;
+    this.balance -= cost; this.tried.add(id); this.save(); return true;
+  }
+  // What painting the garage `color` costs now: nothing for the colour it
+  // already wears or each car's own, else PAINT_PRICE
+  paintCost(color) { return color === this.paint || color === null ? 0 : PAINT_PRICE; }
+  // Paints the garage, if it can: rainbow only once the code has unlocked it
+  setPaint(color) {
+    if (color !== null && !isPaint(color) && !(color === RAINBOW_PAINT && this.konami)) return false;
+    const cost = this.paintCost(color);
+    if (this.balance < cost) return false;
+    this.balance -= cost; this.paint = color; this.save(); return true;
+  }
+  // The Konami code: KONAMI_PAY and the rainbow paint, once a save, so it
+  // is a treat rather than a money tree. Returns what it paid.
+  enterKonami() {
+    if (this.konami) return 0;
+    this.konami = true;
+    const paid = this.credit(KONAMI_PAY) ? KONAMI_PAY : 0;
+    if (!paid) this.save();
+    return paid;
+  }
+  // The car being saved for, shown on the results and in the garage (null to clear)
+  setGoal(id) {
+    if (id !== null && (carPrice(id) === null || this.owned.has(id))) return false;
+    this.goal = id; this.save(); return true;
   }
 }

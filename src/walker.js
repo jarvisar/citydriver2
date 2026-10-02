@@ -297,7 +297,8 @@ export class Walker {
     if (released && high && !this.burning && this.time - this.heldAt < IGNITE) {
       if (chute) this.chute.folding = this.time; else if (!this.chute) this.openChute();
     }
-    this.burning = control && this.held && !this.grounded && this.time - this.heldAt >= IGNITE;
+    // (only with a jetpack: it is bought, see GEAR)
+    this.burning = control && v.jetpack !== false && this.held && !this.grounded && this.time - this.heldAt >= IGNITE;
     if (this.burning) { this.jetting = true; if (chute) this.chute.folding = this.time; }
     if (control && !chute && !high && this.time - this.asked <= BUFFER) {
       const footing = this.grounded || (!this.jumped && this.time - this.footing <= COYOTE);

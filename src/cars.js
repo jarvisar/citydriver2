@@ -166,6 +166,31 @@ export const CAR_IDS = Object.keys(CARS).filter(id => !CARS[id].flies);
 // tests use the Default as their baseline) but the garage leaves them out.
 const RETIRED = new Set(['auto', 'desert', 'snow', 'jungle', 'plains', 'city']);
 export const GARAGE_IDS = Object.keys(CARS).filter(id => !RETIRED.has(id));
+// What the garage sells each one for, out of the one fleet balance every mode
+// pays into. An average player makes about $500 a minute (a taxi shift at
+// 16-19 m/s with its goals, or a B-rated demolition run), so the first car
+// is a few minutes away, the specials an hour or two, and the aircraft are
+// the long goal: three and five hours or so. The cars that turn up in the
+// traffic, which can be borrowed on foot anyway, are the cheapest. See
+// docs/economy.md.
+export const GARAGE_PRICES = {
+  taxi: 0, taxiGT: 10000, taxiFormula: 40000,
+  coast: 1500, hatchback: 2000, sedan: 2500, wagon: 3000, pickup: 4000, van: 4500, sports: 12000, exotic: 45000,
+  micro: 5000, buggy: 8000, hotrod: 15000, bus: 18000, rig: 25000, monster: 30000, formula: 65000,
+  helicopter: 90000, plane: 140000,
+  jetpack: 60000,
+};
+export const carPrice = id => GARAGE_PRICES[id] ?? null;
+// What the garage sells that isn't a vehicle, in its own section. The
+// jetpack works on foot (see Walker): until it is bought, a held jump in
+// the air does nothing more. The parachute stays free.
+export const GEAR = { jetpack: { name: 'Jetpack', about: 'Hold jump in the air to fly, up to 90 m over the street. Let go to drop, and land on your feet.' } };
+export const SHOP_IDS = [...GARAGE_IDS, ...Object.keys(GEAR)];
+export const shopName = id => GEAR[id]?.name ?? carEntry(id).name;
+// A test drive lasts this long. The first of each car is free, and each
+// one after costs a small share of its price, rounded to $50.
+export const TEST_DRIVE_SECONDS = 120;
+export const testDrivePrice = id => Math.max(50, Math.round(carPrice(id) * .025 / 50) * 50);
 // The garage's sections, in order
 export const GARAGE_GROUPS = [['cab', 'Cabs'], ['car', 'Cars'], ['special', 'Specials'], ['air', 'Aircraft']];
 export const garageGroup = id => {

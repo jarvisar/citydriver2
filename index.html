@@ -299,9 +299,9 @@
         <span class="controller-hint">B / Circle or View / Share: close</span>
       </dialog>
       <dialog id="car-dialog" class="chooser" aria-labelledby="car-heading">
-        <div class="chooser-heading"><h2 id="car-heading" class="garage-title">Garage</h2><button id="close-cars" class="icon-button" aria-label="Close garage"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
+        <div class="chooser-heading"><div class="garage-heading"><h2 id="car-heading" class="garage-title">Garage</h2><p class="garage-wallet"><strong id="garage-wallet"></strong><span id="garage-saving"></span></p></div><div class="garage-heading-actions"><button type="button" id="offer-back" class="offer-back" hidden><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m14 6-6 6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>All cars</button><button id="close-cars" class="icon-button" aria-label="Close garage"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div></div>
         <span class="controller-hint">D-pad / stick: choose · A / Cross: select · B / Circle: close<br>Custom paint: A / Cross to change colour</span>
-        <section class="paint-shop" aria-labelledby="paint-heading">
+        <section id="paint-shop" class="paint-shop" aria-labelledby="paint-heading">
           <div class="paint-shop-heading">
             <h3 id="paint-heading">Paint</h3>
             <span id="paint-current" class="paint-current" role="status"></span>
@@ -310,9 +310,26 @@
             <div id="paint-swatches" class="paint-swatches" role="radiogroup" aria-labelledby="paint-heading"></div>
             <label id="paint-custom-well" class="paint-custom" title="Custom color"><input type="color" id="paint-custom" aria-label="Custom color" value="#d96143"><span class="paint-custom-chip" aria-hidden="true"></span><span class="paint-custom-label">Custom</span></label>
           </div>
-          <p class="paint-note">Paint applies to all cars.</p>
+          <p id="paint-note" class="paint-note">Paint applies to all cars.</p>
         </section>
         <div id="garage-sections"></div>
+        <section id="garage-offer" class="garage-offer" aria-labelledby="offer-name" hidden>
+          <div class="offer-body">
+            <div id="offer-art" class="offer-art"></div>
+            <div class="offer-copy">
+              <span id="offer-group" class="garage-subheading"></span>
+              <h3 id="offer-name"></h3>
+              <strong id="offer-price" class="offer-price"></strong>
+              <span id="offer-meters" class="car-meters"></span>
+              <progress id="offer-savings" max="1" value="0" aria-labelledby="offer-progress"></progress>
+              <p id="offer-progress" class="offer-progress"></p>
+              <div class="offer-actions"><button type="button" id="offer-buy"></button><button type="button" id="offer-test"></button></div>
+              <button type="button" id="offer-goal" class="offer-goal" aria-pressed="false">Save for this</button>
+              <p id="offer-note" class="offer-note"></p>
+              <p id="offer-earn" class="offer-note"></p>
+            </div>
+          </div>
+        </section>
       </dialog>
       <dialog id="taxi-fleet-dialog" aria-labelledby="taxi-fleet-heading" aria-describedby="fleet-note">
         <div class="chooser-heading"><div><span class="eyebrow">BUILD YOUR FLEET</span><h2 id="taxi-fleet-heading">A faster way to fare.</h2></div><button type="button" id="close-fleet" class="icon-button" aria-label="Close taxi fleet"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
@@ -323,7 +340,7 @@
           <div id="fleet-liveries" class="paint-swatches fleet-liveries" role="radiogroup" aria-labelledby="fleet-livery-heading"></div>
           <p id="fleet-career" class="fleet-career"></p>
         </section>
-        <p class="fleet-footer">Same fares. Faster cabs. Earn more by fitting more trips into each run.<br>Try every cab for free in <b>Free drive &rarr; Garage</b>.</p>
+        <p class="fleet-footer">Same fares. Faster cabs. Earn more by fitting more trips into each run.<br>Test drive any cab from the <b>Garage</b> in free drive.</p>
         <p id="fleet-feedback" role="status" aria-live="polite"></p>
         <p id="fleet-save" hidden>Saving is unavailable. Your fleet is kept for this visit only.</p>
       </dialog>

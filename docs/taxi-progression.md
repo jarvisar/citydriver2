@@ -67,11 +67,11 @@ Every shift picks three goals from a list of twelve: fares, riders, groups, Spee
 
 Goal targets come in three tiers by driver rank. Rookie and Cabbie get tier one, Regular and Pro get tier two, and Veteran and above get tier three. The third goal is always one tier harder than the other two.
 
-Completing a goal adds its bonus ($150 to $600) to the fleet balance. Bonuses don't count toward the run score, so licences are still based on fare money only. Goals are shown in the pause menu under Shift goals, on the map card, as a popup when completed, and on the results screen.
+Completing a goal adds its bonus ($150 to $600) to the fleet balance. Bonuses don't count toward the run score, so licences are still based on fare money only, but they do count toward the driver rank. Goals are shown in the pause menu under Shift goals, on the map card, as a popup when completed, and on the results screen.
 
 ## Career, Ranks and Records
 
-The career saves lifetime shifts, fares, riders, groups, earnings, tips and goal bonuses under `citydriver-taxi-career`. Career earnings set the driver rank. Shifts add their fare money when they end. Money made anywhere else counts as it comes in: free drive's stunt chains, the share of a demolition run's damage that's paid out, and new places and jump stars. The pause menu's Progress panel shows the rank and how far it is to the next one.
+The career saves lifetime shifts, fares, riders, groups, earnings, tips and goal bonuses under `citydriver-taxi-career`. Career earnings set the driver rank. Shifts add their fare money and goal bonuses when they end. Money made anywhere else counts as it comes in: free drive's stunt chains, the share of a demolition run's damage that's paid out, and new places and jump stars. The pause menu's Progress panel shows the rank and how far it is to the next one.
 
 | Rank | Career earnings |
 | --- | ---: |

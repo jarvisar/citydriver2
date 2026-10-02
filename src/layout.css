@@ -1,5 +1,5 @@
 /* Shared limits for the header, panels, HUD and touch controls. */
-.vr-entry[hidden], #welcome.hidden :is(.vr-entry, .update-entry) { display: none !important; }
+.vr-entry[hidden], #welcome.hidden .vr-entry { display: none !important; }
 .vr-entry, .update-entry { pointer-events: auto; justify-content: center; }
 /* The pause screen's entry is a settings row, sized like the panels above it. */
 #enter-vr-pause { width: 340px; max-width: 100%; margin: 0 0 14px; }

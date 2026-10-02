@@ -1,4 +1,4 @@
-/* Update notice on the title and pause screens (see pwa-register.js). */
+/* Update notice on the title and pause screens (pwa-register.js, and main.js for the desktop app) */
 .update-notice {
   display: flex; align-items: center; gap: 12px; width: max-content; max-width: 100%;
   padding: 4px 4px 4px 14px; border: 1px solid var(--city-line); border-radius: var(--city-control-radius);
@@ -13,7 +13,10 @@
 .update-notice button:focus-visible { outline: 2px solid var(--city-text); outline-offset: 2px; }
 .update-notice button:disabled { cursor: wait; opacity: .6; }
 /* Top centre of the title, above the name, still inside #welcome for the controller */
-#welcome .update-notice { position: absolute; bottom: 100%; left: 50%; margin-bottom: 8px; transform: translateX(-50%); text-shadow: none; }
+#welcome .update-notice { position: absolute; bottom: 100%; left: 50%; margin-bottom: 8px; transform: translateX(-50%); text-shadow: none; animation: update-toast .45s cubic-bezier(.2, .9, .3, 1.25) both; }
+@keyframes update-toast { from { opacity: 0; transform: translate(-50%, -14px) scale(.92); } }
+@media (prefers-reduced-motion: reduce) { #welcome .update-notice { animation: update-fade .3s ease-out both; } }
+@keyframes update-fade { from { opacity: 0; } }
 .pause-header .update-notice { grid-area: 3 / 1 / 4 / 3; margin-top: 10px; background: var(--city-raised); box-shadow: none; }
 /* (a short landscape title fills the height, with room at the top) */
 @media (orientation: landscape) and (max-height: 460px) { #welcome .update-notice { top: 0; bottom: auto; margin: 0; } }

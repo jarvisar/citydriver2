@@ -18,8 +18,16 @@ export const STUNTS = {
   flight: { 'Barrel roll': 12, 'Loop the loop': 20, 'Under the bridge': 25, 'Rooftop landing': 15, 'Smooth landing': 3 },
 };
 // Smashing pays this share of what the same piece earns in a demolition run
-// (a lamp post $16, a tree $22, a traffic car written off $70 to $140)
-export const SMASH_SHARE = .005;
+// (a lamp post $3, a tree $5, a traffic car written off $14 to $29), before
+// the multiplier. It was five times this, more per hit than demolition's own
+// cut and with no clock, so a truck circling a block of parked cars (they go
+// back to their bays) out-earned every run. Demolition is where wrecking pays.
+export const SMASH_SHARE = .001;
+// The same kind of thing smashed again in one chain pays less each time, as
+// a repeated trick does in Tony Hawk's: a row of parked cars or lamp posts is
+// worth a few of them, and a chain that mixes things up keeps its value.
+// It still counts toward the multiplier.
+export const REPEATS = [1, .75, .5, .25, .1];
 // Faster than this past traffic going its own speed, and close
 const NEAR_SPEED = 14, NEAR_CLOSING = 7, NEAR_GAP = 2.5;
 
@@ -40,6 +48,8 @@ export class StuntChain {
     this.scrapedAt = -Infinity; this.lastImpact = null; this.lastCrash = null; this.cooldown = 0;
     this.cars = new WeakMap(); this.passed = new WeakSet();
     this.chain = 0; this.pot = 0; this.chainTime = 0; this.last = null;
+    // (how many of each kind of smash the chain has had)
+    this.repeats = new Map();
   }
   get multiplier() { return chainMultiplier(this.chain); }
   get chainLeft() { return this.chain ? Math.max(0, Math.min(1, this.chainTime / chainSeconds(this.multiplier))) : 0; }
@@ -62,7 +72,7 @@ export class StuntChain {
   bank() {
     if (!this.chain) return 0;
     const amount = this.pot, chain = this.chain, multiplier = this.multiplier;
-    this.chain = 0; this.pot = 0; this.chainTime = 0; this.last = null;
+    this.chain = 0; this.pot = 0; this.chainTime = 0; this.last = null; this.repeats.clear();
     this.events.push({ kind: 'banked', amount, chain, multiplier, text: chain > 1 ? `${chain} stunt chain · +$${amount.toLocaleString('en-US')}` : `+$${amount.toLocaleString('en-US')}` });
     return amount;
   }
@@ -72,7 +82,7 @@ export class StuntChain {
     this.cooldown = .8;
     if (!this.chain) return 0;
     const lost = this.pot;
-    this.chain = 0; this.pot = 0; this.chainTime = 0; this.last = null;
+    this.chain = 0; this.pot = 0; this.chainTime = 0; this.last = null; this.repeats.clear();
     this.events.push({ kind: 'lost', lost, text: `${reason} · $${lost.toLocaleString('en-US')} chain lost` });
     return lost;
   }
@@ -121,7 +131,7 @@ export class StuntChain {
     const price = (kinds ?? []).reduce((sum, kind) => sum + (PRICES[kind] ?? 0), 0);
     if (!price) return 0;
     const kind = kinds[0];
-    return this.add(Math.max(1, Math.round(price * SMASH_SHARE)), kinds.length > 1 && kind === 'table' ? 'Cafe terrace' : PIECE_NAMES[kind] ?? 'Smash', at, 'smash');
+    return this.smash(price, kinds.length > 1 && kind === 'table' ? 'Cafe terrace' : PIECE_NAMES[kind] ?? 'Smash', at, kind);
   }
   // A blow to a traffic or parked car (see CityTraffic.onDamage), each car
   // paid for once, as in a demolition run
@@ -134,7 +144,15 @@ export class StuntChain {
     const value = Math.min(price - record.damage, carDamage(price, closing));
     if (!(value > 0)) return 0;
     record.damage += value; record.hit = this.elapsed;
-    return this.add(Math.max(1, Math.round(value * SMASH_SHARE)), record.damage >= price ? 'Wrecked' : 'Dent', at, 'smash');
+    return this.smash(value, record.damage >= price ? 'Wrecked' : 'Dent', at, record.parked ? 'parked' : 'car');
+  }
+  // A smash worth `price` in a demolition run, less each time its kind
+  // comes round again in the chain (see REPEATS)
+  smash(price, label, at, kind) {
+    if (this.cooldown > 0) return 0;
+    const seen = this.repeats.get(kind) ?? 0;
+    this.repeats.set(kind, seen + 1);
+    return this.add(Math.max(1, Math.round(price * SMASH_SHARE * REPEATS[Math.min(seen, REPEATS.length - 1)])), label, at, 'smash');
   }
   // Someone knocked over by the player's car
   pedestrian() { return this.lose('Pedestrian!'); }

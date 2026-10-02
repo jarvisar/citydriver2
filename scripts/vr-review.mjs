@@ -192,6 +192,14 @@ try {
   check('the garage opens', now.menu === 'car-dialog');
   await stick('right', 1, 0); await stick('right', 1, 0);
   await shot('13-garage-cars');
+  // An unowned car opens its offer, on Test drive while it can't be bought, and B goes back to the cars
+  const showing = label => page.evaluate(label => { const status = window.__citydriver.vrStatus; return status.regions.some(region => status.entries[region.index].label === label); }, label);
+  for (let i = 0; i < 8 && !(await showing('Plane')); i++) await stick('right', 1, 0);
+  await aim('right', 'Plane'); await press('right', 'trigger');
+  now = await shot('13b-garage-offer');
+  check('an unowned car opens its offer on Test drive', now.menu === 'car-offer' && now.selected === 'Test drive', now.selected);
+  await press('right', 'b-button'); now = await state();
+  check('B goes back from an offer to the garage', now.menu === 'car-dialog' && now.paused, now.menu);
   await press('right', 'b-button');
   await aim('right', 'Taxi shift'); await press('right', 'trigger');
   await page.evaluate(() => {

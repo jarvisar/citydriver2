@@ -117,12 +117,23 @@ export function demolitionHudModel(run, vehicle, { shownCash = 0, hint = () => '
   return model;
 }
 
+// A test drive's card (see TestDrive): the clock, and once it is up, the car
+// stopping or landing before the player's own takes its place
+function testCard(model, test) {
+  const seconds = Math.ceil(test.left);
+  return Object.assign(model, { task: true, status: 'test', stage: test.stage ?? (test.over ? 'Test drive over' : 'Test drive'), fareStatus: test.price,
+    timer: { text: test.clock, tone: seconds <= 15 ? 'slow' : 'chain', fraction: test.fraction, label: `${seconds} seconds of test drive left` },
+    title: test.over ? test.landing ? 'Landing…' : 'Stopping…' : test.label, taskUrgent: !test.over && seconds <= 15,
+    party: test.over ? `Back to your ${test.own}` : test.note, info: 'party' });
+}
+
 // Free drive's HUD, in the runs' panels. The task card only shows when it
 // has something to say: a stunt chain going, a fare by the cab (standby, see
-// TaxiRun.standby) or a tip (`trial`: in a cab the fleet doesn't own). The
-// rest of the time the view stays clear.
-export function freeHudModel(stunts, vehicle, { taxi = null, trial = false, hint = () => '' } = {}) {
+// TaxiRun.standby), a test drive's clock or a tip. The rest of the time the
+// view stays clear.
+export function freeHudModel(stunts, vehicle, { taxi = null, test = null, shop = false, hint = () => '' } = {}) {
   const model = Object.assign(baseHud({ running: false }, vehicle, true), { task: false, status: 'free' });
+  if (test?.over) return testCard(model, test);
   if (stunts.chain) {
     return Object.assign(model, { task: true, status: 'chain', stage: `Chain ×${stunts.multiplier}`, fareStatus: money(stunts.pot),
       timer: { text: `${stunts.chain} stunt${stunts.chain === 1 ? '' : 's'}`, tone: 'chain', fraction: stunts.chainLeft, label: `${stunts.chain} stunts in the chain` },
@@ -135,7 +146,8 @@ export function freeHudModel(stunts, vehicle, { taxi = null, trial = false, hint
     return Object.assign(model, { task: true, status: 'pickup', stage: 'Fare',
       stopProgress: { visible: taxi.hold > 0, label: 'Passenger boarding', fraction: Math.min(1, taxi.hold / STOP_SECONDS) } });
   }
-  const tip = hint(taxi?.waiting ? 'cab' : trial ? 'trial' : '');
+  if (test) return testCard(model, test);
+  const tip = hint(taxi?.waiting ? 'cab' : shop ? 'shop' : '');
   // (the tip's first part is the title, the rest the line under it)
   const [title, ...more] = tip.split(' · ');
   if (tip) Object.assign(model, { task: true, status: 'tip', stage: 'Tip', title, detail: more.join(' · ') });

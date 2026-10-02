@@ -30,9 +30,21 @@ export const CALLOUTS = ['', '', 'Smash', 'Wrecking', 'Rampage', 'Total chaos'];
 export const FINE = 10000, FINE_GAP = 1;
 // Each smash tops up the boost, as a taxi's stunts do, and a wreck more
 export const SMASH_BOOST = .06, WRECK_BOOST = .2;
-// The contractor's cut: each chain banked pays this share of its damage into
-// the taxi fleet's balance (about $1,000 for a B rating, $4,000 for an S)
-export const PAY_SHARE = .004;
+// The contractor's cut: what a run's banked damage pays into the fleet
+// balance, in steps like tax bands, each chain paying its share as it banks.
+// A flat .4% paid an S run $4,000 and a lucky row of parked cars $9,000, in
+// under two minutes: three to eight times a good taxi shift's rate. Now a C
+// rating pays about $460, B $780, S $1,600 and an Act of God $2,000, close
+// to a taxi shift's rate a minute at each level of skill.
+export const PAY_BANDS = [[100000, .004], [300000, .0025], [1000000, .001], [Infinity, .0004]];
+export function demolitionPay(damage) {
+  let pay = 0, from = 0;
+  for (const [to, share] of PAY_BANDS) {
+    if (damage <= from) break;
+    pay += (Math.min(damage, to) - from) * share; from = to;
+  }
+  return pay;
+}
 
 // Street furniture, per piece that comes loose (a cafe's table and chairs
 // come loose together, and are paid for together)
@@ -175,7 +187,7 @@ export class DemolitionRun {
     this.events = []; this.summary = null; this.last = null; this.cars = new WeakMap();
     // What the run can be measured by, on the results screen
     this.smashed = 0; this.carsHit = 0; this.wrecked = 0; this.takedowns = 0; this.trees = 0; this.people = 0; this.fines = 0; this.fineCount = 0;
-    this.bestChain = 0; this.bestMultiplier = 1; this.bestBank = 0; this.biggest = null; this.bonusSeconds = 0; this.paid = 0;
+    this.bestChain = 0; this.bestMultiplier = 1; this.bestBank = 0; this.biggest = null; this.bonusSeconds = 0; this.paid = 0; this.banked = 0;
     this.previousBest = this.records.best; this.overtime = false; this.beatBest = false; this.fined = -Infinity;
     // What the contracts count besides the run's own numbers: furniture by kind, parked cars written off
     this.tally = { parkedWrecks: 0, signals: 0 };
@@ -296,7 +308,9 @@ export class DemolitionRun {
     if (!this.chain) return 0;
     const multiplier = this.multiplier, amount = this.pot, chain = this.chain, before = this.rank;
     this.score += amount; this.bestBank = Math.max(this.bestBank, amount);
-    const pay = Math.round(amount * PAY_SHARE); this.paid += pay;
+    // (by everything banked, which fines don't take back, rounded so the run's payments add up to its whole cut)
+    this.banked += amount;
+    const pay = Math.round(demolitionPay(this.banked)) - this.paid; this.paid += pay;
     this.chain = 0; this.pot = 0; this.chainTime = 0;
     const rank = this.rank;
     this.events.push({ kind: 'banked', amount, pay, chain, multiplier, rank: rank.rank > before.rank ? rank : null,

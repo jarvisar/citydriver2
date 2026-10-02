@@ -37,6 +37,20 @@ export function carArt(id) {
   return `<svg class="chooser-art car-art" viewBox="0 0 280 142" aria-hidden="true">${parts.join('')}</svg>`;
 }
 
+// The jetpack's card, from behind: two tanks either side of a back plate,
+// nozzles and their flames. It is the player's own mustard pack, so the
+// garage's paint leaves it alone.
+export function gearArt() {
+  const tank = x => `<rect x="${x}" y="28" width="28" height="66" rx="13" fill="#d9a441"/><rect x="${x + 6}" y="36" width="5" height="48" rx="2.5" fill="#f3d27e"/>`
+    + `<rect x="${x}" y="50" width="28" height="4" fill="#b98632"/><rect x="${x}" y="74" width="28" height="4" fill="#b98632"/><rect x="${x + 8}" y="21" width="12" height="9" rx="2" fill="${TRIM}"/>`
+    + `<polygon points="${x + 6},92 ${x + 22},92 ${x + 25},102 ${x + 3},102" fill="#8d9696"/>`
+    + `<path d="M${x + 4} 102 Q${x + 14} 138 ${x + 24} 102 Z" fill="#ffd238"/><path d="M${x + 9} 102 Q${x + 14} 124 ${x + 19} 102 Z" fill="#ff9433"/>`;
+  const strap = (from, bend, to) => `<path d="M${from} 38 C${from} 18 ${bend} 12 ${to} 26" stroke="${CARBON}" stroke-width="6" stroke-linecap="round" fill="none"/>`;
+  return `<svg class="chooser-art car-art" viewBox="0 0 280 142" aria-hidden="true"><ellipse cx="${CENTER}" cy="${GROUND + 4}" rx="46" ry="4.5" fill="#00000022"/>`
+    + strap(132, 116, 108) + strap(148, 164, 172) + tank(104) + tank(148)
+    + `<rect x="128" y="34" width="24" height="60" rx="6" fill="${CARBON}"/><circle cx="140" cy="52" r="6" fill="${SUIT}"/><path d="M140 52 L143.5 48" stroke="${CARBON}" stroke-width="1.6" stroke-linecap="round"/></svg>`;
+}
+
 // A built road car, from the profile its model is lofted through: the glass
 // house and its panes between the pillars, the body over them with dark wheel
 // wells, the roof, bumpers and lamps at the ends, then the wheels.

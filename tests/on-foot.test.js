@@ -345,6 +345,20 @@ test('holding jump flies the jetpack up to a hover under the ceiling, and high u
   } finally { vehicle.disposeModel(); }
 });
 
+test('without the jetpack a held jump is only a jump, and having it carries from the car to their feet', () => {
+  const { vehicle } = onFoot();
+  vehicle.jetpack = false; vehicle.stepOut();
+  const walker = vehicle.walker, height = () => vehicle.groundedPosition.y - GROUND;
+  try {
+    let highest = 0;
+    for (let i = 0; i < 120 * 3; i++) { vehicle.update(step, { jump: true }); highest = Math.max(highest, height()); assert.ok(!walker.burning, 'never lit'); }
+    assert.ok(highest < 2 && walker.grounded, `only hopped (${highest.toFixed(2)} m)`);
+    vehicle.jetpack = true; vehicle.update(step, {});
+    for (let i = 0; i < 120 * 2; i++) vehicle.update(step, { jump: true });
+    assert.ok(walker.jetting, 'with it, a held jump lights it');
+  } finally { vehicle.disposeModel(); }
+});
+
 test('they land with a squash that springs back, the head dipping after the body, and bank into turns with the head leading', () => {
   const { vehicle } = onFoot();
   vehicle.stepOut();

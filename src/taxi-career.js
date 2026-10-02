@@ -82,7 +82,8 @@ export class TaxiCareer {
   record(run) {
     const before = this.rank;
     this.shifts++; this.fares += run.delivered; this.riders += run.deliveredPassengers; this.groups += run.groups;
-    this.earnings += run.cash; this.tips += run.tipsBanked;
+    // (goal bonuses went into the balance as they were met, and count toward the rank like any other pay)
+    this.earnings += run.cash + (run.goalCash ?? 0); this.tips += run.tipsBanked;
     const done = (run.goals ?? []).filter(goal => goal.done);
     this.goals += done.length; this.goalCash += run.goalCash ?? 0;
     const beaten = [];

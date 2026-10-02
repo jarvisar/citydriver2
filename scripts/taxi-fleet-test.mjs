@@ -46,7 +46,7 @@ try {
   assert.equal(await page.locator('#pause-overlay').isVisible(), true);
   assert.equal(await page.locator('#pause-fleet').evaluate(button => button === document.activeElement), true);
   // Fund the shop fixture; actual fare banking is exercised in taxi-fleet.test.js.
-  await page.evaluate(() => window.__citydriver.taxi.fleet.credit(1500));
+  await page.evaluate(() => window.__citydriver.taxi.fleet.credit(10000));
   await page.click('#pause-fleet'); await page.click('[data-fleet-car=taxiGT]');
   assert.equal(await page.locator('#fleet-balance').textContent(), '$0');
   assert.equal(await page.evaluate(() => window.__citydriver.vehicle.carId), 'taxi', 'purchase never swaps a cab mid-run');
@@ -60,7 +60,7 @@ try {
   await page.waitForFunction(() => window.__citydriver.taxi.boostActive && window.__citydriver.vehicle.speed > 15);
   await page.keyboard.up('ShiftLeft'); await page.keyboard.up('KeyW');
   await page.click('#pause');
-  await page.evaluate(() => window.__citydriver.taxi.fleet.credit(4500));
+  await page.evaluate(() => window.__citydriver.taxi.fleet.credit(40000));
   await page.click('#pause-fleet'); await page.click('[data-fleet-car=taxiFormula]');
   await page.screenshot({ path: '.artifacts/fleet/desktop-owned.png' });
   await page.click('#close-fleet'); await page.click('#end-run');
@@ -88,14 +88,21 @@ try {
   await page.close();
 
   const mobile = await open({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
-  // Fresh save: every cab still works for free and does not grant ownership.
+  // Fresh save: a cab the fleet doesn't own opens its offer in the garage,
+  // and its free test drive goes straight to the street without granting ownership.
   await mobile.tap('#free-drive'); await mobile.waitForFunction(() => window.__citydriver.gameMode === 'free');
   await mobile.waitForFunction(() => getComputedStyle(document.querySelector('#welcome')).visibility === 'hidden');
   for (const id of ['taxiGT', 'taxiFormula']) {
     await mobile.tap('#pause'); await mobile.tap('#change-car'); await mobile.tap(`[data-car=${id}]`);
+    assert.equal(await mobile.locator('#garage-offer').isVisible(), true);
+    assert.equal(await mobile.locator('#offer-buy').isDisabled(), true, 'not enough to buy it');
+    assert.equal(await mobile.locator('#offer-test').textContent(), 'Test drive · Free');
+    await mobile.tap('#offer-test');
+    await mobile.waitForFunction(() => !window.__citydriver.paused);
     assert.equal(await mobile.evaluate(() => window.__citydriver.vehicle.carId), id);
+    assert.equal(await mobile.evaluate(() => window.__citydriver.testDrive.id), id);
     assert.deepEqual(await mobile.evaluate(() => [...window.__citydriver.taxi.fleet.owned]), ['taxi']);
-    await mobile.tap('#resume'); await mobile.waitForTimeout(200);
+    await mobile.waitForTimeout(200);
     assert.equal(await mobile.evaluate(() => window.__citydriver.taxi.status), 'idle', 'a test drive takes no fares');
   }
   await mobile.tap('#pause'); await mobile.tap('#switch-mode');
@@ -122,5 +129,5 @@ try {
   assert.equal(await mobile.evaluate(() => window.__citydriver.gameMode), 'free');
   assert.deepEqual(errors, []);
   await writeFile('.artifacts/fleet/browser-report.json', JSON.stringify({ passed: true, errors }, null, 2));
-  console.log('Fleet checks passed: purchases, persistence, next-shift selection, results, mode-specific menus, free access, desktop and touch layouts.');
+  console.log('Fleet checks passed: purchases, persistence, next-shift selection, results, mode-specific menus, test drives, desktop and touch layouts.');
 } finally { await browser.close(); }

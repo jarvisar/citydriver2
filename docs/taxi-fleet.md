@@ -1,10 +1,10 @@
 # Taxi Fleet
 
-Completed fares, tips and shift goal bonuses are added to a saved fleet balance. So are free drive's stunt chains, a cut of each demolition chain, and new places and jump stars, at much smaller amounts (see [progression](taxi-progression.md)). Ending a shift early keeps completed earnings, but unfinished fares pay nothing. Buying a cab doesn't change your run score or best score.
+Completed fares, tips and shift goal bonuses are added to a saved fleet balance. So are free drive's stunt chains, a cut of each demolition chain, and new places and jump stars. It's the same balance the garage sells every car from (see [money and the garage](economy.md)). Ending a shift early keeps completed earnings, but unfinished fares pay nothing. Buying a cab doesn't change your run score or best score.
 
 The fleet opens from the Taxi fleet button in the pause menu, or on a shift's results screen. Buying a cab selects it for the next shift. You can save up for the Formula Taxi straight away, or switch back to any cab you own.
 
-All three taxis are free in the free drive garage to try out. Using one there doesn't unlock it for shifts, and a cab the fleet doesn't own has no fares around it.
+Cabs are in the free drive garage too, at the same prices, and can be test driven there for two minutes. A test drive doesn't unlock a cab for shifts, and a cab the fleet doesn't own has no fares around it.
 
 ## Liveries
 
@@ -15,14 +15,14 @@ The fleet dialog also has the cab's livery. Liveries are unlocked by driver rank
 | Cab | Price | Top speed (m/s / mph) | Acceleration | Braking | Grip | Off-road speed |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Taxi | Included | 40 / 89 | 21 | 32 | 1.40 | 28 |
-| GT Taxi | $1,500 | 46 / 103 | 29 | 34 | 1.55 | 28 |
-| Formula Taxi | $4,500 | 50 / 112 | 40 | 36 | 2.20 | 28 |
+| GT Taxi | $10,000 | 46 / 103 | 29 | 34 | 1.55 | 28 |
+| Formula Taxi | $40,000 | 50 / 112 | 40 | 36 | 2.20 | 28 |
 
 Acceleration and braking are in m/s², and off-road speed is in m/s. Grip is relative to the original wagon. Boost adds 10 m/s to top speed. Fares, boost, timers and passenger capacity are the same for every taxi.
 
 The Formula Taxi has two seats, with the first-person camera in the left seat. Every cab carries groups of up to four riders.
 
-A good shift earns about $2,000 to $5,000, so the GT Taxi takes one or two shifts and the Formula Taxi a few more.
+A good shift earns about $2,000 to $5,000, so the GT Taxi takes a few shifts and the Formula Taxi more like an hour and a half of driving. They were $1,500 and $4,500 when cabs were the only thing to buy.
 
 Straight-road measurements at 120 Hz without boost:
 

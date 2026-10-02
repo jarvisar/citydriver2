@@ -20,7 +20,8 @@ This is the sequel to [Citydriver](https://github.com/jarvisar/citydriver). The 
 - Ramps and jumps, including a half-built bridge to jump the river
 - Landmarks and shops that passengers can ask to go to
 - Taxi mode with group fares, shift goals, driver ranks and cabs to buy
-- Start a shift from any street in your cab, and earn toward faster cabs in free drive too
+- Start a shift from any street in your cab
+- One balance for every mode, spent on the garage's cars, specials and aircraft, with a test drive of each
 - Demolition mode with a truck, damage chains, contracts, ratings and high scores
 - Get out and walk around in free drive, chase pigeons and borrow cars from traffic
 - Weather and night driving
@@ -30,13 +31,13 @@ This is the sequel to [Citydriver](https://github.com/jarvisar/citydriver). The 
 
 ## How to Play
 
-Choose Taxi shift to drive your cab into the city. Passengers wait in rings all around it, and the shift starts when you stop in one to pick them up. Then follow the arrow and stop in the yellow drop-off zone before the fare clock runs out. Buildings have a short zone outside the entrance. Parks and squares let passengers out anywhere along their side of the street. Some passengers are in a hurry, want stunts or are nervous. An icon on their ring shows which. Drifts, jumps and near misses earn tips. If time runs out with passengers aboard, the shift ends after the last one gets out. End shift in the pause menu ends it early. Earnings can be spent on faster cabs in the taxi fleet. See [progression and balance](docs/taxi-progression.md) and [taxi fleet](docs/taxi-fleet.md) for more details.
+Choose Taxi shift to drive your cab into the city. Passengers wait in rings all around it, and the shift starts when you stop in one to pick them up. Then follow the arrow and stop in the yellow drop-off zone before the fare clock runs out. Buildings have a short zone outside the entrance. Parks and squares let passengers out anywhere along their side of the street. Some passengers are in a hurry, want stunts or are nervous. An icon on their ring shows which. Drifts, jumps and near misses earn tips. If time runs out with passengers aboard, the shift ends after the last one gets out. End shift in the pause menu ends it early. Earnings go into one balance that buys faster cabs and everything else in the garage. See [progression and balance](docs/taxi-progression.md) and [taxi fleet](docs/taxi-fleet.md) for more details.
 
 Demolition puts you in a truck with one minute to cause as much property damage as possible. Lamp posts, benches, signs, trees, bus shelters and cars all have a price, and cars in traffic are worth the most. Hits in quick succession build a chain. Every fourth hit raises the chain's multiplier, up to ×5, and the chain's damage is added to the total when it ends. Each run has three contracts, like felling five trees, and each one finished adds 10 seconds to the clock. Wrecking a moving car adds 3. A jump doesn't break the chain, and landing on a car does a lot of damage. If time runs out mid-chain, the chain keeps going until it ends. Pedestrians dive out of the way if you give them the chance. Running one over costs a $10,000 fine and the chain in progress. Each run gets a rating, and the best five runs are kept as high scores. See [demolition](docs/demolition.md) for the prices, contracts and ratings.
 
-Free drive has no timer. All three taxis are available in the garage to try out, and weather settings and the places you've found are in the pause menu. Driving past a landmark or dropping a passenger at one marks it as found, and found places show up on the city map. The garage also has a helicopter and a plane for seeing the city from the air, and the city bus. Press forward on the main menu to enter free drive.
+Free drive has no timer. You start with the Taxi, and the garage sells everything else: more cabs, ordinary cars, specials like the monster truck and the city bus, and a helicopter and a plane for seeing the city from the air. Pick a car you don't own to buy it or test drive it for two minutes. The first test drive of each one is free. Weather settings and the places you've found are in the pause menu. Driving past a landmark or dropping a passenger at one marks it as found, and found places show up on the city map. Press forward on the main menu to enter free drive.
 
-The modes all happen in the same city. In a cab you own, passengers wait around you in free drive too, so stopping in a ring starts a shift wherever you are. When a shift or a demolition run ends, Keep driving carries on from the same spot in the same vehicle. In free drive, drifts, jumps, near misses, smashes and flying stunts chain together like demolition hits, and when the chain runs out it's paid into your fleet balance. Crashing or running someone over loses it. New places and jump stars pay too, and so does demolition, so everything counts toward a faster cab and the next driver rank.
+The modes all happen in the same city. In a cab you own, passengers wait around you in free drive too, so stopping in a ring starts a shift wherever you are. When a shift or a demolition run ends, Keep driving carries on from the same spot in the same vehicle. In free drive, drifts, jumps, near misses, smashes and flying stunts chain together like demolition hits, and when the chain runs out it's paid into your fleet balance. Crashing or running someone over loses it. New places and jump stars pay too, and so does demolition, so everything counts toward the next car and the next driver rank. See [money and the garage](docs/economy.md) for what each mode pays and what things cost.
 
 R puts the car back on the road. New city is in the pause menu, and it has to be pressed twice since the places you've found and your jump stars are only kept for the current city.
 
@@ -169,6 +170,7 @@ Pushes to `main` are tested and deployed to GitHub Pages at `citydriver2.jarvisa
 - [Handling](docs/handling.md)
 - [Taxi progression](docs/taxi-progression.md)
 - [Taxi fleet](docs/taxi-fleet.md)
+- [Money and the garage](docs/economy.md)
 - [Demolition](docs/demolition.md)
 - [Driving HUD](docs/driving-hud.md)
 - [UI styles](docs/ui-style.md)

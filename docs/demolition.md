@@ -85,7 +85,7 @@ Running someone over costs a $10,000 fine and the whole chain in progress. Someo
 
 The best five runs are saved as high scores, with the total damage of every run. The table is on the results screen and in the pause menu during a run. Once a run passes your best, the score panel says so.
 
-Each chain banked also pays 0.4% of its damage into the taxi fleet's balance, so a B rating is worth about $1,000 toward a faster cab. The results screen shows what the run paid. When a run ends, Keep driving carries on in free drive in the truck, from where it stopped.
+Each chain banked also pays a cut of its damage into the fleet balance: 0.4% of a run's first $100,000, then less of each band after it, so a C rating pays about $460, B $780 and S $1,600 (see [money and the garage](economy.md)). The results screen shows what the run paid and how far off the next car is. When a run ends, Keep driving carries on in free drive in the truck, from where it stopped.
 
 ## Balance
 

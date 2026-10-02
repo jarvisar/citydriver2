@@ -47,7 +47,10 @@ export function menuModel(state, controls, { garage, fleet, result, mapImage, ma
   if (state.chooser === 'map') return { id: 'map', title: 'City map', subtitle: `You are in ${state.location.place}`, image: mapImage, imageKey: mapKey, items: [back], hint: 'B: back' };
   if (state.chooser === 'fleet') return { id: 'taxi-fleet-dialog', title: 'Taxi fleet', subtitle: `Fleet balance ${fleet.balance} · Faster cabs fit more fares into a run`,
     flow: true, items: [...fleet.cabs, ...fleet.liveries, back], hint: VR_POINTING };
-  if (state.chooser === 'garage') return { id: 'car-dialog', title: 'Garage', subtitle: 'Paint applies to all cars', flow: true, items: [...garage.paints, ...garage.cars, back], hint: VR_POINTING };
+  // (an unowned car's offer is a menu of its own, and Back goes back to the garage)
+  if (state.chooser === 'garage' && garage.offer) return { id: 'car-offer', title: garage.offer.label, subtitle: garage.offer.summary,
+    items: garage.offer.items, hint: VR_POINTING };
+  if (state.chooser === 'garage') return { id: 'car-dialog', title: 'Garage', subtitle: `${garage.summary} · Paint ${garage.paintPrice} a colour, on every car`, flow: true, items: [...garage.paints, ...garage.cars, ...garage.gear, back], hint: VR_POINTING };
   if (state.over) return { id: `${state.mode}-results`, title: `Time up · ${result.cash}`,
     subtitle: [result.name, state.mode === 'demolition' ? result.next : result.best].filter(Boolean).join(' · '), hint: VR_POINTING,
     items: [item('retry', { primary: true }), item('keep'), item(state.mode === 'demolition' ? 'taxi' : 'fleet', { value: undefined }), item('exit', { footer: true })] };

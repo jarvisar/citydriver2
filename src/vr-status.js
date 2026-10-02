@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RAINBOW_SWATCH } from './car-paint.js';
 
 // The page's own palette and type (city-theme.css), so the headset's panels
 // read as the same game: slate panels, taxi yellow for the main action and a
@@ -65,6 +66,12 @@ function pour(items, body) {
     page.height = Math.max(page.height, y);
   }
   return pages;
+}
+// The rainbow paint's swatch, as the page's conic gradient
+function rainbowFill(ctx, x, y) {
+  const gradient = ctx.createConicGradient(0, x, y);
+  ['#ff4d4d', '#ffd84d', '#5ee05e', '#4dd8ff', '#6a5cff', '#ff4dd2', '#ff4d4d'].forEach((colour, i, all) => gradient.addColorStop(i / (all.length - 1), colour));
+  return gradient;
 }
 function box(ctx, x, y, width, height, radius, fill, stroke) {
   ctx.beginPath(); ctx.roundRect(x, y, width, height, radius);
@@ -334,7 +341,8 @@ export class VRStatus {
     let left = x + 22, right = x + width - 22;
     if (item.swatch) {
       ctx.beginPath(); ctx.arc(left + 17, middle, 17, 0, Math.PI * 2);
-      ctx.fillStyle = item.swatch; ctx.fill(); ctx.strokeStyle = UI.switchLine; ctx.lineWidth = 2; ctx.stroke();
+      ctx.fillStyle = item.swatch === RAINBOW_SWATCH ? rainbowFill(ctx, left + 17, middle) : item.swatch;
+      ctx.fill(); ctx.strokeStyle = UI.switchLine; ctx.lineWidth = 2; ctx.stroke();
       left += 48;
     }
     if (item.toggle !== undefined) {

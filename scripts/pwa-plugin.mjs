@@ -17,8 +17,6 @@ export function citydriverPwa() {
         { tag: 'meta', attrs: { name: 'apple-mobile-web-app-title', content: 'Citydriver' } },
         ...(config.command === 'build' ? [{
           tag: 'script', attrs: { src: `${base}pwa-register.js`, defer: true }, injectTo: 'body',
-        }, {
-          tag: 'link', attrs: { rel: 'stylesheet', href: `${base}pwa-update.css` },
         }] : []),
         {
           tag: 'script', attrs: { src: `${base}pwa-install.js`, defer: true }, injectTo: 'body',

@@ -28,7 +28,8 @@ export function setupTaxiFleet(menu) {
       dialog.querySelector('#fleet-livery-name').textContent = model.liveryName;
       dialog.querySelector('#fleet-career').textContent = model.career;
     }
-    document.querySelector('#taxi-result-bank').textContent = `Fleet bank ${model.balance}`;
+    // (the shift's results end on the balance and the car it is going toward)
+    document.querySelector('#taxi-result-bank').textContent = [`Balance ${model.balance}`, model.saving?.text].filter(Boolean).join(' · ');
   }
   menu.subscribe(feedback => { render(); dialog.querySelector('#fleet-feedback').textContent = feedback; });
   cards.addEventListener('click', event => {

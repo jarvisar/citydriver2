@@ -4,7 +4,8 @@ import { TaxiRun, STOP_SECONDS } from '../src/taxi-run.js';
 import { TaxiFleet } from '../src/taxi-fleet.js';
 import { TaxiCareer } from '../src/taxi-career.js';
 import { DemolitionRun, CHAIN_SECONDS } from '../src/demolition-run.js';
-import { garageModel, createFleetMenu } from '../src/chooser-model.js';
+import { garageModel, createFleetMenu, savingFor } from '../src/chooser-model.js';
+import { carPrice, testDrivePrice } from '../src/cars.js';
 import { menuControls, menuModel, WEATHER_CHOICES, cycleChoice } from '../src/menu-model.js';
 import { taxiHudModel, demolitionHudModel, locationHudModel, headsetHudModel } from '../src/run-hud-model.js';
 import { renderRunHud } from '../src/run-hud-dom.js';
@@ -50,27 +51,79 @@ test('menu choices and commands cover the title, pause modes, choosers and resul
   }
 });
 
+const garageActions = calls => ({ chooseCar: id => calls.push(id), applyPaint: paint => calls.push(paint), openOffer: id => calls.push(`offer:${id}`),
+  closeOffer: () => calls.push('close'), buyCar: id => calls.push(`buy:${id}`), testDrive: id => calls.push(`test:${id}`), saveFor: id => calls.push(`save:${id}`), useGear: id => calls.push(id) });
 test('garage selection uses car and paint state, and preserves paint-first headset paging', () => {
-  const calls = [], ownPaint = () => '#123456';
-  const garage = garageModel('sports', '#abcdef', ownPaint, { chooseCar: id => calls.push(id), applyPaint: paint => calls.push(paint) });
+  const calls = [], ownPaint = () => '#123456', fleet = new TaxiFleet();
+  fleet.credit(carPrice('sports')); fleet.buy('sports');
+  const garage = garageModel({ carId: 'sports', paint: '#abcdef', ownPaint, fleet }, garageActions(calls));
   assert.equal(garage.cars.find(car => car.current).id, 'sports');
   assert.ok(garage.paints.every(paint => !paint.current), 'custom paint selects no preset');
   garage.cars.find(car => car.id === 'taxi').activate(); garage.paints[0].activate();
   assert.deepEqual(calls, ['taxi', DEFAULT_PAINT]);
   const s = state({ mode: 'free', chooser: 'garage' }), model = menuModel(s, menuControls(s, actions([])), { garage });
   assert.equal(model.items[0].group, 'Paint'); assert.equal(model.items[0].swatch, '#123456');
+  assert.match(model.subtitle, /\$0 · 2 of 21 owned/);
+  assert.equal(model.items.find(item => item.id === 'jetpack')?.label, 'Jetpack', 'the gear after the cars');
+  assert.ok(!garage.paints.some(item => item.id === 'rainbow'), 'no rainbow before the code');
+  assert.ok(garage.paints.filter(item => item.id !== DEFAULT_PAINT).every(item => item.disabled), 'no colour without the money for it');
+  assert.equal(garage.paints[0].disabled, false, 'each car\'s own colour is free');
   assert.deepEqual([...new Set(garage.cars.map(car => car.group))], ['Cabs', 'Cars', 'Specials', 'Aircraft'], 'the garage in sections');
   assert.ok(!garage.cars.some(car => ['auto', 'desert', 'city'].includes(car.id)), 'without the old route wagons');
   assert.equal(model.items.at(-1).label, 'Back');
+});
+
+test('an unowned car opens its offer: buy it, test drive it or save for it, the same commands on the page and in a headset', () => {
+  const calls = [], fleet = new TaxiFleet(), ownPaint = () => '#123456', build = offer => garageModel({ carId: 'taxi', paint: null, ownPaint, fleet, offer }, garageActions(calls));
+  let garage = build(null);
+  const plane = garage.cars.find(car => car.id === 'plane');
+  assert.equal(plane.owned, false); assert.equal(plane.value, '$140,000'); assert.equal(plane.affordable, false);
+  plane.activate(); assert.deepEqual(calls, ['offer:plane']);
+  garage = build('plane');
+  const s = state({ mode: 'free', chooser: 'garage' }), model = menuModel(s, menuControls(s, actions([])), { garage });
+  assert.equal(model.id, 'car-offer'); assert.equal(model.title, 'Plane');
+  const [buy, drive, save, back] = model.items;
+  assert.equal(buy.disabled, true, 'not yet'); assert.equal(buy.value, '$140,000 to go');
+  assert.equal(drive.disabled, false); assert.equal(drive.value, 'Free · 2 min'); assert.equal(drive.primary, true, 'the test drive leads while the car is out of reach');
+  drive.activate(); save.activate(); back.activate();
+  assert.deepEqual(calls.slice(1), ['test:plane', 'save:plane', 'close']);
+  fleet.testDrive('plane'); fleet.setGoal('plane');
+  garage = build('plane');
+  assert.equal(garage.offer.items[1].disabled, true, 'a second test drive costs money'); assert.equal(garage.offer.items[1].value, `$${testDrivePrice('plane').toLocaleString('en-US')} to go`);
+  assert.equal(garage.offer.items[2].toggle, true); garage.offer.items[2].activate(); assert.equal(calls.at(-1), 'save:null');
+  assert.equal(garage.cars.find(car => car.id === 'plane').goal, true);
+  fleet.credit(carPrice('plane'));
+  garage = build('plane');
+  assert.equal(garage.offer.items[0].disabled, false); assert.equal(garage.offer.items[0].primary, true); assert.match(garage.offer.progress, /^Leaves/);
+  fleet.buy('plane');
+  assert.equal(build('plane').offer, null, 'a car owned has no offer');
+  fleet.credit(carPrice('jetpack')); fleet.buy('jetpack');
+  const jetpack = build(null).gear.find(item => item.id === 'jetpack');
+  assert.equal(jetpack.value, 'Owned'); jetpack.activate(); assert.equal(calls.at(-1), 'jetpack', 'owned gear says how to use it');
+  const poorer = new TaxiFleet(), offer = garageModel({ carId: 'taxi', paint: null, ownPaint, fleet: poorer, offer: 'jetpack' }, garageActions(calls)).offer;
+  assert.equal(offer.items[1].label, 'Try it'); assert.match(offer.note, /on foot/);
+  poorer.enterKonami(); assert.ok(garageModel({ carId: 'taxi', paint: null, ownPaint, fleet: poorer }, garageActions(calls)).paints.some(item => item.id === 'rainbow' && !item.disabled), 'the code adds the rainbow');
+});
+
+test('saving for a car: the one chosen, else the cheapest still out of reach, and none once the garage is full', () => {
+  const fleet = new TaxiFleet();
+  assert.equal(savingFor(fleet).id, 'coast'); assert.equal(savingFor(fleet).text, 'Surf Wagon in $1,500');
+  fleet.credit(1600);
+  assert.equal(savingFor(fleet).id, 'hatchback', 'one it can buy already is not a goal');
+  fleet.setGoal('helicopter');
+  assert.equal(savingFor(fleet).id, 'helicopter'); assert.equal(savingFor(fleet).chosen, true); assert.ok(savingFor(fleet).fraction > 0);
+  fleet.credit(2e6);
+  for (const car of garageModel({ carId: 'taxi', paint: null, ownPaint: () => '', fleet }, garageActions([])).cars) fleet.buy(car.id);
+  assert.equal(savingFor(fleet), null);
 });
 
 test('fleet models validate purchases and locked liveries without desktop buttons, including stale rows', () => {
   const fleet = new TaxiFleet(), career = new TaxiCareer(), changes = [], paint = [];
   const menu = createFleetMenu(fleet, { running: () => true, career, onChange: () => changes.push(fleet.selected), onLivery: color => paint.push(color) });
   const locked = menu.model().cabs.find(cab => cab.id === 'taxiGT');
-  assert.equal(locked.disabled, true); assert.equal(locked.value, '$1,500');
+  assert.equal(locked.disabled, true); assert.equal(locked.value, '$10,000');
   assert.equal(locked.activate(), false); assert.equal(changes.length, 0);
-  fleet.credit(1500); assert.equal(menu.model().cabs.find(cab => cab.id === 'taxiGT').disabled, false);
+  fleet.credit(carPrice('taxiGT')); assert.equal(menu.model().cabs.find(cab => cab.id === 'taxiGT').disabled, false);
   assert.equal(locked.activate(), true); assert.equal(fleet.balance, 0); assert.equal(fleet.selected, 'taxiGT');
   assert.equal(locked.activate(), true); assert.equal(fleet.balance, 0, 'a second activation only selects an owned cab');
   assert.match(menu.model().note, /next run/);

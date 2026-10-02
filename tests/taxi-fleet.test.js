@@ -1,24 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TaxiFleet, TAXI_FLEET, FLEET_KEY } from '../src/taxi-fleet.js';
+import { TaxiFleet, TAXI_FLEET, FLEET_KEY, KONAMI_PAY } from '../src/taxi-fleet.js';
 import { TaxiRun } from '../src/taxi-run.js';
-import { CARS } from '../src/cars.js';
+import { CARS, GARAGE_IDS, GARAGE_PRICES, GEAR, carPrice, testDrivePrice } from '../src/cars.js';
+import { PAINT_PRICE, RAINBOW_PAINT } from '../src/car-paint.js';
 import { DrivingController, createCar } from '../src/vehicle.js';
 import { engineFor } from '../src/audio/profiles.js';
 
 const storage = () => { const values = new Map(); return { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) }; };
 
 test('fleet purchases deduct once, persist ownership and keep score separate from savings', () => {
-  const disk = storage(), fleet = new TaxiFleet(disk);
+  const disk = storage(), fleet = new TaxiFleet(disk), gt = carPrice('taxiGT');
   assert.deepEqual([...fleet.owned], ['taxi']);
   assert.equal(fleet.buy('taxiGT'), false);
   assert.equal(fleet.select('taxiFormula'), false);
   assert.equal(fleet.buy('sports'), false);
-  fleet.credit(1499); assert.equal(fleet.buy('taxiGT'), false);
+  fleet.credit(gt - 1); assert.equal(fleet.buy('taxiGT'), false);
   fleet.credit(1); assert.equal(fleet.buy('taxiGT'), true);
   assert.equal(fleet.balance, 0); assert.equal(fleet.selected, 'taxiGT');
   assert.equal(fleet.buy('taxiGT'), false);
-  fleet.credit(4500); assert.equal(fleet.buy('taxiFormula'), true);
+  fleet.credit(carPrice('taxiFormula')); assert.equal(fleet.buy('taxiFormula'), true);
   fleet.select('taxi');
   const loaded = new TaxiFleet(disk);
   assert.equal(loaded.balance, 0); assert.equal(loaded.selected, 'taxi');
@@ -28,11 +29,11 @@ test('fleet purchases deduct once, persist ownership and keep score separate fro
   assert.equal(disk.getItem('citydriver-taxi-best'), null);
 });
 
-test('a driver can save directly for Formula, and malformed saves cannot unlock non-fleet cars', () => {
+test('a driver can save directly for Formula, and malformed saves cannot unlock cars', () => {
   const disk = storage(), fleet = new TaxiFleet(disk);
-  fleet.credit(4500); assert.equal(fleet.buy('taxiFormula'), true);
+  fleet.credit(carPrice('taxiFormula')); assert.equal(fleet.buy('taxiFormula'), true);
   assert.equal(fleet.owned.has('taxiGT'), false);
-  for (const data of ['broken', 'null', '{"version":1,"balance":-1}', '{"version":2,"balance":9999}']) {
+  for (const data of ['broken', 'null', '{"version":1,"balance":-1}', '{"version":2,"balance":-1}', '{"version":3,"balance":9999}']) {
     disk.setItem(FLEET_KEY, data);
     assert.equal(new TaxiFleet(disk).balance, 0);
   }
@@ -41,8 +42,78 @@ test('a driver can save directly for Formula, and malformed saves cannot unlock 
   assert.equal(loaded.balance, 321); assert.equal(loaded.selected, 'taxi');
   assert.deepEqual([...loaded.owned], ['taxi']);
   for (const amount of [-1, NaN, Infinity, 1.1, '50']) assert.equal(loaded.credit(amount), false);
+  disk.setItem(FLEET_KEY, JSON.stringify({ version: 2, balance: 5, owned: ['plane', 'auto', 'nope'], selected: 'plane', goal: 'plane', tried: ['nope', 'formula'] }));
+  const odd = new TaxiFleet(disk);
+  assert.deepEqual([...odd.owned], ['taxi', 'plane'], 'only cars the garage sells');
+  assert.equal(odd.selected, 'taxi', 'only a cab works shifts'); assert.equal(odd.goal, null, 'no saving for a car already owned');
+  assert.deepEqual([...odd.tried], ['formula']);
   const unavailable = new TaxiFleet({ getItem() { throw Error(); }, setItem() { throw Error(); } });
-  unavailable.credit(1500); assert.equal(unavailable.buy('taxiGT'), true); assert.equal(unavailable.saved, false);
+  unavailable.credit(carPrice('taxiGT')); assert.equal(unavailable.buy('taxiGT'), true); assert.equal(unavailable.saved, false);
+});
+
+test('the garage sells every car but the starting cab, cheapest in the traffic and dearest in the air', () => {
+  for (const id of GARAGE_IDS) assert.ok(Number.isSafeInteger(GARAGE_PRICES[id]) && GARAGE_PRICES[id] >= 0, `${id} has a price`);
+  assert.equal(carPrice('taxi'), 0); assert.equal(carPrice('auto'), null, 'retired cars are not for sale');
+  const fleet = new TaxiFleet(), dearest = Math.max(...GARAGE_IDS.map(carPrice));
+  assert.ok(carPrice('plane') === dearest && carPrice('helicopter') > carPrice('formula'), 'the aircraft are the long goal');
+  for (const id of ['hatchback', 'sedan', 'wagon', 'pickup', 'van']) assert.ok(carPrice(id) < carPrice('sports'), `${id} can be borrowed from the traffic, so it is cheap`);
+  fleet.credit(carPrice('sports')); assert.equal(fleet.buy('sports'), true);
+  assert.equal(fleet.selected, 'taxi', 'buying a car keeps the shift cab'); assert.equal(fleet.select('sports'), false);
+  for (const id of Object.keys(GEAR)) assert.ok(carPrice(id) > carPrice('exotic') && carPrice(id) < carPrice('helicopter'), `${id} costs a decent penny, less than an aircraft`);
+  fleet.credit(carPrice('jetpack')); assert.equal(fleet.buy('jetpack'), true); assert.equal(fleet.select('jetpack'), false);
+  assert.equal(fleet.testDriveCost('jetpack'), null, 'nothing to try once it is yours');
+});
+
+test('paint costs a little, a car\'s own colour is free, and the Konami code pays once and unlocks the rainbow', () => {
+  const disk = storage(), fleet = new TaxiFleet(disk);
+  assert.equal(fleet.setPaint('#123456'), false, 'not without the money');
+  fleet.credit(PAINT_PRICE * 2);
+  assert.equal(fleet.paintCost('#123456'), PAINT_PRICE); assert.equal(fleet.setPaint('#123456'), true); assert.equal(fleet.balance, PAINT_PRICE);
+  assert.equal(fleet.setPaint('#123456'), true); assert.equal(fleet.balance, PAINT_PRICE, 'the colour it wears costs nothing again');
+  assert.equal(fleet.setPaint(null), true); assert.equal(fleet.balance, PAINT_PRICE, 'each car\'s own colour is free');
+  assert.equal(fleet.setPaint(RAINBOW_PAINT), false, 'the rainbow waits for the code'); assert.equal(fleet.setPaint('nope'), false);
+  assert.equal(fleet.enterKonami(), KONAMI_PAY); assert.equal(fleet.balance, PAINT_PRICE + KONAMI_PAY);
+  assert.equal(fleet.enterKonami(), 0, 'once a save');
+  assert.equal(fleet.setPaint(RAINBOW_PAINT), true);
+  const loaded = new TaxiFleet(disk);
+  assert.equal(loaded.paint, RAINBOW_PAINT); assert.equal(loaded.konami, true); assert.equal(loaded.enterKonami(), 0, 'nor after a reload');
+  disk.setItem(FLEET_KEY, JSON.stringify({ version: 2, balance: 0, owned: ['taxi'], paint: 'rainbow' }));
+  assert.equal(new TaxiFleet(disk).paint, null, 'no rainbow without the code');
+});
+
+test('test drives: the first of each car is free, the rest cost a little, and none of a car owned', () => {
+  const disk = storage(), fleet = new TaxiFleet(disk);
+  assert.equal(fleet.testDriveCost('taxi'), null); assert.equal(fleet.testDriveCost('auto'), null);
+  assert.equal(fleet.testDriveCost('plane'), 0); assert.equal(fleet.testDrive('plane'), true);
+  assert.equal(fleet.testDriveCost('plane'), testDrivePrice('plane'));
+  assert.ok(testDrivePrice('plane') < carPrice('plane') * .05 && testDrivePrice('coast') >= 50);
+  assert.equal(fleet.testDrive('plane'), false, 'not without the money');
+  fleet.credit(testDrivePrice('plane') + 7); assert.equal(fleet.testDrive('plane'), true); assert.equal(fleet.balance, 7);
+  assert.deepEqual([...new TaxiFleet(disk).tried], ['plane'], 'kept with the fleet, so a reload is no new free drive');
+  assert.equal(fleet.setGoal('plane'), true); assert.equal(new TaxiFleet(disk).goal, 'plane');
+  assert.equal(fleet.setGoal('taxi'), false); assert.equal(fleet.setGoal(null), true);
+  fleet.setGoal('coast'); fleet.credit(carPrice('coast')); fleet.buy('coast');
+  assert.equal(fleet.goal, null, 'bought, nothing left to save for'); assert.equal(fleet.testDriveCost('coast'), null);
+});
+
+test('a fleet saved before the garage sold cars keeps its cabs, and the car its player had picked', () => {
+  const disk = storage();
+  disk.setItem(FLEET_KEY, JSON.stringify({ version: 1, balance: 900, owned: ['taxi', 'taxiGT'], selected: 'taxiGT', livery: 'cream' }));
+  disk.setItem('citydriver-car', 'helicopter');
+  const fleet = new TaxiFleet(disk);
+  assert.deepEqual([...fleet.owned].sort(), ['helicopter', 'taxi', 'taxiGT']); assert.equal(fleet.selected, 'taxiGT'); assert.equal(fleet.balance, 900);
+  assert.equal(JSON.parse(disk.getItem(FLEET_KEY)).version, 2, 'saved again at once');
+  disk.setItem('citydriver-car', 'plane');
+  assert.ok(!new TaxiFleet(disk).owned.has('plane'), 'only once, from the old save');
+  const cab = storage();
+  cab.setItem(FLEET_KEY, JSON.stringify({ version: 1, balance: 0, owned: ['taxi'], selected: 'taxi' })); cab.setItem('citydriver-car', 'taxiFormula');
+  assert.deepEqual([...new TaxiFleet(cab).owned], ['taxi'], 'a cab picked there was only a test drive');
+  const fresh = storage(); fresh.setItem('citydriver-car', 'sports');
+  assert.ok(new TaxiFleet(fresh).owned.has('sports'), 'a player with no fleet yet keeps their car too');
+  assert.ok(!new TaxiFleet(fresh).owned.has('jetpack'));
+  const walked = storage(); walked.setItem('citydriver-jetpack-hint', 'shown');
+  assert.ok(new TaxiFleet(walked).owned.has('jetpack'), 'one who has been on foot keeps the jetpack');
+  assert.deepEqual([...new TaxiFleet(storage()).owned], ['taxi'], 'a new player starts with the cab');
 });
 
 test('completed fares bank exactly once and survive restart, abandonment, expiry and reload', () => {

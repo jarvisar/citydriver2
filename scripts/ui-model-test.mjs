@@ -56,13 +56,27 @@ try {
       }
       check(game.currentMenuModel().items.some(item => item.id === 'sports' && item.label === 'GT'), 'garage labels come from car data');
       paints[1].activate(); check(game.paint === paints[1].id, 'paint command applies without a click');
-      const garageClosed = closed('car-dialog');
+      // A car the fleet doesn't own opens its offer, and Back returns to the cards
       game.currentMenuModel().items.find(item => item.group === 'Cars' && item.id === 'sports').activate();
-      check(game.carId === 'sports', 'car command applies without a click');
+      check(game.currentMenuModel().id === 'car-offer' && game.currentMenuModel().title === 'GT', 'an unowned car opens its offer');
+      check(game.currentMenuModel().items.find(item => item.id === 'offer-buy').disabled, 'it can\'t be bought without the money');
+      game.currentMenuModel().items.find(item => item.label === 'Back').activate();
+      check(game.currentMenuModel().id === 'car-dialog', 'back to the garage from an offer');
+      game.taxi.fleet.credit(12000);
+      game.currentMenuModel().items.find(item => item.id === 'sports').activate();
+      const bought = closed('car-dialog');
+      game.currentMenuModel().items.find(item => item.id === 'offer-buy').activate();
+      await bought;
+      check(game.carId === 'sports' && game.taxi.fleet.owned.has('sports') && game.taxi.fleet.balance === 0, 'buying a car puts the player in it');
+      check(!game.paused, 'a car just bought goes straight to the drive');
+      await game.action('pause'); await row('garage').activate();
+      const garageClosed = closed('car-dialog');
+      game.currentMenuModel().items.find(item => item.id === 'taxi').activate();
+      check(game.carId === 'taxi', 'car command applies without a click');
       await garageClosed;
-      check(game.paused && game.currentMenuModel().id === 'pause', 'garage restores the pause menu');
+      check(game.paused && game.currentMenuModel().id === 'pause', 'picking a car restores the pause menu');
       await row('taxi').activate(); await game.action('pause'); await row('fleet').activate();
-      game.taxi.fleet.credit(1500);
+      game.taxi.fleet.credit(10000);
       document.querySelector('#fleet-balance').textContent = '$999999';
       const cab = game.currentMenuModel().items.find(item => item.id === 'taxiGT');
       document.querySelector('[data-fleet-car="taxiGT"]').disabled = true;

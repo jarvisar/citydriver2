@@ -11,8 +11,9 @@ import './taxi.css';
 import './taxi-fleet.css';
 import './demolition.css';
 import './city-theme.css';
+import './update-notice.css';
 import { setupTaxiFleet } from './taxi-fleet-view.js';
-import { createFleetMenu, garageModel } from './chooser-model.js';
+import { createFleetMenu, garageModel, savingFor } from './chooser-model.js';
 import { menuControls, menuModel, WEATHER_CHOICES, cycleChoice } from './menu-model.js';
 import { bindMenuControls, renderMenuControls } from './menu-dom.js';
 import { locationHudModel, headsetHudModel, freeHudModel } from './run-hud-model.js';
@@ -22,9 +23,10 @@ import { createRendering } from './rendering.js';
 import { setupCameraControls } from './camera-controls.js';
 import { DEFAULT_FOG_DISTANCE, FRAME_CAPS, Graphics, headsetBrowser } from './graphics.js';
 import { JOURNEYS } from './journeys.js';
-import { CARS, GARAGE_IDS, STARTING_CAR, ROUTE_PAINT, carEntry } from './cars.js';
-import { carArt } from './car-art.js';
-import { PAINTS, DEFAULT_PAINT, DEFAULT_PAINT_NAME, paintName, readPaint } from './car-paint.js';
+import { CARS, GARAGE_IDS, GEAR, STARTING_CAR, ROUTE_PAINT, carEntry, carPrice, shopName } from './cars.js';
+import { TestDrive, TEST_DRIVE_WARN } from './test-drive.js';
+import { carArt, gearArt } from './car-art.js';
+import { PAINTS, DEFAULT_PAINT, DEFAULT_PAINT_NAME, PAINT_PRICE, RAINBOW_PAINT, RAINBOW_NAME, paintName, readPaint } from './car-paint.js';
 import { SEED } from './world/route.js';
 import { resolveWorldSeed } from './world/generation.js';
 import { CityWeather } from './world/city-weather.js';
@@ -85,8 +87,8 @@ const carStorageKey = 'citydriver-car';
 let carId = STARTING_CAR;
 try { const saved = localStorage.getItem(carStorageKey); if (saved && GARAGE_IDS.includes(saved)) carId = saved; } catch { /* Storage is optional. */ }
 // One colour dresses the whole garage and follows the player from car to car.
-// It lasts the visit and is not stored: the fleet's own finishes are the thing
-// worth keeping, and Default hands them straight back.
+// It is saved with the fleet (it costs money: see TaxiFleet.setPaint), and
+// Default hands every car its own finish back.
 let paint = null;
 // A headset shows toasts in its own HUD (set up in boot).
 let echoToast = null;
@@ -250,8 +252,9 @@ async function boot() {
     }, () => vehicle);
     let taxiStorage; try { taxiStorage = localStorage; } catch { /* Optional storage. */ }
     const taxi = new TaxiRun(taxiStorage), taxiView = new TaxiView(scene, taxiStorage); cityGuide.taxi = taxi;
-    // Only a cab the player owns comes out of the garage (the fleet buys them)
-    if (carEntry(carId).taxi && !taxi.fleet.owned.has(carId)) carId = taxi.fleet.selected;
+    // Only a car the player owns comes out of the garage (anything else is a test drive)
+    if (!taxi.fleet.owned.has(carId)) carId = taxi.fleet.selected;
+    paint = taxi.fleet.paint;
     // Free drive's stunt chain (see stunt-chain.js)
     const stunts = new StuntChain();
     // Everything the player earns, wherever: the fleet balance that buys cabs,
@@ -507,7 +510,8 @@ async function boot() {
     // round it, and stopping in a ring starts a shift there and then (see
     // TaxiRun.standby). Getting out, or into anything else, puts it away. A
     // cab the fleet doesn't own is only a test drive.
-    const cabbing = () => started && gameMode === 'free' && !autodrive.enabled && taxi.fleet.owned.has(vehicle.carId) && !vehicle.walker;
+    const ownCab = id => carEntry(id).taxi && taxi.fleet.owned.has(id);
+    const cabbing = () => started && gameMode === 'free' && !autodrive.enabled && ownCab(vehicle.carId) && !vehicle.walker;
     function syncStandby() {
       if (cabbing() && taxi.status === 'idle') taxi.standby(vehicle);
       else if (!cabbing() && taxi.waiting) taxi.stop();
@@ -521,7 +525,7 @@ async function boot() {
     // standby, so the clock starts with the first fare as it does in free drive
     function beginTaxi() {
       if (changingJourney) return;
-      leaveRun(); menuIdle.stop(); started = true; stopAutodrive();
+      leaveRun(); menuIdle.stop(); started = true; stopAutodrive(); testDrive.stop();
       takeCar(taxi.fleet.selected, taxi.fleet.liveryColor);
       taxi.stop(); taxiView.reset();
       showFree();
@@ -531,7 +535,7 @@ async function boot() {
       if (freeTraffic === undefined || gameMode === 'free') freeTraffic = traffic.enabled;
       stunts.bank(); stuntEvents(stunts.drainEvents());
       gameMode = 'taxi'; traffic.setEnabled(true, vehicle);
-      if (taxi.fleet.owned.has(vehicle.carId)) taxi.fleet.select(vehicle.carId);
+      if (ownCab(vehicle.carId)) taxi.fleet.select(vehicle.carId);
       renderGoals(); cityGuide.lately = []; document.body.dataset.standby = 'false';
       $('#traffic').setAttribute('aria-pressed', 'true'); $('#autodrive').setAttribute('aria-pressed', 'false');
       modeUi(); updateHud();
@@ -548,7 +552,7 @@ async function boot() {
     }
     // What either run does first: the player at the wheel of its car, in traffic
     function enterRun(mode, id, carPaint) {
-      menuIdle.stop();
+      menuIdle.stop(); testDrive.stop();
       if (freeTraffic === undefined || gameMode === 'free') freeTraffic = traffic.enabled;
       started = true; gameMode = mode; stopAutodrive();
       onFoot.setCar(id, { paint: carPaint }); recoverCar(); traffic.setEnabled(true, vehicle);
@@ -635,11 +639,82 @@ async function boot() {
           // The portrait is drawn in whatever the garage is wearing, so the grid
           // doubles as the preview: one colour repaints the whole fleet at once.
           return `<button type="button" class="chooser-card car-card" data-car="${id}" aria-label="${label}" aria-current="false" style="--car-paint:${cardPaint(id)}">`
-            + carArt(id)
+            + '<span class="car-price" hidden></span>' + carArt(id)
             + `<span class="chooser-card-copy"><span class="chooser-card-title">${label}</span>`
             + `<span class="car-meters">${meters}</span>${current}</span></button>`;
-        }).join('')}</div>`).join('');
-      for (const button of carDialog.querySelectorAll('[data-car]')) button.addEventListener('click', () => chooseCar(button.dataset.car));
+        }).join('')}</div>`).join('')
+        // (and the gear, the jetpack, under its own heading)
+        + `<h3 id="garage-group-gear" class="garage-subheading">Gear</h3><div class="chooser-options car-options" role="group" aria-labelledby="garage-group-gear">`
+        + garageChoices().gear.map(({ id, label, about }) => `<button type="button" class="chooser-card car-card gear-card" data-gear="${id}" aria-label="${label}">`
+          + '<span class="car-price" hidden></span>' + gearArt(id)
+          + `<span class="chooser-card-copy"><span class="chooser-card-title">${label}</span><span class="gear-about">${about}</span></span></button>`).join('') + '</div>';
+      // (a car the fleet owns is picked, any other opens its offer)
+      for (const button of carDialog.querySelectorAll('[data-car]')) button.addEventListener('click', () => garageChoices().cars.find(car => car.id === button.dataset.car)?.activate());
+      for (const button of carDialog.querySelectorAll('[data-gear]')) button.addEventListener('click', () => garageChoices().gear.find(item => item.id === button.dataset.gear)?.activate());
+    }
+    const shopCard = id => carDialog.querySelector(GEAR[id] ? `[data-gear="${id}"]` : `[data-car="${id}"]`);
+    // What the garage says about money: a price on each car the fleet doesn't
+    // own (gold once it can be bought), the balance over them all, and the
+    // car being saved for. An offer, when one is open, takes the cards' place.
+    // An unowned car's offer, open over the garage's cards (its id)
+    let garageOffer = null;
+    const money = amount => `$${amount.toLocaleString('en-US')}`;
+    function renderGarage() {
+      const garage = garageChoices(), saving = garage.saving;
+      $('#garage-wallet').textContent = garage.summary;
+      $('#garage-saving').textContent = !saving ? 'Every car in the garage is yours' : saving.short
+        ? `${saving.chosen ? 'Saving for' : 'Next up:'} ${saving.label} · ${money(saving.short)} to go` : `${saving.label} · ready to buy`;
+      for (const car of [...garage.cars, ...garage.gear]) {
+        const card = shopCard(car.id), tag = card?.querySelector('.car-price');
+        if (!card) continue;
+        tag.hidden = Boolean(car.current); tag.textContent = car.owned ? 'Owned' : car.goal ? `Saving · ${car.value}` : car.value;
+        card.dataset.owned = String(car.owned); card.dataset.affordable = String(car.affordable);
+        card.setAttribute('aria-label', car.owned ? car.label : `${car.label}, ${car.value}${car.affordable ? ', can buy now' : ''}`);
+      }
+      renderOffer(garage.offer);
+    }
+    let offerShown = null;
+    function renderOffer(offer) {
+      const panel = $('#garage-offer');
+      // (All cars sits in the heading, where it stays in reach however far the offer scrolls, in place of the balance the offer shows itself)
+      panel.hidden = !offer; $('#paint-shop').hidden = Boolean(offer); $('#garage-sections').hidden = Boolean(offer);
+      $('#offer-back').hidden = !offer; $('#garage-wallet').parentElement.hidden = Boolean(offer);
+      if (!offer) { offerShown = null; return; }
+      if (offerShown !== offer.id) {
+        offerShown = offer.id;
+        $('#offer-art').innerHTML = offer.gear ? gearArt(offer.id) : carArt(offer.id);
+        // (gear has no meters: it says what it does)
+        $('#offer-meters').innerHTML = offer.gear ? `<span class="gear-about">${offer.about}</span>` : offer.meters.map(({ label, level }) =>
+          `<span class="car-meter"><span>${label}</span><span class="car-meter-track"><span style="width:${level}%"></span></span></span>`).join('');
+      }
+      panel.style.setProperty('--car-paint', offer.paint);
+      $('#offer-group').textContent = offer.group; $('#offer-name').textContent = offer.label; $('#offer-price').textContent = offer.price;
+      $('#offer-progress').textContent = offer.progress; $('#offer-savings').value = offer.fraction;
+      const buy = $('#offer-buy'), test = $('#offer-test'), goal = $('#offer-goal');
+      buy.textContent = offer.buy; buy.disabled = !offer.canBuy; buy.dataset.primary = String(offer.canBuy);
+      test.textContent = `${offer.trying} · ${offer.test}`; test.disabled = !offer.canTest; test.dataset.primary = String(!offer.canBuy && offer.canTest);
+      goal.textContent = offer.goal ? 'Saving for this' : 'Save for this'; goal.setAttribute('aria-pressed', String(offer.goal)); goal.hidden = !offer.canSave;
+      $('#offer-note').textContent = offer.note; $('#offer-earn').textContent = offer.earn; $('#offer-earn').hidden = !offer.earn;
+    }
+    function openOffer(id) {
+      garageOffer = id; renderGarage(); needsRender = true;
+      // (Buy if it can be bought, else whatever can be done, with as much of the offer above it in view as fits)
+      const first = [$('#offer-buy'), $('#offer-test'), $('#offer-goal')].find(button => !button.disabled && !button.hidden);
+      carDialog.scrollTop = 0; first.focus({ preventScroll: true }); first.scrollIntoView({ block: 'nearest' });
+    }
+    function closeOffer() {
+      const id = garageOffer;
+      garageOffer = null; renderGarage(); needsRender = true;
+      if (id) shopCard(id)?.focus();
+    }
+    // The car to save for (null: none), shown on the results and in the garage
+    let goalTold = null;
+    function saveFor(id) {
+      if (!taxi.fleet.setGoal(id)) return;
+      // (said once when the balance first covers it, unless it already does)
+      goalTold = id && taxi.fleet.balance >= carPrice(id) ? id : null;
+      if (id) toast(`Saving for the ${shopName(id)}`);
+      renderGarage(); fleetView.render(); needsRender = true;
     }
     const paintSwatches = $('#paint-swatches'), paintWell = $('#paint-custom-well'), paintInput = $('#paint-custom');
     function buildPaintSwatches() {
@@ -651,29 +726,52 @@ async function boot() {
         for (const event of ['pointerenter', 'focus']) swatch.addEventListener(event, () => { $('#paint-current').textContent = choice.label; });
         for (const event of ['pointerleave', 'blur']) swatch.addEventListener(event, showPaintName);
       }
-      paintInput.addEventListener('input', () => applyPaint(paintInput.value));
+      updatePaintUi();
     }
+    // (the custom colour is shown while it is picked, and paid for once it is let go)
+    paintInput.addEventListener('input', () => applyPaint(paintInput.value, { preview: true }));
+    paintInput.addEventListener('change', () => applyPaint(paintInput.value));
     // With no garage colour set, every car shows the finish it arrived in. The
     // default car has none of its own, so it shows whatever the road it is on
     // would give it.
     const ownPaint = id => (carEntry(id).plain ? ROUTE_PAINT[journey] ?? ROUTE_PAINT.coast : carEntry(id).paint);
-    const cardPaint = id => paint ?? ownPaint(id);
-    const paintCards = () => { for (const card of carDialog.querySelectorAll('[data-car]')) card.style.setProperty('--car-paint', cardPaint(card.dataset.car)); };
+    // (the rainbow cycles the cards' paint in CSS, from each car's own colour)
+    const cardPaint = id => paint && paint !== RAINBOW_PAINT ? paint : ownPaint(id);
+    const paintCards = () => {
+      for (const card of carDialog.querySelectorAll('[data-car]')) card.style.setProperty('--car-paint', cardPaint(card.dataset.car));
+      carDialog.dataset.rainbow = String(paint === RAINBOW_PAINT);
+    };
     function showPaintName() {
-      $('#paint-current').textContent = paint ? paintName(paint) ?? paint.toUpperCase() : DEFAULT_PAINT_NAME;
+      $('#paint-current').textContent = paint === RAINBOW_PAINT ? RAINBOW_NAME : paint ? paintName(paint) ?? paint.toUpperCase() : DEFAULT_PAINT_NAME;
     }
     function updatePaintUi() {
-      for (const choice of garageChoices().paints) paintSwatches.querySelector(`[data-paint="${choice.id}"]`)?.setAttribute('aria-checked', String(choice.current));
-      paintWell.dataset.active = String(Boolean(paint) && !PAINTS.some(swatch => swatch.color === paint));
-      paintWell.style.setProperty('--swatch', paint ?? ownPaint(carId));
-      paintInput.value = paint ?? ownPaint(carId);
+      for (const choice of garageChoices().paints) {
+        const swatch = paintSwatches.querySelector(`[data-paint="${choice.id}"]`);
+        swatch?.setAttribute('aria-checked', String(choice.current));
+        if (swatch) swatch.disabled = choice.disabled;
+      }
+      const custom = Boolean(paint) && paint !== RAINBOW_PAINT && !PAINTS.some(swatch => swatch.color === paint), own = custom ? paint : ownPaint(carId);
+      paintWell.dataset.active = String(custom);
+      paintWell.style.setProperty('--swatch', own);
+      paintInput.value = own; paintInput.disabled = taxi.fleet.balance < PAINT_PRICE && !custom;
       showPaintName();
     }
     // The colour lands on the car where it stands and on every card at once.
-    // Default clears it, and the fleet goes back to its own finishes.
-    function applyPaint(value) {
-      const color = value === DEFAULT_PAINT ? null : readPaint(value);
+    // Default clears it, and the fleet goes back to its own finishes. A new
+    // colour is paid for as it is chosen (`preview`: shown but not paid for,
+    // and put back if the garage closes on it).
+    function applyPaint(value, { preview = false } = {}) {
+      const color = value === DEFAULT_PAINT ? null : value === RAINBOW_PAINT ? RAINBOW_PAINT : readPaint(value);
       if (value !== DEFAULT_PAINT && !color) return;
+      if (!preview && !taxi.fleet.setPaint(color)) {
+        showPaint(taxi.fleet.paint);
+        $('#paint-current').textContent = `A new colour is ${money(PAINT_PRICE)}`;
+        return;
+      }
+      showPaint(color);
+      if (!preview) renderGarage();
+    }
+    function showPaint(color) {
       paint = color;
       // (on the garage car, wherever it is: under the player, or parked)
       if (started && !onFoot.paint(paint)) vehicle.setPaint(paint);
@@ -683,18 +781,19 @@ async function boot() {
     // Free drive's two buttons climb and descend in the helicopter, and jump
     // and sprint on foot (Space and Shift do, see Input), and are named for it
     const driveButtons = { driving: [['Drift', 'Hold + steer'], ['Boost']], flying: [['Climb', 'Hold'], ['Descend']], walking: [['Jump', 'Hold to fly'], ['Sprint']] };
-    let driveMode = null, driveMachine = null, driveTap = null;
+    let driveMode = null, driveMachine = null, driveTap = null, driveJet = null;
     function updateDriveUi() {
       const free = started && gameMode === 'free', mode = free && vehicle.pilot ? 'flying' : free && vehicle.walker ? 'walking' : 'driving';
       // (the helicopter and the plane fly on the same buttons, but the stick's help differs)
-      if (mode === driveMode && vehicle.carId === driveMachine && vehicle.driftMode === driveTap) return;
-      driveMode = mode; driveMachine = vehicle.carId; driveTap = vehicle.driftMode; document.body.dataset.flying = String(mode === 'flying'); document.body.dataset.walking = String(mode === 'walking');
+      if (mode === driveMode && vehicle.carId === driveMachine && vehicle.driftMode === driveTap && hasJetpack() === driveJet) return;
+      driveMode = mode; driveMachine = vehicle.carId; driveTap = vehicle.driftMode; driveJet = hasJetpack(); document.body.dataset.flying = String(mode === 'flying'); document.body.dataset.walking = String(mode === 'walking');
       if (started) rendering.useCameraProfile(mode === 'walking' ? 'walking' : 'driving');
       updateViewUi();
       ['handbrake', 'boost'].forEach((key, i) => {
         const button = $(`[data-drive-button="${key}"]`), [label, given] = driveButtons[mode][i];
         // (drifting tapped rather than held, see setDriftMode)
-        const hint = mode === 'driving' && key === 'handbrake' && vehicle.driftMode === 'tap' ? 'Tap + steer' : given;
+        // (and on foot, the jetpack's Hold to fly only with one)
+        const hint = mode === 'driving' && key === 'handbrake' && vehicle.driftMode === 'tap' ? 'Tap + steer' : mode === 'walking' && key === 'handbrake' && !hasJetpack() ? 'Tap' : given;
         button.querySelector('span').textContent = label;
         // (and what the Drift button says when it has no drift to show: see renderRunHud)
         if (hint) { const small = button.querySelector('small'); small.textContent = hint; small.dataset.idle = hint; }
@@ -705,7 +804,7 @@ async function boot() {
     // Sprint, which is E's and Y's prompt too, says which (see OnFoot.offer)
     const useButton = $('#use-car');
     function updateUseUi() {
-      const offer = started && !paused && gameMode === 'free' ? onFoot.offer() : null;
+      const offer = started && !paused && gameMode === 'free' && !(testDrive.over && inTestCar()) ? onFoot.offer() : null;
       if (useButton.hidden !== !offer) useButton.hidden = !offer;
       if (!offer) return;
       // (stopping fast, or landing high up, a second press jumps out: see OnFoot.bail and jump)
@@ -727,28 +826,136 @@ async function boot() {
       $('#change-car').setAttribute('aria-label', started && gameMode !== 'free' ? 'Garage: free drive only' : `Garage: ${carEntry(carId).name}`);
       updatePaintUi();
     }
-    function chooseCar(id) {
-      if (started && gameMode !== 'free') return;
-      carDialog.close();
-      if (id === carId || !CARS[id]) return;
-      carId = id;
-      try { localStorage.setItem(carStorageKey, id); } catch { /* Still drive it for this visit. */ }
-      // One garage car at a time: the new one takes the player where they are,
-      // in the nearest lane if they were on foot, and the parked one goes
-      if (started) {
-        const walked = onFoot.walking;
-        onFoot.setCar(id, { paint }); vehicle.render(0, world.origin);
-        if (walked) recoverCar();
-      }
+    // One garage car at a time: the new one takes the player where they are,
+    // in the nearest lane if they were on foot, and the parked one goes
+    function swapCar(id) {
+      const walked = onFoot.walking;
+      onFoot.setCar(id, { paint }); vehicle.render(0, world.origin);
+      if (walked) recoverCar();
       autodrive.reset();
       rendering.update(vehicle.car, 0, world.origin);
       updateCarUi(); updateHud(); needsRender = true;
-      // (how to fly, on whatever the player is holding: the plane needs a run at it first)
+    }
+    // (how to fly, on whatever the player is holding: the plane needs a run at it first)
+    function flightHelp(id) {
+      if (!CARS[id].flies) return '';
       const device = inputDevice();
       const takeOff = { vr: 'Right trigger', pad: 'RT', touch: 'Push the stick up', keys: 'Hold W' }[device];
       const climbing = { vr: 'Right stick: climb / descend', pad: 'Right stick or LB / RB: climb / descend', touch: 'Hold Climb or Descend', keys: 'Space / Shift: climb / descend' }[device];
-      const flight = !CARS[id].flies ? '' : CARS[id].kind === 'plane' ? ` · ${takeOff} to take off · ${climbing}` : ` · ${climbing}`;
-      toast(`${carEntry(id).name} selected${flight}`);
+      return CARS[id].kind === 'plane' ? ` · ${takeOff} to take off · ${climbing}` : ` · ${climbing}`;
+    }
+    // Buying or test driving goes straight to the drive, wherever the garage was opened from
+    function leaveGarage() {
+      garageOffer = null;
+      if (started) journeyWasPaused = false;
+      carDialog.close();
+    }
+    // A car the fleet owns, from the garage (`bought`: just now)
+    function chooseCar(id, bought = false) {
+      if ((started && gameMode !== 'free') || !CARS[id] || !taxi.fleet.owned.has(id)) return;
+      if (bought) leaveGarage(); else { garageOffer = null; carDialog.close(); }
+      // (bought while test driving it, it is theirs where it is)
+      if (testDrive.id === id) testDrive.stop();
+      const here = (!vehicle.walker && vehicle.actor.source === 'garage' && vehicle.carId === id) || onFoot.garage?.carId === id;
+      if (id === carId && here) return;
+      carId = id;
+      try { localStorage.setItem(carStorageKey, id); } catch { /* Still drive it for this visit. */ }
+      if (started && !here) swapCar(id);
+      else { updateCarUi(); updateHud(); }
+      toast(`${carEntry(id).name} ${bought ? 'bought' : 'selected'}${flightHelp(id)}`, bought ? 'goal' : '');
+    }
+    function buyCar(id) {
+      if ((started && gameMode !== 'free') || !taxi.fleet.buy(id)) return;
+      audio.cue('goal');
+      if (GEAR[id]) { jetTrial.stop(); leaveGarage(); toast(`Jetpack bought · ${jetpackHelp()}`, 'goal'); updateCarUi(); }
+      else chooseCar(id, true);
+      fleetView.render();
+    }
+    // Owned gear, picked in the garage: how to use it
+    function useGear() { leaveGarage(); if (!started) beginFree(); toast(jetpackHelp()); }
+    const jetpackHelp = () => `Get out and hold ${{ keys: 'Space', pad: 'A', vr: 'the left grip', touch: 'Jump' }[inputDevice()]} in the air to fly`;
+    // The jetpack, tried: TEST_DRIVE_SECONDS of it, counted only on foot (see
+    // TestDrive). It cuts out when they're up; the parachute is still theirs.
+    const jetTrial = new TestDrive();
+    const hasJetpack = () => taxi.fleet.owned.has('jetpack') || (jetTrial.active && !jetTrial.over);
+    // A test drive: a couple of minutes in a car the fleet doesn't own (see
+    // TestDrive), then the player's own car again. The car they own stays
+    // `carId` throughout.
+    const testDrive = new TestDrive();
+    const inTestCar = () => testDrive.active && !vehicle.walker && vehicle.actor.source === 'garage' && vehicle.carId === testDrive.id;
+    function startTestDrive(id) {
+      if ((started && gameMode !== 'free') || !(CARS[id] || GEAR[id])) return;
+      const cost = taxi.fleet.testDriveCost(id);
+      if (!taxi.fleet.testDrive(id)) return;
+      leaveGarage();
+      if (!started) beginFree();
+      if (GEAR[id]) {
+        jetTrial.start(id);
+        toast(`Jetpack · ${jetTrial.clock} on foot${cost ? ` · −${money(cost)}` : ''} · ${jetpackHelp()}`);
+        updateCarUi(); return;
+      }
+      testDrive.start(id);
+      swapCar(id);
+      toast(`Test drive · ${carEntry(id).name} · ${testDrive.clock}${cost ? ` · −${money(cost)}` : ''}${flightHelp(id)}`);
+    }
+    // Once time is up: the car stopped (or landed) and swapped for theirs,
+    // through a moment of dark. A car is swapped where it stopped. Something
+    // that flew may be on a roof or in a park, so theirs goes in the nearest lane.
+    const TEST_STOP = { stop: 1 }, TEST_LAND = { land: true };
+    function testDriveStep(dt) {
+      const id = testDrive.id;
+      // (another car took its place: the garage's, or a run's)
+      if (!inTestCar() && onFoot.garage?.carId !== id) { testDrive.stop(); return; }
+      // (bought meanwhile, in the Taxi fleet: theirs to keep driving)
+      if (taxi.fleet.owned.has(id)) {
+        testDrive.stop(); carId = id;
+        try { localStorage.setItem(carStorageKey, id); } catch { /* Still drive it for this visit. */ }
+        updateCarUi(); return;
+      }
+      const v = vehicle, still = Math.abs(v.speed) < .8 && (!v.pilot || v.pilot.landed) && !v.aloft;
+      const news = testDrive.update(dt, { inCar: inTestCar(), still });
+      const name = carEntry(id).name;
+      if (news === 'warn') toast(`Test drive · ${TEST_DRIVE_WARN} seconds left`);
+      else if (news === 'over') { onFoot.leaving = false; toast(`Test drive over · ${v.pilot ? 'landing' : 'stopping'}`, 'slow'); }
+      else if (news === 'gone') { onFoot.dropParked(); toast(`Test drive over · ${name} back in the garage`); changedCar(); }
+      else if (news === 'done') {
+        const flew = CARS[id].flies;
+        dipToDark();
+        onFoot.setCar(carId, { paint }); haltCar();
+        if (flew) recoverCar(); else { vehicle.render(0, world.origin); rendering.snap(); }
+        changedCar(); updateHud();
+        const short = Math.max(0, carPrice(id) - taxi.fleet.balance);
+        toast(`Back in your ${carEntry(carId).name} · ${name} ${short ? `in ${money(short)}` : 'ready to buy'}`);
+      }
+    }
+    // A cut through dark, for swapping the car under the player
+    function dipToDark() {
+      const fade = $('#menu-view-fade');
+      fade.style.transition = 'none'; fade.style.opacity = '1';
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        fade.style.transition = 'opacity .5s'; fade.style.opacity = '0';
+        fade.addEventListener('transitionend', () => { fade.style.transition = ''; }, { once: true });
+      }));
+    }
+    // The jetpack's try-out, a step on foot: its warning, and its end
+    function jetTrialStep(dt) {
+      if (taxi.fleet.owned.has('jetpack')) { jetTrial.stop(); return; }
+      const news = jetTrial.update(dt, { inCar: true, still: true });
+      if (news === 'warn') toast(`Jetpack · ${TEST_DRIVE_WARN} seconds left`);
+      else if (news === 'over') { toast(`Jetpack try over · ${money(carPrice('jetpack'))} in the Garage`, 'slow'); updateCarUi(); }
+    }
+    // The test drive's card in the HUD (see freeHudModel), or the jetpack's on foot
+    function testCard() {
+      if (jetTrial.active && !jetTrial.over && vehicle.walker) {
+        const short = Math.max(0, carPrice('jetpack') - taxi.fleet.balance);
+        return { stage: 'Jetpack try', label: 'Jetpack', clock: jetTrial.clock, left: jetTrial.left, fraction: jetTrial.fraction, over: false, price: money(carPrice('jetpack')),
+          note: short ? `${money(short)} to go · Garage` : 'Yours to buy in the Garage' };
+      }
+      if (!testDrive.active) return null;
+      const id = testDrive.id, price = carPrice(id), short = Math.max(0, price - taxi.fleet.balance);
+      return { label: carEntry(id).name, clock: testDrive.clock, left: testDrive.left, fraction: testDrive.fraction, over: testDrive.over,
+        landing: Boolean(vehicle.pilot), own: carEntry(carId).name, price: money(price),
+        note: carEntry(id).taxi ? 'No fares until it\'s yours' : short ? `${money(short)} to go · Garage` : 'Yours to buy in the Garage' };
     }
     // What the player is holding, for anything that names a button
     const inputDevice = () => vr?.active ? 'vr' : document.body.dataset.controller === 'true' ? 'pad' : matchMedia('(pointer: coarse)').matches ? 'touch' : 'keys';
@@ -841,8 +1048,15 @@ async function boot() {
     // parachute are both on jump
     let jetHinted = false, footTime = 0;
     try { jetHinted = localStorage.getItem('citydriver-jetpack-hint') === 'shown'; } catch { /* Storage is optional. */ }
-    const walkingFree = () => free() && Boolean(vehicle.walker) && !jetHinted;
+    const walkingFree = () => free() && Boolean(vehicle.walker) && !jetHinted && hasJetpack();
+    // (without it, a jump held in the air says where it is sold, once a visit)
+    let jetAsked = false;
     function hintJetpack(dt) {
+      const walker = vehicle.walker;
+      if (free() && walker && !hasJetpack() && !jetAsked && walker.held && !walker.grounded && walker.time - walker.heldAt > .5) {
+        jetAsked = true;
+        hint(`The jetpack is in the Garage · ${money(carPrice('jetpack'))}`, () => free() && !hasJetpack(), () => {});
+      }
       if (!walkingFree()) { footTime = 0; return; }
       if ((footTime += dt) < 1.5) return;
       const button = { keys: 'Space', pad: 'A', vr: 'the left grip', touch: 'Jump' }[inputDevice()];
@@ -855,9 +1069,21 @@ async function boot() {
       if (started && gameMode === 'taxi') { openFleet(); return; }
       if (started && gameMode === 'demolition') { toast('Garage: free drive only'); return; }
       if (!holdForChooser()) return;
+      garageOffer = null; renderGarage();
       carDialog.showModal(); chooserName = 'garage';
       carDialog.querySelector(`[data-car="${carId}"]`).focus();
     }
+    // Back, from a chooser (Escape, B): out of a car's offer to the garage,
+    // else out of the chooser. Its close button always closes it.
+    function backOut(chooser) {
+      if (chooser === carDialog && garageOffer) closeOffer(); else chooser.close();
+    }
+    carDialog.addEventListener('cancel', event => { if (garageOffer) { event.preventDefault(); closeOffer(); } });
+    // (and a custom colour picked but never let go is put back)
+    carDialog.addEventListener('close', () => { garageOffer = null; if (paint !== taxi.fleet.paint) showPaint(taxi.fleet.paint); });
+    $('#offer-back').addEventListener('click', closeOffer);
+    for (const [button, item] of [['#offer-buy', 'offer-buy'], ['#offer-test', 'offer-test'], ['#offer-goal', 'offer-goal']])
+      $(button).addEventListener('click', () => garageChoices().offer?.items.find(each => each.id === item).activate());
     async function action(name) {
       if (name === 'exitVR') { if (vr?.active) await vr.toggle(); return; }
       if (name === 'recenterVR') { rendering.vrCamera.recenter(); return; }
@@ -875,7 +1101,8 @@ async function boot() {
       if (changingJourney) return;
       const chooser = openChooser();
       if (chooser) {
-        if (name === 'menuClose' || (vr?.active && name === 'pause') || (name === 'car' && (chooser === carDialog || chooser === fleetDialog)) || (name === 'map' && chooser === worldMapDialog)) chooser.close();
+        if (name === 'menuClose' || (vr?.active && name === 'pause')) backOut(chooser);
+        else if ((name === 'car' && (chooser === carDialog || chooser === fleetDialog)) || (name === 'map' && chooser === worldMapDialog)) chooser.close();
         if (MENU_MOVES.includes(name)) moveMenuFocus(chooser, name);
         if (name === 'menuConfirm') confirmMenuFocus(chooser);
         return;
@@ -919,6 +1146,8 @@ async function boot() {
         if (!started || paused) return;
         // (a run keeps the player at the wheel: say so, rather than ignore the press)
         if (gameMode !== 'free') { toast(gameMode === 'taxi' ? 'End the shift to get out (pause menu)' : 'Finish the run to get out'); return; }
+        // (a test drive that is over is handed back first)
+        if (testDrive.over && inTestCar()) return;
         if (autodrive.enabled) action('autodrive');
         const said = onFoot.use();
         if (said) toast(said);
@@ -987,9 +1216,11 @@ async function boot() {
       if (!connected && started && !paused) setPaused(true);
     }, () => {
       if (changingJourney) return;
-      const enabled = vehicle.toggleRainbow();
-      needsRender = true;
-      toast(`Rainbow paint ${enabled ? 'on' : 'off'}`);
+      // (once a save: the money and the rainbow paint in the garage)
+      const paid = taxi.fleet.enterKonami();
+      toast(paid ? `Konami code · +${money(paid)} · Rainbow paint in the Garage` : 'Rainbow paint is in the Garage', 'goal');
+      if (!paid) return;
+      audio.cue('goal'); buildPaintSwatches(); renderGarage(); fleetView.render(); needsRender = true;
     });
     vr = new BrowserVR({
       renderer, buttons: [$('#enter-vr'), $('#enter-vr-pause')], canEnter: () => !changingJourney && !openChooser(),
@@ -1051,20 +1282,27 @@ async function boot() {
         const chooser = openChooser();
         if (chooser) chooser.close(); else action('pause');
       });
-      // Desktop builds that cannot update themselves get a download button on both menus.
+      // Desktop builds that cannot update themselves get the web build's toast
+      // on the title and a download button in the pause menu.
       let updateShown = false;
       const showUpdate = update => {
         if (!update || updateShown) return;
         updateShown = true;
-        for (const [anchor, classes] of [['#enter-vr', 'start-button menu-secondary'], ['#enter-vr-pause', 'panel-button']]) {
-          const button = document.createElement('button');
-          button.type = 'button'; button.className = `${classes} update-entry`;
-          button.innerHTML = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v10m-4-4 4 4 4-4M5 16v4h14v-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span></span>';
-          button.lastChild.textContent = `Get version ${update.version}`;
-          button.title = 'Opens the download page';
-          button.addEventListener('click', () => window.open(update.url)); // the wrapper hands it to the system browser
-          $(anchor).after(button);
-        }
+        const download = () => window.open(update.url); // the wrapper hands it to the system browser
+        const notice = document.createElement('div');
+        notice.className = 'update-notice';
+        notice.innerHTML = '<span role="status"></span><button type="button" title="Opens the download page">Download</button>';
+        notice.firstChild.textContent = `Version ${update.version} available`;
+        for (const type of ['keydown', 'keyup']) notice.addEventListener(type, event => event.stopPropagation());
+        notice.lastChild.addEventListener('click', download);
+        $('#welcome').insertBefore(notice, $('#welcome > .controller-hint'));
+        const button = document.createElement('button');
+        button.type = 'button'; button.className = 'panel-button update-entry';
+        button.innerHTML = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v10m-4-4 4 4 4-4M5 16v4h14v-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span></span>';
+        button.lastChild.textContent = `Get version ${update.version}`;
+        button.title = 'Opens the download page';
+        button.addEventListener('click', download);
+        $('#enter-vr-pause').after(button);
       };
       desktop.onUpdate(showUpdate);
       desktop.getUpdate().then(showUpdate);
@@ -1242,8 +1480,16 @@ async function boot() {
     const freeTips = new OnceHints({
       cab: 'Stop in any ring for a fare · your shift starts with it',
       chain: 'Stunts chain up · a crash loses it',
-      trial: 'A test drive · buy this cab in the Taxi fleet to take fares',
+      shop: 'Enough for your first car · open the Garage',
     }, 'citydriver-free-hints', taxiStorage);
+    // (enough for a car, and none bought yet)
+    const firstCar = () => taxi.fleet.owned.size === 1 && GARAGE_IDS.some(id => !taxi.fleet.owned.has(id) && carPrice(id) <= taxi.fleet.balance);
+    // The car being saved for is said once, in free drive, when the balance first covers it
+    function tellGoal() {
+      const goal = taxi.fleet.goal;
+      if (!goal || goal === goalTold || taxi.fleet.balance < carPrice(goal) || !started || paused || gameMode !== 'free') return;
+      goalTold = goal; toast(`You can buy the ${shopName(goal)} · open the Garage`, 'goal'); audio.cue('goal');
+    }
     function updateHud() {
       const location = locationModel();
       renderLocationHud(location);
@@ -1251,9 +1497,9 @@ async function boot() {
       renderMenuControls(controls());
       cityGuide.update(started && !paused && !changingJourney, { draw: !vr?.active });
       const run = gameMode === 'demolition' ? demolitionView.buildHud(demolition, vehicle)
-        : started && gameMode === 'free' ? freeHudModel(stunts, vehicle, { taxi, trial: carEntry(vehicle.carId).taxi && !taxi.fleet.owned.has(vehicle.carId) && !vehicle.walker, hint: id => freeTips.get(id) })
+        : started && gameMode === 'free' ? freeHudModel(stunts, vehicle, { taxi, test: testCard(), shop: firstCar(), hint: id => freeTips.get(id) })
         : taxiView.buildHud(taxi, vehicle);
-      renderRunHud(run); placeToast();
+      renderRunHud(run); placeToast(); tellGoal();
       updateUseUi();
       if (vr?.active) vrStatus.hud(started && !paused && !changingJourney ? headsetHudModel(run, location, vrHint()) : null);
     }
@@ -1300,7 +1546,8 @@ async function boot() {
       setTimeout(() => renderMenuControls(controls()), 4100);
     }
     const controls = () => menuControls(menuState(), menuActions);
-    const garageChoices = () => garageModel(carId, paint, ownPaint, { chooseCar, applyPaint });
+    const garageChoices = () => garageModel({ carId, paint, ownPaint, fleet: taxi.fleet, offer: garageOffer },
+      { chooseCar, applyPaint, openOffer, closeOffer, buyCar, testDrive: startTestDrive, saveFor, useGear });
     const brandMark = new Image(); brandMark.src = `${import.meta.env.BASE_URL}brand-mark.svg`;
     function currentMenuModel() {
       const state = menuState();
@@ -1345,6 +1592,10 @@ async function boot() {
       else if (demolition.running) state = demolition.controls(dt, state);
       // (stopping, to get out)
       state = onFoot.control(state);
+      // (the jetpack is bought, or tried)
+      vehicle.jetpack = hasJetpack();
+      // (a test drive's time is up: the car stops, or lands itself)
+      if (testDrive.over && inTestCar()) state = vehicle.pilot ? TEST_LAND : TEST_STOP;
       vehicle.update(dt, state);
       if (started) updateControlHelp(vehicle.speed);
       // (a flying machine's stunts and landings)
@@ -1364,6 +1615,8 @@ async function boot() {
       const walked = onFoot.walking, said = onFoot.update(dt, world.chunks);
       if (said) toast(said);
       if (onFoot.walking !== walked) changedCar();
+      if (started && gameMode === 'free' && testDrive.active) testDriveStep(dt);
+      if (started && gameMode === 'free' && jetTrial.active && vehicle.walker) jetTrialStep(dt);
       props.update(dt, vehicle, traffic, world.chunks);
       // Free drive: the stunt chain, and in the player's cab the fares waiting
       if (started && gameMode === 'free') {
@@ -1491,7 +1744,7 @@ async function boot() {
         else if (event.kind === 'overtime') { say(event.text, 'slow', 5); audio.cue('overtime'); }
         else if (event.kind === 'over') {
           haltCar();
-          setPaused(true); pauseOverlay.hidden = true; demolitionView.hud(demolition, vehicle); demolitionView.results(demolition); $('#demolition-retry').focus();
+          setPaused(true); pauseOverlay.hidden = true; demolitionView.hud(demolition, vehicle); demolitionView.results(demolition, savingFor(taxi.fleet)?.text); $('#demolition-retry').focus();
           return;
         }
       }
@@ -1597,7 +1850,8 @@ async function boot() {
     await loadingStage('skyline');
     world.update(vehicle.s, vehicle.u);
     applyWeather();
-    buildCarCards(); buildPaintSwatches(); updateCarUi();
+    $('#paint-note').textContent = `Paint applies to all cars. A new colour is ${money(PAINT_PRICE)}, and each car's own colour is free.`;
+    buildCarCards(); paintCards(); buildPaintSwatches(); updateCarUi();
     vehicle.render(0, world.origin); traffic.render(1, world.origin); rendering.update(vehicle.car, 1, world.origin); updateHud(); updateJourneyUi(); updateViewUi(); updateGraphicsUi();
     nightLighting.update(world, vehicle, traffic, weather.state.lightLevel);
     await loadingStage('graphics');
@@ -1617,7 +1871,9 @@ async function boot() {
     if (import.meta.env.DEV && emulate !== null) (await import('./xr-emulator.js')).installXREmulator(emulate);
     void vr.detect();
     // Development-only inspection surface for automated driving and streaming checks.
-    if (import.meta.env.DEV) window.__citydriver = { seed: SEED, city: CITY, nav: navGraph(), lanePose, roadAt, nearestLanePose, vehicle, onFoot, pigeons, traffic, props, nightLighting, weather, autodrive, audio, graphics, vr, vrStatus, currentMenuModel, fleetMenu, stunts, keepDriving, endRun, cityGuide, taxi, taxiView, beginTaxi, beginFree, demolition, demolitionView, beginDemolition, get gameMode() { return gameMode; }, world, rendering, input, action, chooseCar, applyPaint, get carId() { return carId; }, get paint() { return paint; }, get journey() { return journey; }, get changingJourney() { return changingJourney; }, get paused() { return paused; }, get started() { return started; } };
+    if (import.meta.env.DEV) window.__citydriver = { seed: SEED, city: CITY, nav: navGraph(), lanePose, roadAt, nearestLanePose, vehicle, onFoot, pigeons, traffic, props, nightLighting, weather, autodrive, audio, graphics, vr, vrStatus, currentMenuModel, fleetMenu, stunts, keepDriving, endRun, cityGuide, taxi, taxiView, beginTaxi, beginFree, demolition, demolitionView, beginDemolition, testDrive, jetTrial, startTestDrive, buyCar, get gameMode() { return gameMode; }, world, rendering, input, action,
+      // (review kits stage any car through this, so it hands the car over first, as the garage once did)
+      chooseCar: id => { if (CARS[id]) taxi.fleet.owned.add(id); chooseCar(id); }, applyPaint, get carId() { return carId; }, get paint() { return paint; }, get journey() { return journey; }, get changingJourney() { return changingJourney; }, get paused() { return paused; }, get started() { return started; } };
   } catch (error) { console.error('Could not start Citydriver:', error); $('#loading').classList.add('loaded'); $('#error').hidden = false; }
 }
 boot();
