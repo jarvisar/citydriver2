@@ -39,18 +39,20 @@ try {
     await page.addInitScript(() => localStorage.setItem('citydriver.graphics', JSON.stringify({ mode: 'basic' })));
     await page.goto(`${url}/?seed=4817&ao=0`, { waitUntil: 'networkidle' });
     await page.waitForFunction(() => window.__citydriver && document.querySelector('#loading.loaded'));
+    // Taxi shift puts the cab on standby: fares wait round it, and the clock
+    // starts with the first one aboard
     await page.click('#start');
-    await page.waitForFunction(() => window.__citydriver.taxi.running && getComputedStyle(document.querySelector('#welcome')).visibility === 'hidden');
+    await page.waitForFunction(() => window.__citydriver.taxi.waiting && getComputedStyle(document.querySelector('#welcome')).visibility === 'hidden');
     await page.evaluate(() => {
       const a = window.__citydriver, v = a.vehicle;
       a.traffic.setEnabled(false, v);
       // Start away from incidental pickups so screenshots do not board a passerby.
       v.s += 40; v.speed = 0; v.knock.x = v.knock.z = v.knock.spin = 0;
-      v.update(0, {}); a.world.update(v.s, v.u); a.taxi.start(v);
+      v.update(0, {}); a.world.update(v.s, v.u); a.taxi.standby(v);
       v.render(1, a.world.origin); a.rendering.snap(); a.rendering.update(v.car, 1, a.world.origin);
     });
     await page.waitForTimeout(2400);
-    await inspect(page, `${name}-pickup`);
+    await inspect(page, `${name}-standby`);
     const compact = width <= 760 || height <= 560;
     assert.equal(await page.locator('#city-map-toggle').getAttribute('aria-expanded'), String(!compact));
     assert.equal(await page.evaluate(() => window.__citydriver.taxi.target), null);
@@ -66,6 +68,8 @@ try {
       a.vehicle.knock.x = a.vehicle.knock.z = a.vehicle.knock.spin = 0;
     });
     await page.waitForFunction(() => window.__citydriver.taxi.status === 'driving');
+    assert.equal(await page.evaluate(() => window.__citydriver.gameMode), 'taxi', 'the first fare starts the shift');
+    await page.evaluate(() => window.__citydriver.traffic.setEnabled(false, window.__citydriver.vehicle));
     await page.waitForFunction(() => document.querySelector('#taxi-stage').textContent === 'Drop off');
     assert.match(await page.locator('#taxi-timer').textContent(), /^Speedy \d+s$/);
     assert.equal(await page.locator('#taxi-timer').getAttribute('data-rating'), 'speedy');
@@ -82,7 +86,7 @@ try {
     });
     await page.waitForFunction(() => window.__citydriver.taxi.delivered === 1);
     await page.waitForFunction(() => document.querySelector('#taxi-task-title').textContent === 'Find a passenger');
-    await inspect(page, `${name}-choose`);
+    await inspect(page, `${name}-pickup`);
     await page.evaluate(() => {
       const a = window.__citydriver;
       a.taxi.cash = 9999; a.taxi.boost = 0; a.input.touchButtons.boost = true;

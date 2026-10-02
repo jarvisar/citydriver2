@@ -71,6 +71,13 @@ try {
       check(game.vehicle.carId === 'taxi', 'purchases still apply next run');
       const fleetClosed = closed('taxi-fleet-dialog'); await row('back').activate(); await fleetClosed;
       check(game.paused && game.currentMenuModel().id === 'pause', 'fleet restores pause');
+      // The shift starts with its first fare: the cab stopped in a ring
+      const fare = game.taxi.customers.find(customer => customer.id !== game.taxi.blockedPickup?.id);
+      Object.assign(game.vehicle, { s: fare.s, u: fare.u, heading: fare.heading, speed: 0 }); game.vehicle.update(0, {});
+      await row('resume').activate();
+      while (!game.taxi.running) await new Promise(requestAnimationFrame);
+      await game.action('pause');
+      check(game.gameMode === 'taxi' && row('end').label === 'End shift', 'the first fare starts the shift');
       // A rendered HUD is not the input to either the next HUD or the headset.
       const model = game.taxiView.hud(game.taxi, game.vehicle), before = headsetHudModel(model);
       document.querySelector('#taxi-cash').textContent = 'Wrong cash';

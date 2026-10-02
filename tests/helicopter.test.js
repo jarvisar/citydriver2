@@ -36,7 +36,8 @@ function block(top, z = -60, extra = {}) {
 
 test('the helicopter is in the garage but not the wheeled fleet, and has a model, art and meters', () => {
   assert.ok(GARAGE_IDS.includes('helicopter') && !CAR_IDS.includes('helicopter'));
-  assert.deepEqual(GARAGE_IDS.filter(id => !CARS[id].flies), CAR_IDS, 'every car is still in the garage, in order');
+  const retired = ['auto', 'desert', 'snow', 'jungle', 'plains', 'city'];
+  assert.deepEqual(GARAGE_IDS.filter(id => !CARS[id].flies), CAR_IDS.filter(id => !retired.includes(id)), 'every car but the old route wagons is in the garage, in order');
   assert.ok(!CARS.helicopter.taxi, 'free drive only');
   assert.equal(carMeters('helicopter').length, 4);
   assert.match(carArt('helicopter'), /^<svg[^>]*>.*<ellipse/);

@@ -31,10 +31,10 @@ body[data-mode=demolition] .taxi-hud[data-overtime=true] .taxi-clock-box > span 
 #app .taxi-task[data-stage=demolition] #taxi-fare-status { color: var(--city-accent-soft); font-weight: 800; font-size: 13px; }
 #taxi-party[data-band=damage]:not([data-band='']) { font-weight: 800; }
 #taxi-party[data-band=damage]:not([data-band=''])::before { content: none; }
-body[data-mode=demolition] .taxi-task #toast[data-tone=chain] { color: var(--city-accent); font-weight: 800; letter-spacing: .3px; }
-body[data-mode=demolition] .taxi-task #toast[data-tone=banked] { color: var(--city-accent-soft); font-weight: 700; }
-body[data-mode=demolition] .taxi-task #toast[data-tone=bonus] { color: #8ff0b0; font-weight: 700; }
-body[data-mode=demolition] .taxi-task #toast[data-tone=slow] { color: #ff8a7a; font-weight: 700; }
+#app .taxi-task #toast[data-tone=chain] { color: var(--city-accent); font-weight: 800; letter-spacing: .3px; }
+#app .taxi-task #toast[data-tone=banked] { color: var(--city-accent-soft); font-weight: 700; }
+#app .taxi-task #toast[data-tone=bonus] { color: #8ff0b0; font-weight: 700; }
+#app .taxi-task #toast[data-tone=slow] { color: #ff8a7a; font-weight: 700; }
 
 /* The results card wears a strip of hazard tape along its top. */
 #app #demolition-results .taxi-result-card {

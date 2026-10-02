@@ -1,10 +1,10 @@
 # Taxi Fleet
 
-Completed fares, tips and shift goal bonuses are added to a saved fleet balance. Restarting keeps completed earnings, but unfinished fares pay nothing. Buying a cab doesn't change your run score or best score.
+Completed fares, tips and shift goal bonuses are added to a saved fleet balance. So are free drive's stunt chains, a cut of each demolition chain, and new places and jump stars, at much smaller amounts (see [progression](taxi-progression.md)). Ending a shift early keeps completed earnings, but unfinished fares pay nothing. Buying a cab doesn't change your run score or best score.
 
-The fleet opens from the Taxi fleet button in the pause menu during a run, or on the results screen. Buying a cab selects it for the next run. You can save up for the Formula Taxi straight away, or switch back to any cab you own.
+The fleet opens from the Taxi fleet button in the pause menu, or on a shift's results screen. Buying a cab selects it for the next shift. You can save up for the Formula Taxi straight away, or switch back to any cab you own.
 
-All three taxis are free in the free drive garage. Using one there doesn't unlock it for taxi runs.
+All three taxis are free in the free drive garage to try out. Using one there doesn't unlock it for shifts, and a cab the fleet doesn't own has no fares around it.
 
 ## Liveries
 

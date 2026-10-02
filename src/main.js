@@ -15,14 +15,14 @@ import { setupTaxiFleet } from './taxi-fleet-view.js';
 import { createFleetMenu, garageModel } from './chooser-model.js';
 import { menuControls, menuModel, WEATHER_CHOICES, cycleChoice } from './menu-model.js';
 import { bindMenuControls, renderMenuControls } from './menu-dom.js';
-import { locationHudModel, headsetHudModel } from './run-hud-model.js';
+import { locationHudModel, headsetHudModel, freeHudModel } from './run-hud-model.js';
 import { renderLocationHud, renderRunHud } from './run-hud-dom.js';
 import { taxiResultModel, demolitionResultModel } from './result-model.js';
 import { createRendering } from './rendering.js';
 import { setupCameraControls } from './camera-controls.js';
 import { DEFAULT_FOG_DISTANCE, FRAME_CAPS, Graphics, headsetBrowser } from './graphics.js';
 import { JOURNEYS } from './journeys.js';
-import { CARS, DEFAULT_CAR, ROUTE_PAINT, carEntry } from './cars.js';
+import { CARS, GARAGE_IDS, STARTING_CAR, ROUTE_PAINT, carEntry } from './cars.js';
 import { carArt } from './car-art.js';
 import { PAINTS, DEFAULT_PAINT, DEFAULT_PAINT_NAME, paintName, readPaint } from './car-paint.js';
 import { SEED } from './world/route.js';
@@ -35,7 +35,7 @@ import { CITY } from './world/city.js';
 import { signSheet } from './world/city-signs.js';
 import { loadingStage } from './loading-status.js';
 import { navGraph } from './world/nav-graph.js';
-import { CityGuide } from './city-guide.js';
+import { CityGuide, placePay } from './city-guide.js';
 import { CITY_PLACES } from './world/city-places.js';
 import { Pigeons } from './world/city-pigeons.js';
 import { WorldMap, DISTRICT_COLORS } from './city-world-map.js';
@@ -45,7 +45,8 @@ import { TaxiView } from './taxi-view.js';
 import { DemolitionRun, DEMOLITION_CAR, DEMOLITION_PAINT } from './demolition-run.js';
 import { DemolitionView } from './demolition-view.js';
 import { DriftEffects } from './drift-effects.js';
-import { JumpBook, starText } from './jump-book.js';
+import { StuntChain } from './stunt-chain.js';
+import { JumpBook, starText, STAR_PAY } from './jump-book.js';
 import { setResidentWindow } from './world/resident.js';
 import { PlayerController } from './vehicle.js';
 import { OnFoot, EnterMarker } from './on-foot.js';
@@ -66,6 +67,7 @@ import { BrowserVR } from './vr.js';
 import { VRStatus } from './vr-status.js';
 import { moveMenuFocus, confirmMenuFocus, scrollMenu } from './menu-focus.js';
 import { setupMenuIdle } from './menu-idle.js';
+import { OnceHints } from './hud-dom.js';
 
 setupControlHelp();
 
@@ -80,20 +82,25 @@ const frameClock = new FrameClock(), pacer = new FramePacer();
 let toastTimer, toastShown = -Infinity; let sceneReady = false;
 // The chosen car outlives the visit; positions and mileage do not.
 const carStorageKey = 'citydriver-car';
-let carId = DEFAULT_CAR;
-try { const saved = localStorage.getItem(carStorageKey); if (saved && CARS[saved]) carId = saved; } catch { /* Storage is optional. */ }
+let carId = STARTING_CAR;
+try { const saved = localStorage.getItem(carStorageKey); if (saved && GARAGE_IDS.includes(saved)) carId = saved; } catch { /* Storage is optional. */ }
 // One colour dresses the whole garage and follows the player from car to car.
 // It lasts the visit and is not stored: the fleet's own finishes are the thing
 // worth keeping, and Default hands them straight back.
 let paint = null;
 // A headset shows toasts in its own HUD (set up in boot).
 let echoToast = null;
+// Feedback shares the task card's second line whenever the card is up (all
+// through a run, and in free drive while it has something to show), keeping
+// notifications off the road. A toast showing moves with the card as it comes and goes.
+function placeToast() {
+  const element = $('#toast'), parent = started && !paused && !$('#taxi-task').hidden ? $('.taxi-task-main') : $('#app');
+  if (element.parentElement !== parent) parent.append(element);
+}
 const toast = (message, tone = '') => {
   echoToast?.(message, tone);
   const element = $('#toast');
-  // Run feedback (taxi or demolition) shares the task card's second line, keeping notifications off the road.
-  const parent = gameMode !== 'free' && started && !paused ? $('.taxi-task-main') : $('#app');
-  if (element.parentElement !== parent) parent.append(element);
+  placeToast();
   // Taxi arrivals take their rating's colour: Speedy green, Normal yellow, Slow red.
   element.textContent = message; element.dataset.tone = tone; element.classList.add('show'); clearTimeout(toastTimer); toastShown = performance.now();
   toastTimer = setTimeout(() => element.classList.remove('show'), 2200);
@@ -172,6 +179,9 @@ async function boot() {
     audio.setPaused(true); showSound(audio.restore());
     // Free driving starts on; the hidden code only changes the paint.
     vehicle.toggleFreeDriving();
+    // One set of driving rules everywhere: the brake holds the car still a
+    // moment before reversing, for fares and drop-offs (see vehicle.js)
+    vehicle.arcade = true;
     vehicle.setAppearance(journey);
     vehicle.setLights(weather.state.lightLevel);
     const carDialog = $('#car-dialog'), pauseOverlay = $('#pause-overlay');
@@ -230,10 +240,28 @@ async function boot() {
       nightLighting.update(world, vehicle, traffic, weather.state.lightLevel);
       return drawScene(...args);
     };
-    // No discovery toasts during a run: they cover the task card's instruction
-    const cityGuide = new CityGuide(text => { if (started && gameMode !== 'free') return; toast(text); audio.cue('discovery'); }, () => vehicle);
+    // A new place pays, a new kind of place more. No toasts during a run:
+    // they cover the task card's instruction (the results list them).
+    const cityGuide = new CityGuide((text, found) => {
+      const pay = placePay(found);
+      earn(pay);
+      if (started && gameMode !== 'free') return;
+      toast(`${text} · +$${pay}`); audio.cue('discovery');
+    }, () => vehicle);
     let taxiStorage; try { taxiStorage = localStorage; } catch { /* Optional storage. */ }
     const taxi = new TaxiRun(taxiStorage), taxiView = new TaxiView(scene, taxiStorage); cityGuide.taxi = taxi;
+    // Only a cab the player owns comes out of the garage (the fleet buys them)
+    if (carEntry(carId).taxi && !taxi.fleet.owned.has(carId)) carId = taxi.fleet.selected;
+    // Free drive's stunt chain (see stunt-chain.js)
+    const stunts = new StuntChain();
+    // Everything the player earns, wherever: the fleet balance that buys cabs,
+    // and the career's earnings that set the driver's rank
+    function earn(amount) {
+      if (!(amount > 0)) return;
+      taxi.fleet.credit(amount);
+      const promotion = taxi.career.earn(amount);
+      if (promotion) setTimeout(() => { if (!paused) { toast(promotion.text, 'goal'); audio.cue('goal'); } }, 1400);
+    }
     // (the street map marks the car the player left parked)
     cityGuide.onFoot = onFoot;
     // Demolition: the truck's timed run, scored by the damage it does (see
@@ -243,12 +271,19 @@ async function boot() {
     const demolition = new DemolitionRun(taxiStorage), demolitionView = new DemolitionView(scene, taxiStorage);
     // A drift's smoke, sparks and tyre marks, and the flames of a turbo or the boost (see drift.js)
     const driftEffects = new DriftEffects(scene);
-    props.onSmash = (kinds, at) => demolition.smash(kinds, at);
+    // Whether free drive's stunts count: not under autodrive, which would
+    // earn for nobody
+    const freeStunts = () => started && gameMode === 'free' && !autodrive.enabled;
+    props.onSmash = (kinds, at) => demolition.running ? demolition.smash(kinds, at) : freeStunts() ? stunts.smashed(kinds, at) : 0;
     // Free drive's jumps: what a landing is worth saying, and how far the
     // city's named jumps have been taken (see jump-book.js)
     const jumpBook = new JumpBook(taxiStorage); cityGuide.jumps = jumpBook; cityGuide.refreshJumps();
-    traffic.onDamage = (car, closing) => demolition.damageCar(car, closing);
-    pedestrianContacts.onKnock = (by, at, kind) => { if (by !== 'traffic') demolition.pedestrian(at, by, kind); };
+    traffic.onDamage = (car, closing) => demolition.running ? demolition.damageCar(car, closing) : freeStunts() ? stunts.damaged(car, closing) : 0;
+    pedestrianContacts.onKnock = (by, at, kind) => {
+      if (by === 'traffic') return;
+      if (demolition.running) demolition.pedestrian(at, by, kind);
+      else if (freeStunts() && by === 'player') stunts.pedestrian();
+    };
     // The street map marks what the open contracts ask for where the city
     // has few of them (trees and lamps are on every street): bus shelters,
     // traffic lights, parked cars and traffic. A fresh list twice a second.
@@ -293,6 +328,10 @@ async function boot() {
       fleetView.render(); $('#fleet-feedback').textContent = ''; fleetDialog.showModal(); chooserName = 'fleet';
       fleetDialog.querySelector(`[data-fleet-car="${taxi.fleet.selected}"]`).focus();
     }
+    // The pause screen's header names the driver's rank (from everything
+    // earned, anywhere) and the fleet balance
+    const careerText = () => `${taxi.career.rank.name} · ${cashText()}`;
+    function renderCareer() { $('#pause-career').textContent = careerText(); }
     // The whole city, from the pause screen: built the first time it opens,
     // drawn again whenever it opens or the window changes size
     let worldMap = null;
@@ -424,17 +463,21 @@ async function boot() {
       document.body.dataset.mode = gameMode;
       const run = gameMode !== 'free';
       $('#change-car').hidden = run;
-      $('#pause-fleet').hidden = gameMode !== 'taxi';
-      // (free drive's makes a new city, as R does: a controller's Y gets in and out of cars there,
+      // (free drive earns toward the fleet too; demolition brings its own truck)
+      $('#pause-fleet').hidden = gameMode === 'demolition';
+      // A run ends with End shift or End run, and its results; a shift has no
+      // restart (the next starts with a fare)
+      $('#switch-mode').hidden = run; $('#end-run').hidden = !run; $('#restart-run').hidden = gameMode === 'taxi';
+      // (free drive's makes a new city, asked twice: a controller's Y gets in and out of cars there,
       // and it comes last, well away from Resume)
       renderMenuControls(controls());
-      if (run) $('#switch-mode').before($('#restart-run')); else $('#drift-tap').after($('#restart-run'));
+      if (run) $('#switch-mode').before($('#restart-run'), $('#end-run')); else $('#drift-tap').after($('#restart-run'));
       $('#goals-panel').hidden = !run; $('#goals-heading').textContent = gameMode === 'demolition' ? 'Contracts' : 'Shift goals';
       $('#shift-goals').setAttribute('aria-label', $('#goals-heading').textContent);
       $('#scores-panel').hidden = gameMode !== 'demolition';
       $('#taxi-clock-label').textContent = 'TIME';
       $('#taxi-clock').setAttribute('aria-label', gameMode === 'demolition' ? 'Seconds remaining' : 'Shift seconds remaining');
-      $('#reset').title = run ? 'Reset car: −5 seconds (R)' : 'Reset city (R)';
+      $('#reset').title = run ? 'Reset car: −5 seconds (R)' : 'Reset car (R)';
       $('#reset').setAttribute('aria-label', $('#reset').title);
       vrStatus.setAccent(gameMode);
       // Residents cost a fine in a demolition run: they glow red, through props too
@@ -454,17 +497,51 @@ async function boot() {
       taxi.hold = 0;
       world.update(vehicle.s, vehicle.u); vehicle.render(0, world.origin); rendering.snap(); needsRender = true;
     }
+    // Into car `id` where the player is (on the road nearby if they were on
+    // foot or flying), unless they're already in it
+    function takeCar(id, carPaint) {
+      if (vehicle.carId === id && !vehicle.walker && !onFoot.borrowed && !onFoot.bay) return;
+      onFoot.setCar(id, { paint: carPaint }); recoverCar();
+    }
+    // Free drive in a cab the fleet owns is a taxi on standby: the fares wait
+    // round it, and stopping in a ring starts a shift there and then (see
+    // TaxiRun.standby). Getting out, or into anything else, puts it away. A
+    // cab the fleet doesn't own is only a test drive.
+    const cabbing = () => started && gameMode === 'free' && !autodrive.enabled && taxi.fleet.owned.has(vehicle.carId) && !vehicle.walker;
+    function syncStandby() {
+      if (cabbing() && taxi.status === 'idle') taxi.standby(vehicle);
+      else if (!cabbing() && taxi.waiting) taxi.stop();
+      const standby = String(taxi.waiting);
+      if (document.body.dataset.standby === standby) return;
+      document.body.dataset.standby = standby;
+      // (the headset's menus and HUD take the taxi's accent too)
+      vrStatus.setAccent(taxi.waiting ? 'taxi' : gameMode);
+    }
+    // A taxi shift from a menu: into the player's cab where they are, on
+    // standby, so the clock starts with the first fare as it does in free drive
     function beginTaxi() {
       if (changingJourney) return;
-      demolition.stop(); enterRun('taxi', taxi.fleet.selected, taxi.fleet.liveryColor);
-      taxi.start(vehicle); taxiView.reset(); driftEffects.reset(); renderGoals(); cityGuide.lately = [];
-      showRun();
+      leaveRun(); menuIdle.stop(); started = true; stopAutodrive();
+      takeCar(taxi.fleet.selected, taxi.fleet.liveryColor);
+      taxi.stop(); taxiView.reset();
+      showFree();
+    }
+    // The first fare aboard: the shift is on, wherever the cab is
+    function startShift() {
+      if (freeTraffic === undefined || gameMode === 'free') freeTraffic = traffic.enabled;
+      stunts.bank(); stuntEvents(stunts.drainEvents());
+      gameMode = 'taxi'; traffic.setEnabled(true, vehicle);
+      if (taxi.fleet.owned.has(vehicle.carId)) taxi.fleet.select(vehicle.carId);
+      renderGoals(); cityGuide.lately = []; document.body.dataset.standby = 'false';
+      $('#traffic').setAttribute('aria-pressed', 'true'); $('#autodrive').setAttribute('aria-pressed', 'false');
+      modeUi(); updateHud();
     }
     // Demolition: the truck, a minute on the clock, and a city to wreck. The
     // furniture and parked cars a previous go knocked about are put back.
     function beginDemolition() {
       if (changingJourney) return;
-      taxi.stop(); props.reset(); enterRun('demolition', DEMOLITION_CAR, DEMOLITION_PAINT);
+      taxi.stop(); props.reset(); stunts.bank(); stuntEvents(stunts.drainEvents());
+      enterRun('demolition', DEMOLITION_CAR, DEMOLITION_PAINT);
       demolition.start(); demolitionView.reset(); driftEffects.reset();
       showRun();
       toast('Wreck everything · Mind the pedestrians');
@@ -473,11 +550,13 @@ async function boot() {
     function enterRun(mode, id, carPaint) {
       menuIdle.stop();
       if (freeTraffic === undefined || gameMode === 'free') freeTraffic = traffic.enabled;
-      started = true; gameMode = mode; vehicle.arcade = true;
-      // (autodrive is free drive's alone)
+      started = true; gameMode = mode; stopAutodrive();
+      onFoot.setCar(id, { paint: carPaint }); recoverCar(); traffic.setEnabled(true, vehicle);
+    }
+    // (autodrive is free drive's alone)
+    function stopAutodrive() {
       if (autodrive.enabled) { autodrive.toggle(); revealTouchControls(); }
       autodrive.reset();
-      onFoot.setCar(id, { paint: carPaint }); recoverCar(); traffic.setEnabled(true, vehicle);
     }
     // and last, once the run itself has started
     function showRun() {
@@ -486,34 +565,55 @@ async function boot() {
       rendering.useCameraProfile('driving', true); updateViewUi(); setPaused(false); modeUi(); updateHud();
       taxiView.render(taxi, vehicle, world.origin, time); rendering.update(vehicle.car, 1, world.origin);
     }
+    // Free drive from the title, in the garage's car
     function beginFree({ preserveInput = false } = {}) {
       if (changingJourney) return;
-      menuIdle.stop();
-      const wasRun = taxi.status !== 'idle' || demolition.status !== 'idle'; taxi.stop(); demolition.stop(); started = true; gameMode = 'free';
-      autodrive.reset(); vehicle.arcade = false; onFoot.setCar(carId, { paint }); haltCar();
+      menuIdle.stop(); leaveRun(); started = true;
+      autodrive.reset(); takeCar(carId, paint);
+      showFree({ preserveInput });
+    }
+    // Free drive after a run, in whatever the run left the player in, where
+    // they are: nothing is swapped or moved
+    function keepDriving() {
+      if (changingJourney) return;
+      leaveRun(); started = true; showFree();
+    }
+    // Ends any run (unrecorded, as a run left half way always was) and puts
+    // free drive's traffic setting back
+    function leaveRun() {
+      const wasRun = taxi.running || taxi.status === 'over' || demolition.status !== 'idle';
+      if (!taxi.waiting) taxi.stop();
+      demolition.stop(); gameMode = 'free';
       if (wasRun && freeTraffic !== undefined) traffic.setEnabled(freeTraffic, vehicle);
+    }
+    function showFree({ preserveInput = false } = {}) {
       $('#traffic').setAttribute('aria-pressed', String(traffic.enabled)); $('#autodrive').setAttribute('aria-pressed', String(autodrive.enabled));
       $('#taxi-results').hidden = true; $('#demolition-results').hidden = true; $('#welcome').classList.add('hidden');
-      rendering.useCameraProfile('driving', true); updateViewUi();
-      taxiView.render(taxi, vehicle, world.origin, time); setPaused(false, { preserveInput }); modeUi(); updateHud();
+      rendering.useCameraProfile(vehicle.walker ? 'walking' : 'driving', true); updateViewUi();
+      syncStandby(); taxiView.render(taxi, vehicle, world.origin, time); setPaused(false, { preserveInput }); modeUi(); updateHud();
     }
+    // A run ended early from the pause menu: its results, as when time runs out
+    function endRun() {
+      if (taxi.running) { taxi.finish(); for (const event of taxi.drainEvents()) taxiEvent(event); }
+      else if (demolition.running) { demolition.finish(); demolitionEvents(demolition.drainEvents()); }
+    }
+    // The title's main button
     function start() {
-      if (paused || changingJourney) return;
-      if (!started) {
-        if (gameMode === 'taxi') beginTaxi(); else beginFree();
-      }
+      if (paused || changingJourney || started) return;
+      beginTaxi();
     }
     function setPaused(value, { preserveInput = false } = {}) {
       menuIdle.stop();
       paused = value; if (!preserveInput) input.clear(); frameClock.suspend();
-      if (!paused && autodrive.enabled) start();
+      if (!paused && autodrive.enabled && !started) beginFree();
       if (!paused) fullscreen.resume();
       if (paused) { clearTimeout(toastTimer); $('#toast').classList.remove('show'); }
       // (the title screen is silent: sound begins with the drive)
       audio.setPaused(paused || !started);
       pauseOverlay.hidden = !paused; $('#pause').setAttribute('aria-pressed', String(paused)); $('#pause').setAttribute('aria-label', paused ? 'Resume' : 'Pause');
       $('#pause .control-label').textContent = paused ? 'resume' : 'pause';
-      if (paused) { renderGoals(); $('#resume').focus(); } else $('#pause').blur();
+      // (the menu opens at the top, wherever it was last scrolled)
+      if (paused) { renderGoals(); renderCareer(); pauseOverlay.scrollTop = 0; $('#resume').focus(); } else $('#pause').blur();
     }
     function updateJourneyUi() {
       const data = JOURNEYS[journey];
@@ -524,23 +624,21 @@ async function boot() {
       $('#scene').setAttribute('aria-label', data.canvas);
       document.querySelector('meta[name="theme-color"]').content = '#263b47';
     }
+    // The garage's cards, under a heading for each kind (cabs, cars, specials, aircraft)
     function buildCarCards() {
-      const current = '<span class="chooser-current">CURRENT CAR</span>';
-      $('.car-options').innerHTML = garageChoices().cars.map(({ id, label, plain, meters: values }) => {
-        const entry = { name: label, plain };
-        // The plain row stands for whichever car the road brings: no portrait
-        // and no meters, so it sits above the fleet as a single line.
-        if (entry.plain) return `<button type="button" class="chooser-card car-card car-card-plain" data-car="${id}" aria-current="false">`
-          + `<span class="chooser-card-title">${entry.name}</span>${current}</button>`;
-        const meters = values.map(({ label, level }) =>
-          `<span class="car-meter"><span>${label}</span><span class="car-meter-track"><span style="width:${level}%"></span></span></span>`).join('');
-        // The portrait is drawn in whatever the garage is wearing, so the grid
-        // doubles as the preview: one colour repaints the whole fleet at once.
-        return `<button type="button" class="chooser-card car-card" data-car="${id}" aria-label="${entry.name}" aria-current="false" style="--car-paint:${cardPaint(id)}">`
-          + carArt(id)
-          + `<span class="chooser-card-copy"><span class="chooser-card-title">${entry.name}</span>`
-          + `<span class="car-meters">${meters}</span>${current}</span></button>`;
-      }).join('');
+      const current = '<span class="chooser-current">CURRENT CAR</span>', sections = new Map();
+      for (const car of garageChoices().cars) sections.set(car.group, [...sections.get(car.group) ?? [], car]);
+      $('#garage-sections').innerHTML = [...sections].map(([group, cars], index) => `<h3 id="garage-group-${index}" class="garage-subheading">${group}</h3>`
+        + `<div class="chooser-options car-options" role="group" aria-labelledby="garage-group-${index}">${cars.map(({ id, label, meters: values }) => {
+          const meters = values.map(({ label, level }) =>
+            `<span class="car-meter"><span>${label}</span><span class="car-meter-track"><span style="width:${level}%"></span></span></span>`).join('');
+          // The portrait is drawn in whatever the garage is wearing, so the grid
+          // doubles as the preview: one colour repaints the whole fleet at once.
+          return `<button type="button" class="chooser-card car-card" data-car="${id}" aria-label="${label}" aria-current="false" style="--car-paint:${cardPaint(id)}">`
+            + carArt(id)
+            + `<span class="chooser-card-copy"><span class="chooser-card-title">${label}</span>`
+            + `<span class="car-meters">${meters}</span>${current}</span></button>`;
+        }).join('')}</div>`).join('');
       for (const button of carDialog.querySelectorAll('[data-car]')) button.addEventListener('click', () => chooseCar(button.dataset.car));
     }
     const paintSwatches = $('#paint-swatches'), paintWell = $('#paint-custom-well'), paintInput = $('#paint-custom');
@@ -818,7 +916,9 @@ async function boot() {
       if (name === 'car') { openCars(); return; }
       // E, Y or the button: out of the car, or into the one within reach (free drive only)
       if (name === 'use') {
-        if (!started || paused || gameMode !== 'free') return;
+        if (!started || paused) return;
+        // (a run keeps the player at the wheel: say so, rather than ignore the press)
+        if (gameMode !== 'free') { toast(gameMode === 'taxi' ? 'End the shift to get out (pause menu)' : 'Finish the run to get out'); return; }
         if (autodrive.enabled) action('autodrive');
         const said = onFoot.use();
         if (said) toast(said);
@@ -845,10 +945,15 @@ async function boot() {
       }
       // (not the Escape that freed the pointer, when it reaches the page after the pause the freeing made)
       if (name === 'pause' && !(paused && fullscreen.recentlyReleased)) setPaused(!paused);
+      // R puts the car back on the road in every mode (a run's clock pays for
+      // it). A new city is only ever the pause menu's, asked twice.
       if (name === 'reset') {
         if (taxi.running || demolition.running) { recoverCar(true); return; }
-        // A headset keeps its session: back on the road rather than a new city.
-        if (vr?.active) { recoverCar(); toast('Car reset'); return; }
+        if (!started || paused) return;
+        recoverCar(); toast(vehicle.walker ? 'Back on the street' : 'Back on the road');
+        return;
+      }
+      if (name === 'newCity') {
         // The seed also initializes shared layouts and scenery at module load.
         // Reload with a fresh seed to regenerate the whole city consistently.
         const url = new URL(window.location.href);
@@ -1094,7 +1199,8 @@ async function boot() {
       try { localStorage.setItem('citydriver-weather', weather.mode); } catch { /* Storage is optional. */ }
       updateHud(); needsRender = true;
     }
-    const locationModel = () => locationHudModel(vehicle, cityDistrict(vehicle.s, vehicle.u), weather.state.label);
+    const cashText = () => `$${taxi.fleet.balance.toLocaleString('en-US')}`;
+    const locationModel = () => locationHudModel(vehicle, cityDistrict(vehicle.s, vehicle.u), weather.state.label, cashText());
     // The district card (heading, district and weather) only comes up for a
     // few seconds on driving into a district, and at the start of a drive.
     // A new name has to hold for a moment first, and one shown in the last
@@ -1107,6 +1213,10 @@ async function boot() {
     }
     function updateDistrictCard(place) {
       const driving = gameMode === 'free' && started && !paused && !changingJourney;
+      // (and with the fleet balance on it, it comes up for a few seconds when that changes)
+      const balance = taxi.fleet.balance;
+      if (driving && district.cash !== undefined && balance !== district.cash) district.until = time + 4;
+      district.cash = balance;
       if (!started || gameMode !== 'free') district.current = null;
       else if (driving) {
         if (district.current === null) announceDistrict(place);
@@ -1124,10 +1234,16 @@ async function boot() {
     // few seconds, see taxi.css)
     let movedAt = 0;
     function updateStuck() {
-      if (!(taxi.running || demolition.running) || paused || Math.abs(vehicle.speed) > 1.5) movedAt = time;
+      if (!started || paused || vehicle.walker || vehicle.pilot || Math.abs(vehicle.speed) > 1.5) movedAt = time;
       const stuck = String(time - movedAt > 3);
       if (document.body.dataset.stuck !== stuck) document.body.dataset.stuck = stuck;
     }
+    // Free drive's tips, each shown once in the task card (see freeHudModel)
+    const freeTips = new OnceHints({
+      cab: 'Stop in any ring for a fare · your shift starts with it',
+      chain: 'Stunts chain up · a crash loses it',
+      trial: 'A test drive · buy this cab in the Taxi fleet to take fares',
+    }, 'citydriver-free-hints', taxiStorage);
     function updateHud() {
       const location = locationModel();
       renderLocationHud(location);
@@ -1135,8 +1251,9 @@ async function boot() {
       renderMenuControls(controls());
       cityGuide.update(started && !paused && !changingJourney, { draw: !vr?.active });
       const run = gameMode === 'demolition' ? demolitionView.buildHud(demolition, vehicle)
-        : taxiView.buildHud(taxi, vehicle, started && gameMode === 'free');
-      renderRunHud(run);
+        : started && gameMode === 'free' ? freeHudModel(stunts, vehicle, { taxi, trial: carEntry(vehicle.carId).taxi && !taxi.fleet.owned.has(vehicle.carId) && !vehicle.walker, hint: id => freeTips.get(id) })
+        : taxiView.buildHud(taxi, vehicle);
+      renderRunHud(run); placeToast();
       updateUseUi();
       if (vr?.active) vrStatus.hud(started && !paused && !changingJourney ? headsetHudModel(run, location, vrHint()) : null);
     }
@@ -1155,7 +1272,7 @@ async function boot() {
     }
     const menuActions = {
       start: () => vr.active ? beginTaxi() : start(), taxi: beginTaxi, demolition: beginDemolition, free: beginFree, resume: () => setPaused(false),
-      back: () => openChooser()?.close(), exit: () => action('exitVR'), fleet: openFleet, garage: openCars,
+      back: () => openChooser()?.close(), exit: () => action('exitVR'), fleet: openFleet, garage: openCars, keep: keepDriving, end: endRun, newCity: askNewCity,
       autodrive: () => action('autodrive'), traffic: toggleTraffic, driftTap: () => setDriftMode(vehicle.driftMode === 'tap' ? 'hold' : 'tap'),
       vibration: () => setVibration(!vibration), reset: () => action('reset'), map: openWorldMap,
       weather: () => chooseWeather(cycleChoice(WEATHER_CHOICES.map(([id]) => id), weather.mode)),
@@ -1171,7 +1288,16 @@ async function boot() {
         running: taxi.running || demolition.running, location: locationModel(), carName: carEntry(started && gameMode !== 'free' ? vehicle.carId : carId).name,
         fleetName: carEntry(taxi.fleet.selected).name, autodrive: autodrive.enabled, traffic: traffic.enabled, driftTap: vehicle.driftMode === 'tap', vibration,
         weather: weather.mode, view: rendering.viewLabel, lookSensitivity: cameraPreferences.inputs.controller.sensitivity, comfort: comfort.enabled, graphics: graphics.auto ? 'Auto' : graphics.settings.label,
-        rates: headsetRates(), rateChoice: graphics.rateChoice, frameRate: vr.session?.frameRate, sound: audio.enabled, mix: audio.preset };
+        rates: headsetRates(), rateChoice: graphics.rateChoice, frameRate: vr.session?.frameRate, sound: audio.enabled, mix: audio.preset,
+        career: careerText(), newCityArmed: performance.now() < newCityUntil };
+    }
+    // A new city is asked twice, the second press within a few seconds: it
+    // throws away the places found and the jump stars
+    let newCityUntil = -Infinity;
+    function askNewCity() {
+      if (performance.now() < newCityUntil) { newCityUntil = -Infinity; action('newCity'); return; }
+      newCityUntil = performance.now() + 4000; renderMenuControls(controls());
+      setTimeout(() => renderMenuControls(controls()), 4100);
     }
     const controls = () => menuControls(menuState(), menuActions);
     const garageChoices = () => garageModel(carId, paint, ownPaint, { chooseCar, applyPaint });
@@ -1239,19 +1365,17 @@ async function boot() {
       if (said) toast(said);
       if (onFoot.walking !== walked) changedCar();
       props.update(dt, vehicle, traffic, world.chunks);
+      // Free drive: the stunt chain, and in the player's cab the fares waiting
+      if (started && gameMode === 'free') {
+        stunts.update(dt, vehicle, traffic.enabled ? traffic.vehicles : [], { active: freeStunts(), aloft: Boolean(vehicle.aloft) });
+        stuntEvents(stunts.drainEvents());
+        syncStandby();
+        // (not while stopping to get out: that stop is no pickup)
+        if (taxi.waiting && !onFoot.leaving) { taxi.update(dt, vehicle); for (const event of taxi.drainEvents()) taxiEvent(event); }
+      }
       if (started && taxi.running) {
         taxi.update(dt, vehicle, traffic.enabled ? traffic.vehicles : []);
-        for (const event of taxi.drainEvents()) {
-          if (event.kind === 'over') {
-            haltCar();
-            setPaused(true); pauseOverlay.hidden = true; taxiView.hud(taxi, vehicle); taxiView.results(taxi, cityGuide.lately); fleetView.render(); $('#taxi-retry').focus();
-          } else if (event.kind === 'goal') {
-            // A goal usually completes on a payout, whose toast lands first.
-            renderGoals(); setTimeout(() => { if (taxi.running && !paused) { toast(event.text, 'goal'); audio.cue('goal'); } }, 1500);
-          } else { toast(event.text, event.rating ?? event.tone ?? ''); audio.cue(event.kind, event); taxiView.pop(event, vehicle); }
-          // (a fare's drop-off finds its place, quietly during the shift)
-          if (event.destination) cityGuide.arrive(event.destination.id);
-        }
+        for (const event of taxi.drainEvents()) taxiEvent(event);
         tickClock(taxi.timeLeft);
       }
       if (started && demolition.running) {
@@ -1260,11 +1384,43 @@ async function boot() {
         tickClock(demolition.timeLeft);
       }
     };
+    // What a shift has to say, and its end
+    function taxiEvent(event) {
+      if (event.kind === 'over') {
+        haltCar();
+        setPaused(true); pauseOverlay.hidden = true; taxiView.hud(taxi, vehicle); taxiView.results(taxi, cityGuide.lately); fleetView.render(); $('#taxi-retry').focus();
+        return;
+      }
+      // (the first fare from standby: the shift begins with it)
+      if (event.first) startShift();
+      if (event.kind === 'goal') {
+        // A goal usually completes on a payout, whose toast lands first.
+        renderGoals(); setTimeout(() => { if (taxi.running && !paused) { toast(event.text, 'goal'); audio.cue('goal'); } }, 1500);
+      } else { toast(event.text, event.rating ?? event.tone ?? ''); audio.cue(event.kind, event); taxiView.pop(event, vehicle); }
+      // (a fare's drop-off finds its place, quietly during the shift)
+      if (event.destination) cityGuide.arrive(event.destination.id);
+    }
+    // Free drive's stunts: a small number off each, the multiplier called
+    // out, and the chain's pot paid when it banks (or lost)
+    function stuntEvents(events) {
+      for (const event of events) {
+        if (event.kind === 'stunt' || event.kind === 'smash') {
+          if (event.kind === 'smash') audio.cue('smash', event); else audio.cue('tip', { combo: event.chain });
+          if (event.pop) taxiView.labels.pop({ x: event.x, y: event.y + 1.2, z: event.z, amount: `+$${event.value}`, caption: event.multiplier > 1 ? `${event.label.toUpperCase()} ×${event.multiplier}` : event.label.toUpperCase(), colour: '#9ff2e6', size: 1.6 });
+        } else if (event.kind === 'multiplier') { toast(event.text, 'chain'); audio.cue('multiplier', event); }
+        else if (event.kind === 'banked') {
+          earn(event.amount); toast(event.text, 'banked'); audio.cue('banked');
+          const p = vehicle.groundedPosition;
+          taxiView.labels.pop({ x: p.x, y: p.y + 1.5, z: p.z, amount: `+$${event.amount.toLocaleString('en-US')}`, caption: 'BANKED', colour: '#ffe07a', size: 2.6 });
+        } else if (event.kind === 'lost') { toast(event.text, 'slow'); audio.cue('penalty'); }
+      }
+    }
     // A flying machine's stunts and landings are said as a car's jumps are: a
     // word, a label rising off it, a chime for a stunt, and a jolt through the
     // pad for a hard landing
     function pilotEvent(event) {
       const p = vehicle.groundedPosition, stunt = event.kind === 'stunt';
+      if (freeStunts()) stunts.flew(event, p);
       if (event.kind === 'bounce') { toast(event.text); rumble(.6, .4, .15); return; }
       toast(event.text, 'stunt');
       taxiView.labels.pop({ x: p.x, y: p.y, z: p.z, amount: event.text, caption: stunt ? 'STUNT' : 'LANDING', colour: stunt ? '#ffe07a' : '#9ff2e6', size: 3 });
@@ -1279,14 +1435,20 @@ async function boot() {
         if (taxi.running) taxi.jumped(event, vehicle);
         else if (demolition.running) demolition.jumped(event);
         else if (started && gameMode === 'free') {
-          const news = jumpBook.land(event), p = vehicle.groundedPosition;
+          const news = jumpBook.land(event), p = vehicle.groundedPosition, pay = (news?.gained ?? 0) * STAR_PAY;
+          if (freeStunts()) stunts.jumped(event, p);
+          // (each star newly taken off a named jump pays)
+          earn(pay);
           hintAir(event);
           if (!news) return;
-          toast(news.text, 'stunt'); if (news.gold) audio.cue('bonus');
+          toast(pay ? `${news.text} · +$${pay}` : news.text, 'stunt'); if (news.gold) audio.cue('bonus');
           taxiView.labels.pop({ x: p.x, y: p.y, z: p.z, amount: news.amount, caption: news.caption, colour: news.gold ? '#ffe07a' : '#9ff2e6', size: 2.6 });
           cityGuide.refreshJumps();
         }
-      } else if (event.kind === 'drift') { if (taxi.running) taxi.drifted(event, vehicle); rumble(0, .2 + event.stage * .12, .06); }
+      } else if (event.kind === 'drift') {
+        if (taxi.running) taxi.drifted(event, vehicle); else if (freeStunts()) stunts.drifted(event, vehicle.groundedPosition);
+        rumble(0, .2 + event.stage * .12, .06);
+      }
       else if (event.kind === 'turbo') { hintDrift(event); rumble(.3 + event.stage * .15, .5, .12 + event.stage * .08); }
       else if (event.kind === 'stomp') { traffic.stomp(event.on, event.impact, event); rumble(.7, .5, .18); }
       // (on foot, down on their feet from high up: see Walker's HARD_LANDING)
@@ -1320,6 +1482,8 @@ async function boot() {
         else if (event.kind === 'contract') { demolitionView.pop(event); say(event.text, 'goal', 4); audio.cue('goal'); }
         else if (event.kind === 'banked') {
           say(event.text, 'banked', 3); audio.cue('banked');
+          // (the contractor's cut of the damage goes into the fleet balance)
+          earn(event.pay);
           // (a new rating is its own news, a moment later, as a taxi goal is)
           if (event.rank) later = `Rating · ${event.rank.name}`;
         } else if (event.kind === 'record') later = later ? `${event.text} ${later}` : event.text;
@@ -1453,7 +1617,7 @@ async function boot() {
     if (import.meta.env.DEV && emulate !== null) (await import('./xr-emulator.js')).installXREmulator(emulate);
     void vr.detect();
     // Development-only inspection surface for automated driving and streaming checks.
-    if (import.meta.env.DEV) window.__citydriver = { seed: SEED, city: CITY, nav: navGraph(), lanePose, roadAt, nearestLanePose, vehicle, onFoot, pigeons, traffic, props, nightLighting, weather, autodrive, audio, graphics, vr, vrStatus, currentMenuModel, fleetMenu, cityGuide, taxi, taxiView, beginTaxi, beginFree, demolition, demolitionView, beginDemolition, get gameMode() { return gameMode; }, world, rendering, input, action, chooseCar, applyPaint, get carId() { return carId; }, get paint() { return paint; }, get journey() { return journey; }, get changingJourney() { return changingJourney; }, get paused() { return paused; }, get started() { return started; } };
+    if (import.meta.env.DEV) window.__citydriver = { seed: SEED, city: CITY, nav: navGraph(), lanePose, roadAt, nearestLanePose, vehicle, onFoot, pigeons, traffic, props, nightLighting, weather, autodrive, audio, graphics, vr, vrStatus, currentMenuModel, fleetMenu, stunts, keepDriving, endRun, cityGuide, taxi, taxiView, beginTaxi, beginFree, demolition, demolitionView, beginDemolition, get gameMode() { return gameMode; }, world, rendering, input, action, chooseCar, applyPaint, get carId() { return carId; }, get paint() { return paint; }, get journey() { return journey; }, get changingJourney() { return changingJourney; }, get paused() { return paused; }, get started() { return started; } };
   } catch (error) { console.error('Could not start Citydriver:', error); $('#loading').classList.add('loaded'); $('#error').hidden = false; }
 }
 boot();

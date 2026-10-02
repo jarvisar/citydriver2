@@ -161,8 +161,20 @@ export const CARS = {
 // The wheeled fleet, which the handling is built for, and the garage, which
 // has the flying machines too.
 export const CAR_IDS = Object.keys(CARS).filter(id => !CARS[id].flies);
-export const GARAGE_IDS = Object.keys(CARS);
+// Citydriver 1's wagons, one per old route, and the plain Default card are
+// near copies of the Surf Wagon. They still drive (the handling and audio
+// tests use the Default as their baseline) but the garage leaves them out.
+const RETIRED = new Set(['auto', 'desert', 'snow', 'jungle', 'plains', 'city']);
+export const GARAGE_IDS = Object.keys(CARS).filter(id => !RETIRED.has(id));
+// The garage's sections, in order
+export const GARAGE_GROUPS = [['cab', 'Cabs'], ['car', 'Cars'], ['special', 'Specials'], ['air', 'Aircraft']];
+export const garageGroup = id => {
+  const entry = carEntry(id);
+  return entry.taxi ? 'cab' : entry.flies ? 'air' : ['special', 'formula'].includes(entry.kind) ? 'special' : 'car';
+};
 export const DEFAULT_CAR = 'auto';
+// What a new player drives: their cab, so the fares are there from the start
+export const STARTING_CAR = 'taxi';
 export const carEntry = id => CARS[id] ?? CARS[DEFAULT_CAR];
 
 // Rolling and air drag. They live here because the surface figures below are

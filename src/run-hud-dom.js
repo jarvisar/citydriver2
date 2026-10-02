@@ -1,8 +1,11 @@
 import { $, text, hide, data, attribute, width } from './hud-dom.js';
 
+// A run shows every panel. Free drive (see freeHudModel) shows only the task
+// card, and only while it has something to say.
 export function renderRunHud(model) {
-  hide($('taxi-hud'), !model.running); hide($('taxi-task'), !model.running); hide($('taxi-dash'), !model.running);
-  hide($('taxi-nav'), !model.running || !model.navigation);
+  const task = model.running || Boolean(model.task);
+  hide($('taxi-hud'), !model.running); hide($('taxi-task'), !task); hide($('taxi-dash'), !model.running);
+  hide($('taxi-nav'), !task || !model.navigation);
   hide($('taxi-buttons'), !model.buttons); hide($('taxi-boost'), !model.boostVisible);
   if (model.buttons) {
     text('taxi-boost-state', model.boostState);
@@ -12,14 +15,16 @@ export function renderRunHud(model) {
     const state = $('drift-state');
     text('drift-state', model.driftState ?? state.dataset.idle ?? '');
   }
-  if (!model.running) return;
-  text('taxi-clock-label', model.clockLabel); text('taxi-clock', model.clock);
-  data('taxi-clock', 'urgent', model.urgent); data('taxi-hud', 'overtime', model.overtime);
-  text('taxi-cash', model.cash); attribute($('taxi-cash'), 'aria-label', model.cashLabel);
-  text('taxi-fares', model.fares); text('taxi-speed', model.speed);
-  width('taxi-boost-fill', `${model.boost * 100}%`);
-  attribute($('taxi-boost'), 'aria-valuenow', Math.round(model.boost * 100));
-  if ($('taxi-controller-boost').value !== model.boost) $('taxi-controller-boost').value = model.boost;
+  if (!task) return;
+  if (model.running) {
+    text('taxi-clock-label', model.clockLabel); text('taxi-clock', model.clock);
+    data('taxi-clock', 'urgent', model.urgent); data('taxi-hud', 'overtime', model.overtime);
+    text('taxi-cash', model.cash); attribute($('taxi-cash'), 'aria-label', model.cashLabel);
+    text('taxi-fares', model.fares); text('taxi-speed', model.speed);
+    width('taxi-boost-fill', `${model.boost * 100}%`);
+    attribute($('taxi-boost'), 'aria-valuenow', Math.round(model.boost * 100));
+    if ($('taxi-controller-boost').value !== model.boost) $('taxi-controller-boost').value = model.boost;
+  }
   text('taxi-stage', model.stage); text('taxi-fare-status', model.fareStatus);
   text('taxi-task-title', model.title); text('taxi-task-detail', model.detail);
   data('taxi-task', 'stage', model.status); data('taxi-task', 'urgent', model.taskUrgent); data('taxi-task', 'arriving', model.arriving);
@@ -46,5 +51,5 @@ export function renderRunHud(model) {
 
 export function renderLocationHud(model) {
   text('distance', model.distance); text('city-heading', model.heading); text('city-location', model.place);
-  text('world-map-here', model.place); text('weather-label', model.weather);
+  text('world-map-here', model.place); text('city-cash', model.cash);
 }

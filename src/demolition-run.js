@@ -30,6 +30,9 @@ export const CALLOUTS = ['', '', 'Smash', 'Wrecking', 'Rampage', 'Total chaos'];
 export const FINE = 10000, FINE_GAP = 1;
 // Each smash tops up the boost, as a taxi's stunts do, and a wreck more
 export const SMASH_BOOST = .06, WRECK_BOOST = .2;
+// The contractor's cut: each chain banked pays this share of its damage into
+// the taxi fleet's balance (about $1,000 for a B rating, $4,000 for an S)
+export const PAY_SHARE = .004;
 
 // Street furniture, per piece that comes loose (a cafe's table and chairs
 // come loose together, and are paid for together)
@@ -172,7 +175,7 @@ export class DemolitionRun {
     this.events = []; this.summary = null; this.last = null; this.cars = new WeakMap();
     // What the run can be measured by, on the results screen
     this.smashed = 0; this.carsHit = 0; this.wrecked = 0; this.takedowns = 0; this.trees = 0; this.people = 0; this.fines = 0; this.fineCount = 0;
-    this.bestChain = 0; this.bestMultiplier = 1; this.bestBank = 0; this.biggest = null; this.bonusSeconds = 0;
+    this.bestChain = 0; this.bestMultiplier = 1; this.bestBank = 0; this.biggest = null; this.bonusSeconds = 0; this.paid = 0;
     this.previousBest = this.records.best; this.overtime = false; this.beatBest = false; this.fined = -Infinity;
     // What the contracts count besides the run's own numbers: furniture by kind, parked cars written off
     this.tally = { parkedWrecks: 0, signals: 0 };
@@ -293,9 +296,10 @@ export class DemolitionRun {
     if (!this.chain) return 0;
     const multiplier = this.multiplier, amount = this.pot, chain = this.chain, before = this.rank;
     this.score += amount; this.bestBank = Math.max(this.bestBank, amount);
+    const pay = Math.round(amount * PAY_SHARE); this.paid += pay;
     this.chain = 0; this.pot = 0; this.chainTime = 0;
     const rank = this.rank;
-    this.events.push({ kind: 'banked', amount, chain, multiplier, rank: rank.rank > before.rank ? rank : null,
+    this.events.push({ kind: 'banked', amount, pay, chain, multiplier, rank: rank.rank > before.rank ? rank : null,
       text: chain > 1 ? `${chain} hit chain · +${money(amount)}` : `+${money(amount)}` });
     // (past the best run on the table, once)
     if (!this.beatBest && this.previousBest > 0 && this.score > this.previousBest) {

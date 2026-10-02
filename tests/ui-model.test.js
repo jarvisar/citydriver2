@@ -26,9 +26,9 @@ test('menu choices and commands cover the title, pause modes, choosers and resul
   assert.equal(menuControls(state(), commands).garage.disabled, true, 'an active taxi run keeps its cab');
   assert.equal(build(state({ paused: false })), null);
   assert.equal(build(state({ loading: true })).id, 'loading');
-  for (const [mode, driving] of [['taxi', ['Restart run', 'Free drive', 'Demolition', 'Taxi fleet', 'Tap to drift', 'Reset car']],
-    ['demolition', ['Restart run', 'Free drive', 'Taxi run', 'Tap to drift', 'Reset car']], ['free', ['Taxi run', 'Demolition', 'Garage', 'Autodrive', 'Traffic', 'Tap to drift', 'Reset car']]]) {
-    model = build(state({ mode }));
+  for (const [mode, driving] of [['taxi', ['End shift', 'Demolition', 'Taxi fleet', 'Tap to drift', 'Reset car']],
+    ['demolition', ['Restart run', 'End run', 'Taxi shift', 'Tap to drift', 'Reset car']], ['free', ['Taxi shift', 'Demolition', 'Garage', 'Taxi fleet', 'Autodrive', 'Traffic', 'Tap to drift', 'Reset car']]]) {
+    model = build(state({ mode, running: mode !== 'free' }));
     assert.deepEqual(model.items.filter(item => item.group === 'Driving').map(item => item.label), driving);
     assert.equal(model.items[0].label, 'Resume'); assert.equal(model.items[0].primary, true);
     assert.equal(model.items.find(item => item.id === 'weather').value, 'Golden hour');
@@ -43,8 +43,10 @@ test('menu choices and commands cover the title, pause modes, choosers and resul
   for (const mode of ['taxi', 'demolition']) {
     model = build(state({ mode, over: true }), { result: { cash: '$500', name: 'Class D', next: 'Next rating', best: 'Best $600' } });
     assert.equal(model.title, 'Time up · $500');
-    assert.equal(model.items[1].value, undefined, 'results keep the short action labels');
+    assert.deepEqual(model.items.slice(0, 3).map(item => item.label), mode === 'taxi' ? ['Next shift', 'Keep driving', 'Taxi fleet'] : ['Play again', 'Keep driving', 'Taxi shift']);
+    assert.equal(model.items[2].value, undefined, 'results keep the short action labels');
     model.items[0].activate(); assert.equal(calls.at(-1), mode);
+    model.items[1].activate(); assert.equal(calls.at(-1), 'keep');
   }
 });
 
@@ -57,6 +59,8 @@ test('garage selection uses car and paint state, and preserves paint-first heads
   assert.deepEqual(calls, ['taxi', DEFAULT_PAINT]);
   const s = state({ mode: 'free', chooser: 'garage' }), model = menuModel(s, menuControls(s, actions([])), { garage });
   assert.equal(model.items[0].group, 'Paint'); assert.equal(model.items[0].swatch, '#123456');
+  assert.deepEqual([...new Set(garage.cars.map(car => car.group))], ['Cabs', 'Cars', 'Specials', 'Aircraft'], 'the garage in sections');
+  assert.ok(!garage.cars.some(car => ['auto', 'desert', 'city'].includes(car.id)), 'without the old route wagons');
   assert.equal(model.items.at(-1).label, 'Back');
 });
 
@@ -142,7 +146,7 @@ test('rendering the same HUD twice does not advance cash or hints, and desktop e
 
 test('location and result summaries are available before either interface renders', () => {
   const car = player(), location = locationHudModel({ ...car, heading: -Math.PI / 2 }, 'Harbour', 'Night');
-  assert.deepEqual(location, { distance: '1.0', heading: 'W', place: 'Harbour', weather: 'Night' });
+  assert.deepEqual(location, { distance: '1.0', heading: 'W', place: 'Harbour', weather: 'Night', cash: '' });
   assert.equal(headsetHudModel(null, location).place, 'Harbour');
   const run = new TaxiRun(); run.start(car); run.cash = 600; run.timeLeft = .01; run.update(.02, car);
   const taxi = taxiResultModel(run, [{ name: 'Museum' }]);

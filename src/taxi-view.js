@@ -161,17 +161,19 @@ export class TaxiView {
   // pickup's, after a drop-off), so their GPU buffers are not freed and made again.
   rebuild(run) {
     const previousReactions = new Map(this.markers.map(marker => [marker.stop.id, marker.reactions]));
-    const stops = run.status === 'pickup' ? run.customers : run.status === 'driving' ? [{ ...run.target, color: '#ffd240' }] : [];
+    // (standby's fares are pickups that start a shift: the same rings)
+    const status = run.status === 'standby' ? 'pickup' : run.status;
+    const stops = status === 'pickup' ? run.customers : status === 'driving' ? [{ ...run.target, color: '#ffd240' }] : [];
     const waiting = new Set(stops), kept = new Map();
     for (const marker of this.markers) {
       this.group.remove(marker.group);
-      if (marker.status === run.status && waiting.has(marker.stop)) { kept.set(marker.stop, marker); continue; }
+      if (marker.status === status && waiting.has(marker.stop)) { kept.set(marker.stop, marker); continue; }
       marker.shape?.band.dispose(); marker.shape?.wall.dispose();
       if (marker.person) this.spare(marker.person);
     }
     this.markers = []; this.revision = run.revision;
     for (const stop of stops) {
-      const marker = kept.get(stop) ?? this.marker(stop, run.status);
+      const marker = kept.get(stop) ?? this.marker(stop, status);
       marker.float.phase = this.markers.length * 2.4;
       const previous = previousReactions.get(stop.id), count = marker.person?.count ?? 0;
       marker.reactions = previous?.length === count ? previous : Array.from({ length: count }, (_, i) => previous?.[i] ?? {});
@@ -224,8 +226,10 @@ export class TaxiView {
   }
   render(run, vehicle, origin, time, contacts = null, camera = null) {
     this.labels.render(origin, time, camera);
-    this.group.visible = run.running;
-    if (!run.running) return;
+    // (a cab on standby in free drive shows its fares too: see TaxiRun.standby)
+    const shown = run.running || Boolean(run.waiting);
+    this.group.visible = shown;
+    if (!shown) return;
     if (this.revision !== run.revision) this.rebuild(run);
     this.group.position.z = origin;
     for (const marker of this.markers) {

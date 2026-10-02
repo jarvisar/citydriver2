@@ -81,3 +81,7 @@ body[data-journey=city] .paint-shop { background: #fff6; }
   #car-dialog { width: min(1180px, calc(100% - var(--ui-left) - var(--ui-right))); }
   #car-dialog .car-options { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
+
+/* The garage's sections: cabs, cars, specials and aircraft */
+#garage-sections > .garage-subheading { margin-top: 20px; }
+#garage-sections > .garage-subheading:first-child { margin-top: 0; }

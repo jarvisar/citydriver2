@@ -82,7 +82,7 @@
       <header class="topbar">
         <div class="city-hud" aria-label="City navigation">
           <span id="city-heading" class="city-heading" aria-label="Heading">N</span>
-          <span class="city-hud-copy"><span id="city-location">DOWNTOWN</span><span id="weather-label">Golden hour</span></span>
+          <span class="city-hud-copy"><span id="city-location">DOWNTOWN</span><span id="city-cash">$0</span></span>
         </div>
         <div class="drive-actions" role="group" aria-label="Driving actions">
           <button id="view" title="Change camera (V)"><kbd>V</kbd><svg class="touch-utility-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3" stroke="currentColor" stroke-width="1.5"/><path d="m8 5 2-3h4l2 3" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5"/></svg> <span class="control-label">view</span></button>
@@ -125,7 +125,7 @@
             <div id="taxi-result-goals" class="taxi-result-goals"></div>
             <div id="taxi-result-career" class="taxi-result-career" hidden><div class="taxi-result-heading"><span id="taxi-career-rank">Rookie</span><span id="taxi-career-next"></span></div><progress id="taxi-career-progress" max="1" value="0"></progress><small id="taxi-career-livery"></small></div>
             <p class="taxi-result-footer"><span id="taxi-result-best">Best $0</span><span id="taxi-result-bank"></span></p>
-            <button type="button" id="taxi-retry">Play again</button><button type="button" id="taxi-fleet-results" data-open-fleet>Taxi fleet</button><button type="button" id="taxi-free">Free drive</button>
+            <button type="button" id="taxi-retry">Next shift</button><button type="button" id="taxi-keep">Keep driving</button><button type="button" id="taxi-fleet-results" data-open-fleet>Taxi fleet</button>
           </div>
         </div>
       </section>
@@ -140,7 +140,7 @@
           <div class="taxi-result-more">
             <div id="demolition-result-scores" class="demolition-result-scores"></div>
             <p class="taxi-result-footer"><span id="demolition-result-best"></span><span id="demolition-result-total"></span></p>
-            <button type="button" id="demolition-retry">Play again</button><button type="button" id="demolition-taxi">Taxi run</button><button type="button" id="demolition-free">Free drive</button>
+            <button type="button" id="demolition-retry">Play again</button><button type="button" id="demolition-keep">Keep driving</button><button type="button" id="demolition-taxi">Taxi shift</button>
           </div>
         </div>
       </section>
@@ -158,7 +158,7 @@
           <p class="menu-tagline">Pick up. Drop off. Beat the clock.</p>
         </div>
         <div class="menu-actions">
-          <button id="start" class="start-button"><svg class="wheel-icon" viewBox="0 0 32 32" fill="none" aria-hidden="true"><circle cx="16" cy="16" r="12.5" stroke="currentColor" stroke-width="3"/><path d="M4 14h5c3 0 4-3 7-3s4 3 7 3h5v4h-6a4 4 0 0 0-4 4v6h-4v-6a4 4 0 0 0-4-4H4Z" fill="currentColor"/></svg><span>Start run</span></button>
+          <button id="start" class="start-button"><svg class="wheel-icon" viewBox="0 0 32 32" fill="none" aria-hidden="true"><circle cx="16" cy="16" r="12.5" stroke="currentColor" stroke-width="3"/><path d="M4 14h5c3 0 4-3 7-3s4 3 7 3h5v4h-6a4 4 0 0 0-4 4v6h-4v-6a4 4 0 0 0-4-4H4Z" fill="currentColor"/></svg><span>Taxi shift</span></button>
           <button id="demolition" type="button" class="start-button demolition-entry"><svg class="demolition-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 21h7M6 21V5l13 1M6 9l3-4M19 6v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="19" cy="14" r="4" stroke="currentColor" stroke-width="1.5"/></svg><span>Demolition</span></button>
           <button id="free-drive" type="button" class="start-button menu-secondary"><span>Free drive</span></button>
           <button id="enter-vr" class="start-button vr-entry menu-secondary" type="button" hidden><svg class="vr-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3.8 7.5h16.4a1.8 1.8 0 0 1 1.8 1.8v5.4a1.8 1.8 0 0 1-1.8 1.8h-3.6a2 2 0 0 1-1.7-.9l-1.2-1.8a2 2 0 0 0-3.4 0l-1.2 1.8a2 2 0 0 1-1.7.9H3.8A1.8 1.8 0 0 1 2 14.7V9.3a1.8 1.8 0 0 1 1.8-1.8Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg><span class="vr-entry-label">Enter VR</span></button>
@@ -169,13 +169,14 @@
         <div class="pause-content">
           <header class="pause-header">
             <h2 id="pause-heading">Paused</h2><button id="resume" class="start-button"><svg class="wheel-icon" viewBox="0 0 32 32" fill="none" aria-hidden="true"><circle cx="16" cy="16" r="12.5" stroke="currentColor" stroke-width="3"/><path d="M4 14h5c3 0 4-3 7-3s4 3 7 3h5v4h-6a4 4 0 0 0-4 4v6h-4v-6a4 4 0 0 0-4-4H4Z" fill="currentColor"/></svg><span>Resume</span></button>
-            <div class="location"><svg viewBox="0 0 29 34" fill="none" aria-hidden="true"><path d="M4 4c7 2 14 2 21 0v17c0 4-7 7-10.5 10C11 28 4 25 4 21V4Z" stroke="currentColor" stroke-width="1.3"/><text x="14.5" y="22" text-anchor="middle" fill="currentColor" font-size="19" font-family="Georgia, serif">1</text></svg><div class="location-copy"><span class="location-title">ENDLESS CITY</span><span class="location-sub"><span id="distance">0.0</span> mi driven</span></div></div>
+            <div class="location"><svg viewBox="0 0 29 34" fill="none" aria-hidden="true"><path d="M4 4c7 2 14 2 21 0v17c0 4-7 7-10.5 10C11 28 4 25 4 21V4Z" stroke="currentColor" stroke-width="1.3"/><text x="14.5" y="22" text-anchor="middle" fill="currentColor" font-size="19" font-family="Georgia, serif">1</text></svg><div class="location-copy"><span class="location-title">ENDLESS CITY</span><span class="location-sub"><span id="distance">0.0</span> mi driven</span><span id="pause-career" class="location-sub"></span></div></div>
           </header>
           <div class="pause-settings">
             <div class="pause-column">
               <section class="pause-panel" aria-labelledby="garage-heading">
                 <h3 id="garage-heading">Driving</h3>
                 <button type="button" id="restart-run" class="panel-button"><span>Restart run</span></button>
+                <button type="button" id="end-run" class="panel-button"><span>End shift</span></button>
                 <button type="button" id="switch-mode" class="panel-button"><span>Free drive</span></button>
                 <button type="button" id="other-run" class="panel-button"><span>Demolition</span></button>
                 <button type="button" id="pause-fleet" class="panel-button" data-open-fleet aria-haspopup="dialog"><span>Taxi fleet</span><span class="panel-button-value">Upgrade / select</span></button>
@@ -311,8 +312,7 @@
           </div>
           <p class="paint-note">Paint applies to all cars.</p>
         </section>
-        <h3 id="fleet-heading" class="garage-subheading">Fleet</h3>
-        <div class="chooser-options car-options" role="group" aria-labelledby="fleet-heading"></div>
+        <div id="garage-sections"></div>
       </dialog>
       <dialog id="taxi-fleet-dialog" aria-labelledby="taxi-fleet-heading" aria-describedby="fleet-note">
         <div class="chooser-heading"><div><span class="eyebrow">BUILD YOUR FLEET</span><h2 id="taxi-fleet-heading">A faster way to fare.</h2></div><button type="button" id="close-fleet" class="icon-button" aria-label="Close taxi fleet"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>

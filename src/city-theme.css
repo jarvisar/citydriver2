@@ -24,6 +24,9 @@
 }
 body[data-mode=demolition] { --city-accent: #ff9433; --city-accent-hover: #ffb46e; --city-accent-soft: #ffd6ad; }
 body[data-mode=free] { --city-accent: #5fd0c0; --city-accent-hover: #8fe0d4; --city-accent-soft: #c4f1ea; }
+/* In the player's own cab the fares are on offer (see TaxiRun.standby), so
+   free drive takes the taxi's accent until they get out or change car. */
+body[data-mode=free][data-standby=true] { --city-accent: #ffd238; --city-accent-hover: #ffe177; --city-accent-soft: #fff1ad; }
 body, body[data-journey] {
   --ink: var(--city-text);
   --cream: var(--city-panel);
@@ -71,11 +74,12 @@ body[data-controller=true] #app :is(button, input, select):focus {
   #app .drive-actions button { width: 44px; height: 44px; border: 1px solid var(--city-line); border-radius: 50%; background: var(--city-glass); box-shadow: var(--city-shadow); }
 }
 #app .city-hud, #app .city-hud-copy { min-width: 0; }
-#app :is(#city-location, #weather-label) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#app :is(#city-location, #city-cash) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #app .drive-actions button { color: var(--city-text); border-radius: var(--city-control-radius); font-weight: 650; }
 #app .drive-actions button:hover { background: var(--city-hover); }
 #app .city-heading { color: var(--city-gold); border-color: #f3d89966; }
-#app :is(#weather-label, #taxi-task-detail, #taxi-fares, #taxi-fare-status, #taxi-offer) { color: var(--city-muted); }
+#app :is(#taxi-task-detail, #taxi-fares, #taxi-fare-status, #taxi-offer) { color: var(--city-muted); }
+#app #city-cash { color: var(--city-accent-soft); font-weight: 700; font-variant-numeric: tabular-nums; }
 #app .taxi-score { background: var(--city-glass); color: var(--city-text); }
 #app #taxi-stage { color: var(--city-accent); }
 #app .taxi-task[data-arriving=true] #taxi-task-detail { color: #c3f4bb; }

@@ -1,6 +1,6 @@
 // The headset's menus and HUD, through Meta's WebXR emulator (IWER, the dev
 // server's `?xr` hook): enters VR, walks the title, a taxi run, the pause
-// menu, the city map, the fleet, free drive (and out of the car on foot), the garage and the results, and
+// menu, the city map, the fleet, the results, free drive (and out of the car on foot), the garage, and
 // checks the game's state at each step. Saves the headset's view, a close-up
 // at about a Quest 3's sharpness and each panel's own canvas.
 // node scripts/vr-review.mjs [output directory]   (STEREO=1 draws both eyes)
@@ -97,9 +97,9 @@ try {
   await aim('right', 'Free drive');
   now = await shot('02-title-pointing');
   check('pointing at a row selects it', now.selected === 'Free drive', now.selected);
-  await aim('right', 'Start run'); await press('right', 'trigger'); await wait(300);
+  await aim('right', 'Taxi shift'); await press('right', 'trigger'); await wait(300);
   now = await state();
-  check('the trigger on Start run begins a taxi run', now.started && now.mode === 'taxi' && now.taxi === 'pickup');
+  check('the trigger on Taxi shift puts the cab on standby, the clock waiting for a fare', now.started && now.mode === 'free' && now.taxi === 'standby');
   await set('right', 'trigger', 1); await wait(1500);
   now = await shot('03-taxi');
   check('the HUD shows while driving', now.hud && now.menu === null);
@@ -121,6 +121,7 @@ try {
   await page.waitForFunction(() => window.__citydriver.taxi.status === 'driving', null, { timeout: 20000 }).catch(() => {});
   await wait(1200);
   await shot('05-fare', { close: true });
+  check('the first fare starts the shift', (await state()).mode === 'taxi');
   check('a fare floats the arrow over the car', await page.evaluate(() => window.__citydriver.taxiView.navigation.headset.visible));
   // Pause while looking to the right: the menu opens where the player looks
   await page.evaluate(() => window.__xr.quaternion.set(0, Math.sin(-.35), 0, Math.cos(-.35)));
@@ -151,9 +152,11 @@ try {
   now = await shot('10-fleet');
   check('the taxi fleet opens', now.menu === 'taxi-fleet-dialog');
   await press('right', 'b-button');
-  await aim('right', 'Free drive'); await press('right', 'trigger'); await wait(1000);
+  await aim('right', 'End shift'); await press('right', 'trigger'); await wait(300);
+  check('End shift opens the results', (await state()).menu === 'taxi-results');
+  await aim('right', 'Keep driving'); await press('right', 'trigger'); await wait(1000);
   now = await shot('11-free');
-  check('free drive starts from the pause menu', now.mode === 'free' && !now.paused);
+  check('Keep driving carries on in free drive, where the cab is', now.mode === 'free' && !now.paused);
   const address = await page.evaluate(() => location.href);
   await press('left', 'x-button'); await wait(500);
   check('X resets the car and keeps the session and the city', (await state()).vr && await page.evaluate(() => location.href) === address);
@@ -190,12 +193,17 @@ try {
   await stick('right', 1, 0); await stick('right', 1, 0);
   await shot('13-garage-cars');
   await press('right', 'b-button');
-  await aim('right', 'Taxi run'); await press('right', 'trigger');
-  await page.evaluate(() => { window.__citydriver.taxi.timeLeft = .05; });
+  await aim('right', 'Taxi shift'); await press('right', 'trigger');
+  await page.evaluate(() => {
+    const game = window.__citydriver, rider = game.taxi.customers.find(rider => rider.id !== game.taxi.blockedPickup?.id);
+    Object.assign(game.vehicle, { s: rider.s, u: rider.u, heading: rider.heading, speed: 0 }); game.vehicle.update(0, {});
+  });
+  await page.waitForFunction(() => window.__citydriver.taxi.running, null, { timeout: 20000 }).catch(() => {});
+  await page.evaluate(() => { window.__citydriver.taxi.timeLeft = .05; window.__citydriver.taxi.fareLeft = .05; });
   await page.waitForFunction(() => window.__citydriver.taxi.status === 'over', null, { timeout: 20000 }).catch(() => {});
   now = await shot('14-results');
-  check('the results open on Play again', now.menu === 'taxi-results' && now.selected === 'Play again', now.selected);
-  await aim('right', 'Free drive'); await press('right', 'trigger');
+  check('the results open on Next shift', now.menu === 'taxi-results' && now.selected === 'Next shift', now.selected);
+  await aim('right', 'Keep driving'); await press('right', 'trigger');
   await press('right', 'b-button');
   await aim('right', 'Exit VR'); await press('right', 'trigger'); await wait(800);
   now = await shot('15-exited');

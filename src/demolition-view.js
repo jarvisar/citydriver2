@@ -96,8 +96,9 @@ export class DemolitionView {
     const placement = summary?.placement ?? -1;
     $('demolition-result-scores').innerHTML = `<div class="taxi-result-heading"><span>High scores</span><span>${placement >= 0 ? `#${placement + 1} of ${records.scores.length}` : `Best ${money(records.best)}`}</span></div>`
       + `<ol class="demolition-score-list">${this.scoreList(records.scores, placement)}</ol>`;
-    $('demolition-result-best').textContent = `${records.runs} run${records.runs === 1 ? '' : 's'}`;
-    $('demolition-result-total').textContent = `${money(records.lifetime)} of damage in all`;
+    $('demolition-result-best').textContent = `${records.runs} run${records.runs === 1 ? '' : 's'} · ${compact(records.lifetime)} of damage in all`;
+    // (the contractor's cut, paid into the fleet balance as each chain banked)
+    $('demolition-result-total').textContent = run.paid ? `+${money(run.paid)} to your fleet` : '';
     $('demolition-results').hidden = false;
   }
   dispose() {

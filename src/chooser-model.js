@@ -1,14 +1,15 @@
-import { CARS, GARAGE_IDS, carEntry, carMeters } from './cars.js';
+import { CARS, GARAGE_IDS, GARAGE_GROUPS, carEntry, carMeters, garageGroup } from './cars.js';
 import { PAINTS, DEFAULT_PAINT, DEFAULT_PAINT_NAME } from './car-paint.js';
 import { TAXI_FLEET } from './taxi-fleet.js';
 import { LIVERIES, DRIVER_RANKS, rankIndex, liveryById } from './taxi-career.js';
 
 export const fleetMoney = amount => `$${amount.toLocaleString('en-US')}`;
+const GROUP_NAMES = Object.fromEntries(GARAGE_GROUPS);
 
 export function garageModel(carId, paint, ownPaint, { chooseCar, applyPaint }) {
   return {
     cars: GARAGE_IDS.map(id => ({ id, label: carEntry(id).name, plain: carEntry(id).plain, meters: carMeters(id),
-      paint: paint ?? ownPaint(id), group: 'Cars', current: id === carId, activate: () => chooseCar(id) })),
+      paint: paint ?? ownPaint(id), group: GROUP_NAMES[garageGroup(id)], current: id === carId, activate: () => chooseCar(id) })),
     paints: [{ name: DEFAULT_PAINT_NAME, color: DEFAULT_PAINT }, ...PAINTS].map(({ name, color }) => ({ id: color, label: name,
       swatch: color === DEFAULT_PAINT ? ownPaint(carId) : color, current: color === DEFAULT_PAINT ? !paint : color === paint,
       group: 'Paint', activate: () => applyPaint(color) })),

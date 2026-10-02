@@ -18,7 +18,7 @@
 }
 .city-hud-copy { display: grid; gap: 4px; }
 #city-location { font-size: 9px; font-weight: 650; letter-spacing: 1.7px; text-transform: uppercase; }
-#weather-label { font-size: 11px; color: #e5eceab3; letter-spacing: .15px; }
+#city-cash { font-size: 11px; color: #e5eceab3; letter-spacing: .15px; }
 #app:has(#welcome:not(.hidden)) .city-hud,
 #app:has(#pause-overlay:not([hidden])) .city-hud { visibility: hidden; }
 #welcome .menu-tagline { margin: 20px 0 0; max-width: none; font-size: 15px; font-weight: 500; letter-spacing: .3px; color: #fffdf3; }
@@ -42,7 +42,7 @@
   .city-hud { gap: 8px; padding: 7px 11px 7px 7px; border-radius: 15px; }
   .city-heading { min-width: 30px; height: 30px; font-size: 11px; }
   #city-location { font-size: 8px; letter-spacing: 1px; }
-  #weather-label { font-size: 10px; }
+  #city-cash { font-size: 10px; }
   #welcome .menu-tagline { margin-top: 16px; font-size: 14px; }
 }
 @media (max-width: 390px) {

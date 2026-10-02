@@ -383,10 +383,14 @@ export class VRStatus {
       ctx.fillText(fit(ctx, text, width), x, y);
     };
     const toast = flash && { text: flash.text, color: TONES[flash.tone] ?? UI.text };
-    if (model.taxi) {
-      glass(0, 160, model.urgent ? UI.urgent : UI.glass);
-      ctx.letterSpacing = '2px'; line(model.clockLabel ?? 'TIME', 80, 42, 20, 750, model.urgent ? UI.onUrgent : UI.muted, 140, 'center'); ctx.letterSpacing = '0px';
-      line(model.clock, 80, 114, 64, 750, model.urgent ? UI.onUrgent : UI.text, 140, 'center');
+    if (model.taxi || model.free) {
+      // (free drive has no clock: its heading sits where the clock would)
+      if (model.free) { glass(0, 160); line(model.heading, 80, 100, 56, 750, UI.gold, 140, 'center'); }
+      else {
+        glass(0, 160, model.urgent ? UI.urgent : UI.glass);
+        ctx.letterSpacing = '2px'; line(model.clockLabel ?? 'TIME', 80, 42, 20, 750, model.urgent ? UI.onUrgent : UI.muted, 140, 'center'); ctx.letterSpacing = '0px';
+        line(model.clock, 80, 114, 64, 750, model.urgent ? UI.onUrgent : UI.text, 140, 'center');
+      }
       const x = 174, w = W - 174 * 2;
       glass(x, w);
       let right = x + w - 24;
@@ -407,15 +411,15 @@ export class VRStatus {
       line(model.title, x + 24, 88, 38, 750, UI.text, w - 48);
       line(toast?.text ?? model.detail, x + 24, 128, 26, toast ? 700 : 400, toast?.color ?? UI.muted, w - 48);
       glass(W - 160, 160);
-      line(model.cash, W - 80, 78, 42, 750, UI.text, 140, 'center');
-      line(model.fares, W - 80, 116, 22, 400, UI.muted, 140, 'center');
+      line(model.cash, W - 80, 78, model.free ? 34 : 42, 750, UI.text, 140, 'center');
+      line(model.free ? model.place : model.fares, W - 80, 116, 22, 400, UI.muted, 140, 'center');
     } else {
       const w = 600, x = (W - w) / 2 + 60;
       glass(x - 120, 108);
       line(model.heading, x - 66, 95, 52, 750, UI.gold, 90, 'center');
       glass(x, w);
       line(model.place, x + 26, 66, 36, 750, UI.text, w - 52);
-      line(toast?.text ?? model.weather, x + 26, 112, 26, toast ? 700 : 400, toast?.color ?? UI.muted, w - 52);
+      line(toast?.text ?? model.cash ?? model.weather, x + 26, 112, 26, toast ? 700 : 400, toast?.color ?? UI.muted, w - 52);
     }
     let height = H;
     if (model.hint) {

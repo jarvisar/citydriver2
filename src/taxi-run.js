@@ -6,6 +6,7 @@ import { randomAt } from './world/route.js';
 import { TaxiFleet } from './taxi-fleet.js';
 import { TaxiCareer } from './taxi-career.js';
 import { shiftGoals, goalProgress } from './taxi-goals.js';
+import { nearMiss } from './stunt-chain.js';
 const B = 112;
 
 export const SHIFT_SECONDS = 100;
@@ -369,11 +370,28 @@ export class TaxiRun {
   // What the cab collects if everyone aboard arrives: a group's fare is held
   // until the last rider is out, as in Crazy Taxi 2.
   get remainingFare() { return this.status === 'driving' ? this.held + this.fare.stops.slice(this.stopIndex).reduce((sum, stop) => sum + stop.fare, 0) + this.fare.groupBonus : 0; }
+  // Free drive in a cab: the fares wait round it with no clock running, and
+  // stopping in a ring starts a shift with that fare aboard (see update).
+  get waiting() { return this.status === 'standby'; }
+  standby(player) {
+    this.status = 'standby'; this.events = []; this.elapsed = 0; this.timeLeft = SHIFT_SECONDS; this.overtime = false;
+    this.customers = []; this.servedCustomers = new Map(); this.boarding = null; this.hold = 0; this.fare = null;
+    this.lastDropOff = null; this.ahead = null; this.nextLookAhead = 0; this.ring = null; this.boostActive = false;
+    this.makeCustomers(player);
+    this.blockedPickup = this.customerAt(player); this.revision++;
+  }
   start(player) {
+    this.begin(player); this.makeCustomers(player);
+    // Starting inside a ring must not choose the first fare for the driver.
+    this.blockedPickup = this.customerAt(player);
+  }
+  // A shift's own numbers, from nothing (keeping the fares already waiting,
+  // when it begins from standby)
+  begin(player, customers = []) {
     this.status = 'pickup'; this.timeLeft = SHIFT_SECONDS; this.cash = 0; this.delivered = 0; this.failed = 0;
     this.boost = 1; this.boostActive = false; this.elapsed = 0; this.combo = 1; this.comboTime = 0;
     this.tips = 0; this.hold = 0; this.fare = null; this.events = []; this.scrapedAt = -Infinity; this.crashCooldown = 0;
-    this.customers = []; this.boarding = null; this.blockedPickup = null; this.ahead = null; this.nextLookAhead = 0;
+    this.customers = customers; this.boarding = null; this.blockedPickup = null; this.ahead = null; this.nextLookAhead = 0;
     this.servedCustomers = new Map();
     this.stopIndex = 0; this.onboard = 0; this.deliveredPassengers = 0; this.held = 0; this.lastDropOff = null;
     this.streak = 0; this.ring = null; this.overtime = false;
@@ -383,9 +401,7 @@ export class TaxiRun {
     this.bestStreak = 0; this.bestCombo = 1; this.tipsBanked = 0; this.nearMisses = 0; this.crazyStops = 0; this.drifts = 0; this.jumps = 0;
     this.groups = 0; this.fullCabs = 0; this.longRides = 0; this.pleased = 0; this.goalCash = 0; this.summary = null;
     this.goals = shiftGoals(this.career.shifts, this.career.rank.index);
-    this.lastImpact = player.audioTelemetry?.impactSerial ?? 0; this.lastCrash = player.audioTelemetry?.crashSerial ?? 0; this.makeCustomers(player);
-    // Starting inside a ring must not choose the first fare for the driver.
-    this.blockedPickup = this.customerAt(player);
+    this.lastImpact = player.audioTelemetry?.impactSerial ?? 0; this.lastCrash = player.audioTelemetry?.crashSerial ?? 0;
   }
   stop() { this.status = 'idle'; this.customers = []; this.servedCustomers?.clear(); this.fare = null; this.boarding = null; this.hold = 0; this.onboard = 0; this.stopIndex = 0; this.boostActive = false; this.revision++; }
   makeCustomers(player) {
@@ -504,7 +520,47 @@ export class TaxiRun {
     this.summary = this.career.record(this);
     this.events.push({ kind: 'over' });
   }
+  // The fare in the ring the cab has stopped in climbs aboard. `first`: the
+  // shift begins with it (from standby), which the event says.
+  board(passenger, first = false) {
+    this.fare = passenger; this.fareLeft = passenger.stops[0].limit; this.legElapsed = 0; this.tipMark = Infinity; this.held = 0; this.status = 'driving'; this.boarding = null; this.shaken = false;
+    const seconds = Math.round(pickupSeconds(passenger.passengers) * timeScale(this.elapsed));
+    this.timeLeft = Math.min(MAX_SHIFT_SECONDS, this.timeLeft + seconds);
+    this.stopIndex = 0; this.onboard = passenger.passengers;
+    this.customers = this.customers.filter(customer => customer !== passenger);
+    this.servedCustomers.set(passenger.id, this.elapsed + 60);
+    this.hold = 0; this.tips = 0; this.combo = 1; this.passed = new WeakSet(); this.revision++;
+    // Look round the last stop. The cab can stop anywhere along its stretch.
+    const last = passenger.stops.at(-1).destination, stretch = last.stretch ?? [last];
+    this.lookAround({ s: last.s, u: last.u }, CUSTOMER_RANGE + STOP_RADIUS + Math.max(...stretch.map(p => distance(p, last))));
+    // A Crazy stop is the fare's first trick and starts its chain.
+    const stunt = this.crazyStop ? this.reward('Crazy stop', TIPS.crazyStop, false) : 0; this.ring = null;
+    const who = passenger.passengers > 1 ? `${passenger.passengers} riders aboard` : `${passenger.name} aboard`;
+    this.events.push({ kind: 'pickup', seconds, stunt, first, text: `${stunt ? `Crazy stop +$${stunt} · ` : ''}${who} · +${seconds}s` });
+  }
+  // Standby's step: the pickup half of a shift with no clock. Stopping in a
+  // ring begins the shift, keeping the fares that were waiting.
+  wait(dt, player) {
+    this.elapsed += dt;
+    this.lookAhead();
+    if (this.elapsed >= this.nextCustomerRefresh) {
+      this.nextCustomerRefresh = this.elapsed + 1;
+      if (distance(player, this.customerCenter) > B / 2) this.makeCustomers(player);
+    }
+    if (this.blockedPickup && distance(this.blockedPickup, player) >= STOP_RADIUS) this.blockedPickup = null;
+    const inside = this.customers.find(p => p.id !== this.blockedPickup?.id && distance(p, player) < STOP_RADIUS) ?? null;
+    this.trackRing(inside, player);
+    const passenger = Math.abs(player.speed) < 2.5 ? inside : null;
+    if (passenger?.id !== this.boarding?.id) this.hold = 0;
+    this.boarding = passenger;
+    this.hold = passenger ? this.hold + dt : 0;
+    if (this.hold < STOP_SECONDS) return;
+    const ring = this.ring;
+    this.begin(player, this.customers); this.ring = ring;
+    this.board(passenger, true);
+  }
   update(dt, player, traffic = []) {
+    if (this.status === 'standby' && Number.isFinite(dt) && dt > 0) { this.wait(dt, player); return; }
     if (!this.running || !Number.isFinite(dt) || dt <= 0) return;
     this.elapsed += dt; this.timeLeft = Math.max(0, this.timeLeft - dt);
     if (this.timeLeft <= 0 && !this.overtime) {
@@ -544,21 +600,7 @@ export class TaxiRun {
       if (passenger?.id !== this.boarding?.id) this.hold = 0;
       this.boarding = passenger;
       this.hold = passenger ? this.hold + dt : 0;
-      if (this.hold >= STOP_SECONDS) {
-        this.fare = passenger; this.fareLeft = passenger.stops[0].limit; this.legElapsed = 0; this.tipMark = Infinity; this.held = 0; this.status = 'driving'; this.boarding = null; this.shaken = false;
-        const seconds = Math.round(pickupSeconds(passenger.passengers) * timeScale(this.elapsed));
-        this.timeLeft = Math.min(MAX_SHIFT_SECONDS, this.timeLeft + seconds);
-        this.stopIndex = 0; this.onboard = passenger.passengers;
-        this.customers = this.customers.filter(customer => customer !== passenger);
-        this.servedCustomers.set(passenger.id, this.elapsed + 60);
-        this.hold = 0; this.tips = 0; this.combo = 1; this.passed = new WeakSet(); this.revision++;
-        // Look round the last stop. The cab can stop anywhere along its stretch.
-        const last = passenger.stops.at(-1).destination, stretch = last.stretch ?? [last];
-        this.lookAround({ s: last.s, u: last.u }, CUSTOMER_RANGE + STOP_RADIUS + Math.max(...stretch.map(p => distance(p, last))));
-        // A Crazy stop is the fare's first trick and starts its chain.
-        const stunt = this.crazyStop ? this.reward('Crazy stop', TIPS.crazyStop, false) : 0; this.ring = null;
-        this.events.push({ kind: 'pickup', seconds, stunt, text: `${stunt ? `Crazy stop +$${stunt} · ` : ''}${passenger.passengers > 1 ? `${passenger.passengers} riders aboard` : `${passenger.name} aboard`} · +${seconds}s` });
-      }
+      if (this.hold >= STOP_SECONDS) this.board(passenger);
       return;
     }
     this.fareLeft = Math.max(0, this.fareLeft - dt); this.legElapsed += dt;
@@ -574,17 +616,10 @@ export class TaxiRun {
       if (this.overtime) this.finish();
       return;
     }
-    if (Math.abs(player.speed) > 14 && !collided && this.crashCooldown === 0) {
+    if (!collided && this.crashCooldown === 0) {
       for (const car of traffic) {
-        const carHeading = car.heading;
-        if (this.passed.has(car) || Math.abs(player.speed - car.speed * Math.cos(carHeading - player.heading)) < 7) continue;
-        const ds = car.s - player.s, du = car.u - player.u;
-        const along = ds * Math.cos(player.heading) + du * Math.sin(player.heading);
-        const across = Math.abs(du * Math.cos(player.heading) - ds * Math.sin(player.heading));
-        const clearance = (player.spec?.width ?? 2) / 2 + (car.spec?.width ?? 2) / 2 + .4;
-        if (Math.abs(along) < 2.5 && across > clearance && across < clearance + 2.5) {
-          this.passed.add(car); if (this.onTheWay(player)) this.reward('Near miss', TIPS.nearMiss);
-        }
+        if (this.passed.has(car) || !nearMiss(player, car)) continue;
+        this.passed.add(car); if (this.onTheWay(player)) this.reward('Near miss', TIPS.nearMiss);
       }
     }
     const atStop = insideStop(this.target, player);

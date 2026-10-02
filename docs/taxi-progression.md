@@ -4,6 +4,7 @@ Taxi runs work like Crazy Taxi: a shift clock that fares add time to. The number
 
 ## Fares
 
+- A shift starts with its first fare. Taxi shift on the menus puts you in your cab where you are, with passengers waiting in rings around it, and the clock starts once someone is aboard. A cab the fleet owns has fares around it in free drive too, so stopping in a ring there starts a shift on the spot. Test driving a cab you don't own shows none. End shift in the pause menu ends a shift early, with its results.
 - Passengers waiting for a ride are never navigation targets. Stop in any pickup ring to pick them up. The route only shows up after they get in. Dropping them off, missing the fare or restarting clears the navigation.
 - Driving up to a ring shows where the passenger is going, who they are, the trip length and the fare.
 - Boarding and drop-off need the cab to be stopped for 0.45 seconds.
@@ -16,7 +17,7 @@ Taxi runs work like Crazy Taxi: a shift clock that fares add time to. The number
 
 ## The Shift Clock
 
-A shift starts at 100 seconds and holds at most 180. Boarding adds 8 seconds, plus 2 for each extra rider. Finishing a fare adds a rating bonus (Speedy +10, Normal +6, Slow +1), a second for every 30 m of its route, and up to 5 seconds for a Speedy streak. Riders who get out before the last stop of a group add 2 seconds for Speedy and 1 for Normal.
+A shift starts at 100 seconds, from the first pickup, and holds at most 180. Boarding adds 8 seconds, plus 2 for each extra rider. Finishing a fare adds a rating bonus (Speedy +10, Normal +6, Slow +1), a second for every 30 m of its route, and up to 5 seconds for a Speedy streak. Riders who get out before the last stop of a group add 2 seconds for Speedy and 1 for Normal.
 
 Time rewards shrink by 4.5% for every minute of the shift, down to 40%, so every shift ends.
 
@@ -70,7 +71,7 @@ Completing a goal adds its bonus ($150 to $600) to the fleet balance. Bonuses do
 
 ## Career, Ranks and Records
 
-The career saves lifetime shifts, fares, riders, groups, earnings, tips and goal bonuses under `citydriver-taxi-career`. Career earnings set the driver rank:
+The career saves lifetime shifts, fares, riders, groups, earnings, tips and goal bonuses under `citydriver-taxi-career`. Career earnings set the driver rank. Shifts add their fare money when they end. Money made anywhere else counts as it comes in: free drive's stunt chains, the share of a demolition run's damage that's paid out, and new places and jump stars. The pause menu's Progress panel shows the rank and how far it is to the next one.
 
 | Rank | Career earnings |
 | --- | ---: |

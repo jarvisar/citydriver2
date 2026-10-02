@@ -10,6 +10,8 @@ const WORTH = { distance: 18, air: .8 };
 // (and a big one from this long)
 const BIG_AIR = 1.6;
 const STAR = '★', NO_STAR = '☆';
+// Each star newly taken off a named jump pays into the fleet balance
+export const STAR_PAY = 100;
 
 export const starText = count => STAR.repeat(count) + NO_STAR.repeat(3 - count);
 
@@ -28,7 +30,8 @@ export class JumpBook {
   stars(site, distance = this.best.get(site.id) ?? 0) { return site.stars.filter(d => distance >= d).length; }
   // How many of the city's named jumps have been landed
   get landed() { return this.sites.filter(site => this.best.has(site.id)).length; }
-  // A landing: the word it is worth ({ text, amount, caption, gold }), or null
+  // A landing: the word it is worth ({ text, amount, caption, gold, gained:
+  // the stars it newly took off a named jump }), or null
   land(event) {
     if (event.landing === 'splash') return null;
     const distance = Math.round(event.distance), spun = event.landing === 'spun', site = event.jump?.stars ? event.jump : null;
@@ -45,10 +48,10 @@ export class JumpBook {
     this.save();
     const trick = event.turns ? `${Math.abs(event.turns) * 360}` : '';
     if (site && !spun) {
-      const before = this.best.get(site.id), stars = this.stars(site, distance);
+      const before = this.best.get(site.id), stars = this.stars(site, distance), had = this.stars(site);
       if (before === undefined || distance > before) this.best.set(site.id, distance);
       const better = before !== undefined && distance > before, name = site.kind === 'river' && !stars ? 'River jump · short' : site.name;
-      return { text: [name, `${distance} m`, starText(stars), trick, better ? 'Best here' : '', record].filter(Boolean).join(' · '), amount: `${distance} m`, caption: stars ? starText(stars) : 'SHORT', gold: stars > 0 };
+      return { text: [name, `${distance} m`, starText(stars), trick, better ? 'Best here' : '', record].filter(Boolean).join(' · '), amount: `${distance} m`, caption: stars ? starText(stars) : 'SHORT', gold: stars > 0, gained: Math.max(0, stars - had) };
     }
     if (!trick && distance < WORTH.distance && event.air < WORTH.air) return null;
     if (spun) return { text: trick ? `${trick} · spun out` : 'Spun out', amount: 'SPUN', caption: '', gold: false };

@@ -64,6 +64,18 @@ export class TaxiCareer {
       this.saved = true;
     } catch { this.saved = false; }
   }
+  // Money made anywhere else in the city (free drive's stunts, a demolition
+  // run's pay, places found) counts toward the rank as fares do. Returns
+  // what to say about a promotion, or null.
+  earn(amount) {
+    if (!validCount(amount) || !amount || !Number.isSafeInteger(this.earnings + amount)) return null;
+    const before = this.rank;
+    this.earnings += amount; this.save();
+    const after = this.rank;
+    if (after.index <= before.index) return null;
+    const liveries = LIVERIES.filter(livery => rankIndex(livery.rank) > before.index && rankIndex(livery.rank) <= after.index);
+    return { before, after, liveries, text: [`Promoted · ${after.name}`, ...liveries.map(livery => `${livery.name} livery`)].join(' · ') };
+  }
   // Closes a shift: totals grow, records fall, and a rank may be earned. The
   // summary drives the results screen, so it names every record beaten and
   // every livery the new rank unlocked.

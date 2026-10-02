@@ -180,9 +180,12 @@ test('free drive\'s book of jumps: stars by distance, a best for each jump, and 
   const site = sites.find(each => each.stars), book = new JumpBook();
   if (!site) return;
   const jump = (distance, extra = {}) => ({ kind: 'jump', distance, air: 1.2, turns: 0, landing: 'clean', jump: site, ...extra });
-  assert.match(book.land(jump(site.stars[0] + 1)).text, /★☆☆/);
+  const first = book.land(jump(site.stars[0] + 1));
+  assert.match(first.text, /★☆☆/); assert.equal(first.gained, 1);
   const best = book.land(jump(site.stars[2] + 1));
   assert.match(best.text, /★★★/); assert.match(best.text, /Best here/);
+  assert.equal(best.gained, 2, 'only the stars it newly took pay');
+  assert.equal(book.land(jump(site.stars[0] + 1)).gained, 0);
   assert.equal(book.best.get(site.id), Math.round(site.stars[2] + 1));
   assert.equal(book.land(jump(site.stars[2] + 30, { landing: 'splash' })), null, 'a splash is no landing');
   assert.equal(book.best.get(site.id), Math.round(site.stars[2] + 1));

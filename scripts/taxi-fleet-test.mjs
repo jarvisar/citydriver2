@@ -15,9 +15,18 @@ async function open(options) {
   await page.waitForFunction(() => window.__citydriver && document.querySelector('#loading.loaded'));
   return page;
 }
+// A shift starts with its first fare: into a ring and stopped there
+async function pickUp(page) {
+  await page.evaluate(() => {
+    const g = window.__citydriver, v = g.vehicle, fare = g.taxi.customers.find(customer => customer.id !== g.taxi.blockedPickup?.id);
+    v.s = fare.s; v.u = fare.u; v.heading = fare.heading; v.speed = 0; v.update(0, {});
+  });
+  await page.waitForFunction(() => window.__citydriver.taxi.running);
+}
 async function startAndPause(page) {
-  await page.click('#start'); await page.waitForFunction(() => window.__citydriver.taxi.running);
+  await page.click('#start'); await page.waitForFunction(() => window.__citydriver.taxi.waiting);
   await page.waitForFunction(() => getComputedStyle(document.querySelector('#welcome')).visibility === 'hidden');
+  await pickUp(page);
   await page.click('#pause');
 }
 try {
@@ -42,8 +51,11 @@ try {
   assert.equal(await page.locator('#fleet-balance').textContent(), '$0');
   assert.equal(await page.evaluate(() => window.__citydriver.vehicle.carId), 'taxi', 'purchase never swaps a cab mid-run');
   await page.click('[data-fleet-car=taxiGT]'); assert.equal(await page.locator('#fleet-balance').textContent(), '$0');
-  await page.click('#close-fleet'); await page.click('#restart-run');
-  assert.equal(await page.evaluate(() => window.__citydriver.vehicle.carId), 'taxiGT');
+  await page.click('#close-fleet'); await page.click('#end-run');
+  await page.waitForFunction(() => window.__citydriver.taxi.status === 'over');
+  await page.click('#taxi-retry');
+  assert.equal(await page.evaluate(() => window.__citydriver.vehicle.carId), 'taxiGT', 'the next shift is in the cab bought');
+  await pickUp(page);
   await page.keyboard.down('KeyW'); await page.keyboard.down('ShiftLeft');
   await page.waitForFunction(() => window.__citydriver.taxi.boostActive && window.__citydriver.vehicle.speed > 15);
   await page.keyboard.up('ShiftLeft'); await page.keyboard.up('KeyW');
@@ -51,11 +63,14 @@ try {
   await page.evaluate(() => window.__citydriver.taxi.fleet.credit(4500));
   await page.click('#pause-fleet'); await page.click('[data-fleet-car=taxiFormula]');
   await page.screenshot({ path: '.artifacts/fleet/desktop-owned.png' });
-  await page.click('#close-fleet'); await page.click('#restart-run');
+  await page.click('#close-fleet'); await page.click('#end-run');
+  await page.waitForFunction(() => window.__citydriver.taxi.status === 'over');
+  await page.click('#taxi-retry');
   assert.equal(await page.evaluate(() => window.__citydriver.vehicle.carId), 'taxiFormula');
   assert.equal(await page.evaluate(() => window.__citydriver.vehicle.car.userData.seats), 2);
   await page.screenshot({ path: '.artifacts/fleet/formula-driving.png' });
-  await page.evaluate(() => { window.__citydriver.taxi.timeLeft = .01; });
+  await pickUp(page);
+  await page.evaluate(() => { window.__citydriver.taxi.timeLeft = .01; window.__citydriver.taxi.fareLeft = .01; });
   await page.waitForFunction(() => window.__citydriver.taxi.status === 'over');
   await page.click('#taxi-fleet-results'); await page.click('[data-fleet-car=taxiGT]'); await page.click('#close-fleet');
   assert.equal(await page.locator('#taxi-results').isVisible(), true);
@@ -65,8 +80,10 @@ try {
   await startAndPause(page);
   assert.equal(await page.evaluate(() => window.__citydriver.vehicle.carId), 'taxiGT');
   assert.deepEqual(await page.evaluate(() => [...window.__citydriver.taxi.fleet.owned]), ['taxi', 'taxiGT', 'taxiFormula']);
-  await page.click('#switch-mode'); await page.click('#pause');
-  assert.equal(await page.locator('#pause-fleet').isVisible(), false);
+  await page.click('#end-run'); await page.waitForFunction(() => window.__citydriver.taxi.status === 'over');
+  await page.click('#taxi-keep'); await page.click('#pause');
+  assert.equal(await page.evaluate(() => window.__citydriver.gameMode), 'free');
+  assert.equal(await page.locator('#end-run').isVisible(), false);
   assert.equal(await page.locator('#change-car').isVisible(), true);
   await page.close();
 
@@ -78,7 +95,8 @@ try {
     await mobile.tap('#pause'); await mobile.tap('#change-car'); await mobile.tap(`[data-car=${id}]`);
     assert.equal(await mobile.evaluate(() => window.__citydriver.vehicle.carId), id);
     assert.deepEqual(await mobile.evaluate(() => [...window.__citydriver.taxi.fleet.owned]), ['taxi']);
-    await mobile.tap('#resume');
+    await mobile.tap('#resume'); await mobile.waitForTimeout(200);
+    assert.equal(await mobile.evaluate(() => window.__citydriver.taxi.status), 'idle', 'a test drive takes no fares');
   }
   await mobile.tap('#pause'); await mobile.tap('#switch-mode');
   assert.equal(await mobile.evaluate(() => window.__citydriver.vehicle.carId), 'taxi', 'free selection does not bypass ownership');
@@ -95,13 +113,14 @@ try {
   await mobile.locator('[data-fleet-car=taxiFormula]').scrollIntoViewIfNeeded();
   await mobile.screenshot({ path: '.artifacts/fleet/mobile-landscape.png' });
   await mobile.tap('#close-fleet'); await mobile.tap('#resume');
-  await mobile.evaluate(() => { window.__citydriver.taxi.timeLeft = .01; });
+  await pickUp(mobile);
+  await mobile.evaluate(() => { window.__citydriver.taxi.timeLeft = .01; window.__citydriver.taxi.fareLeft = .01; });
   await mobile.waitForFunction(() => window.__citydriver.taxi.status === 'over');
   await mobile.locator('#taxi-fleet-results').scrollIntoViewIfNeeded();
   await mobile.tap('#taxi-fleet-results'); await mobile.tap('#close-fleet');
-  await mobile.locator('#taxi-free').scrollIntoViewIfNeeded(); await mobile.tap('#taxi-free');
+  await mobile.locator('#taxi-keep').scrollIntoViewIfNeeded(); await mobile.tap('#taxi-keep');
   assert.equal(await mobile.evaluate(() => window.__citydriver.gameMode), 'free');
   assert.deepEqual(errors, []);
   await writeFile('.artifacts/fleet/browser-report.json', JSON.stringify({ passed: true, errors }, null, 2));
-  console.log('Fleet checks passed: purchases, persistence, next-run selection, results, mode-specific menus, free access, desktop and touch layouts.');
+  console.log('Fleet checks passed: purchases, persistence, next-shift selection, results, mode-specific menus, free access, desktop and touch layouts.');
 } finally { await browser.close(); }

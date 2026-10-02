@@ -11,6 +11,9 @@ const MAP_SCALE = .36;
 // A ramp, for the notebook's jumps
 const RAMP_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18h18V9Z" fill="currentColor"/></svg>';
 const EMPTY = [];
+// What a place found pays into the fleet balance, the first of its kind more
+export const PLACE_PAY = 50, KIND_PAY = 100;
+export const placePay = found => found.reduce((sum, { first }) => sum + (first ? KIND_PAY : PLACE_PAY), 0);
 export class CityGuide {
   constructor(notify, position) {
     // Discoveries last only for the visit: clear any an older build saved
@@ -94,7 +97,7 @@ export class CityGuide {
     let count = '';
     if (found.some(each => each.first)) count = e.found.size === total ? `all ${total} found` : `${e.found.size} / ${total}`;
     else if (one) { const all = cityPlaces().filter(place => place.type === one.type); count = `${all.filter(place => e.seen.has(place.id)).length} of ${all.length}`; }
-    this.notify(['Found ' + list, kind, count].filter(Boolean).join(' · '));
+    this.notify(['Found ' + list, kind, count].filter(Boolean).join(' · '), found);
     this.lately.push(...found.map(({ place }) => place));
     this.refreshNotebook();
   }
@@ -165,9 +168,9 @@ export class CityGuide {
       // (and in free drive, the city's named jumps: gold once landed)
       const jumps = run?.running || this.demolition?.running || !this.jumps ? EMPTY : this.jumps.sites;
       this.mapState = { target, nextStop, parked, targets, known, jumps, landed: this.jumps?.landed, stopIndex: run?.stopIndex,
-        places: run?.status === 'pickup' ? run.customers : target ? [{ ...target, color: '#ffd238' }] : [],
+        places: run?.status === 'pickup' || run?.status === 'standby' ? run.customers : target ? [{ ...target, color: '#ffd238' }] : [],
         route: taxiRoute(vehicle, target && run.approach(vehicle)), nextRoute: nextStop ? taxiRoute(target, nextStop) : [],
-        key: [run, run?.status, run?.status === 'pickup' ? run.customers : null, target, nextStop, run?.stopIndex, parked, parked?.s, parked?.u, targets, known.length, jumps, this.jumps?.landed] };
+        key: [run, run?.status, run?.status === 'pickup' || run?.status === 'standby' ? run.customers : null, target, nextStop, run?.stopIndex, parked, parked?.s, parked?.u, targets, known.length, jumps, this.jumps?.landed] };
     }
     const { target, nextStop, parked, targets, known, jumps, places, route, nextRoute, stopIndex, key } = this.mapState;
     const ratio = Math.min(window.devicePixelRatio || 1, 2);

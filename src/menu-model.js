@@ -11,12 +11,16 @@ export function menuControls(state, actions) {
   const control = (label, activate, extra = {}) => ({ label, activate, ...extra });
   const run = state.mode !== 'free', taxi = state.mode === 'taxi', locked = state.started && run;
   return {
-    start: control('Start run', actions.start), taxi: control('Taxi run', actions.taxi), demolition: control('Demolition', actions.demolition), free: control('Free drive', actions.free),
+    start: control('Taxi shift', actions.start), taxi: control('Taxi shift', actions.taxi), demolition: control('Demolition', actions.demolition), free: control('Free drive', actions.free),
     resume: control('Resume', actions.resume), back: control('Back', actions.back), exit: control('Exit VR', actions.exit),
-    retry: control('Play again', state.mode === 'demolition' ? actions.demolition : actions.taxi),
-    restart: control(run ? 'Restart run' : 'New city', state.mode === 'demolition' ? actions.demolition : taxi ? actions.taxi : actions.reset),
-    switchMode: control(run ? 'Free drive' : 'Taxi run', run ? actions.free : actions.taxi),
-    otherRun: control(state.mode === 'demolition' ? 'Taxi run' : 'Demolition', state.mode === 'demolition' ? actions.taxi : actions.demolition),
+    retry: control(taxi ? 'Next shift' : 'Play again', state.mode === 'demolition' ? actions.demolition : actions.taxi),
+    // Carrying on in free drive after a run, in the same car at the same spot
+    keep: control('Keep driving', actions.keep),
+    // (free drive's is New city, asked twice: it drops the places found and the jump stars)
+    restart: control(run ? 'Restart run' : state.newCityArmed ? 'Again for a new city' : 'New city', state.mode === 'demolition' ? actions.demolition : actions.newCity),
+    end: control(taxi ? 'End shift' : 'End run', actions.end),
+    switchMode: control('Taxi shift', actions.taxi),
+    otherRun: control(state.mode === 'demolition' ? 'Taxi shift' : 'Demolition', state.mode === 'demolition' ? actions.taxi : actions.demolition),
     fleet: control('Taxi fleet', actions.fleet, { value: state.fleetName }),
     garage: control('Garage', actions.garage, { value: state.carName, disabled: locked }),
     autodrive: control('Autodrive', actions.autodrive, { toggle: state.autodrive, disabled: locked }),
@@ -46,16 +50,16 @@ export function menuModel(state, controls, { garage, fleet, result, mapImage, ma
   if (state.chooser === 'garage') return { id: 'car-dialog', title: 'Garage', subtitle: 'Paint applies to all cars', flow: true, items: [...garage.paints, ...garage.cars, back], hint: VR_POINTING };
   if (state.over) return { id: `${state.mode}-results`, title: `Time up · ${result.cash}`,
     subtitle: [result.name, state.mode === 'demolition' ? result.next : result.best].filter(Boolean).join(' · '), hint: VR_POINTING,
-    items: [item('retry', { primary: true }), item(state.mode === 'demolition' ? 'taxi' : 'fleet', { value: undefined }), item('free'), item('exit', { footer: true })] };
+    items: [item('retry', { primary: true }), item('keep'), item(state.mode === 'demolition' ? 'taxi' : 'fleet', { value: undefined }), item('exit', { footer: true })] };
   if (!state.started) return { id: 'title', title: 'citydriver', wordmark: true, mark, subtitle: 'Pick up. Drop off. Beat the clock.', hint: VR_CONTROLS,
     items: [item('start', { primary: true }), item('demolition'), item('free'), item('exit')] };
   if (!state.paused) return null;
   const drive = key => item(key, { group: 'Driving' });
   const view = key => item(key, { column: 1, group: 'View' });
-  return { id: 'pause', title: 'Paused', subtitle: `${state.location.place} · ${state.location.distance} mi driven`, columns: 2,
+  return { id: 'pause', title: 'Paused', subtitle: [state.location.place, state.career].filter(Boolean).join(' · '), columns: 2,
     hint: state.mode === 'free' ? `${VR_CONTROLS} · Y: get out` : VR_CONTROLS, items: [
       item('resume', { primary: true, header: true }),
-      ...(state.mode === 'taxi' ? ['restart', 'free', 'demolition', 'fleet'] : state.mode === 'demolition' ? ['restart', 'free', 'taxi'] : ['taxi', 'demolition', 'garage', 'autodrive', 'traffic']).map(drive),
+      ...(state.mode === 'taxi' ? ['end', 'demolition', 'fleet'] : state.mode === 'demolition' ? ['restart', 'end', 'taxi'] : ['taxi', 'demolition', 'garage', 'fleet', 'autodrive', 'traffic']).map(drive),
       drive('driftTap'), drive('reset'), item('map', { group: 'The city' }), item('weather', { group: 'The city' }),
       ...['view', 'recenter', 'lookSensitivity', 'comfort', 'graphics'].map(view), ...(state.rates.length ? [view('rate')] : []),
       item('sound', { column: 1, group: 'Sound' }), item('mix', { column: 1, group: 'Sound' }), item('vibration', { column: 1, group: 'Sound' }), item('exit', { footer: true }),
