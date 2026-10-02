@@ -68,6 +68,8 @@ export class Input {
       }
       if (document.querySelector('dialog[open]')) return;
       if (e.code === 'KeyQ' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); onAction('recenter'); return; }
+      // N shows or hides the street map, beside M for the city map
+      if (e.code === 'KeyN' && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); if (!e.repeat) onAction('streetMap'); return; }
       if (['BracketLeft', 'BracketRight'].includes(e.code) && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault(); onAction(e.code === 'BracketLeft' ? 'zoomIn' : 'zoomOut'); return;
       }

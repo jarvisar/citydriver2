@@ -23,9 +23,11 @@ export function menuControls(state, actions) {
     end: control(taxi ? 'End shift' : 'End run', actions.end),
     // (in free drive on a job's standby, its button would start what is
     // already waiting: Free drive takes its place, back in their own car)
-    switchMode: state.standby === 'taxi' ? control('Free drive', actions.free) : control('Taxi shift', actions.taxi),
-    otherRun: state.mode === 'demolition' ? control('Taxi shift', actions.taxi)
-      : state.standby === 'demolition' ? control('Free drive', actions.free) : control('Demolition', actions.demolition),
+    // (`job`: which mode the button starts, for its colour and icon on the
+    // pause screen. In a run it is Free drive, beside the other run.)
+    switchMode: run || state.standby === 'taxi' ? control('Free drive', actions.free, { job: 'free' }) : control('Taxi shift', actions.taxi, { job: 'taxi' }),
+    otherRun: state.mode === 'demolition' ? control('Taxi shift', actions.taxi, { job: 'taxi' })
+      : state.standby === 'demolition' ? control('Free drive', actions.free, { job: 'free' }) : control('Demolition', actions.demolition, { job: 'demolition' }),
     // (the cabs and their liveries are in it too: in a shift only those, for the next shift)
     garage: control('Garage', actions.garage, { value: state.carName, disabled: state.started && state.mode === 'demolition' }),
     autodrive: control('Autodrive', actions.autodrive, { toggle: state.autodrive, disabled: locked }),
@@ -67,7 +69,7 @@ export function menuModel(state, controls, { garage, result, mapImage, mapKey, m
   return { id: 'pause', title: 'Paused', subtitle: [state.location.place, state.career].filter(Boolean).join(' · '), columns: 2,
     hint: state.mode === 'free' ? `${VR_CONTROLS} · Y: get out` : VR_CONTROLS, items: [
       item('resume', { primary: true, header: true }),
-      ...(state.mode === 'taxi' ? ['end', 'demolition', 'garage'] : state.mode === 'demolition' ? ['restart', 'end', 'taxi']
+      ...(state.mode === 'taxi' ? ['end', 'free', 'demolition', 'garage'] : state.mode === 'demolition' ? ['restart', 'end', 'free', 'taxi']
         : [state.standby === 'taxi' ? 'free' : 'taxi', state.standby === 'demolition' ? 'free' : 'demolition', 'garage', 'autodrive', 'traffic']).map(drive),
       drive('driftTap'), drive('reset'), item('map', { group: 'The city' }), item('weather', { group: 'The city' }),
       ...['view', 'recenter', 'lookSensitivity', 'comfort', 'graphics'].map(view), ...(state.rates.length ? [view('rate')] : []),

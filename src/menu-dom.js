@@ -32,5 +32,6 @@ export function renderMenuControls(controls) {
     if (button.disabled !== controls[key].disabled) button.disabled = controls[key].disabled;
   }
   for (const [id, key] of [['autodrive', 'autodrive'], ['traffic', 'traffic'], ['drift-tap', 'driftTap'], ['vibration', 'vibration'], ['sound', 'sound']]) attribute(document.getElementById(id), 'aria-pressed', controls[key].toggle);
+  for (const [id, key] of [['switch-mode', 'switchMode'], ['other-run', 'otherRun']]) attribute(document.getElementById(id), 'data-job', controls[key].job);
   text('current-car', controls.garage.value);
 }

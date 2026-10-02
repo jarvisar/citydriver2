@@ -482,11 +482,11 @@ async function boot() {
       $('#change-car').hidden = gameMode === 'demolition';
       // A run ends with End shift or End run, and its results; a shift has no
       // restart (the next starts with a fare)
-      $('#switch-mode').hidden = run; $('#end-run').hidden = !run; $('#restart-run').hidden = gameMode === 'taxi';
+      $('#end-run').hidden = !run; $('#restart-run').hidden = gameMode === 'taxi';
       // (free drive's makes a new city, asked twice: a controller's Y gets in and out of cars there,
       // and it comes last, well away from Resume)
       renderMenuControls(controls());
-      if (run) $('#switch-mode').before($('#restart-run'), $('#end-run')); else $('#drift-tap').after($('#restart-run'));
+      if (run) $('#garage-heading').after($('#restart-run'), $('#end-run')); else $('#drift-tap').after($('#restart-run'));
       $('#goals-panel').hidden = !run; $('#goals-heading').textContent = gameMode === 'demolition' ? 'Contracts' : 'Shift goals';
       $('#shift-goals').setAttribute('aria-label', $('#goals-heading').textContent);
       $('#scores-panel').hidden = gameMode !== 'demolition';
@@ -1207,6 +1207,8 @@ async function boot() {
       if (vr?.active && !started && name === 'pause') return;
       // M or View / Share: the city map, from the drive or the pause screen
       if (name === 'map') { if ((started || paused) && !runOver()) openWorldMap(); return; }
+      // N: the street map shown or folded away, while it is on screen (not in a headset, which has none)
+      if (name === 'streetMap') { if (started && !paused && !vr.active && !runOver()) cityGuide.toggle(); return; }
       if (name === 'nextJourney') return;
       if (name === 'recenter') {
         if (!started) return;
@@ -1308,6 +1310,8 @@ async function boot() {
       toast(paid ? `Konami code · +${money(paid)} · Rainbow paint in the Garage` : 'Rainbow paint is in the Garage', 'goal');
       if (!paid) return;
       audio.cue('goal'); buildPaintSwatches(); renderGarage(); needsRender = true;
+      // (entered on the pause screen, its header shows the new balance)
+      if (paused) renderCareer();
     });
     vr = new BrowserVR({
       renderer, buttons: [$('#enter-vr'), $('#enter-vr-pause')], canEnter: () => !changingJourney && !openChooser(),

@@ -86,7 +86,7 @@ The controller layout is the one most driving games use (Need for Speed Heat, Bu
 | Recenter camera | Q | R3 / right stick click |
 | Sound | Pause menu | Pause menu |
 | City map | M, or City map on the street map | View / Share |
-| Street map (show / hide) | Its arrow button | |
+| Street map (show / hide) | N, or its arrow button | |
 | Menus | Tab, Enter | D-pad or left stick to choose, A / Cross to select, B / Circle to go back |
 
 On touch screens, drag anywhere with one thumb to drive and use Boost and Drift at the bottom right with the other. Hold Drift while steering to drift in chase view. The Drift button shows the spark colour and a bar that fills toward the next one. Press and hold Drift in the air and steer to spin. Release the stick to stop. In first or third person, keep one thumb on the stick and drag a second thumb across the scene to look around. In the helicopter and the plane, hold Climb or Descend. On foot, drag the stick the way to walk and push it further to run. Tap Jump to hop or hold it to fly, hold Sprint, and tap Get out or Get in.

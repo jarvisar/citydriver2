@@ -148,6 +148,10 @@ test('two tabs on one fleet keep both tabs\' money and purchases', () => {
   a.credit(carPrice('sports'));
   assert.equal(a.buy('sports'), true); assert.equal(b.buy('sports'), false); assert.equal(b.balance, 100);
   assert.equal(b.buy('hatchback'), false);
+  // The Konami code adds to what the other tab saved, not to this tab's old balance
+  const fresh = storage(), first = new TaxiFleet(fresh), second = new TaxiFleet(fresh);
+  first.credit(5000); assert.equal(second.enterKonami(), KONAMI_PAY); assert.equal(second.balance, 5000 + KONAMI_PAY);
+  assert.equal(new TaxiFleet(fresh).balance, 5000 + KONAMI_PAY);
   // A tab whose save is untouched keeps its own state, changes made directly included (the dev hook's)
   b.owned.add('taxiGT'); assert.equal(b.select('taxiGT'), true); assert.equal(new TaxiFleet(disk).selected, 'taxiGT');
   // While its saves fail, a tab never swaps the progress it holds for another tab's save

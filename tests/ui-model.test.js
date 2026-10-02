@@ -28,8 +28,15 @@ test('menu choices and commands cover the title, pause modes, choosers and resul
   assert.equal(menuControls(state({ mode: 'demolition' }), commands).garage.disabled, true, 'a demolition run keeps its truck');
   assert.equal(build(state({ paused: false })), null);
   assert.equal(build(state({ loading: true })).id, 'loading');
-  for (const [mode, driving] of [['taxi', ['End shift', 'Demolition', 'Garage', 'Tap to drift', 'Reset car']],
-    ['demolition', ['Restart run', 'End run', 'Taxi shift', 'Tap to drift', 'Reset car']], ['free', ['Taxi shift', 'Demolition', 'Garage', 'Autodrive', 'Traffic', 'Tap to drift', 'Reset car']]]) {
+  // The pause screen's two mode buttons: in a run, Free drive beside the other run; on a job's standby, Free drive in its place
+  for (const [extra, modes] of [[{ mode: 'free' }, [['Taxi shift', 'taxi'], ['Demolition', 'demolition']]], [{ mode: 'free', standby: 'taxi' }, [['Free drive', 'free'], ['Demolition', 'demolition']]],
+    [{ mode: 'free', standby: 'demolition' }, [['Taxi shift', 'taxi'], ['Free drive', 'free']]], [{ mode: 'taxi' }, [['Free drive', 'free'], ['Demolition', 'demolition']]],
+    [{ mode: 'demolition' }, [['Free drive', 'free'], ['Taxi shift', 'taxi']]]]) {
+    const controls = menuControls(state(extra), commands);
+    assert.deepEqual([controls.switchMode, controls.otherRun].map(({ label, job }) => [label, job]), modes, JSON.stringify(extra));
+  }
+  for (const [mode, driving] of [['taxi', ['End shift', 'Free drive', 'Demolition', 'Garage', 'Tap to drift', 'Reset car']],
+    ['demolition', ['Restart run', 'End run', 'Free drive', 'Taxi shift', 'Tap to drift', 'Reset car']], ['free', ['Taxi shift', 'Demolition', 'Garage', 'Autodrive', 'Traffic', 'Tap to drift', 'Reset car']]]) {
     model = build(state({ mode, running: mode !== 'free' }));
     assert.deepEqual(model.items.filter(item => item.group === 'Driving').map(item => item.label), driving);
     assert.equal(model.items[0].label, 'Resume'); assert.equal(model.items[0].primary, true);

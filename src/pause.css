@@ -3,7 +3,9 @@
    one column on a phone and side by side where the screen has room. The
    header is a bar pinned to the top, so Resume stays in reach however far
    the settings scroll. */
-.pause-overlay { padding: 0 max(16px, var(--ui-right)) max(24px, var(--ui-bottom)) max(16px, var(--ui-left)); scrollbar-width: thin; }
+/* (clipped sideways: the header's bar reaches 100vmax either side, which let
+   a phone scroll the menu sideways) */
+.pause-overlay { padding: 0 max(16px, var(--ui-right)) max(24px, var(--ui-bottom)) max(16px, var(--ui-left)); scrollbar-width: thin; overflow-x: hidden; }
 .pause-content { width: 380px; max-width: 100%; margin: 0 auto; }
 .pause-header {
   position: sticky; top: 0; z-index: 1;
@@ -30,6 +32,32 @@
 .pause-header .start-button { min-width: 0; min-height: 48px; margin: 0; padding: 12px 16px; gap: 12px; }
 .pause-header .start-button span { font-size: 14px; white-space: nowrap; }
 .pause-header .wheel-icon { width: 24px; height: 24px; }
+/* Taxi shift and Demolition (Free drive in a job's place on its standby)
+   get a row of their own under the bar, glossy like the title's buttons but
+   smaller, each in its own mode's colours whatever the screen's accent.
+   The label comes first in the markup for menu-dom, so the icon is moved
+   before it. */
+.pause-modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 22px; }
+#app .pause-modes .mode-button {
+  --mode-top: #ffe983; --mode-bottom: #f4b400; --mode-edge: #8f6a00; --mode-hover: #ffe177; --mode-glow: #ffd2388c;
+  display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-width: 0; min-height: 54px; margin: 0; padding: 8px 14px;
+  color: #17262f; font-size: 17px; background: var(--city-gloss), linear-gradient(var(--mode-top), var(--mode-bottom)); border-color: var(--mode-edge);
+}
+#app .pause-modes .mode-button[data-job=demolition] { --mode-top: #ffc185; --mode-bottom: #ea730e; --mode-edge: #8e4405; --mode-hover: #ffb46e; --mode-glow: #ff94338c; }
+#app .pause-modes .mode-button[data-job=free] { --mode-top: #a4eade; --mode-bottom: #2fab9a; --mode-edge: #1a6a5f; --mode-hover: #8fe0d4; --mode-glow: #5fd0c08c; }
+#app .pause-modes .mode-button:hover { background: var(--city-gloss), linear-gradient(#fffbe9, var(--mode-hover)); box-shadow: inset 0 1px 0 #ffffffcc, 0 0 0 3px #ffffff1a, 0 2px 10px var(--mode-glow); }
+#app .pause-modes .mode-button:active { background: linear-gradient(var(--mode-bottom), var(--mode-top)); box-shadow: inset 0 3px 6px #00000066, 0 1px 0 #ffffff1f; }
+.pause-modes .mode-button span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pause-modes .mode-button svg { display: none; order: -1; flex-shrink: 0; width: 28px; height: 28px; }
+.pause-modes .mode-button[data-job=taxi] .wheel-icon, .pause-modes .mode-button[data-job=demolition] .demolition-icon,
+.pause-modes .mode-button[data-job=free] .free-icon { display: block; }
+.pause-modes .mode-button .wheel-icon { width: 24px; height: 24px; }
+@media (max-width: 380px) {
+  .pause-modes { gap: 8px; }
+  #app .pause-modes .mode-button { gap: 6px; padding-inline: 8px; font-size: 15px; letter-spacing: .3px; }
+  .pause-modes .mode-button svg { width: 22px; height: 22px; }
+  .pause-modes .mode-button .wheel-icon { width: 20px; height: 20px; }
+}
 .pause-settings { display: grid; gap: 22px; min-width: 0; }
 .pause-settings :is(.pause-panel, .graphics-panel, #enter-vr-pause) { width: 100%; margin: 0; min-width: 0; }
 .pause-settings h3 { margin: 0 0 10px; font-size: 12px; letter-spacing: 1.5px; opacity: 1; }
@@ -77,11 +105,14 @@ body:not([data-mode=free]) .pause-panel :is(#autodrive, #traffic) { display: non
   body:not([data-mode=free]) .pause-column:nth-child(2) { grid-area: 1 / 2; }
   body:not([data-mode=free]) .pause-column:nth-child(3) { grid-area: 2 / 2; }
   .pause-settings > :not(.pause-column) { grid-column: 1 / -1; }
+  /* (the mode buttons line up with the columns under them) */
+  .pause-modes { column-gap: 24px; }
 }
 @media (min-width: 1000px) {
   .pause-content { width: 1100px; }
   .pause-settings { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: auto; column-gap: 28px; }
   .pause-column:nth-child(n), body:not([data-mode=free]) .pause-column:nth-child(n) { grid-row: 1; grid-column: auto; }
+  .pause-modes { grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 28px; }
 }
 /* The bar leaves out the game's name: it is on the title screen already, and
    a narrow phone keeps the bar to two lines. */
@@ -93,6 +124,8 @@ body:not([data-mode=free]) .pause-panel :is(#autodrive, #traffic) { display: non
   .pause-header .start-button { min-height: 44px; padding-block: 8px; }
   .pause-settings { gap: 16px; }
   .pause-column { gap: 16px; }
+  .pause-modes { margin-bottom: 16px; }
+  #app .pause-modes .mode-button { min-height: 48px; padding-block: 6px; font-size: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .graphics-toggle .settings-chevron { transition: none; } }
 

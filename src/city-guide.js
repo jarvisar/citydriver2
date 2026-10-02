@@ -31,18 +31,20 @@ export class CityGuide {
       if (!this.mapPreferenceSet) this.setExpanded(!this.compactQuery.matches);
     });
     $('city-notebook').innerHTML = PLACE_TYPES.map(type => { const kind = CITY_PLACES[type]; return `<div class="notebook-place" data-place-type="${type}" title="${kind.description}" style="--place-color:${kind.color}"><span class="notebook-stamp">${kind.symbol}</span><span><strong>${kind.label}</strong><small>${kind.short}</small></span><span class="notebook-check" aria-hidden="true">○</span></div>`; }).join('');
-    $('city-map-toggle').addEventListener('click', () => {
-      this.mapPreferenceSet = true;
-      this.setExpanded(!this.expanded);
-    });
+    $('city-map-toggle').addEventListener('click', () => this.toggle());
     this.refreshNotebook();
+  }
+  // The arrow button or N: the player's choice from then on, whatever the screen size
+  toggle() {
+    this.mapPreferenceSet = true;
+    this.setExpanded(!this.expanded);
   }
   setExpanded(expanded) {
     this.expanded = expanded; this.canvas.hidden = !expanded;
     $('city-guide').dataset.expanded = String(expanded);
     $('city-map-toggle').setAttribute('aria-expanded', String(expanded));
     $('city-map-toggle').setAttribute('aria-label', expanded ? 'Hide map' : 'Show map');
-    $('city-map-toggle').title = expanded ? 'Hide map' : 'Show map';
+    $('city-map-toggle').title = expanded ? 'Hide map (N)' : 'Show map (N)';
     $('taxi-offer').hidden = !expanded || !(this.taxi?.running || this.demolition?.running) || !$('taxi-offer').textContent;
     // Draw immediately so opening the map never exposes an empty canvas.
     if (expanded) {
