@@ -59,11 +59,12 @@ The cars that turn up in traffic are cheapest, since you can borrow them on foot
 | Monster Truck | $30,000 | 1 h |
 | Formula Taxi | $40,000 | 1.3 h |
 | Exotic | $45,000 | 1.5 h |
+| Jetpack | $60,000 | 2 h |
 | Formula | $65,000 | 2.2 h |
 | Helicopter | $90,000 | 3 h |
 | Plane | $140,000 | 4.7 h |
 
-Everything together is $520,500, about 17 hours of average play. The prices are in `GARAGE_PRICES` in `src/cars.js`.
+Everything together is $580,500, about 19 hours of average play. The prices are in `GARAGE_PRICES` in `src/cars.js`.
 
 ## Using the Garage
 
@@ -73,11 +74,17 @@ A test drive is two minutes in the car, free the first time for each car. After 
 
 Save for this pins a car. The garage header and both results screens show how far off it is, and free drive says so once when you can afford it. Without a pinned car they show the cheapest one you can't buy yet.
 
+The jetpack is sold under the cars, in its own Gear section. Without it, holding jump in the air does nothing more than a jump. The parachute is still free, since it's what you have when you bail out of an aircraft. Its free try is two minutes too, but the clock only runs while you're on foot. When it runs out mid-flight you drop, and a tap of jump still opens the parachute.
+
+Paint costs $100 a colour, the rainbow included. Going back to each car's own colour is free, and so is picking the colour you already have. Paint is saved with the fleet now, since it costs money. The custom colour picker only charges when you let go of it, and closing the garage on a colour you were still picking puts the old one back.
+
+The Konami code (up, up, down, down, left, right, left, right, B, A, or the same on a controller's D-pad) pays $10,000 once per save and adds Rainbow to the paint swatches. Entering it again only reminds you where the paint is. The $10,000 goes into the balance but not toward the driver rank.
+
 The Taxi fleet dialog still sells cabs and liveries. It's the same ownership and the same prices as the garage.
 
 ## Old Saves
 
-Saves from before this kept only cabs, since the garage lent every other car out for free. Loading one keeps the balance and cabs, and you also keep the car you had picked in the garage, so nobody comes back to find the car they drive locked. That only happens once, when the save is first upgraded.
+Saves from before this kept only cabs, since the garage lent every other car out for free. Loading one keeps the balance and cabs, and you also keep the car you had picked in the garage and, if you've ever been on foot, the jetpack, so nobody comes back to find what they used locked. That only happens once, when the save is first upgraded.
 
 ## Known Issues & Limitations
 
