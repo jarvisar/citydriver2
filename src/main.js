@@ -1267,7 +1267,7 @@ async function boot() {
     function headsetLayout(on) {
       if ((document.documentElement.dataset.headset === 'true') === on) return;
       document.documentElement.dataset.headset = String(on);
-      $('#enter-vr').classList.toggle('menu-secondary', !on); for (const id of ['#start', '#demolition']) $(id).classList.toggle('menu-secondary', on);
+      $('#enter-vr').classList.toggle('menu-secondary', !on); for (const id of ['#start', '#demolition', '#free-drive']) $(id).classList.toggle('menu-secondary', on);
       if (on) { $('.menu-actions').prepend($('#enter-vr')); $('.pause-column').prepend($('#enter-vr-pause')); }
       else { $('.menu-actions').append($('#enter-vr')); $('.graphics-panel').after($('#enter-vr-pause')); }
     }

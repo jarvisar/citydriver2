@@ -8,12 +8,21 @@
 #app #welcome #demolition:not(.menu-secondary):hover { background: #ffb46e; border-color: #ffb46e; }
 #welcome #demolition:not(.menu-secondary) .demolition-icon { width: 43px; height: 43px; flex-shrink: 0; }
 #app #welcome #demolition.menu-secondary .demolition-icon { color: #ff9433; }
+/* Free drive the same, in its teal */
+#app #welcome #free-drive:not(.menu-secondary) { margin-top: 14px; color: #17262f; background: #5fd0c0; border-color: #5fd0c0; }
+#app #welcome #free-drive:not(.menu-secondary):hover { background: #8fe0d4; border-color: #8fe0d4; }
+#welcome #free-drive:not(.menu-secondary) .free-icon { width: 43px; height: 43px; flex-shrink: 0; }
+#app #welcome #free-drive.menu-secondary .free-icon { color: #5fd0c0; }
+@media (max-height: 700px) {
+  #app #welcome :is(#demolition, #free-drive):not(.menu-secondary) { margin-top: 10px; }
+  #welcome :is(#demolition, #free-drive):not(.menu-secondary) :is(.demolition-icon, .free-icon) { width: 36px; height: 36px; }
+}
 @media (max-height: 560px) {
-  #app #welcome #demolition:not(.menu-secondary) { margin-top: 10px; }
-  #welcome #demolition:not(.menu-secondary) .demolition-icon { width: 32px; height: 32px; }
+  #app #welcome :is(#demolition, #free-drive):not(.menu-secondary) { margin-top: 10px; }
+  #welcome :is(#demolition, #free-drive):not(.menu-secondary) :is(.demolition-icon, .free-icon) { width: 32px; height: 32px; }
 }
 @media (max-height: 380px) and (orientation: landscape) {
-  #app #welcome #demolition:not(.menu-secondary) { margin-top: 8px; }
+  #app #welcome :is(#demolition, #free-drive):not(.menu-secondary) { margin-top: 8px; }
 }
 
 /* The clock in hazard stripes, two oranges close enough to keep it legible */

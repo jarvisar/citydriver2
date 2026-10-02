@@ -113,6 +113,11 @@ button svg:not(.chooser-art) { stroke-linecap: round; stroke-linejoin: round; }
   .pause-overlay .location { margin: 0 0 18px; }
   .pause-overlay > h2 { margin-top: 0; }
 }
+/* Three full-size modes need a little less height each on shorter screens */
+@media (max-height: 700px) {
+  #welcome .start-button { min-height: 66px; padding: 12px 26px; }
+  #welcome .wheel-icon { width: 36px; height: 36px; }
+}
 @media (max-height: 560px) {
   #welcome { top: calc(var(--ui-top) + 54px); bottom: calc(var(--ui-bottom) + 12px); }
   #welcome .brand-mark { width: 56px; }
