@@ -257,6 +257,14 @@ test('time up banks the last chain, rates the run and keeps it in the high score
   assert.equal(again.records.record({ score: -FINE, smashed: 0, wrecked: 0, bestChain: 0 }).placement, -1);
 });
 
+test('two tabs on one high score table keep both tabs\' runs', () => {
+  const storage = memory(), a = new DemolitionRecords(storage), b = new DemolitionRecords(storage);
+  a.record({ score: 900, smashed: 1, wrecked: 0, bestChain: 1 });
+  assert.equal(b.record({ score: 500, smashed: 1, wrecked: 0, bestChain: 1 }).placement, 1);
+  const table = new DemolitionRecords(storage);
+  assert.deepEqual(table.scores.map(entry => entry.score), [900, 500]); assert.equal(table.runs, 2); assert.equal(table.lifetime, 1400);
+});
+
 test('corrupt or missing storage starts an empty table', () => {
   const storage = memory(); storage.setItem(SCORES_KEY, '{"version":1,"runs":-3,"scores":[{"score":"lots"},{"score":900,"date":42}]}');
   const records = new DemolitionRecords(storage);

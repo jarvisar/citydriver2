@@ -11,7 +11,7 @@ import './taxi.css';
 import './demolition.css';
 import './city-theme.css';
 import './update-notice.css';
-import { garageModel, savingFor } from './chooser-model.js';
+import { garageModel, savingFor, UNSAVED } from './chooser-model.js';
 import { menuControls, menuModel, WEATHER_CHOICES, cycleChoice } from './menu-model.js';
 import { bindMenuControls, renderMenuControls } from './menu-dom.js';
 import { locationHudModel, headsetHudModel, freeHudModel } from './run-hud-model.js';
@@ -40,6 +40,8 @@ import { CITY_PLACES } from './world/city-places.js';
 import { Pigeons } from './world/city-pigeons.js';
 import { WorldMap, DISTRICT_COLORS } from './city-world-map.js';
 import { TaxiRun } from './taxi-run.js';
+import { FLEET_KEY } from './taxi-fleet.js';
+import { CAREER_KEY } from './taxi-career.js';
 import { goalProgress } from './taxi-goals.js';
 import { TaxiView } from './taxi-view.js';
 import { DemolitionRun, DEMOLITION_CAR, DEMOLITION_PAINT } from './demolition-run.js';
@@ -344,7 +346,7 @@ async function boot() {
     }
     // The pause screen's header names the driver's rank (from everything
     // earned, anywhere) and the fleet balance
-    const careerText = () => `${taxi.career.rank.name} · ${cashText()}`;
+    const careerText = () => `${taxi.career.rank.name} · ${cashText()}${taxi.fleet.saved && taxi.career.saved ? '' : ` · ${UNSAVED}`}`;
     function renderCareer() { $('#pause-career').textContent = careerText(); }
     // The whole city, from the pause screen: built the first time it opens,
     // drawn again whenever it opens or the window changes size
@@ -906,7 +908,11 @@ async function boot() {
       if (id === carId && here) return;
       pickCar(id, taxi.fleet);
       if (started && !here) swapCar(id);
-      else { updateCarUi(); updateHud(); }
+      else {
+        // (bought on the title: straight into it, as a test drive goes, a cab on standby)
+        if (!started && bought) { if (carEntry(id).taxi) beginTaxi(); else beginFree(); }
+        updateCarUi(); updateHud();
+      }
       toast(`${carEntry(id).name} ${bought ? 'bought' : 'selected'}${carEntry(id).taxi ? started ? ` · ${standbyText('taxi')}` : ' for shifts' : flightHelp(id)}`, bought ? 'goal' : '');
     }
     // In a taxi shift the garage holds only the cabs (see garageModel): one
@@ -923,7 +929,7 @@ async function boot() {
       audio.cue('goal');
       // (a cab bought is the next shift's: see TaxiFleet.buy)
       if (inShift()) chooseCab(id, true);
-      else if (GEAR[id]) { jetTrial.stop(); leaveGarage(); toast(`Jetpack bought · ${jetpackHelp()}`, 'goal'); updateCarUi(); }
+      else if (GEAR[id]) { jetTrial.stop(); leaveGarage(); if (!started) beginFree(); toast(`Jetpack bought · ${jetpackHelp()}`, 'goal'); updateCarUi(); }
       else chooseCar(id, true);
     }
     // Owned gear, picked in the garage: how to use it
@@ -1454,6 +1460,14 @@ async function boot() {
     window.addEventListener('keydown', () => audio.unlock(), { capture: true });
     window.addEventListener('pagehide', event => { audio.setHidden(true); if (!event.persisted) { onFoot.clear(); vehicle.disposeModel(); enterMarker.dispose(); nightLighting.dispose(); props.dispose(); world.dispose(); weather.dispose(); traffic.dispose(); taxiView.dispose(); demolitionView.dispose(); driftEffects.dispose(); void audio.dispose().catch(() => {}); } });
     window.addEventListener('pageshow', () => { audio.setHidden(document.hidden); needsRender = true; });
+    // Progress saved in another tab shows here too (every change also picks it
+    // up first: see TaxiFleet.sync)
+    window.addEventListener('storage', event => {
+      if (event.key !== FLEET_KEY && event.key !== CAREER_KEY) return;
+      taxi.fleet.sync(); taxi.career.sync();
+      if (paused) renderCareer();
+      if (carDialog.open) renderGarage();
+    });
     $('#scene').addEventListener('webglcontextlost', event => { event.preventDefault(); setPaused(true); toast('Graphics lost. Reload to restart.'); });
     $('#scene').addEventListener('webglcontextrestored', () => { needsRender = true; });
     const qualityButtons = [...document.querySelectorAll('[data-quality]')];

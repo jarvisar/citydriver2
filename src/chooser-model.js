@@ -19,6 +19,9 @@ export function savingFor(fleet) {
     text: short ? `${label} in ${fleetMoney(short)}` : `${label} · ready to buy` };
 }
 
+// Shown with the balance while saves are failing
+export const UNSAVED = 'Progress not saved';
+
 // The garage, for the page and the headset alike. A car the fleet owns is
 // picked at once, and any other opens its offer (`offer`, its id): buy it,
 // test drive it for a couple of minutes, or save for it. Gear (the jetpack)
@@ -42,8 +45,10 @@ export function garageModel({ carId, paint, ownPaint, fleet, offer = null, caree
   });
   const shop = shift ? SHOP_IDS : [...cars, ...gear].map(item => item.id), owned = shop.filter(id => fleet.owned.has(id)).length;
   const items = [...cars, ...gear];
-  return { balance: fleetMoney(fleet.balance), owned, total: shop.length, saving: savingFor(fleet), shift,
-    summary: `${fleetMoney(fleet.balance)} · ${owned} of ${shop.length} owned`, paintPrice: fleetMoney(PAINT_PRICE),
+  // (storage refused the last save: what was earned or bought lasts only for this visit)
+  const unsaved = !fleet.saved || career?.saved === false;
+  return { balance: fleetMoney(fleet.balance), owned, total: shop.length, saving: savingFor(fleet), shift, unsaved,
+    summary: `${fleetMoney(fleet.balance)} · ${owned} of ${shop.length} owned${unsaved ? ` · ${UNSAVED}` : ''}`, paintPrice: fleetMoney(PAINT_PRICE),
     cars, gear, ...liveryModel(fleet, career, actions),
     // (each car's own colour is free, the rest cost PAINT_PRICE, and the rainbow is the Konami code's)
     paints: shift ? [] : [{ name: DEFAULT_PAINT_NAME, color: DEFAULT_PAINT }, ...PAINTS, ...fleet.konami ? [{ name: RAINBOW_NAME, color: RAINBOW_PAINT }] : []].map(({ name, color }) => {

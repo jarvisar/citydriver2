@@ -45,13 +45,26 @@ export class TaxiCareer {
     this.storage = storage; this.saved = Boolean(storage);
     this.shifts = 0; this.fares = 0; this.riders = 0; this.groups = 0; this.earnings = 0; this.tips = 0; this.goals = 0; this.goalCash = 0;
     this.records = Object.fromEntries(RECORDS.map(record => [record.id, 0]));
+    // The save as this tab last read or wrote it (see TaxiFleet.sync)
+    this.seen = null;
     try {
-      const data = JSON.parse(storage?.getItem(CAREER_KEY) ?? 'null');
-      if (data?.version === 1) {
-        for (const key of ['shifts', 'fares', 'riders', 'groups', 'earnings', 'tips', 'goals', 'goalCash']) if (validCount(data[key])) this[key] = data[key];
-        for (const record of RECORDS) if (validCount(data.records?.[record.id])) this.records[record.id] = data.records[record.id];
-      }
+      this.seen = storage?.getItem(CAREER_KEY) ?? null;
+      this.load(JSON.parse(this.seen ?? 'null'));
     } catch { /* Corrupt or unavailable storage starts a fresh career. */ }
+  }
+  load(data) {
+    if (data?.version !== 1) return;
+    for (const key of ['shifts', 'fares', 'riders', 'groups', 'earnings', 'tips', 'goals', 'goalCash']) if (validCount(data[key])) this[key] = data[key];
+    for (const record of RECORDS) if (validCount(data.records?.[record.id])) this.records[record.id] = data.records[record.id];
+  }
+  // Picks up another tab's save before a change, as the fleet does
+  sync() {
+    if (!this.saved) return;
+    let text;
+    try { text = this.storage.getItem(CAREER_KEY); } catch { return; }
+    if (text === this.seen) return;
+    this.seen = text;
+    try { this.load(JSON.parse(text ?? 'null')); } catch { /* Keep this tab's career. */ }
   }
   get rank() { return driverRank(this.earnings); }
   unlocked(liveryId) { return rankIndex(liveryById(liveryId).rank) <= this.rank.index; }
@@ -59,15 +72,17 @@ export class TaxiCareer {
   save() {
     try {
       if (!this.storage) throw new Error('Storage unavailable');
-      this.storage.setItem(CAREER_KEY, JSON.stringify({ version: 1, shifts: this.shifts, fares: this.fares, riders: this.riders, groups: this.groups,
-        earnings: this.earnings, tips: this.tips, goals: this.goals, goalCash: this.goalCash, records: this.records }));
-      this.saved = true;
+      const text = JSON.stringify({ version: 1, shifts: this.shifts, fares: this.fares, riders: this.riders, groups: this.groups,
+        earnings: this.earnings, tips: this.tips, goals: this.goals, goalCash: this.goalCash, records: this.records });
+      this.storage.setItem(CAREER_KEY, text);
+      this.seen = text; this.saved = true;
     } catch { this.saved = false; }
   }
-  // Money made anywhere else in the city (free drive's stunts, a demolition
-  // run's pay, places found) counts toward the rank as fares do. Returns
-  // what to say about a promotion, or null.
+  // Money made anywhere in the city (fares as they are paid, free drive's
+  // stunts, a demolition run's pay, places found) counts toward the rank.
+  // Returns what to say about a promotion, or null.
   earn(amount) {
+    this.sync();
     if (!validCount(amount) || !amount || !Number.isSafeInteger(this.earnings + amount)) return null;
     const before = this.rank;
     this.earnings += amount; this.save();
@@ -80,10 +95,13 @@ export class TaxiCareer {
   // summary drives the results screen, so it names every record beaten and
   // every livery the new rank unlocked.
   record(run) {
-    const before = this.rank;
+    this.sync();
+    // Fares and goal bonuses counted toward the rank as they were paid
+    // (`run.ranked`), so a shift left half way still counts. Only the rest is
+    // added here, and the promotion is judged over the whole shift's pay.
+    const pay = run.cash + (run.goalCash ?? 0), before = driverRank(this.earnings - Math.min(pay, run.ranked ?? 0));
     this.shifts++; this.fares += run.delivered; this.riders += run.deliveredPassengers; this.groups += run.groups;
-    // (goal bonuses went into the balance as they were met, and count toward the rank like any other pay)
-    this.earnings += run.cash + (run.goalCash ?? 0); this.tips += run.tipsBanked;
+    this.earnings += Math.max(0, pay - (run.ranked ?? 0)); this.tips += run.tipsBanked;
     const done = (run.goals ?? []).filter(goal => goal.done);
     this.goals += done.length; this.goalCash += run.goalCash ?? 0;
     const beaten = [];

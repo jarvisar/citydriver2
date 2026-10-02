@@ -55,6 +55,20 @@ test('menu choices and commands cover the title, pause modes, choosers and resul
 const garageActions = calls => ({ chooseCar: id => calls.push(id), applyPaint: paint => calls.push(paint), openOffer: id => calls.push(`offer:${id}`),
   closeOffer: () => calls.push('close'), buyCar: id => calls.push(`buy:${id}`), testDrive: id => calls.push(`test:${id}`), saveFor: id => calls.push(`save:${id}`), useGear: id => calls.push(id),
   chooseCab: id => calls.push(`cab:${id}`), chooseLivery: id => calls.push(`livery:${id}`) });
+test('the garage says when progress is not being saved', () => {
+  let full = false; const values = new Map();
+  const disk = { getItem: key => values.get(key) ?? null, setItem: (key, value) => { if (full) throw Error('Quota'); values.set(key, value); } };
+  const fleet = new TaxiFleet(disk), career = new TaxiCareer(disk), ownPaint = () => '#123456';
+  const garage = shift => garageModel({ carId: 'coast', paint: null, ownPaint, fleet, career, shift }, garageActions([]));
+  assert.equal(garage(false).unsaved, false); assert.doesNotMatch(garage(false).summary, /not saved/);
+  full = true; fleet.credit(100);
+  assert.equal(garage(false).unsaved, true); assert.match(garage(false).summary, /\$100 · \d+ of \d+ owned · Progress not saved/);
+  const s = state({ mode: 'taxi', started: true, chooser: 'garage' });
+  assert.match(menuModel(s, menuControls(s, actions([])), { garage: garage(true) }).subtitle, /Progress not saved/);
+  full = false; fleet.credit(1);
+  assert.equal(garage(false).unsaved, false, 'a later save that works clears it');
+});
+
 test('garage selection uses car and paint state, and preserves paint-first headset paging', () => {
   const calls = [], ownPaint = () => '#123456', fleet = new TaxiFleet();
   fleet.credit(carPrice('sports')); fleet.buy('sports');

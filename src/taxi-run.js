@@ -345,8 +345,12 @@ const LOOK_AHEAD = 1 / 60;
 export class TaxiRun {
   constructor(storage = null) {
     this.fleet = new TaxiFleet(storage); this.career = new TaxiCareer(storage); this.goals = []; this.summary = null;
-    this.storage = storage; this.best = 0; this.status = 'idle'; this.events = []; this.revision = 0;
-    try { const best = Number(storage?.getItem('citydriver-taxi-best')); if (Number.isFinite(best) && best > 0) this.best = Math.floor(best); } catch { /* Optional storage. */ }
+    this.storage = storage; this.status = 'idle'; this.events = []; this.revision = 0; this.ranked = 0;
+    this.best = this.storedBest();
+  }
+  storedBest() {
+    try { const best = Number(this.storage?.getItem('citydriver-taxi-best')); if (Number.isFinite(best) && best > 0) return Math.floor(best); } catch { /* Optional storage. */ }
+    return 0;
   }
   get running() { return this.status === 'pickup' || this.status === 'driving'; }
   get currentStop() { return this.status === 'driving' ? this.fare.stops[this.stopIndex] : null; }
@@ -400,6 +404,8 @@ export class TaxiRun {
     // career keeps the best of them.
     this.bestStreak = 0; this.bestCombo = 1; this.tipsBanked = 0; this.nearMisses = 0; this.crazyStops = 0; this.drifts = 0; this.jumps = 0;
     this.groups = 0; this.fullCabs = 0; this.longRides = 0; this.pleased = 0; this.goalCash = 0; this.summary = null;
+    // (pay counted toward the rank so far: see bank)
+    this.ranked = 0;
     this.goals = shiftGoals(this.career.shifts, this.career.rank.index);
     this.lastImpact = player.audioTelemetry?.impactSerial ?? 0; this.lastCrash = player.audioTelemetry?.crashSerial ?? 0;
   }
@@ -509,12 +515,19 @@ export class TaxiRun {
       if (goal.done) continue;
       goal.progress = goalProgress(goal, stats);
       if (goal.progress < goal.target) continue;
-      goal.done = true; this.goalCash += goal.bonus; this.fleet.credit(goal.bonus);
+      goal.done = true; this.goalCash += goal.bonus; this.bank(goal.bonus);
       this.events.push({ kind: 'goal', text: `Goal · ${goal.text} · +$${goal.bonus}`, goal, bonus: goal.bonus });
     }
   }
+  // Pay goes into the balance and toward the rank at once, so it counts even
+  // if the shift is left for another mode or the page is closed
+  bank(amount) {
+    this.fleet.credit(amount); this.career.earn(amount); this.ranked += amount;
+  }
   finish() {
     this.status = 'over'; this.boostActive = false; this.boarding = null; this.hold = 0; this.onboard = 0; this.revision++;
+    // (another tab may have set a better one meanwhile)
+    this.best = Math.max(this.best, this.storedBest());
     this.previousBest = this.best; this.best = Math.max(this.best, this.cash);
     try { this.storage?.setItem('citydriver-taxi-best', String(this.best)); } catch { /* Optional storage. */ }
     this.summary = this.career.record(this);
@@ -646,7 +659,7 @@ export class TaxiRun {
       this.ratings[rating.id]++;
       this.deliveredPassengers += stop.passengers; this.onboard -= stop.passengers;
       this.timeLeft = Math.min(MAX_SHIFT_SECONDS, this.timeLeft + seconds);
-      if (paid) { this.cash += paid; this.fleet.credit(paid); }
+      if (paid) { this.cash += paid; this.bank(paid); }
       const group = this.fare.passengers > 1;
       if (last) {
         this.delivered++; this.tipsBanked += this.tips;

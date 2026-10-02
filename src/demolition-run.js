@@ -132,28 +132,43 @@ const validCount = value => Number.isSafeInteger(value) && value >= 0;
 export class DemolitionRecords {
   constructor(storage = null) {
     this.storage = storage; this.saved = Boolean(storage); this.scores = []; this.runs = 0; this.lifetime = 0;
+    // The save as this tab last read or wrote it (see TaxiFleet.sync)
+    this.seen = null;
     try {
-      const data = JSON.parse(storage?.getItem(SCORES_KEY) ?? 'null');
-      if (data?.version === 1) {
-        if (validCount(data.runs)) this.runs = data.runs;
-        if (validCount(data.lifetime)) this.lifetime = data.lifetime;
-        this.scores = (Array.isArray(data.scores) ? data.scores : []).filter(entry => validCount(entry?.score) && entry.score > 0)
-          .map(({ score, smashed, wrecked, chain, date }) => ({ score, smashed: validCount(smashed) ? smashed : 0, wrecked: validCount(wrecked) ? wrecked : 0,
-            chain: validCount(chain) ? chain : 0, date: typeof date === 'string' ? date.slice(0, 10) : '' }))
-          .sort((a, b) => b.score - a.score).slice(0, SCORE_SLOTS);
-      }
+      this.seen = storage?.getItem(SCORES_KEY) ?? null;
+      this.load(JSON.parse(this.seen ?? 'null'));
     } catch { /* Corrupt or unavailable storage starts a fresh table. */ }
+  }
+  load(data) {
+    if (data?.version !== 1) return;
+    if (validCount(data.runs)) this.runs = data.runs;
+    if (validCount(data.lifetime)) this.lifetime = data.lifetime;
+    this.scores = (Array.isArray(data.scores) ? data.scores : []).filter(entry => validCount(entry?.score) && entry.score > 0)
+      .map(({ score, smashed, wrecked, chain, date }) => ({ score, smashed: validCount(smashed) ? smashed : 0, wrecked: validCount(wrecked) ? wrecked : 0,
+        chain: validCount(chain) ? chain : 0, date: typeof date === 'string' ? date.slice(0, 10) : '' }))
+      .sort((a, b) => b.score - a.score).slice(0, SCORE_SLOTS);
+  }
+  // Picks up another tab's save before a change, as the fleet does
+  sync() {
+    if (!this.saved) return;
+    let text;
+    try { text = this.storage.getItem(SCORES_KEY); } catch { return; }
+    if (text === this.seen) return;
+    this.seen = text;
+    try { this.load(JSON.parse(text ?? 'null')); } catch { /* Keep this tab's table. */ }
   }
   get best() { return this.scores[0]?.score ?? 0; }
   save() {
     try {
       if (!this.storage) throw new Error('Storage unavailable');
-      this.storage.setItem(SCORES_KEY, JSON.stringify({ version: 1, runs: this.runs, lifetime: this.lifetime, scores: this.scores }));
-      this.saved = true;
+      const text = JSON.stringify({ version: 1, runs: this.runs, lifetime: this.lifetime, scores: this.scores });
+      this.storage.setItem(SCORES_KEY, text);
+      this.seen = text; this.saved = true;
     } catch { this.saved = false; }
   }
   // Closes a run: its place in the table (from 0), or -1 if it missed it
   record(run, now = Date.now()) {
+    this.sync();
     const previousBest = this.best, score = Math.max(0, Math.round(run.score));
     this.runs++; this.lifetime += score;
     const entry = { score, smashed: run.smashed, wrecked: run.wrecked, chain: run.bestChain, date: new Date(now).toISOString().slice(0, 10) };

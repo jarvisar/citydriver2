@@ -136,6 +136,30 @@ test('completed fares bank exactly once and survive restart, abandonment, expiry
   assert.equal(new TaxiRun(disk).best, paid);
 });
 
+test('two tabs on one fleet keep both tabs\' money and purchases', () => {
+  const disk = storage(), a = new TaxiFleet(disk), b = new TaxiFleet(disk);
+  // A tab opened first, then the other earns and buys: the first one's next earning keeps that purchase
+  a.credit(carPrice('hatchback')); assert.equal(a.buy('hatchback'), true);
+  b.credit(100);
+  assert.equal(b.balance, 100); assert.ok(b.owned.has('hatchback'));
+  const reloaded = new TaxiFleet(disk);
+  assert.equal(reloaded.balance, 100); assert.ok(reloaded.owned.has('hatchback'));
+  // Money spent in one tab can't be spent again in the other, nor a car bought twice
+  a.credit(carPrice('sports'));
+  assert.equal(a.buy('sports'), true); assert.equal(b.buy('sports'), false); assert.equal(b.balance, 100);
+  assert.equal(b.buy('hatchback'), false);
+  // A tab whose save is untouched keeps its own state, changes made directly included (the dev hook's)
+  b.owned.add('taxiGT'); assert.equal(b.select('taxiGT'), true); assert.equal(new TaxiFleet(disk).selected, 'taxiGT');
+  // While its saves fail, a tab never swaps the progress it holds for another tab's save
+  let full = false;
+  const flaky = { getItem: key => disk.getItem(key), setItem: (key, value) => { if (full) throw Error('Quota'); disk.setItem(key, value); } };
+  const c = new TaxiFleet(flaky);
+  full = true; c.credit(1000); assert.equal(c.saved, false);
+  a.credit(1); c.credit(1);
+  assert.equal(c.balance, 100 + 1001);
+  full = false; c.credit(1); assert.equal(c.saved, true); assert.equal(new TaxiFleet(disk).balance, 100 + 1002);
+});
+
 const straight = { frame: () => ({ angle: 0, scale: 1 }), position: (s, u) => ({ x: u, y: 0, z: -s }), height: () => 0, bounds: () => [-100, 100] };
 test('upgrades actually cover a block faster, brake harder and turn tighter at every tick rate', () => {
   for (const hz of [30, 60, 144]) {

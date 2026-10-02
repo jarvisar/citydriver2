@@ -8,7 +8,7 @@ Every mode pays into one balance, and the garage sells every vehicle out of it. 
 - Demolition runs: a cut of the damage, paid as each chain banks (below).
 - Free drive: stunt chains when they bank, new places ($100 for the first of a kind, $50 for the rest) and jump stars ($100 each). Places and stars reset with each visit, like the notebook.
 
-All of it also counts toward the driver rank, including shift goal bonuses, which used to be left out.
+All of it also counts toward the driver rank, including shift goal bonuses, which used to be left out. Fares count toward the rank as soon as they're paid, so a shift you leave for another mode still counts.
 
 I tried to keep each mode at about the same money per minute for the same level of skill, so nobody has to play a mode they don't like to get the next car. Roughly:
 
@@ -68,7 +68,7 @@ Everything together is $579,000, about 19 hours of average play. The prices are 
 
 ## Using the Garage
 
-A car you own is picked straight away, like before. It becomes your free drive car. Cabs are different. Picking one puts you in it with fares waiting and makes it your shift cab, but Free drive on the title still starts in your own car. Any other car opens its offer: price, how far your balance gets you, and Buy, Test drive and Save for this. Buying puts you in it.
+A car you own is picked straight away, like before. It becomes your free drive car. Cabs are different. Picking one puts you in it with fares waiting and makes it your shift cab, but Free drive on the title still starts in your own car. Any other car opens its offer: price, how far your balance gets you, and Buy, Test drive and Save for this. Buying puts you in it, from the title screen too.
 
 A test drive is two minutes in the car, free the first time for each car. After that it costs 2.5% of the price ($2,250 for the helicopter). Stunts pay as usual, but a cab you're only test driving has no fares. When time is up the car stops, or lands itself if it flies, then you're back in your own car. If you'd already got out, it just goes back to the garage. Test drives used are saved with the fleet, so reloading doesn't give you another free one.
 
@@ -91,3 +91,5 @@ Saves from before this kept only cabs, since the garage lent every other car out
 - Places and jump stars pay again after a reload. Re-finding a city is still slower money than a shift, so I left it.
 - Traffic cars can be borrowed on foot for free. That's why those cars are the cheapest.
 - There's nothing to spend on once the garage is full.
+- Progress is saved in the browser. If it can't save (storage blocked or full), the garage and pause screen say "Progress not saved", and anything earned lasts until the page is closed.
+- Two tabs open at once share one save, so neither undoes the other's purchases. If saving fails in one of them, the next save that works can still overwrite the other tab's changes.

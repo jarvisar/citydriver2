@@ -19,12 +19,26 @@ export class JumpBook {
   constructor(storage = null) {
     this.storage = storage; this.best = new Map();
     this.records = { longest: 0, air: 0, turns: 0, jumps: 0 };
+    // The save as this tab last read or wrote it, so another tab's records
+    // are picked up before a landing changes them (see TaxiFleet.sync)
+    this.seen = null;
+    this.sync();
+  }
+  sync() {
     try {
-      const saved = JSON.parse(storage?.getItem(KEY) ?? 'null');
+      const text = this.storage?.getItem(KEY) ?? null;
+      if (text === this.seen) return;
+      this.seen = text;
+      const saved = JSON.parse(text ?? 'null');
       if (saved && typeof saved === 'object') for (const key of Object.keys(this.records)) if (Number.isFinite(saved[key]) && saved[key] >= 0) this.records[key] = saved[key];
     } catch { /* Optional storage. */ }
   }
-  save() { try { this.storage?.setItem(KEY, JSON.stringify(this.records)); } catch { /* Optional storage. */ } }
+  save() {
+    try {
+      const text = JSON.stringify(this.records);
+      this.storage?.setItem(KEY, text); if (this.storage) this.seen = text;
+    } catch { /* Optional storage. */ }
+  }
   // The city's named jumps: loading ramps and the river jump (mounds have no names)
   get sites() { return cityJumps().sites.filter(site => site.stars); }
   stars(site, distance = this.best.get(site.id) ?? 0) { return site.stars.filter(d => distance >= d).length; }
@@ -34,6 +48,7 @@ export class JumpBook {
   // the stars it newly took off a named jump }), or null
   land(event) {
     if (event.landing === 'splash') return null;
+    this.sync();
     const distance = Math.round(event.distance), spun = event.landing === 'spun', site = event.jump?.stars ? event.jump : null;
     const records = this.records, first = records.jumps === 0;
     records.jumps++;

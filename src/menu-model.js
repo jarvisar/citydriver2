@@ -1,3 +1,5 @@
+import { UNSAVED } from './chooser-model.js';
+
 export const WEATHER_CHOICES = [
   ['auto', 'Auto'], ['clear', 'Day'], ['overcast', 'Overcast'], ['rain', 'Rain'], ['storm', 'Storm'], ['snow', 'Snow'], ['sunset', 'Golden hour'], ['night', 'Night'],
 ];
@@ -52,7 +54,7 @@ export function menuModel(state, controls, { garage, result, mapImage, mapKey, m
   if (state.chooser === 'garage' && garage.offer) return { id: 'car-offer', title: garage.offer.label, subtitle: garage.offer.summary,
     items: garage.offer.items, hint: VR_POINTING };
   if (state.chooser === 'garage') return { id: 'car-dialog', title: 'Garage', flow: true, hint: VR_POINTING,
-    subtitle: garage.shift ? `${garage.balance} · Cab changes apply to your next shift` : `${garage.summary} · Paint ${garage.paintPrice} a colour, on every car`,
+    subtitle: garage.shift ? `${garage.balance}${garage.unsaved ? ` · ${UNSAVED}` : ''} · Cab changes apply to your next shift` : `${garage.summary} · Paint ${garage.paintPrice} a colour, on every car`,
     items: [...garage.paints, ...garage.liveries, ...garage.cars, ...garage.gear, back] };
   if (state.over) return { id: `${state.mode}-results`, title: `Time up · ${result.cash}`,
     subtitle: [result.name, state.mode === 'demolition' ? result.next : result.best].filter(Boolean).join(' · '), hint: VR_POINTING,

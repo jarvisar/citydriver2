@@ -51,6 +51,33 @@ test('closing a shift grows the totals, sets records only when beaten, promotes,
   unavailable.record(run); assert.equal(unavailable.saved, false); assert.equal(unavailable.shifts, 1);
 });
 
+test('a fare counts toward the rank when paid, so a shift left half way still counts, and only once', () => {
+  const disk = storage(), run = new TaxiRun(disk), car = player();
+  const deliver = () => {
+    run.start(car); const solo = run.customers.find(c => c.passengers === 1 && c.id !== run.blockedPickup?.id);
+    Object.assign(car, { s: solo.s, u: solo.u, speed: 0 }); run.update(STOP_SECONDS, car);
+    Object.assign(car, { s: run.target.s, u: run.target.u }); run.update(STOP_SECONDS, car);
+    // (with any goal bonus it earned)
+    assert.ok(run.cash > 0); return run.cash + run.goalCash;
+  };
+  const first = deliver();
+  assert.equal(run.career.earnings, first); assert.equal(new TaxiCareer(disk).earnings, first, 'saved as it is paid');
+  // Left for another mode: unrecorded, but the fare still counts
+  run.stop();
+  assert.equal(new TaxiCareer(disk).earnings, first); assert.equal(new TaxiCareer(disk).shifts, 0);
+  // Finished, the shift adds what it paid only once, and the results still name the promotion
+  run.career.earnings = DRIVER_RANKS[1].earnings - 1; run.career.save();
+  const second = deliver(); run.finish();
+  assert.equal(run.career.earnings, DRIVER_RANKS[1].earnings - 1 + second); assert.equal(run.career.shifts, 1);
+  assert.equal(run.summary.promoted, true); assert.equal(run.summary.before.id, 'rookie');
+});
+
+test('two tabs on one career keep both tabs\' earnings', () => {
+  const disk = storage(), a = new TaxiCareer(disk), b = new TaxiCareer(disk);
+  a.earn(500); b.earn(300);
+  assert.equal(b.earnings, 800); assert.equal(new TaxiCareer(disk).earnings, 800);
+});
+
 test('the fleet keeps a livery, but only one the career has unlocked', () => {
   const disk = storage(), fleet = new TaxiFleet(disk), career = new TaxiCareer(disk);
   assert.equal(fleet.livery, 'yellow'); assert.equal(fleet.liveryColor, null);
