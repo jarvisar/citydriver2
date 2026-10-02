@@ -74,7 +74,7 @@ The controller layout is the one most driving games use (Need for Speed Heat, Bu
 | Camera | V | B / Circle |
 | Pause | P / Escape (Escape also frees the mouse) | Start / Menu |
 | Reset car (−5 seconds in a run) | R | D-pad Down |
-| Garage / Taxi fleet | C / G | Pause menu |
+| Garage (cars, cabs and liveries) | C / G | Pause menu |
 | Autodrive (free drive) | H | D-pad Up |
 | Get out / get in (free drive), end a shift or run (press twice) | E, then E again to jump out | Y / Triangle, then again to jump out |
 | Walk (on foot) | W A S D / arrows | Left stick |
@@ -193,3 +193,5 @@ Pushes to `main` are tested and deployed to GitHub Pages at `citydriver2.jarvisa
 ## License
 
 The map generator in `src/mapgen/` is a port of MapGenerator by ProbableTrain and is licensed under the GNU Lesser General Public License v3.0. See `src/mapgen/COPYING.LESSER`.
+
+The Oswald font in `src/fonts/` is by The Oswald Project Authors and is licensed under the SIL Open Font License 1.1. See `src/fonts/OFL.txt`.

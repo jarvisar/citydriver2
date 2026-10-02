@@ -26,27 +26,29 @@
       .loading {
         position: fixed; inset: 0; z-index: 8;
         display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
-        background: #20323d; color: #e9f0ef;
-        font: 12px 'Segoe UI', Arial, sans-serif; letter-spacing: .3px;
+        background: radial-gradient(130% 95% at 50% 30%, #2b363e, #0c1013); color: #f4f1e6;
+        font: bold 13px 'Helvetica Neue', Helvetica, Arial, sans-serif; letter-spacing: .3px; text-shadow: 0 -1px 0 #000;
         transition: opacity .25s, visibility 0s .25s;
       }
       .loading.loaded { opacity: 0; visibility: hidden; pointer-events: none; }
-      .loading-spinner {
-        box-sizing: border-box; width: 20px; height: 20px;
-        border: 2px solid #e9f0ef26; border-top-color: #e9f0ef; border-radius: 50%;
-        animation: loading-spin .9s linear infinite;
+      /* A striped bar that runs while the city is built, as progress bars did */
+      .loading-bar {
+        box-sizing: border-box; width: 180px; height: 16px; border: 1px solid #8f6a00; border-radius: 8px;
+        background: linear-gradient(-45deg, #ffffff47 25%, #fff0 25% 50%, #ffffff47 50% 75%, #fff0 75%) 0 0 / 20px 20px, linear-gradient(#ffe983, #f4b400);
+        box-shadow: inset 0 1px 0 #ffffffa6, 0 0 0 4px #00000066, 0 0 0 5px #ffffff14;
+        animation: loading-stripes .7s linear infinite;
       }
-      .loading.loaded .loading-spinner { animation: none; }
-      @keyframes loading-spin { to { transform: rotate(360deg); } }
+      .loading.loaded .loading-bar { animation: none; }
+      @keyframes loading-stripes { to { background-position: 20px 0, 0 0; } }
       @media (prefers-reduced-motion: reduce) {
         .loading { transition: none; }
-        .loading-spinner { animation: none; }
+        .loading-bar { animation: none; }
       }
     </style>
     <noscript>
       <style>
         .loading { display: none; }
-        noscript h1, noscript p { max-width: 640px; margin: 16px; color: #e9f0ef; font-family: 'Segoe UI', Arial, sans-serif; }
+        noscript h1, noscript p { max-width: 640px; margin: 16px; color: #e9f0ef; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
       </style>
     </noscript>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -71,7 +73,7 @@
   </head>
   <body>
     <main id="app">
-      <div id="loading" class="loading" role="status"><span class="loading-spinner" aria-hidden="true"></span><span id="loading-status">Loading Citydriver…</span></div>
+      <div id="loading" class="loading" role="status"><span class="loading-bar" aria-hidden="true"></span><span id="loading-status">Loading Citydriver…</span></div>
       <noscript>
         <h1>Citydriver 2</h1>
         <p>A free 3D taxi driving game built with Three.js. Every visit generates a new island city with a harbour, a river, parks and six districts. Pick up passengers and get them to their stop before time runs out, or wreck the city in a demolition truck. Citydriver 2 needs JavaScript and WebGL to run.</p>
@@ -125,7 +127,7 @@
             <div id="taxi-result-goals" class="taxi-result-goals"></div>
             <div id="taxi-result-career" class="taxi-result-career" hidden><div class="taxi-result-heading"><span id="taxi-career-rank">Rookie</span><span id="taxi-career-next"></span></div><progress id="taxi-career-progress" max="1" value="0"></progress><small id="taxi-career-livery"></small></div>
             <p class="taxi-result-footer"><span id="taxi-result-best">Best $0</span><span id="taxi-result-bank"></span></p>
-            <button type="button" id="taxi-retry">Next shift</button><button type="button" id="taxi-keep">Keep driving</button><button type="button" id="taxi-fleet-results" data-open-fleet>Taxi fleet</button>
+            <button type="button" id="taxi-retry">Next shift</button><button type="button" id="taxi-keep">Keep driving</button><button type="button" id="taxi-garage-results" aria-haspopup="dialog">Garage</button>
           </div>
         </div>
       </section>
@@ -179,7 +181,6 @@
                 <button type="button" id="end-run" class="panel-button"><span>End shift</span></button>
                 <button type="button" id="switch-mode" class="panel-button"><span>Free drive</span></button>
                 <button type="button" id="other-run" class="panel-button"><span>Demolition</span></button>
-                <button type="button" id="pause-fleet" class="panel-button" data-open-fleet aria-haspopup="dialog"><span>Taxi fleet</span><span class="panel-button-value">Upgrade / select</span></button>
                 <button type="button" id="change-car" class="panel-button" aria-haspopup="dialog" title="Garage (G)"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3.5 16h17v-4.2l-1.6-4A2 2 0 0 0 17 6.5H7a2 2 0 0 0-1.9 1.3l-1.6 4V16Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M3.5 11.8h17M4.8 16v1.8M19.2 16v1.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span class="panel-button-label">Garage</span><span id="current-car" class="panel-button-value"></span></button>
                 <button type="button" id="autodrive" class="panel-button panel-toggle" aria-pressed="false" title="Autodrive (H / D-pad Up while driving)"><span class="panel-button-label">Autodrive</span><span class="panel-switch" aria-hidden="true"></span></button>
                 <button type="button" id="traffic" class="panel-button panel-toggle" aria-pressed="true"><span class="panel-button-label">Traffic</span><span class="panel-switch" aria-hidden="true"></span></button>
@@ -330,19 +331,6 @@
             </div>
           </div>
         </section>
-      </dialog>
-      <dialog id="taxi-fleet-dialog" aria-labelledby="taxi-fleet-heading" aria-describedby="fleet-note">
-        <div class="chooser-heading"><div><span class="eyebrow">BUILD YOUR FLEET</span><h2 id="taxi-fleet-heading">A faster way to fare.</h2></div><button type="button" id="close-fleet" class="icon-button" aria-label="Close taxi fleet"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
-        <div class="fleet-summary"><p id="fleet-note"></p><div class="fleet-wallet"><span>Fleet balance</span><strong id="fleet-balance">$0</strong></div></div>
-        <div class="taxi-fleet-cards"></div>
-        <section class="fleet-livery-shop" aria-labelledby="fleet-livery-heading">
-          <div class="fleet-livery-heading"><h3 id="fleet-livery-heading">Livery</h3><span id="fleet-livery-name" role="status"></span></div>
-          <div id="fleet-liveries" class="paint-swatches fleet-liveries" role="radiogroup" aria-labelledby="fleet-livery-heading"></div>
-          <p id="fleet-career" class="fleet-career"></p>
-        </section>
-        <p class="fleet-footer">Same fares. Faster cabs. Earn more by fitting more trips into each run.<br>Test drive any cab from the <b>Garage</b> in free drive.</p>
-        <p id="fleet-feedback" role="status" aria-live="polite"></p>
-        <p id="fleet-save" hidden>Saving is unavailable. Your fleet is kept for this visit only.</p>
       </dialog>
       <div id="error" class="error" hidden><h2>Unable to start the game</h2><p>WebGL 2 required. Update your browser and enable hardware acceleration.</p><button onclick="location.reload()">Try again</button></div>
     </main>

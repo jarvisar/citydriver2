@@ -78,16 +78,20 @@ try {
       check(game.carId === 'taxi', 'car command applies without a click');
       await garageClosed;
       check(game.paused && game.currentMenuModel().id === 'pause', 'picking a car restores the pause menu');
-      await row('taxi').activate(); await game.action('pause'); await row('fleet').activate();
+      // (the cabs are the garage's too)
+      await row('taxi').activate(); await game.action('pause'); await row('garage').activate();
       game.taxi.fleet.credit(10000);
-      document.querySelector('#fleet-balance').textContent = '$999999';
+      document.querySelector('#garage-wallet').textContent = '$999999';
+      document.querySelector('[data-car="taxiGT"]').disabled = true;
       const cab = game.currentMenuModel().items.find(item => item.id === 'taxiGT');
-      document.querySelector('[data-fleet-car="taxiGT"]').disabled = true;
-      check(!cab.disabled && !game.currentMenuModel().subtitle.includes('999999'), 'fleet state ignores desktop balance and disabled buttons');
-      cab.activate(); check(game.taxi.fleet.balance === 0 && game.taxi.fleet.selected === 'taxiGT', 'fleet command buys the cab');
-      check(game.vehicle.carId === 'taxi', 'purchases still apply next run');
-      const fleetClosed = closed('taxi-fleet-dialog'); await row('back').activate(); await fleetClosed;
-      check(game.paused && game.currentMenuModel().id === 'pause', 'fleet restores pause');
+      check(!cab.disabled && !game.currentMenuModel().subtitle.includes('999999'), 'garage state ignores desktop balance and disabled buttons');
+      check(game.currentMenuModel().items.some(item => item.group === 'Cab livery'), 'the cabs\' liveries are in the garage');
+      cab.activate(); check(game.currentMenuModel().id === 'car-offer', 'an unowned cab opens its offer');
+      const cabBought = closed('car-dialog');
+      game.currentMenuModel().items.find(item => item.id === 'offer-buy').activate(); await cabBought;
+      check(game.taxi.fleet.balance === 0 && game.taxi.fleet.selected === 'taxiGT' && game.vehicle.carId === 'taxiGT', 'a cab bought in free drive is driven, and drives the shifts');
+      await game.action('pause');
+      check(game.paused && game.currentMenuModel().id === 'pause', 'back to the pause menu');
       // The shift starts with its first fare: the cab stopped in a ring
       const fare = game.taxi.customers.find(customer => customer.id !== game.taxi.blockedPickup?.id);
       Object.assign(game.vehicle, { s: fare.s, u: fare.u, heading: fare.heading, speed: 0 }); game.vehicle.update(0, {});

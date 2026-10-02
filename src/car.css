@@ -85,6 +85,23 @@ body[data-journey=city] .paint-shop { background: #fff6; }
 /* The garage's sections: cabs, cars, specials and aircraft */
 #garage-sections > .garage-subheading { margin-top: 20px; }
 #garage-sections > .garage-subheading:first-child { margin-top: 0; }
+/* In a taxi shift the garage is just the cabs and their liveries, for the next shift */
+#car-dialog[data-shift=true] :is(#paint-shop, #garage-sections > [data-group]:not([data-group=Cabs])) { display: none; }
+/* The cabs' liveries, under their heading. Rank unlocks them, so a locked one
+   stays in view, dimmed, as the road ahead. */
+.garage-livery { margin: 0 0 12px; padding: 12px 14px; border: 1px solid var(--city-edge); border-radius: 6px; background: #151b20; box-shadow: inset 0 2px 5px #00000099, 0 1px 0 #ffffff12; }
+.garage-livery-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 2px 12px; margin: 0 0 8px; }
+.garage-livery-heading > span:first-child { color: var(--city-gold); font-family: var(--city-display); font-size: 13px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; text-shadow: var(--city-engrave); }
+#garage-livery-name { color: var(--city-muted); font-size: 12px; }
+.garage-livery-swatch { min-width: 44px; min-height: 44px; }
+.garage-livery-swatch .paint-chip { width: 30px; height: 30px; }
+.garage-livery-swatch[data-locked=true] { cursor: default; }
+.garage-livery-swatch[data-locked=true] .paint-chip { outline: 1px dashed #ffffff73; outline-offset: 2px; }
+.garage-livery-note { margin: 8px 0 0; color: var(--city-muted); font-size: 12px; line-height: 1.5; }
+/* The shift's cab wears a taxi-yellow tag (the fleet is the taxi's, in every mode) */
+.car-card[data-shift-cab=true][data-owned=true] .car-price {
+  background: var(--city-gloss), linear-gradient(#ffe983, #f4b400); border-color: #8f6a00; color: #17262f; text-shadow: var(--city-emboss);
+}
 
 /* The balance and what is next to buy, under the garage's title */
 .garage-heading { min-width: 0; }
@@ -93,32 +110,41 @@ body[data-journey=city] .paint-shop { background: #fff6; }
 .garage-wallet span { color: var(--city-muted); }
 /* A car the fleet doesn't own wears its price, in the accent once it can be bought */
 .car-card { position: relative; }
-.car-price { position: absolute; top: 9px; right: 9px; z-index: 1; padding: 3px 8px; border-radius: 6px; background: var(--city-recessed); color: var(--city-muted); font-size: 11px; font-weight: 700; letter-spacing: .2px; }
-.car-card[data-affordable=true] .car-price { background: var(--city-accent); color: var(--city-on-accent); }
+/* (price tags are glossy stickers on the showroom glass) */
+.car-price {
+  position: absolute; top: 9px; right: 9px; z-index: 1; padding: 2px 7px; border: 1px solid var(--city-edge); border-radius: 4px;
+  background: linear-gradient(#ffffff1f, #ffffff00 50%), linear-gradient(#262f36, #12181c); color: var(--city-muted);
+  box-shadow: inset 0 1px 0 #ffffff26, 0 1px 3px #000000b3; text-shadow: var(--city-engrave);
+  font-family: var(--city-display); font-size: 12px; font-weight: 600; letter-spacing: .5px;
+}
+.car-card[data-affordable=true] .car-price { background: var(--city-accent-fill); border-color: var(--city-accent-edge); color: var(--city-on-accent); box-shadow: inset 0 1px 0 #ffffffa6, 0 1px 3px #000000b3; text-shadow: var(--city-emboss); }
 
 .garage-heading-actions { display: flex; flex-shrink: 0; align-items: center; gap: 8px; }
 /* An unowned car's offer, in the cards' place: its portrait and price, and
    buy, test drive or save for it */
 .garage-offer { padding-bottom: 4px; }
-.offer-back { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 14px 0 8px; border: 1px solid var(--city-line); border-radius: var(--city-control-radius); background: var(--city-raised); color: var(--city-text); font-size: 12px; font-weight: 650; }
-.offer-back:hover { background: var(--city-hover); }
+.offer-back { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 14px 0 8px; border: 1px solid var(--city-edge); border-radius: var(--city-control-radius); background: var(--city-button-fill); box-shadow: var(--city-bevel); color: var(--city-text); text-shadow: var(--city-engrave); font-size: 12px; font-weight: 700; }
+.offer-back:hover { background: var(--city-button-hover); }
+.offer-back:active { background: var(--city-button-down); box-shadow: var(--city-pressed); }
 .offer-back svg { width: 18px; height: 18px; }
-.offer-body { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 26px; align-items: center; padding: 20px 22px; border: 1px solid var(--city-line); border-radius: 12px; background: var(--city-raised); }
-.offer-art .car-art { display: block; width: 100%; height: auto; background: radial-gradient(ellipse at center, #ffffff0c, transparent 70%); }
+.offer-body { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 26px; align-items: center; padding: 20px 22px; border: 1px solid var(--city-edge); border-radius: 6px; background: linear-gradient(#3a4650, #232b32); box-shadow: inset 0 1px 0 var(--city-shine), 0 2px 6px #00000073; }
+.offer-art .car-art { display: block; width: 100%; height: auto; border-radius: 4px; }
 .offer-copy .garage-subheading { display: block; margin: 0; }
-.offer-copy h3 { margin: 4px 0 2px; font-size: 22px; font-weight: 700; }
-.offer-price { display: block; color: var(--city-accent-soft); font-size: 18px; font-weight: 800; }
+.offer-copy h3 { margin: 4px 0 2px; font-family: var(--city-display); font-size: 26px; font-weight: 600; letter-spacing: .3px; text-shadow: var(--city-engrave); }
+.offer-price { display: block; color: var(--city-accent-soft); font-family: var(--city-display); font-size: 22px; font-weight: 600; text-shadow: 0 0 9px var(--city-accent-glow); }
 .offer-copy .car-meters { max-width: none; }
 .garage-offer progress { display: block; width: 100%; height: 6px; margin: 16px 0 6px; }
 .offer-progress { margin: 0; color: var(--city-muted); font-size: 12px; }
 .offer-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
-.offer-actions button, .offer-goal { min-height: 44px; padding: 8px 10px; border: 1px solid var(--city-line); border-radius: var(--city-control-radius); background: var(--city-panel); color: var(--city-text); font-size: 13px; font-weight: 700; }
-.offer-actions button:hover:not(:disabled), .offer-goal:hover { background: var(--city-hover); }
-.offer-actions button[data-primary=true] { background: var(--city-accent); border-color: var(--city-accent); color: var(--city-on-accent); }
-.offer-actions button[data-primary=true]:hover { background: var(--city-accent-hover); }
-.offer-actions button:disabled { background: var(--city-recessed); color: var(--city-muted); opacity: .75; cursor: default; }
+.offer-actions button, .offer-goal { min-height: 44px; padding: 8px 10px; border: 1px solid var(--city-edge); border-radius: var(--city-control-radius); background: var(--city-button-fill); box-shadow: var(--city-bevel); color: var(--city-text); text-shadow: var(--city-engrave); font-size: 13px; font-weight: 700; }
+.offer-actions button:hover:not(:disabled), .offer-goal:hover { background: var(--city-button-hover); }
+.offer-actions button:active:not(:disabled), .offer-goal:active { background: var(--city-button-down); box-shadow: var(--city-pressed); }
+.offer-actions button[data-primary=true] { background: var(--city-accent-fill); border-color: var(--city-accent-edge); color: var(--city-on-accent); box-shadow: inset 0 1px 0 #ffffffa6, 0 1px 3px #00000080; text-shadow: var(--city-emboss); }
+.offer-actions button[data-primary=true]:hover:not(:disabled) { background: var(--city-accent-hover-fill); }
+.offer-actions button[data-primary=true]:active:not(:disabled) { background: linear-gradient(var(--city-accent-bottom), var(--city-accent-top)); box-shadow: inset 0 2px 5px #00000066; }
+.offer-actions button:disabled { background: var(--city-recessed); color: var(--city-muted); border-color: var(--city-edge); box-shadow: var(--city-well); text-shadow: none; opacity: .75; cursor: default; }
 .offer-goal { width: 100%; margin-top: 8px; font-weight: 600; }
-.offer-goal[aria-pressed=true] { border-color: var(--city-gold); color: var(--city-gold); }
+.offer-goal[aria-pressed=true] { color: var(--city-gold); background: var(--city-button-down); box-shadow: var(--city-pressed); }
 .offer-note { margin: 10px 0 0; color: var(--city-muted); font-size: 12px; line-height: 1.5; }
 @media (max-width: 600px) {
   .offer-body { grid-template-columns: 1fr; gap: 6px; padding: 14px; }
@@ -126,7 +152,7 @@ body[data-journey=city] .paint-shop { background: #fff6; }
 }
 /* (side by side, a 320px phone breaks both labels in two) */
 @media (max-width: 380px) { .offer-actions { grid-template-columns: 1fr; } }
-.car-card[data-owned=true] .car-price { background: none; box-shadow: inset 0 0 0 1px var(--city-line); font-weight: 600; }
+.car-card[data-owned=true] .car-price { background: linear-gradient(#ffffff59, #ffffff00 50%), linear-gradient(#a8eaa9, #4fae58); border-color: #1f5a27; color: #10230f; text-shadow: var(--city-emboss); }
 @media (min-width: 601px) { .offer-art .car-art { max-width: 420px; margin: 0 auto; } }
 /* A colour costs money, so one the balance can't cover is greyed out */
 .paint-swatch:disabled { opacity: .35; cursor: default; }

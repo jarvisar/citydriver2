@@ -1,6 +1,6 @@
 // The headset's menus and HUD, through Meta's WebXR emulator (IWER, the dev
 // server's `?xr` hook): enters VR, walks the title, a taxi run, the pause
-// menu, the city map, the fleet, the results, free drive (and out of the car on foot), the garage, and
+// menu, the city map, the garage in a shift, the results, free drive (and out of the car on foot), the garage, and
 // checks the game's state at each step. Saves the headset's view, a close-up
 // at about a Quest 3's sharpness and each panel's own canvas.
 // node scripts/vr-review.mjs [output directory]   (STEREO=1 draws both eyes)
@@ -148,9 +148,9 @@ try {
   await press('right', 'b-button');
   now = await state();
   check('B returns to the pause menu, on the row that opened the map', now.menu === 'pause' && now.selected === 'City map', now.selected);
-  await aim('right', 'Taxi fleet'); await press('right', 'trigger');
-  now = await shot('10-fleet');
-  check('the taxi fleet opens', now.menu === 'taxi-fleet-dialog');
+  await aim('right', 'Garage'); await press('right', 'trigger');
+  now = await shot('10-shift-garage');
+  check('in a shift the garage opens on the cabs', now.menu === 'car-dialog');
   await press('right', 'b-button');
   await aim('right', 'End shift'); await press('right', 'trigger'); await wait(300);
   check('End shift opens the results', (await state()).menu === 'taxi-results');

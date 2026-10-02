@@ -4,13 +4,15 @@
 /* On the title, Demolition is a main action beside the taxi run's, as big,
    in its own orange whatever the page's accent. (In a headset's browser,
    where Enter VR leads, it steps back with Start run, keeping the crane.) */
-#app #welcome #demolition:not(.menu-secondary) { margin-top: 14px; color: #17262f; background: #ff9433; border-color: #ff9433; }
-#app #welcome #demolition:not(.menu-secondary):hover { background: #ffb46e; border-color: #ffb46e; }
+#app #welcome #demolition:not(.menu-secondary) { margin-top: 14px; color: #17262f; background: var(--city-gloss), linear-gradient(#ffc185, #ea730e); border-color: #8e4405; }
+#app #welcome #demolition:not(.menu-secondary):hover { background: var(--city-gloss), linear-gradient(#fffbe9, #ffb46e); box-shadow: inset 0 1px 0 #ffffffcc, 0 0 0 3px #ffffff1a, 0 2px 10px #ff94338c; }
+#app #welcome #demolition:not(.menu-secondary):active { background: linear-gradient(#ea730e, #ffc185); }
 #welcome #demolition:not(.menu-secondary) .demolition-icon { width: 43px; height: 43px; flex-shrink: 0; }
 #app #welcome #demolition.menu-secondary .demolition-icon { color: #ff9433; }
 /* Free drive the same, in its teal */
-#app #welcome #free-drive:not(.menu-secondary) { margin-top: 14px; color: #17262f; background: #5fd0c0; border-color: #5fd0c0; }
-#app #welcome #free-drive:not(.menu-secondary):hover { background: #8fe0d4; border-color: #8fe0d4; }
+#app #welcome #free-drive:not(.menu-secondary) { margin-top: 14px; color: #17262f; background: var(--city-gloss), linear-gradient(#a4eade, #2fab9a); border-color: #1a6a5f; }
+#app #welcome #free-drive:not(.menu-secondary):hover { background: var(--city-gloss), linear-gradient(#f2fffc, #8fe0d4); box-shadow: inset 0 1px 0 #ffffffcc, 0 0 0 3px #ffffff1a, 0 2px 10px #5fd0c08c; }
+#app #welcome #free-drive:not(.menu-secondary):active { background: linear-gradient(#2fab9a, #a4eade); }
 #welcome #free-drive:not(.menu-secondary) .free-icon { width: 43px; height: 43px; flex-shrink: 0; }
 #app #welcome #free-drive.menu-secondary .free-icon { color: #5fd0c0; }
 @media (max-height: 700px) {
@@ -47,7 +49,7 @@ body[data-mode=demolition] .taxi-hud[data-overtime=true] .taxi-clock-box > span 
 
 /* The results card wears a strip of hazard tape along its top. */
 #app #demolition-results .taxi-result-card {
-  background: repeating-linear-gradient(-45deg, var(--city-accent) 0 10px, var(--city-recessed) 10px 20px) top / 100% 7px no-repeat, var(--city-panel);
+  background: repeating-linear-gradient(-45deg, var(--city-accent) 0 10px, var(--city-recessed) 10px 20px) top / 100% 7px no-repeat, var(--city-panel-fill);
 }
 .taxi-result-stats li[data-bad=true] strong { color: #ff8a7a; }
 
@@ -58,9 +60,13 @@ body[data-mode=demolition] .taxi-hud[data-overtime=true] .taxi-clock-box > span 
 .demolition-score-list li > span:first-child { color: #9fb0b6; text-align: center; }
 .demolition-score-list strong { color: var(--city-text); font-weight: 700; text-align: left; }
 .demolition-score-list small { font-size: 11px; text-align: right; }
-.demolition-score-rank { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; background: #ffffff14; color: var(--city-text); font-size: 12px; font-weight: 800; }
+.demolition-score-rank {
+  display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--city-edge); border-radius: 5px;
+  background: var(--city-button-fill); box-shadow: var(--city-bevel); color: var(--city-text); text-shadow: var(--city-engrave);
+  font-family: var(--city-display); font-size: 13px; font-weight: 600;
+}
 .demolition-score-list li[data-current=true] strong { color: var(--city-accent); }
-.demolition-score-list li[data-current=true] .demolition-score-rank { background: var(--city-accent); color: var(--city-on-accent); }
+.demolition-score-list li[data-current=true] .demolition-score-rank { background: var(--city-accent-fill); border-color: var(--city-accent-edge); color: var(--city-on-accent); box-shadow: inset 0 1px 0 #ffffffa6, 0 1px 2px #00000073; text-shadow: var(--city-emboss); }
 .demolition-score-list .demolition-score-empty { display: block; font-size: 12px; }
 #scores-panel .demolition-score-list li:first-child { border-top: 0; }
 @media (max-height: 700px) {

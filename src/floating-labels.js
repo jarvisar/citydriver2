@@ -39,11 +39,12 @@ export class FloatingLabels {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.lineJoin = 'round';
     ctx.strokeStyle = '#17262f'; ctx.fillStyle = colour;
+    // (the HUD's condensed capitals, city-theme.css)
     if (caption) {
-      ctx.font = "800 38px 'Segoe UI', Arial, sans-serif"; ctx.lineWidth = 9;
+      ctx.font = "600 42px Oswald, 'Arial Narrow', Arial, sans-serif"; ctx.lineWidth = 9;
       ctx.strokeText(caption, 256, 50, 500); ctx.fillText(caption, 256, 50, 500);
     }
-    ctx.font = "900 88px 'Segoe UI', Arial, sans-serif"; ctx.lineWidth = 14;
+    ctx.font = "700 96px Oswald, 'Arial Narrow', Arial, sans-serif"; ctx.lineWidth = 14;
     ctx.strokeText(amount, 256, 138, 500); ctx.fillText(amount, 256, 138, 500);
     label.map.needsUpdate = true;
     // (stacked over any others still rising, up to four high)

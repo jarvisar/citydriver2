@@ -71,7 +71,7 @@ body[data-controller=true] .pause-overlay button:focus { outline: 2px solid var(
 .chooser { width: min(930px, calc(100% - var(--ui-left) - var(--ui-right))); max-height: calc(100% - var(--ui-top) - var(--ui-bottom)); padding: 20px; overscroll-behavior: contain; scrollbar-width: thin; }
 .chooser-heading { position: sticky; top: -20px; z-index: 1; padding: 4px 0; background: #f6f5ea; }
 /* Focus moved by a controller or the keyboard scrolls clear of the pinned heading. */
-:is(.chooser, #taxi-fleet-dialog) { scroll-padding-block: 80px 16px; }
+.chooser { scroll-padding-block: 80px 16px; }
 body[data-journey=city] .chooser-heading { background: #eef1f4; }
 .chooser-options { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .chooser-card { min-width: 0; }

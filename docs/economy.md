@@ -80,7 +80,7 @@ Paint costs $100 a colour, the rainbow included. Going back to each car's own co
 
 The Konami code (up, up, down, down, left, right, left, right, B, A, or the same on a controller's D-pad) pays $10,000 once per save and adds Rainbow to the paint swatches. Entering it again only reminds you where the paint is. The $10,000 goes into the balance but not toward the driver rank.
 
-The Taxi fleet dialog still sells cabs and liveries. It's the same ownership and the same prices as the garage.
+The cabs and their liveries are in the garage too (it replaced the separate Taxi fleet dialog). During a shift it shows only those, for the next shift.
 
 ## Old Saves
 

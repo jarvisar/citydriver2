@@ -83,10 +83,10 @@ The career saves lifetime shifts, fares, riders, groups, earnings, tips and goal
 | Ace | $75,000 |
 | City Legend | $150,000 |
 
-Each rank unlocks a livery in the taxi fleet.
+Each rank unlocks a cab livery in the garage.
 
 Records are kept for most fares in a shift, best combo, longest Speedy streak, most tips in a shift and longest shift. On the results screen, a tile turns gold when that shift beat the record. The first shift sets the records without marking them. The best cash score is saved separately with the licence under `citydriver-taxi-best`.
 
 ## Tests
 
-`npm test` covers the shift clock, overtime, special riders, drop-off zones, goal selection, goal completion, career totals, records, promotions, livery unlocks and group route penalties. With the dev server running, `npm run test:fleet` tests the results screen, the fleet dialog and goal bonuses in the browser.
+`npm test` covers the shift clock, overtime, special riders, drop-off zones, goal selection, goal completion, career totals, records, promotions, livery unlocks and group route penalties. With the dev server running, `npm run test:fleet` tests the results screen, the garage's cabs and goal bonuses in the browser.

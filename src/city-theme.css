@@ -1,34 +1,59 @@
-/* Citydriver's shared visual language. Layout stays in the component styles.
-   Slate panels come from the district HUD; the accent marks action/selection:
-   taxi yellow on a taxi run, site-work orange on a demolition run and
-   sea-glass teal in free drive (body[data-mode], below). */
+/* Citydriver's look, after the web apps and Chrome Experiments of about
+   2010-2014: gunmetal panels with a fine grain, bevelled buttons lit along
+   their top edge, glossy accents, inset wells for readouts, and condensed
+   capitals (Oswald) for headings, numbers and the big buttons. Layout stays
+   in the component styles. The accent marks the action or selection: taxi
+   yellow on a taxi run, site-work orange on a demolition run and sea-glass
+   teal in free drive (body[data-mode], below). */
+@font-face {
+  font-family: Oswald; font-weight: 400 700; font-display: swap;
+  src: url('./fonts/oswald-latin.woff2') format('woff2');
+}
 :root {
-  --city-panel: #263b45;
-  --city-glass: #263b45f2;
-  --city-raised: #304954;
-  --city-hover: #3b5662;
-  --city-recessed: #1b2d36;
-  --city-text: #f5f4e9;
-  --city-muted: #c4d3d8;
-  --city-line: #afc9d13d;
-  --city-accent: #ffd238;
-  --city-accent-hover: #ffe177;
-  /* the accent as light text on a dark panel */
-  --city-accent-soft: #fff1ad;
+  --city-panel: #28323a;
+  --city-glass: #28323af0;
+  --city-raised: #3b4751;
+  --city-hover: #4a5863;
+  --city-recessed: #12181c;
+  --city-edge: #080b0d;
+  --city-shine: #ffffff2b;
+  --city-text: #f4f1e6;
+  --city-muted: #b9c4cb;
+  --city-line: #ffffff1f;
   --city-gold: #f3d899;
   --city-on-accent: #17262f;
-  --city-radius: 16px;
-  --city-control-radius: 10px;
-  --city-shadow: 0 6px 24px #101e282b;
-  --city-font: 'Segoe UI', Arial, sans-serif;
+  --city-radius: 7px;
+  --city-control-radius: 5px;
+  --city-shadow: 0 2px 7px #00000080;
+  --city-font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --city-display: Oswald, 'Arial Narrow', 'Helvetica Neue', Arial, sans-serif;
+  /* light text pressed into a dark surface, and dark text on a light one */
+  --city-engrave: 0 -1px 0 #000000b3;
+  --city-emboss: 0 1px 0 #ffffff80;
+  --city-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23g)' opacity='.1'/%3E%3C/svg%3E");
 }
-body[data-mode=demolition] { --city-accent: #ff9433; --city-accent-hover: #ffb46e; --city-accent-soft: #ffd6ad; }
-body[data-mode=free] { --city-accent: #5fd0c0; --city-accent-hover: #8fe0d4; --city-accent-soft: #c4f1ea; }
-/* In a cab the fares are on offer (see TaxiRun.standby), and in the
-   demolition truck a run waits for its first hit, so free drive takes that
-   mode's accent until they get out or change car. */
-body[data-mode=free][data-standby=taxi] { --city-accent: #ffd238; --city-accent-hover: #ffe177; --city-accent-soft: #fff1ad; }
-body[data-mode=free][data-standby=demolition] { --city-accent: #ff9433; --city-accent-hover: #ffb46e; --city-accent-soft: #ffd6ad; }
+/* Each mode's accent: its flat colour, a lighter hover, a soft tint for
+   light text on a panel, and the top, bottom and edge of its gloss */
+body {
+  --city-accent: #ffd238; --city-accent-hover: #ffe177; --city-accent-soft: #fff1ad;
+  --city-accent-top: #ffe983; --city-accent-bottom: #f4b400; --city-accent-edge: #8f6a00;
+}
+body[data-mode=demolition], body[data-mode=free][data-standby=demolition] {
+  --city-accent: #ff9433; --city-accent-hover: #ffb46e; --city-accent-soft: #ffd6ad;
+  --city-accent-top: #ffc185; --city-accent-bottom: #ea730e; --city-accent-edge: #8e4405;
+}
+body[data-mode=free] {
+  --city-accent: #5fd0c0; --city-accent-hover: #8fe0d4; --city-accent-soft: #c4f1ea;
+  --city-accent-top: #a4eade; --city-accent-bottom: #2fab9a; --city-accent-edge: #1a6a5f;
+}
+/* In a cab the fares are on offer (see TaxiRun.standby), so free drive takes
+   the taxi's accent until they get out or change car. The demolition truck
+   does the same with its orange, above. */
+body[data-mode=free][data-standby=taxi] {
+  --city-accent: #ffd238; --city-accent-hover: #ffe177; --city-accent-soft: #fff1ad;
+  --city-accent-top: #ffe983; --city-accent-bottom: #f4b400; --city-accent-edge: #8f6a00;
+}
+/* (worked out on body, so each mode's accent reaches the gloss) */
 body, body[data-journey] {
   --ink: var(--city-text);
   --cream: var(--city-panel);
@@ -36,6 +61,18 @@ body, body[data-journey] {
   --action: var(--city-raised);
   --action-hover: var(--city-hover);
   --menu-ink: var(--city-text);
+  --city-hud-fill: var(--city-grain), linear-gradient(#3c4852f2, #192026f2);
+  --city-panel-fill: var(--city-grain), linear-gradient(#33404a, #1a2127);
+  --city-button-fill: linear-gradient(#4d5a65, #2c363e);
+  --city-button-hover: linear-gradient(#5d6b77, #37434c);
+  --city-button-down: linear-gradient(#232b31, #353f48);
+  --city-bevel: inset 0 1px 0 var(--city-shine), 0 1px 2px #00000073;
+  --city-pressed: inset 0 2px 6px #000000a6, 0 1px 0 #ffffff12;
+  --city-well: inset 0 1px 4px #000000d9, 0 1px 0 #ffffff17;
+  --city-gloss: linear-gradient(#ffffff66, #ffffff26 49%, #ffffff00 51%);
+  --city-accent-fill: var(--city-gloss), linear-gradient(var(--city-accent-top), var(--city-accent-bottom));
+  --city-accent-hover-fill: var(--city-gloss), linear-gradient(#fffbe9, var(--city-accent-hover));
+  --city-accent-glow: color-mix(in srgb, var(--city-accent) 55%, transparent);
   color: var(--city-text);
   background: var(--city-recessed);
   font-family: var(--city-font);
@@ -46,20 +83,21 @@ body, body[data-journey] {
 body[data-controller=true] #app :is(button, input, select):focus {
   outline: 3px solid var(--city-gold); outline-offset: 3px;
 }
-#app kbd { border-color: var(--city-line); background: #ffffff09; color: inherit; }
-
-/* HUD panels share a finish in both free drive and taxi mode. The stick's
-   caption is named apart: an id inside :is() would lend every class in the
-   list its weight, and the pause screen's plain location could not undo it. */
-#app :is(.city-hud, .drive-actions, .city-guide, .taxi-task, .taxi-dash, .controls, .location), #app #stick-help {
-  color: var(--city-text); background: var(--city-glass); border-color: var(--city-line);
-  box-shadow: var(--city-shadow); backdrop-filter: blur(12px);
+/* Keys are drawn as keycaps */
+#app kbd {
+  color: #2a3238; background: linear-gradient(#ffffff, #d6dce0); border: 1px solid #7d878e; border-bottom-color: #59636a;
+  border-radius: 3px; box-shadow: inset 0 1px 0 #ffffff, 0 1px 1px #00000080; text-shadow: 0 1px 0 #ffffff;
+  font-family: var(--city-font); font-weight: 700;
 }
-/* The city behind the panels moves every frame, so each blur is redrawn every
-   frame, a whole extra pass per panel on a phone. The glass is 95% opaque and
-   hides nearly all of it, so the lighter levels leave the blur out. */
-:root:is([data-graphics='smooth'], [data-graphics='basic']) #app :is(.city-hud, .drive-actions, .city-guide, .taxi-task, .taxi-dash, .controls, #stick-help, .location) {
-  backdrop-filter: none;
+
+/* HUD panels share a finish in both free drive and the runs. The stick's
+   caption is named apart: an id inside :is() would lend every class in the
+   list its weight, and the pause screen's plain location could not undo it.
+   No backdrop blur: the city moves every frame, so a blur is redrawn every
+   frame, and the panels are nearly opaque anyway. */
+#app :is(.city-hud, .drive-actions, .city-guide, .taxi-task, .taxi-dash, .controls, .location), #app #stick-help {
+  color: var(--city-text); background: var(--city-hud-fill); border: 1px solid var(--city-edge);
+  box-shadow: inset 0 1px 0 var(--city-shine), var(--city-shadow); backdrop-filter: none;
 }
 #app :is(.city-hud, .drive-actions, .city-guide, .taxi-task, .controls) { border-radius: var(--city-radius); }
 #app .drive-actions { padding: 3px; }
@@ -69,69 +107,121 @@ body[data-controller=true] #app :is(button, input, select):focus {
   #app .drive-actions { padding: 2px; }
   #app :is(.city-hud, .drive-actions) { min-height: 50px; }
 }
-/* and on a phone the view and pause buttons are round glass buttons of their
-   own, as most mobile racers have them, rather than a bar */
+/* and on a phone the view and pause buttons are round buttons of their own,
+   as most mobile racers have them, rather than a bar */
 @media (any-pointer: coarse) and (max-width: 760px), (any-pointer: coarse) and (max-height: 560px) {
-  #app .drive-actions { gap: 4px; min-height: 0; padding: 0; border: 0; background: none; box-shadow: none; backdrop-filter: none; }
-  #app .drive-actions button { width: 44px; height: 44px; border: 1px solid var(--city-line); border-radius: 50%; background: var(--city-glass); box-shadow: var(--city-shadow); }
+  #app .drive-actions { gap: 4px; min-height: 0; padding: 0; border: 0; background: none; box-shadow: none; }
+  #app .drive-actions button {
+    width: 44px; height: 44px; border: 1px solid var(--city-edge); border-radius: 50%;
+    background: radial-gradient(circle at 50% 0, #ffffff38, #ffffff00 62%), var(--city-hud-fill);
+    box-shadow: inset 0 1px 0 var(--city-shine), var(--city-shadow);
+  }
 }
 #app .city-hud, #app .city-hud-copy { min-width: 0; }
 #app :is(#city-location, #city-cash) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#app .drive-actions button { color: var(--city-text); border-radius: var(--city-control-radius); font-weight: 650; }
-#app .drive-actions button:hover { background: var(--city-hover); }
-#app .city-heading { color: var(--city-gold); border-color: #f3d89966; }
+#app .drive-actions button { color: var(--city-text); border-radius: var(--city-control-radius); font-weight: 700; text-shadow: var(--city-engrave); }
+#app .drive-actions button:hover { background: var(--city-button-hover); box-shadow: var(--city-bevel); }
+#app .drive-actions button:active { background: var(--city-button-down); box-shadow: var(--city-pressed); }
+#app .city-heading {
+  color: var(--city-gold); border: 1px solid var(--city-edge); font-family: var(--city-display); font-weight: 600;
+  background: radial-gradient(circle at 50% 20%, #56636d, #1a2025 70%); box-shadow: inset 0 1px 0 var(--city-shine), 0 1px 0 #ffffff14;
+}
+#app #city-location { font-family: var(--city-display); font-weight: 500; letter-spacing: 1px; text-transform: uppercase; }
 #app :is(#taxi-task-detail, #taxi-fares, #taxi-fare-status, #taxi-offer) { color: var(--city-muted); }
 #app #city-cash { color: var(--city-accent-soft); font-weight: 700; font-variant-numeric: tabular-nums; }
-#app .taxi-score { background: var(--city-glass); color: var(--city-text); }
 #app #taxi-stage { color: var(--city-accent); }
 #app .taxi-task[data-arriving=true] #taxi-task-detail { color: #c3f4bb; }
-#app .city-guide-header { background: var(--city-panel); }
 #app .city-guide[data-expanded=false] .city-guide-header { background: transparent; }
-#app #city-map-toggle { color: var(--city-text); border-radius: var(--city-control-radius); }
-#app #city-map-open { color: var(--city-gold); border-radius: var(--city-control-radius); }
-#app :is(#city-map-toggle, #city-map-open):hover { background: var(--city-hover); }
+#app :is(#city-map-toggle, #city-map-open) { color: var(--city-text); border-radius: var(--city-control-radius); text-shadow: var(--city-engrave); }
+#app #city-map-open { color: var(--city-gold); }
+/* (the street map's header in condensed letters: in Arial it ran out of room
+   for its fold button) */
+#app :is(#city-map-open, .city-guide-header > span) { font-family: var(--city-display); font-weight: 500; letter-spacing: .3px; }
+#app #city-map-open { padding-inline: 6px; font-size: 13px; }
+#app .city-guide-header > span { font-size: 13px; }
+#app :is(#city-map-toggle, #city-map-open):hover { background: var(--city-button-hover); box-shadow: var(--city-bevel); }
+/* The street map sits behind glass in a recessed bezel */
+#app #city-map { border: 1px solid var(--city-edge); border-radius: 4px; box-shadow: 0 1px 0 #ffffff17, 0 0 0 1px #00000040; }
 /* With a controller, the map button names the pad button that opens it. */
-body[data-controller=true] #app #city-map-open::before { content: 'VIEW'; margin-right: 6px; padding: 1px 5px; border: 1px solid var(--city-line); border-radius: 4px; font-size: 9px; letter-spacing: .5px; vertical-align: 1px; }
-#app #taxi-buttons button { border-radius: var(--city-control-radius); border-color: var(--city-line); }
-#app #taxi-buttons > button { color: var(--city-text); background: var(--city-glass); }
-#app #taxi-buttons[data-drifting=true] [data-drive-button=handbrake] { background: var(--city-hover); }
+body[data-controller=true] #app #city-map-open::before {
+  content: 'VIEW'; margin-right: 6px; padding: 1px 5px; border: 1px solid #59636a; border-radius: 3px;
+  color: #2a3238; background: linear-gradient(#ffffff, #d6dce0); text-shadow: none;
+  font: 700 9px var(--city-font); letter-spacing: .5px; vertical-align: 1px;
+}
 
-/* The circular steering target in slate rather than the base cream glass. */
-#app #touch-stick { background: #263b45b8; border-color: #afc9d170; opacity: 1; box-shadow: var(--city-shadow); }
-#app .stick-guide { border-color: #c4d3d84d; }
-#app .stick-thumb { background: var(--city-muted); border-color: #f5f4e970; box-shadow: 0 3px 10px #101e2859; }
-#app #touch-stick.active .stick-thumb { background: var(--city-accent); border-color: var(--city-accent-hover); }
-#app #stick-help { border: 1px solid var(--city-line); border-radius: var(--city-control-radius); }
-#app #welcome > .controller-hint { border: 1px solid var(--city-line); background: var(--city-glass); color: var(--city-text); }
+/* The touch stick: a dished socket and a glossy ball */
+#app #touch-stick {
+  background: radial-gradient(circle, #0a0e11d9 0 52%, #222a30d9 100%); border: 1px solid #000000; opacity: 1;
+  box-shadow: inset 0 3px 10px #000000cc, 0 0 0 3px #ffffff17, 0 3px 10px #00000080;
+}
+#app .stick-guide { border: 1px dashed #ffffff33; }
+#app .stick-thumb {
+  background: radial-gradient(circle at 50% 28%, #ffffff, #d0d7db 42%, #808c94); border: 1px solid #2b3339;
+  box-shadow: 0 4px 9px #000000b3, inset 0 -3px 4px #00000033;
+}
+#app #touch-stick.active .stick-thumb {
+  background: radial-gradient(circle at 50% 28%, #ffffff, var(--city-accent-top) 30%, var(--city-accent-bottom)); border-color: var(--city-accent-edge);
+}
+#app #stick-help { border-radius: var(--city-radius); }
+#app #welcome > .controller-hint { border: 1px solid var(--city-edge); background: var(--city-hud-fill); color: var(--city-text); box-shadow: inset 0 1px 0 var(--city-shine), var(--city-shadow); text-shadow: var(--city-engrave); }
 #app #stick-help .stick-help-line { opacity: 1; color: var(--city-muted); }
 #app #stick-help .dismiss-control-help { color: var(--city-muted); background: transparent; }
-#app #stick-help .dismiss-control-help:hover { color: var(--city-text); background: var(--city-hover); }
+#app #stick-help .dismiss-control-help:hover { color: var(--city-text); background: var(--city-button-hover); }
 
-/* Menus, pause settings and dialogs use the same palette as the HUD. */
-#app .pause-overlay, #app .taxi-results { background: #101e28df; color: var(--city-text); backdrop-filter: blur(10px); }
-#app :is(.pause-header h2, .garage-title, #taxi-fleet-heading, .error h2) {
-  font-family: var(--city-font); font-weight: 750; letter-spacing: -.6px; color: var(--city-text); text-shadow: none;
+/* Menus, pause settings and dialogs: the city dimmed under a vignette, then
+   panels like the HUD's */
+#app .pause-overlay, #app .taxi-results {
+  background: radial-gradient(130% 95% at 50% 30%, #0c1216b3, #04070af2); color: var(--city-text); backdrop-filter: none;
 }
-#app :is(.pause-header .location-copy, .pause-settings h3) { text-shadow: none; }
-#app .pause-header .location { background: none; border: 0; box-shadow: none; backdrop-filter: none; }
-#app :is(.pause-settings h3, .paint-shop h3, .garage-subheading) { color: var(--city-gold); font-weight: 750; opacity: 1; }
-#app :is(.chooser, #taxi-fleet-dialog, .taxi-result-card) {
-  color: var(--city-text); background: var(--city-panel); border: 1px solid var(--city-line);
-  border-radius: var(--city-radius); box-shadow: 0 18px 60px #07131d70;
+#app :is(.pause-header h2, .garage-title, .error h2) {
+  font-family: var(--city-display); font-weight: 600; letter-spacing: .5px; text-transform: uppercase;
+  color: var(--city-text); text-shadow: var(--city-engrave);
 }
-#app :is(.chooser, #taxi-fleet-dialog)::backdrop { background: #101e28d9; backdrop-filter: blur(8px); }
-#app :is(.chooser-heading, #taxi-fleet-dialog .chooser-heading) { background: var(--city-panel); }
-#app :is(.icon-button, .chooser-heading .icon-button, #taxi-fleet-dialog .icon-button) {
-  color: var(--city-text); background: var(--city-raised); border: 1px solid var(--city-line);
-  border-radius: var(--city-control-radius); box-shadow: none;
+#app :is(.pause-header .location-copy) { text-shadow: var(--city-engrave); }
+#app .pause-header .location { background: none; border: 0; box-shadow: none; }
+#app :is(.pause-settings h3, .paint-shop h3, .garage-subheading) {
+  color: var(--city-gold); font-family: var(--city-display); font-weight: 600; letter-spacing: 1.5px;
+  text-transform: uppercase; text-shadow: var(--city-engrave); opacity: 1;
 }
-#app .icon-button:hover { background: var(--city-hover); transform: none; }
+/* Each group of settings is a panel with its heading in a strip along the top */
+#app .pause-settings :is(.pause-panel, .graphics-panel) {
+  padding: 0 12px 12px; background: var(--city-panel-fill); border: 1px solid var(--city-edge);
+  border-radius: var(--city-radius); box-shadow: inset 0 1px 0 #ffffff1a, 0 3px 10px #00000080;
+}
+#app .pause-settings :is(.pause-panel, .graphics-panel) > h3 {
+  margin: 0 -12px 12px; padding: 9px 12px 8px; border-bottom: 1px solid var(--city-edge);
+  border-radius: var(--city-radius) var(--city-radius) 0 0;
+  background: linear-gradient(#ffffff14, #ffffff05); box-shadow: 0 1px 0 #ffffff0f;
+}
+#app :is(.chooser, .taxi-result-card) {
+  color: var(--city-text); background: var(--city-panel-fill); border: 1px solid var(--city-edge);
+  border-radius: 8px; box-shadow: inset 0 1px 0 #ffffff21, 0 0 0 1px #ffffff12, 0 16px 50px #000000bf;
+}
+#app .chooser::backdrop { background: radial-gradient(130% 95% at 50% 30%, #0c1216b3, #04070af2); backdrop-filter: none; }
+/* A dialog's heading is its title bar, edge to edge and pinned while it scrolls */
+#app .chooser { --chooser-pad: 20px; padding: var(--chooser-pad); }
+@media (max-width: 760px) { #app .chooser { --chooser-pad: 16px; } }
+#app .chooser > .chooser-heading {
+  top: calc(-1 * var(--chooser-pad)); z-index: 2;
+  margin: calc(-1 * var(--chooser-pad)) calc(-1 * var(--chooser-pad)) 16px; padding: 10px var(--chooser-pad);
+  background: var(--city-grain), linear-gradient(#4b5862, #2c363e 50%, #252e35 51%, #1d242a);
+  border-bottom: 1px solid var(--city-edge); border-radius: 7px 7px 0 0;
+  box-shadow: inset 0 1px 0 #ffffff2e, 0 1px 0 #ffffff0f, 0 3px 8px #00000059;
+}
+/* The close buttons are the round ones a lightbox had */
+#app :is(.icon-button, .chooser-heading .icon-button) {
+  color: var(--city-text); background: radial-gradient(circle at 50% 0, #ffffff40, #ffffff00 60%), var(--city-button-fill);
+  border: 2px solid #c9d1d6; border-radius: 50%; box-shadow: 0 2px 5px #000000a6;
+}
+#app .icon-button:hover { background: radial-gradient(circle at 50% 0, #ffffff4d, #ffffff00 60%), var(--city-button-hover); border-color: #ffffff; transform: none; }
+#app .icon-button:active { background: var(--city-button-down); }
 #app :is(.panel-button, .panel-toggle, .weather-setting, .graphics-levels button, .pwa-install-button) {
-  color: var(--city-text); border: 1px solid var(--city-line); background: var(--city-raised);
-  border-radius: var(--city-control-radius); box-shadow: none; backdrop-filter: none;
+  color: var(--city-text); border: 1px solid var(--city-edge); background: var(--city-button-fill);
+  border-radius: var(--city-control-radius); box-shadow: var(--city-bevel); text-shadow: var(--city-engrave); backdrop-filter: none;
 }
-#app :is(.panel-button, .panel-toggle, .graphics-levels button, .pwa-install-button):hover { background: var(--city-hover); }
-#app .panel-button:disabled { background: var(--city-recessed); color: var(--city-muted); opacity: .65; }
+#app :is(.panel-button, .panel-toggle, .graphics-levels button, .pwa-install-button):hover { background: var(--city-button-hover); }
+#app :is(.panel-button, .panel-toggle, .graphics-levels button, .pwa-install-button):active { background: var(--city-button-down); box-shadow: var(--city-pressed); }
+#app .panel-button:disabled { background: var(--city-recessed); color: var(--city-muted); box-shadow: var(--city-well); opacity: .7; }
 #app .pause-panel > :is(.panel-button, .weather-setting) + :is(.panel-button, .weather-setting) { margin-top: 6px; }
 #app :is(.panel-button-value, .graphics-toggle small, .audio-mixer-toggle small, .graphics-status, .weather-note,
   .audio-description, .audio-channel output, .pixel-density-control output, .paint-current, .paint-note,
@@ -139,65 +229,129 @@ body[data-controller=true] #app #city-map-open::before { content: 'VIEW'; margin
   color: var(--city-muted); opacity: 1;
 }
 #app #pause-overlay .pwa-install-help { color: var(--city-muted); opacity: 1; }
-#app :is(.graphics-settings, .audio-mixer, .paint-shop, .notebook-panel) {
-  color: var(--city-text); border-color: var(--city-line); background: var(--city-recessed);
+/* The drawers under Camera, Graphics and Audio settings, and the paint and
+   places lists, are wells sunk into their panel */
+#app :is(.graphics-settings, .audio-mixer, .paint-shop) {
+  color: var(--city-text); border: 1px solid var(--city-edge); background: #151b20; box-shadow: inset 0 2px 5px #00000099, 0 1px 0 #ffffff12;
 }
+#app .paint-shop { border-radius: 6px; }
+#app .notebook-panel { color: var(--city-text); }
 #app :is(.graphics-toggle, .audio-mixer-toggle)[aria-expanded=true] { border-radius: var(--city-control-radius) var(--city-control-radius) 0 0; }
-#app :is(.graphics-settings, .audio-mixer) { border-radius: 0 0 var(--city-control-radius) var(--city-control-radius); }
-#app .weather-setting select { color: var(--city-text); border-color: var(--city-line); background: var(--city-recessed); border-radius: 7px; }
-#app .panel-switch { border-color: #afc9d180; background: var(--city-recessed); }
-#app .panel-switch::after { background: var(--city-muted); }
-#app .panel-toggle[aria-pressed=true] .panel-switch { background: var(--city-accent); border-color: var(--city-accent); }
-#app .panel-toggle[aria-pressed=true] .panel-switch::after { background: var(--city-on-accent); }
-#app :is(.graphics-levels button[aria-checked=true], .audio-presets button[aria-pressed=true]) {
-  color: var(--city-on-accent); background: var(--city-accent); border-color: var(--city-accent); font-weight: 750;
+#app :is(.graphics-settings, .audio-mixer) { border-top: 0; border-radius: 0 0 var(--city-control-radius) var(--city-control-radius); }
+/* A pop-up menu, after the desktop's own: a bevelled button with arrows */
+#app .weather-setting select {
+  appearance: none; padding: 6px 30px 6px 10px; color: var(--city-text); text-shadow: var(--city-engrave);
+  border: 1px solid var(--city-edge); border-radius: 4px; box-shadow: var(--city-bevel);
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='14'%3E%3Cpath d='M1 5.5 5 1.5l4 4M1 8.5l4 4 4-4' fill='none' stroke='%23f4f1e6' stroke-width='1.6'/%3E%3C/svg%3E") no-repeat right 10px center / 10px 14px, var(--city-button-fill);
 }
-#app .audio-presets { background: var(--city-panel); }
-#app .audio-presets button { color: var(--city-muted); }
-#app .audio-presets button:hover { background: var(--city-hover); }
-#app .audio-presets button[aria-pressed=true]:hover { color: var(--city-on-accent); background: var(--city-accent-hover); }
+#app .weather-setting select:hover { background-color: transparent; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='14'%3E%3Cpath d='M1 5.5 5 1.5l4 4M1 8.5l4 4 4-4' fill='none' stroke='%23f4f1e6' stroke-width='1.6'/%3E%3C/svg%3E"), var(--city-button-hover); }
+#app .weather-setting option { color: var(--city-text); background: var(--city-panel); }
+/* Switches, after iOS 5's: a sunk track that fills with the accent, and a
+   glossy knob */
+#app .panel-switch {
+  width: 46px; height: 24px; border: 1px solid var(--city-edge); border-radius: 12px;
+  background: linear-gradient(#0c1013, #262e35); box-shadow: inset 0 1px 3px #000000cc, 0 1px 0 #ffffff1a;
+}
+#app .panel-switch::after {
+  top: 1px; left: 1px; width: 20px; height: 20px;
+  background: radial-gradient(circle at 50% 25%, #ffffff, #d5dbdf 55%, #a7b1b8); box-shadow: 0 1px 3px #000000b3, inset 0 -1px 1px #0000002e;
+}
+#app .panel-toggle[aria-pressed=true] .panel-switch {
+  background: linear-gradient(var(--city-accent-bottom), var(--city-accent-top)); border-color: var(--city-accent-edge);
+  box-shadow: inset 0 1px 3px #00000080, 0 1px 0 #ffffff1a;
+}
+#app .panel-toggle[aria-pressed=true] .panel-switch::after { transform: translateX(22px); background: radial-gradient(circle at 50% 25%, #ffffff, #e2e7ea 55%, #b2bbc1); }
+/* Segmented controls: the chosen segment lit in the accent and pressed in */
+#app :is(.graphics-levels button[aria-checked=true], .audio-presets button[aria-pressed=true]) {
+  color: var(--city-on-accent); background: linear-gradient(var(--city-accent-bottom), var(--city-accent-top));
+  border-color: var(--city-accent-edge); box-shadow: inset 0 2px 4px #00000059; text-shadow: var(--city-emboss); font-weight: 700;
+}
+#app .audio-presets { background: var(--city-recessed); border: 1px solid var(--city-edge); border-radius: var(--city-control-radius); box-shadow: var(--city-well); }
+#app .audio-presets button { color: var(--city-muted); border-radius: 3px; text-shadow: var(--city-engrave); }
+#app .audio-presets button:hover { color: var(--city-text); background: var(--city-button-hover); box-shadow: var(--city-bevel); }
+#app .audio-presets button[aria-pressed=true]:hover { color: var(--city-on-accent); background: linear-gradient(var(--city-accent), var(--city-accent-hover)); }
 #app :is(.graphics-slider, progress) { accent-color: var(--city-accent); }
+/* Sliders: a groove that fills with the accent and a glossy knob */
 #app .audio-channel input { --control-level: var(--audio-level, 0%); }
-#app :is(.audio-channel input, .graphics-slider) { --control-track: #afc9d138; appearance: none; background: transparent; cursor: pointer; }
-#app :is(.audio-channel input, .graphics-slider)::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--city-accent) var(--control-level), var(--control-track) var(--control-level)); }
-#app :is(.audio-channel input, .graphics-slider)::-webkit-slider-thumb { appearance: none; width: 16px; height: 16px; margin-top: -6px; border: 2px solid var(--city-recessed); border-radius: 50%; background: var(--city-accent); box-shadow: 0 0 0 1px var(--city-line); }
-#app :is(.audio-channel input, .graphics-slider)::-moz-range-track { height: 4px; border-radius: 2px; background: var(--control-track); }
-#app :is(.audio-channel input, .graphics-slider)::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--city-accent); }
-#app :is(.audio-channel input, .graphics-slider)::-moz-range-thumb { box-sizing: border-box; width: 16px; height: 16px; border: 2px solid var(--city-recessed); border-radius: 50%; background: var(--city-accent); }
+#app :is(.audio-channel input, .graphics-slider) { --control-track: #0b0f12; appearance: none; background: transparent; cursor: pointer; }
+#app :is(.audio-channel input, .graphics-slider)::-webkit-slider-runnable-track {
+  height: 6px; border-radius: 3px; box-shadow: inset 0 1px 2px #000000e6, 0 1px 0 #ffffff17;
+  background: linear-gradient(#ffffff40, #ffffff00) 0 0 / var(--control-level) 100% no-repeat, linear-gradient(to right, var(--city-accent) var(--control-level), var(--control-track) var(--control-level));
+}
+#app :is(.audio-channel input, .graphics-slider)::-webkit-slider-thumb {
+  appearance: none; width: 20px; height: 20px; margin-top: -7px; border: 1px solid #2b3339; border-radius: 50%;
+  background: radial-gradient(circle at 50% 25%, #ffffff, #d5dbdf 55%, #a2acb3); box-shadow: 0 2px 4px #000000b3;
+}
+#app :is(.audio-channel input, .graphics-slider)::-moz-range-track { height: 6px; border-radius: 3px; background: var(--control-track); box-shadow: inset 0 1px 2px #000000e6, 0 1px 0 #ffffff17; }
+#app :is(.audio-channel input, .graphics-slider)::-moz-range-progress { height: 6px; border-radius: 3px; background: linear-gradient(var(--city-accent-top), var(--city-accent-bottom)); }
+#app :is(.audio-channel input, .graphics-slider)::-moz-range-thumb {
+  box-sizing: border-box; width: 20px; height: 20px; border: 1px solid #2b3339; border-radius: 50%;
+  background: radial-gradient(circle at 50% 25%, #ffffff, #d5dbdf 55%, #a2acb3); box-shadow: 0 2px 4px #000000b3;
+}
+/* Progress bars, Bootstrap's: a sunk track and a striped, glossy bar */
+#app progress { appearance: none; border: 0; border-radius: 4px; background: var(--city-recessed); box-shadow: var(--city-well); overflow: hidden; }
+#app progress::-webkit-progress-bar { background: var(--city-recessed); border-radius: 4px; box-shadow: var(--city-well); }
+#app progress::-webkit-progress-value {
+  border-radius: 4px; background: linear-gradient(-45deg, #ffffff38 25%, #ffffff00 25% 50%, #ffffff38 50% 75%, #ffffff00 75%) 0 0 / 16px 16px,
+    linear-gradient(var(--city-accent-top), var(--city-accent-bottom));
+}
+#app progress::-moz-progress-bar {
+  border-radius: 4px; background: linear-gradient(-45deg, #ffffff38 25%, #ffffff00 25% 50%, #ffffff38 50% 75%, #ffffff00 75%) 0 0 / 16px 16px,
+    linear-gradient(var(--city-accent-top), var(--city-accent-bottom));
+}
 
-/* Shared primary and secondary actions; no cream gradients or pill buttons. */
+/* Primary actions are glossy, in the accent */
 #app :is(.start-button, .taxi-result-card button), #app #welcome .start-button {
-  color: var(--city-on-accent); background: var(--city-accent); border: 1px solid var(--city-accent);
-  border-radius: var(--city-control-radius); box-shadow: var(--city-shadow); font-weight: 750; text-shadow: none;
+  color: var(--city-on-accent); background: var(--city-accent-fill); border: 1px solid var(--city-accent-edge);
+  border-radius: 6px; box-shadow: inset 0 1px 0 #ffffffa6, 0 2px 5px #00000080; text-shadow: var(--city-emboss);
+  font-family: var(--city-display); font-weight: 600; letter-spacing: .5px; text-transform: uppercase;
 }
 #app :is(.start-button, .taxi-result-card button):hover, #app #welcome .start-button:hover {
-  color: var(--city-on-accent); background: var(--city-accent-hover); border-color: var(--city-accent-hover); transform: none;
+  color: var(--city-on-accent); background: var(--city-accent-hover-fill); border-color: var(--city-accent-edge); transform: none;
+  box-shadow: inset 0 1px 0 #ffffffcc, 0 0 0 3px #ffffff1a, 0 2px 10px var(--city-accent-glow);
+}
+#app :is(.start-button, .taxi-result-card button):active, #app #welcome .start-button:active {
+  background: linear-gradient(var(--city-accent-bottom), var(--city-accent-top)); box-shadow: inset 0 3px 6px #00000066, 0 1px 0 #ffffff1f; transform: none;
 }
 #app #welcome .start-button.menu-secondary, #app .taxi-result-card button + button {
-  color: var(--city-text); background: var(--city-panel); border-color: var(--city-line); box-shadow: var(--city-shadow);
+  color: var(--city-text); background: var(--city-button-fill); border-color: var(--city-edge); box-shadow: var(--city-bevel), 0 2px 5px #00000066; text-shadow: var(--city-engrave);
 }
-#app #welcome .start-button.menu-secondary:hover, #app .taxi-result-card button + button:hover { background: var(--city-hover); }
-#app :is(.chooser-card, .taxi-fleet-card) { color: var(--city-text); background: var(--city-raised); border-color: var(--city-line); border-radius: 12px; }
-#app .chooser-card:hover { background: var(--city-hover); border-color: var(--city-gold); transform: none; }
-#app .chooser-card[aria-current=true] { border-color: var(--city-accent); box-shadow: inset 0 3px var(--city-accent); }
-#app .chooser-current { color: var(--city-accent); }
-#app .paint-custom { border-color: var(--city-line); border-radius: var(--city-control-radius); }
-#app .paint-custom[data-active=true], #app .paint-swatch[aria-checked=true] { border-color: var(--city-accent); box-shadow: 0 0 0 2px var(--city-accent); }
-#app .car-meter-track { background: #afc9d138; }
-#app .car-meter-track > span { background: var(--city-gold); }
-#app .taxi-fleet-card[data-selected=true] { border-color: var(--city-accent); box-shadow: inset 0 3px var(--city-accent); }
-#app .taxi-fleet-card button { border-radius: var(--city-control-radius); }
-#app .notebook-stamp { color: var(--city-text); border-color: var(--city-line); }
-#app .notebook-place[data-found=true] .notebook-stamp { color: var(--city-on-accent); }
+#app #welcome .start-button.menu-secondary:hover, #app .taxi-result-card button + button:hover { background: var(--city-button-hover); box-shadow: var(--city-bevel), 0 2px 5px #00000066; }
+#app #welcome .start-button.menu-secondary:active, #app .taxi-result-card button + button:active { background: var(--city-button-down); box-shadow: var(--city-pressed); }
+#app .chooser-card {
+  color: var(--city-text); background: linear-gradient(#3a4650, #232b32); border: 1px solid var(--city-edge); border-radius: 6px;
+  box-shadow: inset 0 1px 0 var(--city-shine), 0 2px 6px #00000073;
+}
+#app .chooser-card:hover { background: linear-gradient(#475561, #29323a); border-color: var(--city-edge); box-shadow: inset 0 1px 0 #ffffff3d, 0 0 0 1px var(--city-gold), 0 3px 10px #00000080; transform: none; }
+#app .chooser-card[aria-current=true] { border-color: var(--city-accent-edge); box-shadow: inset 0 1px 0 var(--city-shine), 0 0 0 2px var(--city-accent), 0 0 14px var(--city-accent-glow); }
+#app .chooser-current { color: var(--city-accent); font-family: var(--city-display); font-weight: 600; }
+/* Each portrait on a lit showroom floor */
+#app :is(.chooser-card .chooser-art, .offer-art .car-art) {
+  background: radial-gradient(ellipse 60% 55% at 50% 72%, #ffffff29, #ffffff00 70%), linear-gradient(#1a2126, #2c363e 78%, #20282e);
+}
+#app .paint-custom { border-color: #ffffff38; border-radius: 17px; }
+#app .paint-custom[data-active=true], #app .paint-swatch[aria-checked=true] { border-color: var(--city-accent); box-shadow: 0 0 0 2px var(--city-accent), 0 0 10px var(--city-accent-glow); }
+/* Paint chips are glossy, like sweets */
+#app .paint-chip { box-shadow: inset 0 0 0 1px #00000059, 0 1px 2px #00000080; background-image: radial-gradient(circle at 50% 22%, #ffffffb3, #ffffff00 48%), linear-gradient(#ffffff00 55%, #00000040); }
+#app .car-meter-track { height: 5px; background: var(--city-recessed); box-shadow: var(--city-well); }
+#app .car-meter-track > span { background: linear-gradient(#ffeec2, var(--city-gold) 50%, #c9a65a); }
+/* The places list is a page of rubber stamps */
+#app .notebook-stamp { color: var(--city-text); border-color: #ffffff4d; font-family: Georgia, serif; }
+#app .notebook-place[data-found=true] .notebook-stamp { color: var(--city-on-accent); border-color: #0000004d; rotate: -9deg; box-shadow: inset 0 0 0 2px #ffffff40, 0 1px 2px #00000080; }
 #app .notebook-check { color: var(--city-gold); }
 
-/* Peripheral states too, rather than the base light/green theme. */
-#app > #toast, #app #vr-error { background: var(--city-panel); color: var(--city-text); border: 1px solid var(--city-line); border-radius: var(--city-control-radius); box-shadow: var(--city-shadow); }
-#app .taxi-task #toast { border: 0; box-shadow: none; }
+/* Notices are dark and rounded, after Growl's */
+#app > #toast, #app #vr-error {
+  background: #0b0f12e6; color: var(--city-text); border: 1px solid #ffffff2e; border-radius: 8px;
+  box-shadow: 0 0 0 1px #000000, 0 4px 14px #000000b3; text-shadow: var(--city-engrave); font-weight: 700;
+}
+#app .taxi-task #toast { border: 0; box-shadow: none; text-shadow: none; }
 /* A stunt in free drive (see Plane) */
 #app > #toast[data-tone=stunt] { color: var(--city-accent-soft); font-weight: 700; }
-#app :is(.error, .loading) { background: var(--city-panel); color: var(--city-text); }
-#app .error button { background: var(--city-accent); color: var(--city-on-accent); border-color: var(--city-accent); border-radius: var(--city-control-radius); }
+#app :is(.error, .loading) { background: var(--city-grain), radial-gradient(130% 95% at 50% 30%, #2b363e, #0c1013); color: var(--city-text); }
+#app .error button { background: var(--city-accent-fill); color: var(--city-on-accent); border: 1px solid var(--city-accent-edge); border-radius: var(--city-control-radius); box-shadow: inset 0 1px 0 #ffffffa6, 0 2px 5px #00000080; text-shadow: var(--city-emboss); font-weight: 700; }
+/* Every text field and scroller in the menus is dark too */
+#app :is(.pause-overlay, .chooser, .taxi-result-card, #city-notebook, .city-guide) { scrollbar-color: #56636e #0f1417; }
 /* A big screen draws the HUD and menus larger, the way a game's interface
    grows with the display: one step at desktop sizes, more at 1440p and 4K.
    Zoom keeps each panel's own layout, as though on a smaller screen; a
@@ -205,11 +359,12 @@ body[data-controller=true] #app #city-map-open::before { content: 'VIEW'; margin
 @media (min-width: 1600px) and (min-height: 1000px) {
   :root { --ui-scale: 1.15; }
   #app :is(.topbar, .taxi-hud, .taxi-task, .taxi-dash, .city-guide, .controls, .pause-content, .taxi-result-card, .chooser),
-  #app :is(#taxi-buttons, #camera-tools, #toast, #fps-counter, #vr-error, #taxi-fleet-dialog) { zoom: var(--ui-scale); }
-  #app :is(.chooser, .taxi-result-card), #app #taxi-fleet-dialog { max-height: calc((100svh - var(--ui-top) - var(--ui-bottom)) / var(--ui-scale)); }
+  #app :is(#taxi-buttons, #camera-tools, #toast, #fps-counter, #vr-error) { zoom: var(--ui-scale); }
+  #app :is(.chooser, .taxi-result-card) { max-height: calc((100svh - var(--ui-top) - var(--ui-bottom)) / var(--ui-scale)); }
 }
 @media (min-width: 2200px) and (min-height: 1300px) { :root { --ui-scale: 1.35; } }
 @media (min-width: 3000px) and (min-height: 1800px) { :root { --ui-scale: 1.7; } }
 @media (forced-colors: active) {
   #app :is(.audio-channel input, .graphics-slider) { appearance: auto; accent-color: auto; }
+  #app .weather-setting select { appearance: auto; }
 }

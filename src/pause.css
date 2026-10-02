@@ -9,8 +9,14 @@
   position: sticky; top: 0; z-index: 1;
   display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 16px;
   margin-bottom: 20px; padding: max(16px, var(--ui-top)) 0 12px;
-  /* (the bar runs the full width of the screen, behind the column) */
-  background: #101e28; box-shadow: 0 0 0 100vmax #101e28, 0 1px 0 100vmax var(--city-line); clip-path: inset(0 -100vmax -1px);
+  clip-path: inset(0 -100vmax -10px);
+}
+/* (the bar runs the full width of the screen behind the column, a glossy
+   toolbar with a shadow on what scrolls under it) */
+.pause-header::before {
+  content: ''; position: absolute; inset: 0 -100vmax; z-index: -1;
+  background: var(--city-grain), linear-gradient(#46535d, #2b353d 50%, #242d34 51%, #191f24);
+  border-bottom: 1px solid var(--city-edge); box-shadow: inset 0 1px 0 #ffffff1f, 0 1px 0 #ffffff0d, 0 3px 8px #00000099;
 }
 .pause-header h2 { grid-area: 1 / 1; }
 .pause-header .start-button { grid-area: 1 / 2 / span 2; }
@@ -77,11 +83,9 @@ body:not([data-mode=free]) .pause-panel :is(#autodrive, #traffic) { display: non
   .pause-settings { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: auto; column-gap: 28px; }
   .pause-column:nth-child(n), body:not([data-mode=free]) .pause-column:nth-child(n) { grid-row: 1; grid-column: auto; }
 }
-/* A narrow phone keeps the bar to two lines: the game's name is on the
-   title screen already. */
-@media (max-width: 420px) {
-  .pause-header .location-title { display: none; }
-}
+/* The bar leaves out the game's name: it is on the title screen already, and
+   a narrow phone keeps the bar to two lines. */
+.pause-header .location-title { display: none; }
 /* A short screen keeps the bar low. */
 @media (max-height: 560px) {
   .pause-header { margin-bottom: 14px; padding: max(10px, var(--ui-top)) 0 8px; }
@@ -96,8 +100,8 @@ body:not([data-mode=free]) .pause-panel :is(#autodrive, #traffic) { display: non
 #goals-panel[hidden], #scores-panel[hidden] { display: none; }
 .shift-goals { margin: 0; padding: 0; list-style: none; display: grid; }
 .shift-goals li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--ui-line); font-size: 12px; }
-.shift-goals .goal-check { display: grid; place-items: center; flex: none; width: 24px; height: 24px; border-radius: 50%; border: 1px dashed var(--ui-line); font-size: 13px; }
-.shift-goals li[data-done=true] .goal-check { background: #7ce787; border-style: solid; color: #172229; }
+.shift-goals .goal-check { display: grid; place-items: center; flex: none; width: 24px; height: 24px; border-radius: 50%; border: 1px dashed #ffffff40; font-size: 13px; }
+.shift-goals li[data-done=true] .goal-check { background: radial-gradient(circle at 50% 25%, #e0fbe2, #7ce787 45%, #3e9f4b); border: 1px solid #1f5a27; color: #10230f; box-shadow: 0 1px 2px #00000080; }
 .shift-goals .goal-copy { display: grid; gap: 2px; min-width: 0; }
 .shift-goals strong { font-weight: 600; }
 .shift-goals li[data-done=true] strong { text-decoration: line-through; opacity: .8; }

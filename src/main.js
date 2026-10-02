@@ -8,12 +8,10 @@ import './audio/mixer.css';
 import './pause.css';
 import './city-ui.css';
 import './taxi.css';
-import './taxi-fleet.css';
 import './demolition.css';
 import './city-theme.css';
 import './update-notice.css';
-import { setupTaxiFleet } from './taxi-fleet-view.js';
-import { createFleetMenu, garageModel, savingFor } from './chooser-model.js';
+import { garageModel, savingFor } from './chooser-model.js';
 import { menuControls, menuModel, WEATHER_CHOICES, cycleChoice } from './menu-model.js';
 import { bindMenuControls, renderMenuControls } from './menu-dom.js';
 import { locationHudModel, headsetHudModel, freeHudModel } from './run-hud-model.js';
@@ -200,9 +198,9 @@ async function boot() {
     vehicle.setAppearance(journey);
     vehicle.setLights(weather.state.lightLevel);
     const carDialog = $('#car-dialog'), pauseOverlay = $('#pause-overlay');
-    const fleetDialog = $('#taxi-fleet-dialog'), worldMapDialog = $('#world-map-dialog');
-    const choosers = [carDialog, fleetDialog, worldMapDialog];
-    const chooserDialogs = { garage: carDialog, fleet: fleetDialog, map: worldMapDialog };
+    const worldMapDialog = $('#world-map-dialog');
+    const choosers = [carDialog, worldMapDialog];
+    const chooserDialogs = { garage: carDialog, map: worldMapDialog };
     let chooserName = null;
     const openChooser = () => chooserDialogs[chooserName] ?? null;
     // A chooser pauses the drive over the pause screen; closing it restores
@@ -326,10 +324,13 @@ async function boot() {
     cityGuide.jobs = () => started && gameMode === 'free' && traffic.enabled && !taxi.waiting && !demolition.waiting
       ? traffic.vehicles.filter(car => car.job && car.car.visible) : [];
     const runOver = () => taxi.status === 'over' || demolition.status === 'over';
-    const fleetMenu = createFleetMenu(taxi.fleet, { running: () => taxi.running, career: taxi.career, onChange: () => { needsRender = true; },
-      // A livery is only paint, so unlike a cab it can change mid-run.
-      onLivery: color => { if (started && gameMode === 'taxi') { vehicle.setPaint(color); vehicle.render(0, world.origin); rendering.update(vehicle.car, 0, world.origin); } } });
-    const fleetView = setupTaxiFleet(fleetMenu);
+    // A cab's livery, from the garage (rank unlocks them). It is only paint, so
+    // unlike a cab it can change mid-shift.
+    function chooseLivery(id) {
+      if (!taxi.fleet.setLivery(id, taxi.career)) return;
+      if (started && gameMode === 'taxi') { vehicle.setPaint(taxi.fleet.liveryColor); vehicle.render(0, world.origin); rendering.update(vehicle.car, 0, world.origin); }
+      renderGarage(); needsRender = true;
+    }
     // The pause screen lists the shift's goals with live progress (in a
     // demolition run, its contracts and the high score table).
     function renderGoals() {
@@ -340,15 +341,6 @@ async function boot() {
         return `<li data-done="${goal.done}"><span class="goal-check" aria-hidden="true">${goal.done ? '✓' : '○'}</span><span class="goal-copy"><strong>${goal.text}</strong><small>${goal.done ? `+$${goal.bonus} banked` : `${progress} / ${goal.target} · $${goal.bonus}`}</small></span></li>`;
       }).join('');
       $('#goals-summary').textContent = goals.length ? `${goals.filter(goal => goal.done).length} of ${goals.length} · Bonuses bank to your fleet` : '';
-    }
-    let fleetReturnFocus;
-    function openFleet() {
-      // (pausing focuses Resume, so note the focus first)
-      const focus = document.activeElement;
-      if (!holdForChooser()) return;
-      fleetReturnFocus = focus;
-      fleetView.render(); $('#fleet-feedback').textContent = ''; fleetDialog.showModal(); chooserName = 'fleet';
-      fleetDialog.querySelector(`[data-fleet-car="${taxi.fleet.selected}"]`).focus();
     }
     // The pause screen's header names the driver's rank (from everything
     // earned, anywhere) and the fleet balance
@@ -484,9 +476,8 @@ async function boot() {
     function modeUi() {
       document.body.dataset.mode = gameMode;
       const run = gameMode !== 'free';
-      $('#change-car').hidden = run;
-      // (free drive earns toward the fleet too; demolition brings its own truck)
-      $('#pause-fleet').hidden = gameMode === 'demolition';
+      // (in a shift the garage is the cabs, for the next one. Demolition brings its own truck)
+      $('#change-car').hidden = gameMode === 'demolition';
       // A run ends with End shift or End run, and its results; a shift has no
       // restart (the next starts with a fare)
       $('#switch-mode').hidden = run; $('#end-run').hidden = !run; $('#restart-run').hidden = gameMode === 'taxi';
@@ -662,12 +653,16 @@ async function boot() {
       $('#scene').setAttribute('aria-label', data.canvas);
       document.querySelector('meta[name="theme-color"]').content = '#263b47';
     }
-    // The garage's cards, under a heading for each kind (cabs, cars, specials, aircraft)
+    // The garage's cards, under a heading for each kind (cabs, cars, specials,
+    // aircraft), with the cabs' liveries under theirs
     function buildCarCards() {
       const current = '<span class="chooser-current">CURRENT CAR</span>', sections = new Map();
-      for (const car of garageChoices().cars) sections.set(car.group, [...sections.get(car.group) ?? [], car]);
-      $('#garage-sections').innerHTML = [...sections].map(([group, cars], index) => `<h3 id="garage-group-${index}" class="garage-subheading">${group}</h3>`
-        + `<div class="chooser-options car-options" role="group" aria-labelledby="garage-group-${index}">${cars.map(({ id, label, meters: values }) => {
+      for (const car of garageChoices(false).cars) sections.set(car.group, [...sections.get(car.group) ?? [], car]);
+      const livery = '<div class="garage-livery"><div class="garage-livery-heading"><span>Livery</span><span id="garage-livery-name" role="status"></span></div>'
+        + '<div id="garage-liveries" class="paint-swatches" role="radiogroup" aria-label="Cab livery"></div><p id="garage-career" class="garage-livery-note"></p></div>';
+      $('#garage-sections').innerHTML = [...sections].map(([group, cars], index) => `<h3 id="garage-group-${index}" class="garage-subheading" data-group="${group}">${group}</h3>`
+        + (cars.some(car => carEntry(car.id).taxi) ? livery : '')
+        + `<div class="chooser-options car-options" role="group" aria-labelledby="garage-group-${index}" data-group="${group}">${cars.map(({ id, label, meters: values }) => {
           const meters = values.map(({ label, level }) =>
             `<span class="car-meter"><span>${label}</span><span class="car-meter-track"><span style="width:${level}%"></span></span></span>`).join('');
           // The portrait is drawn in whatever the garage is wearing, so the grid
@@ -678,13 +673,19 @@ async function boot() {
             + `<span class="car-meters">${meters}</span>${current}</span></button>`;
         }).join('')}</div>`).join('')
         // (and the gear, the jetpack, under its own heading)
-        + `<h3 id="garage-group-gear" class="garage-subheading">Gear</h3><div class="chooser-options car-options" role="group" aria-labelledby="garage-group-gear">`
-        + garageChoices().gear.map(({ id, label, about }) => `<button type="button" class="chooser-card car-card gear-card" data-gear="${id}" aria-label="${label}">`
+        + `<h3 id="garage-group-gear" class="garage-subheading" data-group="Gear">Gear</h3><div class="chooser-options car-options" role="group" aria-labelledby="garage-group-gear" data-group="Gear">`
+        + garageChoices(false).gear.map(({ id, label, about }) => `<button type="button" class="chooser-card car-card gear-card" data-gear="${id}" aria-label="${label}">`
           + '<span class="car-price" hidden></span>' + gearArt(id)
           + `<span class="chooser-card-copy"><span class="chooser-card-title">${label}</span><span class="gear-about">${about}</span></span></button>`).join('') + '</div>';
       // (a car the fleet owns is picked, any other opens its offer)
       for (const button of carDialog.querySelectorAll('[data-car]')) button.addEventListener('click', () => garageChoices().cars.find(car => car.id === button.dataset.car)?.activate());
       for (const button of carDialog.querySelectorAll('[data-gear]')) button.addEventListener('click', () => garageChoices().gear.find(item => item.id === button.dataset.gear)?.activate());
+      $('#garage-liveries').addEventListener('click', event => {
+        const swatch = event.target.closest('[data-livery]');
+        if (!swatch) return;
+        garageChoices().liveries.find(livery => livery.id === swatch.dataset.livery)?.activate();
+        $('#garage-liveries').querySelector(`[data-livery="${swatch.dataset.livery}"]`)?.focus();
+      });
     }
     const shopCard = id => carDialog.querySelector(GEAR[id] ? `[data-gear="${id}"]` : `[data-car="${id}"]`);
     // What the garage says about money: a price on each car the fleet doesn't
@@ -695,18 +696,28 @@ async function boot() {
     const money = amount => `$${amount.toLocaleString('en-US')}`;
     function renderGarage() {
       const garage = garageChoices(), saving = garage.saving;
+      // (in a shift it shows only the cabs and their liveries: see garageModel)
+      carDialog.dataset.shift = String(garage.shift); paintCards();
       $('#garage-wallet').textContent = garage.summary;
-      $('#garage-saving').textContent = !saving ? 'Every car in the garage is yours' : saving.short
+      $('#garage-saving').textContent = garage.shift ? 'Cab changes apply to your next shift' : !saving ? 'Every car in the garage is yours' : saving.short
         ? `${saving.chosen ? 'Saving for' : 'Next up:'} ${saving.label} · ${money(saving.short)} to go` : `${saving.label} · ready to buy`;
       for (const car of [...garage.cars, ...garage.gear]) {
         const card = shopCard(car.id), tag = card?.querySelector('.car-price');
         if (!card) continue;
-        tag.hidden = Boolean(car.current); tag.textContent = car.owned ? 'Owned' : car.goal ? `Saving · ${car.value}` : car.value;
-        card.dataset.owned = String(car.owned); card.dataset.affordable = String(car.affordable);
-        card.setAttribute('aria-label', car.owned ? car.label : `${car.label}, ${car.value}${car.affordable ? ', can buy now' : ''}`);
+        tag.hidden = Boolean(car.current); tag.textContent = car.owned ? car.shiftCab ? 'Shift cab' : 'Owned' : car.goal ? `Saving · ${car.value}` : car.value;
+        card.dataset.owned = String(car.owned); card.dataset.affordable = String(car.affordable); card.dataset.shiftCab = String(Boolean(car.shiftCab));
+        card.setAttribute('aria-label', car.owned ? `${car.label}${car.shiftCab ? ', shift cab' : ''}` : `${car.label}, ${car.value}${car.affordable ? ', can buy now' : ''}`);
+        if (!car.gear) { card.setAttribute('aria-current', String(car.current)); card.querySelector('.chooser-current').textContent = garage.shift ? 'NEXT SHIFT' : 'CURRENT CAR'; }
       }
+      $('#garage-liveries').innerHTML = garage.liveries.map(({ id, current, disabled, swatch, accessibilityLabel }) =>
+        `<button type="button" class="paint-swatch garage-livery-swatch" role="radio" aria-checked="${current}" data-livery="${id}" data-locked="${disabled}"
+          style="--swatch:${swatch}" aria-label="${accessibilityLabel}" title="${accessibilityLabel}" ${disabled ? 'disabled' : ''}><span class="paint-chip" aria-hidden="true"></span></button>`).join('');
+      $('#garage-livery-name').textContent = garage.liveryName; $('#garage-career').textContent = garage.career;
+      renderBank();
       renderOffer(garage.offer);
     }
+    // (a shift's results end on the balance and the car it is going toward)
+    function renderBank() { $('#taxi-result-bank').textContent = [`Balance ${money(taxi.fleet.balance)}`, savingFor(taxi.fleet)?.text].filter(Boolean).join(' · '); }
     let offerShown = null;
     function renderOffer(offer) {
       const panel = $('#garage-offer');
@@ -748,7 +759,7 @@ async function boot() {
       // (said once when the balance first covers it, unless it already does)
       goalTold = id && taxi.fleet.balance >= carPrice(id) ? id : null;
       if (id) toast(`Saving for the ${shopName(id)}`);
-      renderGarage(); fleetView.render(); needsRender = true;
+      renderGarage(); needsRender = true;
     }
     const paintSwatches = $('#paint-swatches'), paintWell = $('#paint-custom-well'), paintInput = $('#paint-custom');
     function buildPaintSwatches() {
@@ -769,11 +780,12 @@ async function boot() {
     // default car has none of its own, so it shows whatever the road it is on
     // would give it.
     const ownPaint = id => (carEntry(id).plain ? ROUTE_PAINT[journey] ?? ROUTE_PAINT.coast : carEntry(id).paint);
-    // (the rainbow cycles the cards' paint in CSS, from each car's own colour)
-    const cardPaint = id => paint && paint !== RAINBOW_PAINT ? paint : ownPaint(id);
+    // (the rainbow cycles the cards' paint in CSS, from each car's own colour.
+    // In a shift the cabs wear their livery, as the shift's cab does)
+    const cardPaint = id => inShift() && carEntry(id).taxi ? taxi.fleet.liveryColor ?? ownPaint(id) : paint && paint !== RAINBOW_PAINT ? paint : ownPaint(id);
     const paintCards = () => {
       for (const card of carDialog.querySelectorAll('[data-car]')) card.style.setProperty('--car-paint', cardPaint(card.dataset.car));
-      carDialog.dataset.rainbow = String(paint === RAINBOW_PAINT);
+      carDialog.dataset.rainbow = String(paint === RAINBOW_PAINT && !inShift());
     };
     function showPaintName() {
       $('#paint-current').textContent = paint === RAINBOW_PAINT ? RAINBOW_NAME : paint ? paintName(paint) ?? paint.toUpperCase() : DEFAULT_PAINT_NAME;
@@ -856,8 +868,8 @@ async function boot() {
     function updateCarUi() {
       updateDriveUi();
       for (const choice of garageChoices().cars) carDialog.querySelector(`[data-car="${choice.id}"]`)?.setAttribute('aria-current', String(choice.current));
-      $('#current-car').textContent = started && gameMode !== 'free' ? carEntry(vehicle.carId).name : carEntry(carId).name;
-      $('#change-car').setAttribute('aria-label', started && gameMode !== 'free' ? 'Garage: free drive only' : `Garage: ${carEntry(carId).name}`);
+      $('#current-car').textContent = garageValue();
+      $('#change-car').setAttribute('aria-label', `Garage: ${garageValue()}`);
       updatePaintUi();
     }
     // One garage car at a time: the new one takes the player where they are,
@@ -897,12 +909,22 @@ async function boot() {
       else { updateCarUi(); updateHud(); }
       toast(`${carEntry(id).name} ${bought ? 'bought' : 'selected'}${carEntry(id).taxi ? started ? ` · ${standbyText('taxi')}` : ' for shifts' : flightHelp(id)}`, bought ? 'goal' : '');
     }
+    // In a taxi shift the garage holds only the cabs (see garageModel): one
+    // picked or bought there drives the next shift, and this one carries on in
+    // the cab it started with, back on the pause screen.
+    function inShift() { return started && gameMode === 'taxi'; }
+    function chooseCab(id, bought = false) {
+      if (!bought && !taxi.fleet.select(id)) return;
+      garageOffer = null; carDialog.close(); updateCarUi();
+      toast(`${carEntry(id).name} ${bought ? 'bought' : 'selected'} · ready for your next shift`, bought ? 'goal' : '');
+    }
     function buyCar(id) {
-      if ((started && gameMode !== 'free') || !taxi.fleet.buy(id)) return;
+      if ((started && gameMode !== 'free' && !(inShift() && carEntry(id).taxi)) || !taxi.fleet.buy(id)) return;
       audio.cue('goal');
-      if (GEAR[id]) { jetTrial.stop(); leaveGarage(); toast(`Jetpack bought · ${jetpackHelp()}`, 'goal'); updateCarUi(); }
+      // (a cab bought is the next shift's: see TaxiFleet.buy)
+      if (inShift()) chooseCab(id, true);
+      else if (GEAR[id]) { jetTrial.stop(); leaveGarage(); toast(`Jetpack bought · ${jetpackHelp()}`, 'goal'); updateCarUi(); }
       else chooseCar(id, true);
-      fleetView.render();
     }
     // Owned gear, picked in the garage: how to use it
     function useGear() { leaveGarage(); if (!started) beginFree(); toast(jetpackHelp()); }
@@ -1112,13 +1134,21 @@ async function boot() {
           () => free() && !vehicle.pilot && !working() && !jobHints[job], () => { jobHints[job] = true; try { localStorage.setItem(jobHintKey, JSON.stringify(jobHints)); } catch { /* Told for this visit. */ } });
       }
     }
+    // (closing it goes back to whatever opened it: the pause screen's row, or the results' button)
+    let garageReturnFocus = null;
     function openCars() {
-      if (started && gameMode === 'taxi') { openFleet(); return; }
-      if (started && gameMode === 'demolition') { toast('Garage: free drive only'); return; }
+      if (started && gameMode === 'demolition') { toast('Garage: not in a demolition run'); return; }
+      // (pausing focuses Resume, so note the focus first)
+      const focus = document.activeElement;
       if (!holdForChooser()) return;
+      garageReturnFocus = focus;
       garageOffer = null; renderGarage();
-      carDialog.showModal(); chooserName = 'garage';
-      carDialog.querySelector(`[data-car="${carId}"]`).focus();
+      carDialog.showModal(); chooserName = 'garage'; carDialog.scrollTop = 0;
+      carDialog.querySelector(`[data-car="${inShift() ? taxi.fleet.selected : carId}"]`).focus();
+    }
+    // What the pause screen's Garage row says: the car, or in a shift the next shift's cab
+    function garageValue() {
+      return inShift() ? `${carEntry(taxi.fleet.selected).name} · next shift` : carEntry(started && gameMode !== 'free' ? vehicle.carId : carId).name;
     }
     // Back, from a chooser (Escape, B): out of a car's offer to the garage,
     // else out of the chooser. Its close button always closes it.
@@ -1149,7 +1179,7 @@ async function boot() {
       const chooser = openChooser();
       if (chooser) {
         if (name === 'menuClose' || (vr?.active && name === 'pause')) backOut(chooser);
-        else if ((name === 'car' && (chooser === carDialog || chooser === fleetDialog)) || (name === 'map' && chooser === worldMapDialog)) chooser.close();
+        else if ((name === 'car' && chooser === carDialog) || (name === 'map' && chooser === worldMapDialog)) chooser.close();
         if (MENU_MOVES.includes(name)) moveMenuFocus(chooser, name);
         if (name === 'menuConfirm') confirmMenuFocus(chooser);
         return;
@@ -1274,7 +1304,7 @@ async function boot() {
       const paid = taxi.fleet.enterKonami();
       toast(paid ? `Konami code · +${money(paid)} · Rainbow paint in the Garage` : 'Rainbow paint is in the Garage', 'goal');
       if (!paid) return;
-      audio.cue('goal'); buildPaintSwatches(); renderGarage(); fleetView.render(); needsRender = true;
+      audio.cue('goal'); buildPaintSwatches(); renderGarage(); needsRender = true;
     });
     vr = new BrowserVR({
       renderer, buttons: [$('#enter-vr'), $('#enter-vr-pause')], canEnter: () => !changingJourney && !openChooser(),
@@ -1404,7 +1434,7 @@ async function boot() {
         if (openChooser() === dialog) chooserName = null;
         if (!changingJourney) setPaused(journeyWasPaused || document.hidden);
         if (runOver()) pauseOverlay.hidden = true;
-        if (dialog === fleetDialog) fleetReturnFocus?.focus();
+        if (dialog === carDialog && garageReturnFocus?.checkVisibility()) garageReturnFocus.focus();
         if (dialog === worldMapDialog && paused && !pauseOverlay.hidden) $('#open-world-map').focus();
       });
       dialog.addEventListener('click', event => {
@@ -1571,7 +1601,7 @@ async function boot() {
     }
     const menuActions = {
       start: () => vr.active ? beginTaxi() : start(), taxi: beginTaxi, demolition: beginDemolition, free: beginFree, resume: () => setPaused(false),
-      back: () => openChooser()?.close(), exit: () => action('exitVR'), fleet: openFleet, garage: openCars, keep: keepDriving, end: endRun, newCity: askNewCity,
+      back: () => openChooser()?.close(), exit: () => action('exitVR'), garage: openCars, keep: keepDriving, end: endRun, newCity: askNewCity,
       autodrive: () => action('autodrive'), traffic: toggleTraffic, driftTap: () => setDriftMode(vehicle.driftMode === 'tap' ? 'hold' : 'tap'),
       vibration: () => setVibration(!vibration), reset: () => action('reset'), map: openWorldMap,
       weather: () => chooseWeather(cycleChoice(WEATHER_CHOICES.map(([id]) => id), weather.mode)),
@@ -1584,8 +1614,8 @@ async function boot() {
     const headsetRates = () => [...(vr.session?.supportedFrameRates ?? [])].sort((a, b) => a - b);
     function menuState() {
       return { loading: changingJourney, started, paused, mode: gameMode, chooser: chooserName, over: runOver(),
-        running: taxi.running || demolition.running, location: locationModel(), carName: carEntry(started && gameMode !== 'free' ? vehicle.carId : carId).name,
-        fleetName: carEntry(taxi.fleet.selected).name, autodrive: autodrive.enabled, traffic: traffic.enabled, driftTap: vehicle.driftMode === 'tap', vibration,
+        running: taxi.running || demolition.running, location: locationModel(), carName: garageValue(),
+        autodrive: autodrive.enabled, traffic: traffic.enabled, driftTap: vehicle.driftMode === 'tap', vibration,
         weather: weather.mode, view: rendering.viewLabel, lookSensitivity: cameraPreferences.inputs.controller.sensitivity, comfort: comfort.enabled, graphics: graphics.auto ? 'Auto' : graphics.settings.label,
         rates: headsetRates(), rateChoice: graphics.rateChoice, frameRate: vr.session?.frameRate, sound: audio.enabled, mix: audio.preset,
         career: careerText(), newCityArmed: performance.now() < newCityUntil, standby: taxi.waiting ? 'taxi' : demolition.waiting ? 'demolition' : null };
@@ -1599,14 +1629,13 @@ async function boot() {
       setTimeout(() => renderMenuControls(controls()), 4100);
     }
     const controls = () => menuControls(menuState(), menuActions);
-    const garageChoices = () => garageModel({ carId, paint, ownPaint, fleet: taxi.fleet, offer: garageOffer },
-      { chooseCar, applyPaint, openOffer, closeOffer, buyCar, testDrive: startTestDrive, saveFor, useGear });
+    const garageChoices = (shift = inShift()) => garageModel({ carId, paint, ownPaint, fleet: taxi.fleet, offer: garageOffer, career: taxi.career, shift },
+      { chooseCar, chooseCab, chooseLivery, applyPaint, openOffer, closeOffer, buyCar, testDrive: startTestDrive, saveFor, useGear });
     const brandMark = new Image(); brandMark.src = `${import.meta.env.BASE_URL}brand-mark.svg`;
     function currentMenuModel() {
       const state = menuState();
       return menuModel(state, menuControls(state, menuActions), {
         garage: state.chooser === 'garage' ? garageChoices() : null,
-        fleet: state.chooser === 'fleet' ? fleetMenu.model() : null,
         result: state.over ? gameMode === 'demolition' ? demolitionResultModel(demolition) : taxiResultModel(taxi, cityGuide.lately) : null,
         mapImage: vrMapCanvas, mapKey: vrMapKey, mark: brandMark,
       });
@@ -1696,7 +1725,7 @@ async function boot() {
     function taxiEvent(event) {
       if (event.kind === 'over') {
         haltCar();
-        setPaused(true); pauseOverlay.hidden = true; taxiView.hud(taxi, vehicle); taxiView.results(taxi, cityGuide.lately); fleetView.render(); $('#taxi-retry').focus();
+        setPaused(true); pauseOverlay.hidden = true; taxiView.hud(taxi, vehicle); taxiView.results(taxi, cityGuide.lately); renderBank(); $('#taxi-retry').focus();
         return;
       }
       // (the first fare from standby: the shift begins with it)
@@ -1934,7 +1963,7 @@ async function boot() {
     if (import.meta.env.DEV && emulate !== null) (await import('./xr-emulator.js')).installXREmulator(emulate);
     void vr.detect();
     // Development-only inspection surface for automated driving and streaming checks.
-    if (import.meta.env.DEV) window.__citydriver = { seed: SEED, city: CITY, nav: navGraph(), lanePose, roadAt, nearestLanePose, vehicle, onFoot, pigeons, traffic, props, nightLighting, weather, autodrive, audio, graphics, vr, vrStatus, currentMenuModel, fleetMenu, stunts, keepDriving, endRun, cityGuide, taxi, taxiView, beginTaxi, beginFree, demolition, demolitionView, beginDemolition, testDrive, jetTrial, startTestDrive, buyCar, get gameMode() { return gameMode; }, world, rendering, input, action,
+    if (import.meta.env.DEV) window.__citydriver = { seed: SEED, city: CITY, nav: navGraph(), lanePose, roadAt, nearestLanePose, vehicle, onFoot, pigeons, traffic, props, nightLighting, weather, autodrive, audio, graphics, vr, vrStatus, currentMenuModel, stunts, keepDriving, endRun, cityGuide, taxi, taxiView, beginTaxi, beginFree, demolition, demolitionView, beginDemolition, testDrive, jetTrial, startTestDrive, buyCar, get gameMode() { return gameMode; }, world, rendering, input, action,
       // (review kits stage any car through this, so it hands the car over first, as the garage once did)
       chooseCar: id => { if (CARS[id]) taxi.fleet.owned.add(id); chooseCar(id); }, applyPaint, get carId() { return carId; }, get paint() { return paint; }, get journey() { return journey; }, get changingJourney() { return changingJourney; }, get paused() { return paused; }, get started() { return started; } };
   } catch (error) { console.error('Could not start Citydriver:', error); $('#loading').classList.add('loaded'); $('#error').hidden = false; }

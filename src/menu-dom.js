@@ -3,7 +3,7 @@ import { attribute, text } from './hud-dom.js';
 const LABELS = {
   '#start span': 'start', '#free-drive span': 'free', '#demolition span': 'demolition', '#resume span': 'resume',
   '#taxi-retry': 'retry', '#taxi-keep': 'keep', '#demolition-retry': 'retry', '#demolition-taxi': 'taxi', '#demolition-keep': 'keep', '#end-run span': 'end',
-  '#taxi-fleet-results': 'fleet', '#pause-fleet > span:first-child': 'fleet',
+  '#taxi-garage-results': 'garage',
   '#restart-run span': 'restart', '#switch-mode span': 'switchMode', '#other-run span': 'otherRun',
   '#change-car .panel-button-label': 'garage', '#autodrive .panel-button-label': 'autodrive', '#traffic .panel-button-label': 'traffic',
   '#drift-tap .panel-button-label': 'driftTap', '#vibration .panel-button-label': 'vibration',
@@ -14,13 +14,12 @@ export function bindMenuControls(getControls) {
   const bindings = { start: 'start', 'free-drive': 'free', demolition: 'demolition', resume: 'resume',
     'taxi-retry': 'retry', 'taxi-keep': 'keep', 'demolition-retry': 'retry', 'demolition-taxi': 'taxi', 'demolition-keep': 'keep',
     'restart-run': 'restart', 'end-run': 'end', 'switch-mode': 'switchMode', 'other-run': 'otherRun', 'change-car': 'garage',
-    'close-cars': 'back', 'close-fleet': 'back', 'close-world-map': 'back', 'open-world-map': 'map', 'city-map-open': 'map', 'city-map': 'map',
+    'close-cars': 'back', 'taxi-garage-results': 'garage', 'close-world-map': 'back', 'open-world-map': 'map', 'city-map-open': 'map', 'city-map': 'map',
     autodrive: 'autodrive', traffic: 'traffic', 'drift-tap': 'driftTap', vibration: 'vibration', sound: 'sound', reset: 'reset' };
   for (const [id, key] of Object.entries(bindings)) document.getElementById(id).addEventListener('click', () => {
     const control = getControls()[key];
     if (!control.disabled) control.activate();
   });
-  for (const button of document.querySelectorAll('[data-open-fleet]')) button.addEventListener('click', () => getControls().fleet.activate());
 }
 
 export function renderMenuControls(controls) {

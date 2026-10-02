@@ -31,27 +31,34 @@ async function startAndPause(page) {
 }
 try {
   const page = await open({ viewport: { width: 1440, height: 960 } });
-  assert.equal(await page.locator('#welcome [data-open-fleet]').count(), 0);
   await startAndPause(page);
-  assert.equal(await page.locator('#change-car').isVisible(), false);
-  assert.equal(await page.locator('#pause-fleet').isVisible(), true);
-  await page.click('#pause-fleet');
-  assert.equal(await page.locator('[data-fleet-car=taxiGT]').isDisabled(), true);
-  assert.equal(await page.locator('[data-fleet-car=taxiFormula]').isDisabled(), true);
+  // (the cabs are the garage's: in a shift it holds just them, for the next shift)
+  assert.equal(await page.locator('#change-car').isVisible(), true);
+  await page.click('#change-car');
+  assert.equal(await page.locator('#car-dialog').getAttribute('data-shift'), 'true');
+  assert.equal(await page.locator('[data-car=hatchback]').isVisible(), false, 'only cabs in a shift');
+  assert.equal(await page.locator('#paint-shop').isVisible(), false);
+  assert.ok(await page.locator('#garage-liveries [data-livery]').count() > 1, 'the liveries over the cabs');
+  await page.click('[data-car=taxiGT]');
+  assert.equal(await page.locator('#offer-buy').isDisabled(), true, 'not enough to buy it');
+  assert.equal(await page.locator('#offer-test').isDisabled(), true, 'no test drives mid-shift');
   const time = await page.evaluate(() => window.__citydriver.taxi.timeLeft);
   await page.waitForTimeout(250); assert.equal(await page.evaluate(() => window.__citydriver.taxi.timeLeft), time);
   await page.screenshot({ path: '.artifacts/fleet/desktop-locked.png' });
-  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
   await page.locator('#pause-overlay').waitFor({ state: 'visible' });
   assert.equal(await page.locator('#pause-overlay').isVisible(), true);
-  assert.equal(await page.locator('#pause-fleet').evaluate(button => button === document.activeElement), true);
+  assert.equal(await page.locator('#change-car').evaluate(button => button === document.activeElement), true);
   // Fund the shop fixture; actual fare banking is exercised in taxi-fleet.test.js.
   await page.evaluate(() => window.__citydriver.taxi.fleet.credit(10000));
-  await page.click('#pause-fleet'); await page.click('[data-fleet-car=taxiGT]');
-  assert.equal(await page.locator('#fleet-balance').textContent(), '$0');
+  await page.click('#change-car'); await page.click('[data-car=taxiGT]'); await page.click('#offer-buy');
+  assert.equal(await page.evaluate(() => window.__citydriver.taxi.fleet.balance), 0);
   assert.equal(await page.evaluate(() => window.__citydriver.vehicle.carId), 'taxi', 'purchase never swaps a cab mid-run');
-  await page.click('[data-fleet-car=taxiGT]'); assert.equal(await page.locator('#fleet-balance').textContent(), '$0');
-  await page.click('#close-fleet'); await page.click('#end-run');
+  // (back on the pause screen: a dialog's close event restores it a task later)
+  await page.locator('#pause-overlay').waitFor({ state: 'visible', timeout: 5000 });
+  await page.click('#change-car'); await page.click('[data-car=taxiGT]');
+  assert.equal(await page.evaluate(() => window.__citydriver.taxi.fleet.balance), 0, 'picking an owned cab only selects it');
+  await page.click('#end-run');
   await page.waitForFunction(() => window.__citydriver.taxi.status === 'over');
   await page.click('#taxi-retry');
   assert.equal(await page.evaluate(() => window.__citydriver.vehicle.carId), 'taxiGT', 'the next shift is in the cab bought');
@@ -61,9 +68,9 @@ try {
   await page.keyboard.up('ShiftLeft'); await page.keyboard.up('KeyW');
   await page.click('#pause');
   await page.evaluate(() => window.__citydriver.taxi.fleet.credit(40000));
-  await page.click('#pause-fleet'); await page.click('[data-fleet-car=taxiFormula]');
-  await page.screenshot({ path: '.artifacts/fleet/desktop-owned.png' });
-  await page.click('#close-fleet'); await page.click('#end-run');
+  await page.click('#change-car'); await page.click('[data-car=taxiFormula]'); await page.click('#offer-buy');
+  await page.click('#change-car'); await page.screenshot({ path: '.artifacts/fleet/desktop-owned.png' });
+  await page.click('#close-cars'); await page.click('#end-run');
   await page.waitForFunction(() => window.__citydriver.taxi.status === 'over');
   await page.click('#taxi-retry');
   assert.equal(await page.evaluate(() => window.__citydriver.vehicle.carId), 'taxiFormula');
@@ -72,7 +79,7 @@ try {
   await pickUp(page);
   await page.evaluate(() => { window.__citydriver.taxi.timeLeft = .01; window.__citydriver.taxi.fareLeft = .01; });
   await page.waitForFunction(() => window.__citydriver.taxi.status === 'over');
-  await page.click('#taxi-fleet-results'); await page.click('[data-fleet-car=taxiGT]'); await page.click('#close-fleet');
+  await page.click('#taxi-garage-results'); await page.click('[data-car=taxiGT]');
   assert.equal(await page.locator('#taxi-results').isVisible(), true);
   assert.equal(await page.locator('#pause-overlay').isVisible(), false);
   await page.click('#taxi-retry'); assert.equal(await page.evaluate(() => window.__citydriver.vehicle.carId), 'taxiGT');
@@ -107,27 +114,28 @@ try {
   }
   await mobile.tap('#pause'); await mobile.tap('#switch-mode');
   assert.equal(await mobile.evaluate(() => window.__citydriver.vehicle.carId), 'taxi', 'free selection does not bypass ownership');
-  await mobile.tap('#pause'); await mobile.tap('#pause-fleet');
+  await mobile.tap('#pause'); await mobile.tap('#change-car');
   assert.ok(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-  assert.ok(await mobile.locator('#taxi-fleet-dialog').evaluate(el => el.scrollWidth <= el.clientWidth));
+  assert.ok(await mobile.locator('#car-dialog').evaluate(el => el.scrollWidth <= el.clientWidth));
+  await mobile.locator('#garage-liveries').scrollIntoViewIfNeeded();
   await mobile.screenshot({ path: '.artifacts/fleet/mobile.png' });
-  await mobile.locator('[data-fleet-car=taxiFormula]').scrollIntoViewIfNeeded();
+  await mobile.locator('[data-car=taxiFormula]').scrollIntoViewIfNeeded();
   await mobile.screenshot({ path: '.artifacts/fleet/mobile-formula.png' });
-  await mobile.tap('#close-fleet');
+  await mobile.tap('#close-cars');
   await mobile.setViewportSize({ width: 844, height: 390 });
-  await mobile.tap('#pause-fleet');
-  assert.ok(await mobile.locator('#taxi-fleet-dialog').evaluate(el => el.scrollWidth <= el.clientWidth));
-  await mobile.locator('[data-fleet-car=taxiFormula]').scrollIntoViewIfNeeded();
+  await mobile.tap('#change-car');
+  assert.ok(await mobile.locator('#car-dialog').evaluate(el => el.scrollWidth <= el.clientWidth));
+  await mobile.locator('[data-car=taxiFormula]').scrollIntoViewIfNeeded();
   await mobile.screenshot({ path: '.artifacts/fleet/mobile-landscape.png' });
-  await mobile.tap('#close-fleet'); await mobile.tap('#resume');
+  await mobile.tap('#close-cars'); await mobile.tap('#resume');
   await pickUp(mobile);
   await mobile.evaluate(() => { window.__citydriver.taxi.timeLeft = .01; window.__citydriver.taxi.fareLeft = .01; });
   await mobile.waitForFunction(() => window.__citydriver.taxi.status === 'over');
-  await mobile.locator('#taxi-fleet-results').scrollIntoViewIfNeeded();
-  await mobile.tap('#taxi-fleet-results'); await mobile.tap('#close-fleet');
+  await mobile.locator('#taxi-garage-results').scrollIntoViewIfNeeded();
+  await mobile.tap('#taxi-garage-results'); await mobile.tap('#close-cars');
   await mobile.locator('#taxi-keep').scrollIntoViewIfNeeded(); await mobile.tap('#taxi-keep');
   assert.equal(await mobile.evaluate(() => window.__citydriver.gameMode), 'free');
   assert.deepEqual(errors, []);
   await writeFile('.artifacts/fleet/browser-report.json', JSON.stringify({ passed: true, errors }, null, 2));
-  console.log('Fleet checks passed: purchases, persistence, next-shift selection, results, mode-specific menus, test drives, desktop and touch layouts.');
+  console.log('Fleet checks passed (through the garage): purchases, persistence, next-shift selection, results, mode-specific menus, test drives, desktop and touch layouts.');
 } finally { await browser.close(); }

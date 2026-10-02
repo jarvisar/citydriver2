@@ -2,16 +2,29 @@ import * as THREE from 'three';
 import { RAINBOW_SWATCH } from './car-paint.js';
 
 // The page's own palette and type (city-theme.css), so the headset's panels
-// read as the same game: slate panels, taxi yellow for the main action and a
-// gold ring round whatever is selected.
+// read as the same game: gunmetal panels lit along their top edge, glossy
+// taxi yellow for the main action and a gold ring round whatever is selected.
+// A pair is a gradient from top to bottom.
 const UI = {
-  panel: '#263b45', glass: '#263b45f2', raised: '#304954', hover: '#3b5662', recessed: '#1b2d36',
-  text: '#f5f4e9', muted: '#c4d3d8', line: '#afc9d13d', switchLine: '#afc9d180',
-  accent: '#ffd238', accentHover: '#ffe177', gold: '#f3d899', onAccent: '#17262f',
-  urgent: '#ffb5a6', onUrgent: '#721e15', font: "'Segoe UI', Arial, sans-serif",
+  panel: ['#33404a', '#1a2127'], glass: ['#3c4852f2', '#192026f2'], raised: ['#4d5a65', '#2c363e'], hover: ['#5d6b77', '#37434c'],
+  bar: ['#4b5862', '#1d242a'], readout: ['#090c0e', '#182025'], knob: ['#ffffff', '#a7b1b8'],
+  recessed: '#12181c', edge: '#080b0d', shine: '#ffffff2b',
+  text: '#f4f1e6', muted: '#b9c4cb', switchLine: '#ffffff40', gold: '#f3d899', onAccent: '#17262f',
+  urgent: ['#ffd8cf', '#ff8a7a'], onUrgent: '#721e15',
+  font: "'Helvetica Neue', Helvetica, Arial, sans-serif", display: "Oswald, 'Arial Narrow', 'Helvetica Neue', Arial, sans-serif",
 };
-// Each mode's accent, as city-theme.css sets it: taxi yellow, demolition orange, free-drive teal
-export const ACCENTS = { taxi: ['#ffd238', '#ffe177'], demolition: ['#ff9433', '#ffb46e'], free: ['#5fd0c0', '#8fe0d4'] };
+// Each mode's accent, as city-theme.css sets it (taxi yellow, demolition orange,
+// free-drive teal): flat, hover, the gloss's top, bottom and edge, and soft
+export const ACCENTS = {
+  taxi: ['#ffd238', '#ffe177', '#ffe983', '#f4b400', '#8f6a00', '#fff1ad'],
+  demolition: ['#ff9433', '#ffb46e', '#ffc185', '#ea730e', '#8e4405', '#ffd6ad'],
+  free: ['#5fd0c0', '#8fe0d4', '#a4eade', '#2fab9a', '#1a6a5f', '#c4f1ea'],
+};
+const useAccent = mode => {
+  const [flat, hover, top, bottom, edge, soft] = ACCENTS[mode] ?? ACCENTS.taxi;
+  Object.assign(UI, { accent: flat, accentHover: hover, accentTop: top, accentBottom: bottom, accentEdge: edge, accentSoft: soft });
+};
+useAccent('taxi');
 // Fare ratings and goals, as the taxi HUD colours them (taxi.css), and a demolition run's news
 export const TONES = { speedy: '#7ce787', normal: '#ffd238', slow: '#ff8a7a', goal: '#c3f4bb', chain: '#ff9433', banked: '#ffd6ad', bonus: '#8ff0b0' };
 // Where the panels hang: metres from the eyes, degrees below eye level and
@@ -30,6 +43,7 @@ const PAD = 40, ROW = 72, GAP = 10, HEADING = 44, COLUMN_GAP = 24, NARROW = 620,
 const BEAM = .4;
 
 const font = (size, weight = 400) => `${weight} ${size}px ${UI.font}`;
+const display = (size, weight = 600) => `${weight} ${size}px ${UI.display}`;
 function fit(ctx, text, width) {
   if (ctx.measureText(text).width <= width) return text;
   let end = text.length;
@@ -73,10 +87,22 @@ function rainbowFill(ctx, x, y) {
   ['#ff4d4d', '#ffd84d', '#5ee05e', '#4dd8ff', '#6a5cff', '#ff4dd2', '#ff4d4d'].forEach((colour, i, all) => gradient.addColorStop(i / (all.length - 1), colour));
   return gradient;
 }
+function down(ctx, y, height, [top, bottom]) {
+  const gradient = ctx.createLinearGradient(0, y, 0, y + height);
+  gradient.addColorStop(0, top); gradient.addColorStop(1, bottom);
+  return gradient;
+}
 function box(ctx, x, y, width, height, radius, fill, stroke) {
   ctx.beginPath(); ctx.roundRect(x, y, width, height, radius);
-  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (fill) { ctx.fillStyle = Array.isArray(fill) ? down(ctx, y, height, fill) : fill; ctx.fill(); }
   if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); }
+}
+// The light along a bevel's top edge, or the gloss over an accent's top half
+function shine(ctx, x, y, width, height, radius, gloss = false) {
+  ctx.save(); ctx.beginPath(); ctx.roundRect(x, y, width, height, radius); ctx.clip();
+  if (gloss) { ctx.fillStyle = down(ctx, y, height / 2, ['#ffffff66', '#ffffff26']); ctx.fillRect(x, y, width, height / 2); }
+  ctx.fillStyle = gloss ? '#ffffffa6' : UI.shine; ctx.fillRect(x, y + 2, width, 2);
+  ctx.restore();
 }
 
 // One canvas on a plane, cropped to what was drawn so the panel fits its content.
@@ -168,9 +194,8 @@ export class VRStatus {
   // The mode's accent for the main action, switches and the HUD's headings;
   // whatever is showing is drawn again in it
   setAccent(mode) {
-    const [accent, hover] = ACCENTS[mode] ?? ACCENTS.taxi;
-    if (UI.accent === accent) return;
-    UI.accent = accent; UI.accentHover = hover; this.signature = ''; this.hudSignature = '';
+    if (UI.accent === (ACCENTS[mode] ?? ACCENTS.taxi)[0]) return;
+    useAccent(mode); this.signature = ''; this.hudSignature = '';
     if (this.model) this.update(this.model);
   }
   update(model) {
@@ -302,22 +327,29 @@ export class VRStatus {
     if (model.flow) this.order = [...header, ...body, ...footer];
 
     panel.clear();
-    box(ctx, 1, 1, width - 2, height - 2, 30, UI.panel, UI.line);
+    box(ctx, 1, 1, width - 2, height - 2, 16, UI.panel, UI.edge);
+    // The header is a title bar, as the page's dialogs have
+    ctx.save(); ctx.beginPath(); ctx.roundRect(2, 2, width - 4, height - 4, 15); ctx.clip();
+    ctx.fillStyle = down(ctx, 2, top - 16, UI.bar); ctx.fillRect(2, 2, width - 4, top - 16);
+    ctx.fillStyle = UI.shine; ctx.fillRect(2, 3, width - 4, 2);
+    ctx.fillStyle = UI.edge; ctx.fillRect(2, top - 14, width - 4, 2);
+    ctx.restore();
     ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
     if (mark) ctx.drawImage(model.mark, PAD, PAD + 4, mark, mark);
-    // Headings as the page's, tight; the wordmark tighter still.
-    ctx.fillStyle = UI.text; ctx.font = font(50, 750); ctx.letterSpacing = model.wordmark ? '-3px' : '-1px';
-    ctx.fillText(fit(ctx, model.title ?? '', titleWidth), titleX, PAD + 46); ctx.letterSpacing = '0px';
+    // Headings in the page's condensed capitals, the wordmark in its own letters
+    ctx.fillStyle = UI.text;
+    if (model.wordmark) { ctx.font = font(50, 750); ctx.letterSpacing = '-3px'; ctx.fillText(fit(ctx, model.title ?? '', titleWidth), titleX, PAD + 46); }
+    else { ctx.font = display(50); ctx.letterSpacing = '1px'; ctx.fillText(fit(ctx, (model.title ?? '').toUpperCase(), titleWidth), titleX, PAD + 48); }
+    ctx.letterSpacing = '0px';
     if (model.subtitle) { ctx.fillStyle = UI.muted; ctx.font = font(27); ctx.fillText(fit(ctx, model.subtitle, titleWidth), titleX, PAD + 90); }
-    ctx.fillStyle = UI.line; ctx.fillRect(PAD, top - 14, inner, 2);
-    ctx.font = font(22, 750); ctx.fillStyle = UI.gold; ctx.letterSpacing = '2px';
+    ctx.font = display(25); ctx.fillStyle = UI.gold; ctx.letterSpacing = '2px';
     for (const heading of headings) ctx.fillText(heading.text.toUpperCase(), heading.x + 2, heading.y + 28);
     ctx.letterSpacing = '0px';
     if (this.imageBox) {
       const b = this.imageBox;
       ctx.save(); ctx.beginPath(); ctx.roundRect(b.x, b.y, b.width, b.height, 16); ctx.clip();
       ctx.drawImage(model.image, b.x, b.y, b.width, b.height); ctx.restore();
-      box(ctx, b.x, b.y, b.width, b.height, 16, null, UI.line);
+      box(ctx, b.x, b.y, b.width, b.height, 16, null, UI.edge);
     }
     for (const region of this.regions) this.row(region, this.entries[region.index], region.index === this.selected);
     if (this.pages > 1 && !header.length) {
@@ -331,8 +363,9 @@ export class VRStatus {
   row({ x, y, width, height }, item, selected) {
     const ctx = this.menu.ctx, middle = y + height / 2;
     ctx.globalAlpha = item.disabled ? .5 : 1;
-    const fill = item.primary ? selected ? UI.accentHover : UI.accent : selected ? UI.hover : UI.raised;
-    box(ctx, x, y, width, height, 14, fill, item.primary ? null : UI.line);
+    const fill = item.primary ? selected ? ['#fffbe9', UI.accentHover] : [UI.accentTop, UI.accentBottom] : selected ? UI.hover : UI.raised;
+    box(ctx, x, y, width, height, 10, fill, item.primary ? UI.accentEdge : UI.edge);
+    shine(ctx, x + 1, y + 1, width - 2, height - 2, 9, item.primary);
     if (selected) {
       ctx.beginPath(); ctx.roundRect(x - 6, y - 6, width + 12, height + 12, 19);
       ctx.strokeStyle = UI.gold; ctx.lineWidth = 4; ctx.stroke();
@@ -346,11 +379,12 @@ export class VRStatus {
       left += 48;
     }
     if (item.toggle !== undefined) {
-      // As the page's .panel-switch: yellow when on.
-      const w = 58, h = 32, sx = right - w, sy = middle - h / 2;
-      box(ctx, sx, sy, w, h, h / 2, item.toggle ? UI.accent : UI.recessed, item.toggle ? null : UI.switchLine);
-      ctx.beginPath(); ctx.arc(item.toggle ? sx + w - h / 2 : sx + h / 2, middle, h / 2 - 5, 0, Math.PI * 2);
-      ctx.fillStyle = item.toggle ? UI.onAccent : UI.muted; ctx.fill();
+      // As the page's .panel-switch: a sunk track that fills with the accent, and a glossy knob
+      const w = 62, h = 34, sx = right - w, sy = middle - h / 2;
+      box(ctx, sx, sy, w, h, h / 2, item.toggle ? [UI.accentBottom, UI.accentTop] : ['#0c1013', '#262e35'], item.toggle ? UI.accentEdge : UI.edge);
+      ctx.beginPath(); ctx.arc(item.toggle ? sx + w - h / 2 : sx + h / 2, middle, h / 2 - 3, 0, Math.PI * 2);
+      ctx.fillStyle = down(ctx, middle - h / 2, h, UI.knob); ctx.fill();
+      ctx.strokeStyle = '#00000080'; ctx.lineWidth = 1.5; ctx.stroke();
       right = sx - 16;
     } else if (item.current || item.value) {
       // (a colour is ticked, as the page's swatches are ringed)
@@ -362,9 +396,10 @@ export class VRStatus {
       right -= ctx.measureText(value).width + 16;
     }
     const centred = item.primary || item.footer || item.header || this.narrow;
-    ctx.font = font(31, item.primary ? 750 : 600); ctx.fillStyle = item.primary ? UI.onAccent : UI.text;
+    // (the main action in the page's big-button capitals)
+    ctx.font = item.primary ? display(34) : font(31, 600); ctx.fillStyle = item.primary ? UI.onAccent : UI.text;
     ctx.textAlign = centred && item.toggle === undefined && !item.value && !item.current ? 'center' : 'left';
-    const label = fit(ctx, item.label, right - left);
+    const label = fit(ctx, item.primary ? item.label.toUpperCase() : item.label, right - left);
     ctx.fillText(label, ctx.textAlign === 'center' ? x + width / 2 : left, middle + 1);
     ctx.globalAlpha = 1; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
   }
@@ -385,54 +420,65 @@ export class VRStatus {
     const panel = this.hudPanel, ctx = panel.ctx, W = HUD.pixels, H = 150;
     panel.clear();
     ctx.textBaseline = 'alphabetic';
-    const glass = (x, w, fill = UI.glass) => box(ctx, x, 0, w, H, 22, fill, UI.line);
-    const line = (text, x, y, size, weight, color, width, align = 'left') => {
-      ctx.font = font(size, weight); ctx.fillStyle = color; ctx.textAlign = align;
+    // A panel lit along its top, a glossy plate, or a readout sunk into the panel
+    const glass = (x, w, fill = UI.glass, edge = UI.edge, finish = 'bevel') => {
+      box(ctx, x, 1, w, H - 2, 14, fill, edge);
+      if (finish !== 'well') shine(ctx, x + 1, 2, w - 2, H - 4, 13, finish === 'gloss');
+    };
+    const line = (text, x, y, size, weight, color, width, align = 'left', face = font) => {
+      ctx.font = face(size, weight); ctx.fillStyle = color; ctx.textAlign = align;
       ctx.fillText(fit(ctx, text, width), x, y);
     };
     const toast = flash && { text: flash.text, color: TONES[flash.tone] ?? UI.text };
     if (model.taxi || model.free) {
       // (free drive has no clock: its heading sits where the clock would)
-      if (model.free) { glass(0, 160); line(model.heading, 80, 100, 56, 750, UI.gold, 140, 'center'); }
+      if (model.free) { glass(0, 160); line(model.heading, 80, 104, 64, 600, UI.gold, 140, 'center', display); }
       else {
-        glass(0, 160, model.urgent ? UI.urgent : UI.glass);
-        ctx.letterSpacing = '2px'; line(model.clockLabel ?? 'TIME', 80, 42, 20, 750, model.urgent ? UI.onUrgent : UI.muted, 140, 'center'); ctx.letterSpacing = '0px';
-        line(model.clock, 80, 114, 64, 750, model.urgent ? UI.onUrgent : UI.text, 140, 'center');
+        // The clock in the accent, as the page's roof-sign plate
+        const ink = model.urgent ? UI.onUrgent : UI.onAccent;
+        glass(0, 160, model.urgent ? UI.urgent : [UI.accentTop, UI.accentBottom], model.urgent ? '#8a2a1c' : UI.accentEdge, 'gloss');
+        ctx.letterSpacing = '3px'; line(model.clockLabel ?? 'TIME', 80, 44, 24, 600, ink, 140, 'center', display); ctx.letterSpacing = '0px';
+        line(model.clock, 80, 120, 72, 700, ink, 140, 'center', display);
       }
       const x = 174, w = W - 174 * 2;
       glass(x, w);
       let right = x + w - 24;
-      // The fare's clock and the distance left keep their places through a toast.
-      const pill = (text, color) => {
-        ctx.font = font(24, 750); const tw = ctx.measureText(text).width + 28;
-        box(ctx, right - tw, 16, tw, 36, 18, UI.recessed, null);
-        line(text, right - tw / 2, 43, 24, 750, color, tw, 'center');
+      // The fare's clock and the distance left keep their places through a
+      // toast. The clock is a glossy badge in its rating's colour.
+      const pill = (text, color, badge) => {
+        ctx.font = display(26); const tw = ctx.measureText(text).width + 28;
+        box(ctx, right - tw, 16, tw, 36, 18, badge ? color : UI.recessed, badge ? '#00000080' : UI.edge);
+        if (badge) shine(ctx, right - tw + 1, 17, tw - 2, 34, 17, true);
+        line(text, right - tw / 2, 44, 26, 600, badge ? UI.onAccent : color, tw, 'center', display);
         right -= tw + 10;
       };
-      if (model.timer) pill(model.timer.text, TONES[model.timer.tone] ?? UI.text);
-      if (model.distance) pill(model.distance, UI.text);
+      if (model.timer) pill(model.timer.text, TONES[model.timer.tone] ?? UI.accent, true);
+      if (model.distance) pill(model.distance, UI.text, false);
       if (model.timer && model.timer.fraction !== null) {
-        box(ctx, x + 2, H - 10, w - 4, 8, 4, UI.recessed, null);
-        box(ctx, x + 2, H - 10, Math.max(8, (w - 4) * model.timer.fraction), 8, 4, TONES[model.timer.tone] ?? UI.accent, null);
+        box(ctx, x + 2, H - 11, w - 4, 8, 4, UI.recessed, null);
+        box(ctx, x + 2, H - 11, Math.max(8, (w - 4) * model.timer.fraction), 8, 4, TONES[model.timer.tone] ?? UI.accent, null);
       }
-      ctx.letterSpacing = '1px'; line(model.stage.toUpperCase(), x + 24, 43, 23, 750, UI.accent, right - x - 24); ctx.letterSpacing = '0px';
-      line(model.title, x + 24, 88, 38, 750, UI.text, w - 48);
+      ctx.letterSpacing = '1px'; line(model.stage.toUpperCase(), x + 24, 44, 26, 600, UI.accent, right - x - 24, 'left', display); ctx.letterSpacing = '0px';
+      line(model.title, x + 24, 90, 40, 500, UI.text, w - 48, 'left', display);
       line(toast?.text ?? model.detail, x + 24, 128, 26, toast ? 700 : 400, toast?.color ?? UI.muted, w - 48);
-      glass(W - 160, 160);
-      line(model.cash, W - 80, 78, model.free ? 34 : 42, 750, UI.text, 140, 'center');
-      line(model.free ? model.place : model.fares, W - 80, 116, 22, 400, UI.muted, 140, 'center');
+      // The money lit up in a meter's readout
+      glass(W - 160, 160, UI.readout, UI.edge, 'well');
+      ctx.shadowColor = UI.accent; ctx.shadowBlur = 14;
+      line(model.cash, W - 80, 82, model.free ? 40 : 48, 600, UI.accentSoft, 140, 'center', display);
+      ctx.shadowBlur = 0;
+      line(model.free ? model.place : model.fares, W - 80, 118, 22, 400, UI.muted, 140, 'center');
     } else {
       const w = 600, x = (W - w) / 2 + 60;
       glass(x - 120, 108);
-      line(model.heading, x - 66, 95, 52, 750, UI.gold, 90, 'center');
+      line(model.heading, x - 66, 98, 58, 600, UI.gold, 90, 'center', display);
       glass(x, w);
-      line(model.place, x + 26, 66, 36, 750, UI.text, w - 52);
+      line(model.place, x + 26, 68, 38, 500, UI.text, w - 52, 'left', display);
       line(toast?.text ?? model.cash ?? model.weather, x + 26, 112, 26, toast ? 700 : 400, toast?.color ?? UI.muted, w - 52);
     }
     let height = H;
     if (model.hint) {
       ctx.font = font(23); const hw = Math.min(W - 40, ctx.measureText(model.hint).width + 44);
-      box(ctx, (W - hw) / 2, H + 14, hw, 44, 22, UI.glass, UI.line);
+      box(ctx, (W - hw) / 2, H + 14, hw, 44, 22, UI.glass, UI.edge);
       line(model.hint, W / 2, H + 44, 23, 400, UI.text, hw - 36, 'center');
       height = H + 60;
     }

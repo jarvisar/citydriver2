@@ -135,7 +135,7 @@ export class WorldMap {
     const drawn = [];
     for (const label of [...this.labels].sort((a, b) => Number(Boolean(b.downtown)) - Number(Boolean(a.downtown)))) {
       const [x, y] = toCanvas(label.x, label.y), lines = label.downtown ? ['DOWNTOWN'] : label.name.toUpperCase().split(' ');
-      ctx.font = `${label.downtown ? 800 : 700} ${label.downtown ? (small ? 11 : 14) : small ? 10 : 13}px 'Segoe UI', Arial, sans-serif`;
+      ctx.font = `${label.downtown ? 700 : 500} ${label.downtown ? (small ? 12 : 16) : small ? 11 : 14}px Oswald, 'Arial Narrow', Arial, sans-serif`;
       const lineHeight = label.downtown ? 15 : small ? 11 : 14, top = y - (lines.length - 1) * lineHeight / 2;
       const half = Math.max(...lines.map(line => ctx.measureText(line).width)) / 2 + 2;
       const box = { left: x - half, right: x + half, top: top - lineHeight / 2, bottom: top + (lines.length - .5) * lineHeight };

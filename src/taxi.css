@@ -3,30 +3,39 @@
 [hidden]#taxi-buttons, [hidden]#taxi-dash, .taxi-stop-track[hidden], .taxi-timer-track[hidden], #taxi-timer[hidden] { display: none; }
 .taxi-hud, .taxi-task, .taxi-dash { font-variant-numeric: tabular-nums; pointer-events: none; }
 .taxi-hud { position: absolute; top: var(--ui-top); left: var(--ui-left); display: flex; gap: 2px; height: 58px; color: #fff; }
-.taxi-clock-box { display: flex; flex-direction: column; justify-content: center; align-items: center; min-width: 72px; padding: 5px 12px; background: var(--city-accent); color: #172229; border-radius: 12px 0 0 12px; }
-.taxi-clock-box > span { font-size: 11px; font-weight: 800; letter-spacing: .7px; }
-#taxi-clock { font-size: 30px; font-weight: 850; line-height: 1; letter-spacing: -1px; }
-.taxi-clock-box:has([data-urgent=true]) { background: #ffb5a6; }
+/* The clock is a glossy plate like a cab's roof sign, the money a meter's
+   lit readout sunk into a panel */
+.taxi-clock-box {
+  display: flex; flex-direction: column; justify-content: center; align-items: center; min-width: 72px; padding: 5px 12px;
+  color: #172229; background: var(--city-accent-fill); border: 1px solid var(--city-accent-edge); border-radius: 7px 0 0 7px;
+  box-shadow: inset 0 1px 0 #ffffffa6, var(--city-shadow); text-shadow: var(--city-emboss);
+}
+.taxi-clock-box > span { font-family: var(--city-display); font-size: 12px; font-weight: 600; letter-spacing: 1.5px; }
+#taxi-clock { font-family: var(--city-display); font-size: 32px; font-weight: 700; line-height: 1; }
+.taxi-clock-box:has([data-urgent=true]) { background: var(--city-gloss), linear-gradient(#ffd8cf, #ff8a7a); border-color: #8a2a1c; }
 #taxi-clock[data-urgent=true] { color: #721e15; }
-.taxi-score { display: grid; align-content: center; gap: 2px; padding: 6px 12px; border-radius: 0 12px 12px 0; background: #17262ff5; }
-#taxi-cash { font-size: 24px; font-weight: 800; line-height: 1.1; }
-#taxi-fares { font-size: 12px; color: #d9e4e8; }
+.taxi-score {
+  display: grid; align-content: center; gap: 2px; padding: 6px 12px; border: 1px solid var(--city-edge); border-left: 0; border-radius: 0 7px 7px 0;
+  background: linear-gradient(#090c0ef7, #182025f7); box-shadow: inset 0 2px 7px #000000f2, inset 0 -1px 0 #ffffff12, var(--city-shadow);
+}
+#taxi-cash { font-family: var(--city-display); font-size: 26px; font-weight: 600; line-height: 1.1; color: var(--city-accent-soft); text-shadow: 0 0 9px var(--city-accent-glow); }
+#taxi-fares { font-size: 12px; color: var(--city-muted); }
 
 .taxi-task { position: absolute; top: var(--ui-top); left: 50%; transform: translateX(-50%); width: 410px; max-width: calc(100% - var(--ui-left) - var(--ui-right)); display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid #ffffff40; border-radius: 14px; background: #17262ff5; color: #fff8e7; box-shadow: 0 3px 12px #07111926; }
 .taxi-task:has(.taxi-nav[hidden]) { grid-template-columns: minmax(0, 1fr); }
 .taxi-nav { display: grid; justify-items: center; align-content: center; gap: 2px; }
 #taxi-arrow { display: block; width: 30px; height: 30px; }
-#taxi-nav-distance { font-size: 12px; font-weight: 750; white-space: nowrap; }
+#taxi-nav-distance { font-family: var(--city-display); font-size: 13px; font-weight: 600; white-space: nowrap; }
 /* Two lines and no more: the stage, clock and money, then where to or what
    to hit with one extra after it (see info in run-hud-model.js). A hint or
    prompt takes the extra's place while it shows, and a toast takes theirs. */
 .taxi-task-copy { min-width: 0; display: grid; gap: 3px; }
 .taxi-task-heading { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 12px; line-height: 1.3; white-space: nowrap; }
-#taxi-stage { min-width: 0; margin-right: auto; overflow: hidden; text-overflow: ellipsis; color: var(--city-accent); font-weight: 800; }
-#taxi-fare-status { color: #d9e4e8; }
+#taxi-stage { min-width: 0; margin-right: auto; overflow: hidden; text-overflow: ellipsis; color: var(--city-accent); font-family: var(--city-display); font-size: 13px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; }
+#taxi-fare-status { color: var(--city-muted); }
 .taxi-task-main { display: flex; align-items: baseline; gap: 8px; min-width: 0; white-space: nowrap; }
 .taxi-task-main > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-#taxi-task-title { flex: 0 1 auto; font-size: 17px; line-height: 1.25; font-weight: 750; }
+#taxi-task-title { flex: 0 1 auto; font-family: var(--city-display); font-size: 19px; line-height: 1.25; font-weight: 500; letter-spacing: .2px; text-shadow: var(--city-engrave); }
 /* (the extra has what room the title leaves) */
 .taxi-task-main > :not(#taxi-task-title) { flex: 1 1 0; }
 .taxi-task-main > :is(.taxi-task-info, #taxi-task-detail, #toast) { font-size: 13px; line-height: 1.3; color: #d9e4e8; }
@@ -42,11 +51,13 @@
 #app .taxi-task[data-arriving=true] #toast { display: none; }
 /* (but an arrival prompt keeps its words and the title gives way) */
 .taxi-task[data-arriving=true] #taxi-task-detail { flex: none; }
-.taxi-task[data-arriving=true] { border-color: #b9edb1; }
+/* In the drop-off the card lights up green (#app, to win over the panels' shared finish) */
+#app .taxi-task[data-arriving=true] { border-color: #1f5a27; box-shadow: inset 0 1px 0 var(--city-shine), 0 0 0 2px #7ce787, 0 0 16px #7ce78799; }
 .taxi-task[data-arriving=true] #taxi-task-detail { color: #c3f4bb; }
 #city-map-toggle:focus-visible, #city-map-open:focus-visible, #taxi-buttons button:focus-visible { outline: 3px solid #fff8e7; outline-offset: 3px; }
-.taxi-stop-track { position: absolute; left: 12px; right: 12px; bottom: 0; height: 4px; border-radius: 2px; overflow: hidden; background: #ffffff30; }
-#taxi-stop-progress { display: block; height: 100%; background: #b9edb1; width: 0; }
+/* The card's bars are striped, sunk into its edges */
+.taxi-stop-track { position: absolute; left: 12px; right: 12px; bottom: 1px; height: 5px; border-radius: 3px; overflow: hidden; background: #00000080; box-shadow: inset 0 1px 2px #000000cc; }
+#taxi-stop-progress { display: block; height: 100%; width: 0; background: linear-gradient(-45deg, #ffffff4d 25%, #ffffff00 25% 50%, #ffffff4d 50% 75%, #ffffff00 75%) 0 0 / 10px 10px, linear-gradient(#d9fbd5, #7ce787); }
 
 /* Arrival ratings and fare distance share one traffic-light palette: green
    is the good end (Speedy, a long paying fare) and red the other. */
@@ -54,22 +65,27 @@
 [data-rating=normal], [data-band=medium], [data-tone=normal] { --rating-color: #ffd238; }
 [data-band=short] { --rating-color: #ffa44a; }
 [data-rating=slow], [data-band=hop], [data-tone=slow] { --rating-color: #ff8a7a; }
-#taxi-timer { flex: none; padding: 1px 8px; border-radius: 999px; color: #172229; background: var(--rating-color); font-weight: 800; white-space: nowrap; }
+/* (a glossy badge, as notification counts were) */
+#taxi-timer {
+  flex: none; padding: 1px 8px; border: 1px solid #00000080; border-radius: 999px; color: #172229; white-space: nowrap;
+  background: linear-gradient(#ffffff80, #ffffff26 50%, #ffffff00 51%), var(--rating-color);
+  box-shadow: inset 0 1px 0 #ffffff99, 0 1px 2px #00000099; text-shadow: var(--city-emboss); font-weight: 800;
+}
 .taxi-task[data-urgent=true] #taxi-timer { animation: taxi-timer-pulse .45s ease-in-out infinite alternate; }
 @keyframes taxi-timer-pulse { to { transform: scale(1.08); } }
 @media (prefers-reduced-motion: reduce) { .taxi-task[data-urgent=true] #taxi-timer { animation: none; outline: 2px solid #fff8e7; } }
 /* The clock drains along the top edge; ticks mark where the rating drops. */
-.taxi-timer-track { position: absolute; left: 14px; right: 14px; top: 0; height: 4px; border-radius: 0 0 3px 3px; overflow: hidden; background: #ffffff26; }
-.taxi-timer-track::before, .taxi-timer-track::after { content: ''; position: absolute; top: 0; bottom: 0; width: 2px; background: #17262f; z-index: 1; }
+.taxi-timer-track { position: absolute; left: 14px; right: 14px; top: 1px; height: 5px; border-radius: 0 0 3px 3px; overflow: hidden; background: #00000080; box-shadow: inset 0 1px 2px #000000cc; }
+.taxi-timer-track::before, .taxi-timer-track::after { content: ''; position: absolute; top: 0; bottom: 0; width: 2px; background: #0b0f12; z-index: 1; }
 .taxi-timer-track::before { left: 25%; }
 .taxi-timer-track::after { left: 50%; }
-#taxi-timer-fill { display: block; height: 100%; background: var(--rating-color); }
+#taxi-timer-fill { display: block; height: 100%; background: linear-gradient(-45deg, #ffffff4d 25%, #ffffff00 25% 50%, #ffffff4d 50% 75%, #ffffff00 75%) 0 0 / 10px 10px, linear-gradient(#ffffff66, #ffffff00), var(--rating-color); }
 #taxi-party[data-band]:not([data-band='']) { color: var(--rating-color); font-weight: 700; }
 #taxi-party[data-band]:not([data-band=''])::before { content: '●'; margin-right: 5px; }
 #app .taxi-task #toast:is([data-tone=speedy], [data-tone=normal], [data-tone=slow]) { color: var(--rating-color); font-weight: 700; }
 
-.taxi-dash { position: absolute; bottom: var(--ui-bottom); left: 50%; transform: translateX(-50%); display: grid; justify-items: center; gap: 4px; padding: 7px 10px; border-radius: 10px; color: #e6edef; background: #17262ff5; font-size: 12px; }
-#taxi-speed { font-size: 23px; font-weight: 750; color: #fff8e7; }
+.taxi-dash { position: absolute; bottom: var(--ui-bottom); left: 50%; transform: translateX(-50%); display: grid; justify-items: center; gap: 4px; padding: 7px 10px; border-radius: var(--city-radius); color: #e6edef; font-size: 12px; }
+#taxi-speed { font-family: var(--city-display); font-size: 25px; font-weight: 600; color: #fff8e7; text-shadow: var(--city-engrave); }
 #taxi-combo { color: #c3f4bb; font-size: 12px; white-space: nowrap; }
 #taxi-combo:empty { display: none; }
 .taxi-controller-charge { display: none; }
@@ -80,27 +96,32 @@ body[data-controller=true] .taxi-dash { bottom: var(--ui-bottom); left: 50%; tra
 #taxi-controller-boost::-webkit-progress-value { background: var(--city-accent); }
 #taxi-controller-boost::-moz-progress-bar { background: var(--city-accent); }
 #taxi-buttons { position: absolute; left: var(--ui-left); bottom: var(--ui-bottom); display: flex; align-items: stretch; gap: 10px; }
-#taxi-buttons button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; width: 80px; min-width: 80px; min-height: 76px; height: 100%; padding: 9px 7px 12px; border: 1px solid #ffffff50; border-radius: 12px; color: #172229; background: var(--city-accent); font-weight: 800; font-size: 15px; touch-action: none; }
-#taxi-buttons > button { color: #fff8e7; background: #17262ff5; }
+/* Arcade buttons: Boost glossy in the accent, the rest dark, and both press in */
+#taxi-buttons button {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; width: 80px; min-width: 80px; min-height: 76px; height: 100%; padding: 9px 7px 12px;
+  border: 1px solid var(--city-accent-edge); border-radius: 8px; color: #172229; background: var(--city-accent-fill);
+  box-shadow: inset 0 1px 0 #ffffffa6, 0 2px 6px #00000099; text-shadow: var(--city-emboss); font-weight: 800; font-size: 15px; touch-action: none;
+}
+#taxi-buttons button > span:first-of-type { font-family: var(--city-display); font-size: 17px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; }
+#taxi-buttons > button { color: var(--city-text); background: var(--city-hud-fill); border-color: var(--city-edge); box-shadow: inset 0 1px 0 var(--city-shine), var(--city-shadow); text-shadow: var(--city-engrave); }
 #taxi-buttons small { font-size: 11px; font-weight: 600; }
 #taxi-buttons kbd { width: auto; height: auto; padding: 2px 4px; font-size: 11px; line-height: 1.2; }
-#taxi-buttons > button kbd { border-color: #ffffff60; }
 .taxi-boost-control { position: relative; }
-#taxi-boost { position: absolute; left: 8px; right: 8px; bottom: 6px; height: 4px; border-radius: 4px; background: #17222940; overflow: hidden; pointer-events: none; }
-#taxi-boost-fill { display: block; height: 100%; background: #172229; }
-#taxi-buttons[data-boosting=true] [data-drive-button=boost] { background: var(--city-accent-soft); box-shadow: inset 0 0 0 2px #fff8e7; }
-#taxi-buttons[data-drifting=true] [data-drive-button=handbrake] { background: #405760; box-shadow: inset 0 0 0 2px #fff8e7; }
+#taxi-boost { position: absolute; left: 8px; right: 8px; bottom: 6px; height: 5px; border-radius: 3px; background: #00000033; box-shadow: inset 0 1px 1px #00000066, 0 1px 0 #ffffff66; overflow: hidden; pointer-events: none; }
+#taxi-boost-fill { display: block; height: 100%; background: linear-gradient(#3a4650, #172229); }
+#taxi-buttons[data-boosting=true] [data-drive-button=boost] { background: linear-gradient(var(--city-accent-bottom), var(--city-accent-top)); box-shadow: inset 0 3px 7px #00000080, 0 0 14px var(--city-accent-glow); }
+#taxi-buttons[data-drifting=true] [data-drive-button=handbrake] { background: var(--city-button-down); box-shadow: var(--city-pressed); }
 /* Through a drift the Drift button fills toward the next stage in the sparks' colour (see Drift), then shows the turbo running down */
 [data-drive-button=handbrake] { position: relative; }
-.drift-charge { position: absolute; left: 8px; right: 8px; bottom: 6px; height: 4px; border-radius: 4px; background: #ffffff26; overflow: hidden; pointer-events: none; visibility: hidden; color: #e6edef; }
-#drift-charge-fill { display: block; width: 0; height: 100%; background: currentColor; transition: width .1s linear; }
+.drift-charge { position: absolute; left: 8px; right: 8px; bottom: 6px; height: 5px; border-radius: 3px; background: #00000080; box-shadow: inset 0 1px 2px #000000cc, 0 1px 0 #ffffff17; overflow: hidden; pointer-events: none; visibility: hidden; color: #e6edef; }
+#drift-charge-fill { display: block; width: 0; height: 100%; background: linear-gradient(#ffffff73, #ffffff00), currentColor; transition: width .1s linear; }
 #taxi-buttons:is([data-drifting=true], [data-turbo=true]) .drift-charge { visibility: visible; }
 #taxi-buttons[data-stage='1'] .drift-charge { color: #57c3ff; }
 #taxi-buttons[data-stage='2'] .drift-charge { color: #ffa12e; }
 #taxi-buttons[data-stage='3'] .drift-charge { color: #ff58d8; }
-#taxi-buttons[data-stage='1'] [data-drive-button=handbrake] { box-shadow: inset 0 0 0 2px #57c3ff; }
-#taxi-buttons[data-stage='2'] [data-drive-button=handbrake] { box-shadow: inset 0 0 0 2px #ffa12e; }
-#taxi-buttons[data-stage='3'] [data-drive-button=handbrake] { box-shadow: inset 0 0 0 2px #ff58d8; }
+#taxi-buttons[data-stage='1'] [data-drive-button=handbrake] { box-shadow: inset 0 2px 6px #000000a6, inset 0 0 0 2px #57c3ff, 0 0 14px #57c3ffb3; }
+#taxi-buttons[data-stage='2'] [data-drive-button=handbrake] { box-shadow: inset 0 2px 6px #000000a6, inset 0 0 0 2px #ffa12e, 0 0 14px #ffa12eb3; }
+#taxi-buttons[data-stage='3'] [data-drive-button=handbrake] { box-shadow: inset 0 2px 6px #000000a6, inset 0 0 0 2px #ff58d8, 0 0 14px #ff58d8b3; }
 /* In the helicopter they climb and descend, longer names set a little smaller */
 body[data-flying=true] #taxi-buttons span { font-size: 13px; }
 
@@ -120,7 +141,13 @@ body:not([data-mode=free]) #toast { top: calc(var(--ui-top) + 120px); }
 /* Shared in-game map: an explicit 44px toggle, compact by default on phones. */
 .city-guide { --map-bottom: var(--ui-bottom); bottom: var(--map-bottom); width: 232px; padding: 8px; background: #17262ff5; border-radius: 12px; }
 body:not([data-mode=free]) .city-guide[data-expanded=true] { max-height: calc(100% - var(--taxi-task-bottom, 190px) - 12px - var(--map-bottom)); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
-.city-guide[data-expanded=true] .city-guide-header { position: sticky; top: 0; background: #17262f; z-index: 1; }
+/* (open, its header is a little toolbar, solid so a long offer scrolls under
+   it. It reaches into the card's padding and draws its edge with shadows, so
+   its buttons keep every pixel they had.) */
+.city-guide[data-expanded=true] .city-guide-header {
+  position: sticky; top: 0; z-index: 1; margin-inline: -4px; padding-inline: 4px;
+  background: linear-gradient(#46535d, #2b343c); border-radius: 5px; box-shadow: inset 0 0 0 1px var(--city-edge), inset 0 2px 0 var(--city-shine);
+}
 .city-guide-header { margin-bottom: 4px; }
 .city-guide-header > span { font-size: 12px; letter-spacing: .5px; }
 :is(#city-map-toggle, #city-map-open) { min-width: 0; min-height: 44px; padding: 8px 8px; font-size: 13px; font-weight: 650; color: #fff8e7; border-radius: 8px; }
@@ -152,6 +179,8 @@ body[data-controller=true] #city-map-open svg { display: none; }
 @media (any-pointer: coarse) {
   :root { --stick-size: 120px; }
   #taxi-buttons kbd { display: none; }
+  /* (Get out keeps to one line in the narrower button) */
+  body:not([data-flying=true]) #taxi-buttons button > span:first-of-type { font-size: 15px; letter-spacing: .2px; }
   #taxi-buttons button { width: 72px; min-width: 72px; min-height: 72px; }
   body:not([data-mode=free]) #stick-help { display: block; bottom: calc(var(--stick-size) + 8px); padding: 6px 36px 6px 9px; color: #e6edef; background: #17262ff5; border-radius: 9px; font-size: 12px; line-height: 1.5; }
   body:not([data-mode=free]) .stick-help-line { font-size: 12px; }
@@ -235,25 +264,37 @@ body[data-controller=true] #city-map-open svg { display: none; }
 }
 .taxi-results { position: absolute; inset: 0; z-index: 7; display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: center; background: #101c28d9; backdrop-filter: blur(10px); color: #f9f5e5; }
 .taxi-result-card { width: 360px; max-width: calc(100% - var(--ui-left) - var(--ui-right)); padding: 26px 26px 22px; border: 1px solid color-mix(in srgb, var(--city-accent) 40%, transparent); border-radius: 16px; background: #17262f; text-align: center; font-variant-numeric: tabular-nums; }
-.taxi-result-card h2 { display: flex; align-items: baseline; justify-content: center; gap: 10px; font-size: 13px; letter-spacing: 2px; margin: 0 0 8px; color: var(--city-accent); }
-#taxi-result-shift, #demolition-result-time { color: #9fb0b6; font-size: 12px; letter-spacing: 0; font-weight: 600; }
+.taxi-result-card h2 { display: flex; align-items: baseline; justify-content: center; gap: 10px; font-family: var(--city-display); font-size: 17px; font-weight: 600; letter-spacing: 2px; margin: 0 0 8px; color: var(--city-accent); text-shadow: var(--city-engrave); }
+#taxi-result-shift, #demolition-result-time { color: #9fb0b6; font-size: 13px; letter-spacing: .5px; font-weight: 500; }
 #taxi-result-shift[data-new=true] { color: var(--city-accent); }
 #taxi-result-shift[data-new=true]::after { content: ' ★'; }
-#taxi-result-cash, #demolition-result-score { display: block; font-size: 64px; line-height: 1; font-weight: 900; letter-spacing: -3px; }
+/* The takings in polished metal letters */
+#taxi-result-cash, #demolition-result-score {
+  display: block; padding: 0 .1em; font-family: var(--city-display); font-size: 64px; line-height: 1.1; font-weight: 700; letter-spacing: 0;
+  color: transparent; background: linear-gradient(#ffffff 10%, var(--city-accent-soft) 48%, var(--city-accent) 52%, var(--city-accent-bottom) 92%); -webkit-background-clip: text; background-clip: text;
+  filter: drop-shadow(0 2px 0 #000000) drop-shadow(0 0 12px color-mix(in srgb, var(--city-accent) 35%, transparent));
+}
+@media (forced-colors: active) { #taxi-result-cash, #demolition-result-score { color: CanvasText; background: none; filter: none; } }
 .taxi-license { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 16px 0 18px; text-align: left; }
-.taxi-license-badge { display: grid; place-items: center; flex: none; width: 48px; height: 48px; border-radius: 12px; background: var(--city-accent); color: #172229; font-size: 28px; font-weight: 900; line-height: 1; }
-.taxi-license[data-license=none] .taxi-license-badge { background: #ffffff1f; color: #d9e4e8; }
-.taxi-license:is([data-license=s], [data-license=legend]) .taxi-license-badge { background: linear-gradient(135deg, var(--city-accent-soft), var(--city-accent) 45%, #ff9c33); box-shadow: 0 0 18px color-mix(in srgb, var(--city-accent) 40%, transparent); }
+/* The license badge is a glossy tile, like an app's icon */
+.taxi-license-badge {
+  display: grid; place-items: center; flex: none; width: 48px; height: 48px; border: 1px solid var(--city-accent-edge); border-radius: 11px;
+  background: var(--city-accent-fill); color: #172229; box-shadow: inset 0 1px 0 #ffffffb3, 0 2px 6px #000000a6; text-shadow: var(--city-emboss);
+  font-family: var(--city-display); font-size: 28px; font-weight: 700; line-height: 1;
+}
+.taxi-license[data-license=none] .taxi-license-badge { background: var(--city-button-fill); border-color: var(--city-edge); color: #d9e4e8; box-shadow: var(--city-bevel); text-shadow: var(--city-engrave); }
+.taxi-license:is([data-license=s], [data-license=legend]) .taxi-license-badge { background: var(--city-gloss), linear-gradient(135deg, var(--city-accent-soft), var(--city-accent) 45%, #ff9c33); box-shadow: inset 0 1px 0 #ffffffb3, 0 0 18px color-mix(in srgb, var(--city-accent) 50%, transparent); }
 .taxi-license-copy { display: grid; gap: 3px; min-width: 0; }
-#taxi-license-name, #demolition-rank-name { font-size: 17px; font-weight: 800; }
+#taxi-license-name, #demolition-rank-name { font-family: var(--city-display); font-size: 19px; font-weight: 600; letter-spacing: .3px; }
 #taxi-license-next, #demolition-rank-next { font-size: 12px; color: #c3d0d5; }
 #taxi-license-next:empty, #demolition-rank-next:empty { display: none; }
-/* Six numbers say what the shift was; gold marks a career record. */
+/* Six numbers say what the shift was, each in a sunk readout. Gold marks a
+   career record. */
 .taxi-result-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 0; padding: 0; list-style: none; }
-.taxi-result-stats li { display: grid; gap: 2px; padding: 10px 4px 9px; border-radius: 10px; background: #ffffff0a; }
-.taxi-result-stats strong { font-size: 22px; line-height: 1.1; font-weight: 800; letter-spacing: -.5px; }
+.taxi-result-stats li { display: grid; gap: 2px; padding: 10px 4px 9px; border-radius: 5px; background: linear-gradient(#0b0f12, #161d22); box-shadow: var(--city-well); }
+.taxi-result-stats strong { font-family: var(--city-display); font-size: 23px; line-height: 1.1; font-weight: 600; }
 .taxi-result-stats span { font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: #9fb0b6; }
-.taxi-result-stats li[data-new=true] { background: color-mix(in srgb, var(--city-accent) 9%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--city-accent) 40%, transparent); }
+.taxi-result-stats li[data-new=true] { background: linear-gradient(color-mix(in srgb, var(--city-accent) 8%, #0b0f12), color-mix(in srgb, var(--city-accent) 14%, #161d22)); box-shadow: var(--city-well), inset 0 0 0 1px color-mix(in srgb, var(--city-accent) 45%, transparent); }
 .taxi-result-stats li[data-new=true] strong { color: var(--city-accent); }
 .taxi-result-stats li[data-new=true] span::after { content: ' ★'; color: var(--city-accent); }
 .taxi-result-heading { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: #9fb0b6; }
@@ -284,11 +325,11 @@ body[data-controller=true] #city-map-open svg { display: none; }
    short screen tightens the card, and on its side the takings sit beside
    the goals and the buttons, so the whole card fits without scrolling. */
 .taxi-result-more { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 8px; }
-.taxi-result-more > :not(#taxi-keep, #taxi-fleet-results, #demolition-keep, #demolition-taxi) { grid-column: 1 / -1; }
-.taxi-result-card :is(#taxi-fleet-results, #taxi-free, #demolition-taxi, #demolition-free) { padding-inline: 8px; }
+.taxi-result-more > :not(#taxi-keep, #taxi-garage-results, #demolition-keep, #demolition-taxi) { grid-column: 1 / -1; }
+.taxi-result-card :is(#taxi-garage-results, #taxi-free, #demolition-taxi, #demolition-free) { padding-inline: 8px; }
 @media (max-height: 700px) {
   .taxi-result-card { padding: 18px 20px 16px; }
-  #taxi-result-cash, #demolition-result-score { font-size: 48px; letter-spacing: -2px; }
+  #taxi-result-cash, #demolition-result-score { font-size: 48px; }
   .taxi-license { margin: 10px 0 12px; }
   .taxi-license-badge { width: 40px; height: 40px; font-size: 24px; }
   .taxi-result-stats li { padding: 6px 4px 5px; }
@@ -371,3 +412,23 @@ body[data-controller=true] #city-map-open svg { display: none; }
   .taxi-task { gap: 6px; padding: 7px 8px; grid-template-columns: 32px minmax(0, 1fr); }
   .taxi-task-heading { gap: 5px; }
 }
+/* The results card keeps to the screen, buttons and all, with the balance under it */
+#taxi-result-bank { color: #ffd238; line-height: 1.6; }
+.taxi-result-card { max-height: calc(100% - var(--ui-top) - var(--ui-bottom)); overflow-y: auto; box-sizing: border-box; }
+.taxi-result-card button { min-height: 44px; }
+/* The smallest phones (568 px tall) fit the whole card, buttons and all. */
+@media (max-height: 600px) and (orientation: portrait) {
+  .taxi-result-card { padding: 14px 16px 12px; }
+  #taxi-result-cash { font-size: 40px; }
+  .taxi-license { margin: 6px 0 8px; }
+  .taxi-result-stats li { padding: 4px 4px 3px; }
+  .taxi-result-stats strong { font-size: 16px; }
+  .taxi-result-goals { margin-top: 8px; }
+  .taxi-result-goals li { padding-block: 3px; }
+  .taxi-result-more > * { margin-top: 8px; }
+  .taxi-result-card button { margin-top: 8px; padding-block: 10px; }
+}
+@media (orientation: landscape) and (max-height: 400px) {
+  .taxi-result-card { padding-block: 12px 10px; }
+}
+#change-car[hidden] { display: none; }

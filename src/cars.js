@@ -257,7 +257,16 @@ const METERS = [
   { label: 'Handling', key: 'grip', low: .72, high: 1.3 },
   { label: 'Off road', key: 'offRoad', low: 12, high: 24.5 },
 ];
+// The cabs are tuned past every road car, so on that scale all three pegged
+// every bar. They get one of their own from zero (the old Taxi fleet's), so
+// the Taxi, GT Taxi and Formula Taxi still tell apart in the garage.
+const CAB_METERS = [
+  { label: 'Top speed', key: 'topSpeed', low: 0, high: 55 },
+  { label: 'Acceleration', key: 'acceleration', low: 0, high: 42 },
+  { label: 'Handling', key: 'grip', low: 0, high: 2.3 },
+  { label: 'Off road', key: 'offRoad', low: 0, high: 32 },
+];
 export function carMeters(id) {
-  const stats = carEntry(id).stats;
-  return METERS.map(({ label, key, low, high }) => ({ label, level: Math.round(Math.min(1, Math.max(.06, (stats[key] - low) / (high - low))) * 100) }));
+  const { stats, taxi } = carEntry(id);
+  return (taxi ? CAB_METERS : METERS).map(({ label, key, low, high }) => ({ label, level: Math.round(Math.min(1, Math.max(.06, (stats[key] - low) / (high - low))) * 100) }));
 }

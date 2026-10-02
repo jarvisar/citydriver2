@@ -7,9 +7,11 @@ import { BrowserVR } from '../src/vr.js';
 import { VRStatus } from '../src/vr-status.js';
 
 // The headset's panels draw on canvases. Node has none, so a stand-in
-// measures every character 14 px wide and draws nothing.
+// measures every character 14 px wide and draws nothing (its gradients too).
 globalThis.document ??= { createElement: () => {
-  const ctx = new Proxy({ measureText: text => ({ width: String(text).length * 14 }) }, { get: (target, key) => target[key] ?? (() => {}), set: () => true });
+  const gradient = () => ({ addColorStop() {} });
+  const ctx = new Proxy({ measureText: text => ({ width: String(text).length * 14 }), createLinearGradient: gradient, createConicGradient: gradient },
+    { get: (target, key) => target[key] ?? (() => {}), set: () => true });
   return { width: 0, height: 0, getContext: () => ctx };
 } };
 function panelFixture(model) {

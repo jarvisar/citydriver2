@@ -4,7 +4,7 @@ import { TaxiRun, STOP_SECONDS } from '../src/taxi-run.js';
 import { TaxiFleet } from '../src/taxi-fleet.js';
 import { TaxiCareer } from '../src/taxi-career.js';
 import { DemolitionRun, CHAIN_SECONDS } from '../src/demolition-run.js';
-import { garageModel, createFleetMenu, savingFor } from '../src/chooser-model.js';
+import { garageModel, savingFor } from '../src/chooser-model.js';
 import { carPrice, testDrivePrice } from '../src/cars.js';
 import { menuControls, menuModel, WEATHER_CHOICES, cycleChoice } from '../src/menu-model.js';
 import { taxiHudModel, demolitionHudModel, locationHudModel, headsetHudModel } from '../src/run-hud-model.js';
@@ -14,7 +14,7 @@ import { DEFAULT_PAINT } from '../src/car-paint.js';
 
 const player = () => ({ s: 25, u: 3, heading: 0, speed: 0, distance: 1609.344, boosting: false, drifting: false });
 const state = (extra = {}) => ({ started: true, paused: true, loading: false, chooser: null, mode: 'taxi', over: false, running: true,
-  location: { place: 'Downtown', distance: '1.0' }, carName: 'City Taxi', fleetName: 'City Taxi', weather: 'sunset', view: 'Chase view',
+  location: { place: 'Downtown', distance: '1.0' }, carName: 'City Taxi', weather: 'sunset', view: 'Chase view',
   graphics: 'Auto', sound: true, mix: 'balanced', comfort: true, rates: [], rateChoice: null, ...extra });
 const actions = calls => new Proxy({}, { get: (_, key) => () => calls.push(key) });
 
@@ -24,11 +24,12 @@ test('menu choices and commands cover the title, pause modes, choosers and resul
   let model = build(state({ started: false, paused: false }));
   assert.equal(model.id, 'title'); model.items[0].activate(); assert.deepEqual(calls, ['start']);
   assert.equal(menuControls(state({ started: false }), commands).garage.disabled, false, 'a garage visit before starting is allowed');
-  assert.equal(menuControls(state(), commands).garage.disabled, true, 'an active taxi run keeps its cab');
+  assert.equal(menuControls(state(), commands).garage.disabled, false, 'in a shift the garage is the cabs, for the next one');
+  assert.equal(menuControls(state({ mode: 'demolition' }), commands).garage.disabled, true, 'a demolition run keeps its truck');
   assert.equal(build(state({ paused: false })), null);
   assert.equal(build(state({ loading: true })).id, 'loading');
-  for (const [mode, driving] of [['taxi', ['End shift', 'Demolition', 'Taxi fleet', 'Tap to drift', 'Reset car']],
-    ['demolition', ['Restart run', 'End run', 'Taxi shift', 'Tap to drift', 'Reset car']], ['free', ['Taxi shift', 'Demolition', 'Garage', 'Taxi fleet', 'Autodrive', 'Traffic', 'Tap to drift', 'Reset car']]]) {
+  for (const [mode, driving] of [['taxi', ['End shift', 'Demolition', 'Garage', 'Tap to drift', 'Reset car']],
+    ['demolition', ['Restart run', 'End run', 'Taxi shift', 'Tap to drift', 'Reset car']], ['free', ['Taxi shift', 'Demolition', 'Garage', 'Autodrive', 'Traffic', 'Tap to drift', 'Reset car']]]) {
     model = build(state({ mode, running: mode !== 'free' }));
     assert.deepEqual(model.items.filter(item => item.group === 'Driving').map(item => item.label), driving);
     assert.equal(model.items[0].label, 'Resume'); assert.equal(model.items[0].primary, true);
@@ -44,7 +45,7 @@ test('menu choices and commands cover the title, pause modes, choosers and resul
   for (const mode of ['taxi', 'demolition']) {
     model = build(state({ mode, over: true }), { result: { cash: '$500', name: 'Class D', next: 'Next rating', best: 'Best $600' } });
     assert.equal(model.title, 'Time up · $500');
-    assert.deepEqual(model.items.slice(0, 3).map(item => item.label), mode === 'taxi' ? ['Next shift', 'Keep driving', 'Taxi fleet'] : ['Play again', 'Keep driving', 'Taxi shift']);
+    assert.deepEqual(model.items.slice(0, 3).map(item => item.label), mode === 'taxi' ? ['Next shift', 'Keep driving', 'Garage'] : ['Play again', 'Keep driving', 'Taxi shift']);
     assert.equal(model.items[2].value, undefined, 'results keep the short action labels');
     model.items[0].activate(); assert.equal(calls.at(-1), mode);
     model.items[1].activate(); assert.equal(calls.at(-1), 'keep');
@@ -52,7 +53,8 @@ test('menu choices and commands cover the title, pause modes, choosers and resul
 });
 
 const garageActions = calls => ({ chooseCar: id => calls.push(id), applyPaint: paint => calls.push(paint), openOffer: id => calls.push(`offer:${id}`),
-  closeOffer: () => calls.push('close'), buyCar: id => calls.push(`buy:${id}`), testDrive: id => calls.push(`test:${id}`), saveFor: id => calls.push(`save:${id}`), useGear: id => calls.push(id) });
+  closeOffer: () => calls.push('close'), buyCar: id => calls.push(`buy:${id}`), testDrive: id => calls.push(`test:${id}`), saveFor: id => calls.push(`save:${id}`), useGear: id => calls.push(id),
+  chooseCab: id => calls.push(`cab:${id}`), chooseLivery: id => calls.push(`livery:${id}`) });
 test('garage selection uses car and paint state, and preserves paint-first headset paging', () => {
   const calls = [], ownPaint = () => '#123456', fleet = new TaxiFleet();
   fleet.credit(carPrice('sports')); fleet.buy('sports');
@@ -117,20 +119,26 @@ test('saving for a car: the one chosen, else the cheapest still out of reach, an
   assert.equal(savingFor(fleet), null);
 });
 
-test('fleet models validate purchases and locked liveries without desktop buttons, including stale rows', () => {
-  const fleet = new TaxiFleet(), career = new TaxiCareer(), changes = [], paint = [];
-  const menu = createFleetMenu(fleet, { running: () => true, career, onChange: () => changes.push(fleet.selected), onLivery: color => paint.push(color) });
-  const locked = menu.model().cabs.find(cab => cab.id === 'taxiGT');
-  assert.equal(locked.disabled, true); assert.equal(locked.value, '$10,000');
-  assert.equal(locked.activate(), false); assert.equal(changes.length, 0);
-  fleet.credit(carPrice('taxiGT')); assert.equal(menu.model().cabs.find(cab => cab.id === 'taxiGT').disabled, false);
-  assert.equal(locked.activate(), true); assert.equal(fleet.balance, 0); assert.equal(fleet.selected, 'taxiGT');
-  assert.equal(locked.activate(), true); assert.equal(fleet.balance, 0, 'a second activation only selects an owned cab');
-  assert.match(menu.model().note, /next run/);
-  const livery = menu.model().liveries.find(livery => livery.id === 'cream');
-  assert.equal(livery.disabled, true); assert.equal(livery.activate(), false);
-  career.earnings = 2000; assert.equal(livery.activate(), true); assert.equal(paint.length, 1);
-  assert.equal(menu.model().liveries.find(livery => livery.current).id, 'cream');
+test('the garage holds the fleet too: the shift cab and liveries, and in a shift only the cabs, for the next one', () => {
+  const calls = [], fleet = new TaxiFleet(), career = new TaxiCareer(), ownPaint = () => '#123456';
+  const build = (shift, offer = null) => garageModel({ carId: 'hatchback', paint: null, ownPaint, fleet, career, shift, offer }, garageActions(calls));
+  let garage = build(false);
+  assert.equal(garage.cars.find(car => car.id === 'taxi').value, 'Shift cab', 'the shift\'s cab is marked among the cars');
+  assert.ok(garage.liveries.some(livery => livery.disabled) && garage.liveries.some(livery => livery.current), 'liveries, locked by rank');
+  garage = build(true);
+  assert.deepEqual([...new Set(garage.cars.map(car => car.group))], ['Cabs']); assert.equal(garage.paints.length, 0); assert.equal(garage.gear.length, 0);
+  assert.equal(garage.cars.find(car => car.current).id, 'taxi', 'the next shift\'s cab is the current one');
+  garage.cars.find(car => car.id === 'taxi').activate(); assert.equal(calls.at(-1), 'cab:taxi', 'an owned cab is picked for the next shift, not driven');
+  garage.cars.find(car => car.id === 'taxiGT').activate(); assert.equal(calls.at(-1), 'offer:taxiGT');
+  const offer = build(true, 'taxiGT').offer;
+  assert.equal(offer.items[1].disabled, true, 'no test drives mid-shift'); assert.match(offer.note, /next shift/);
+  assert.equal(build(true, 'plane').offer, null, 'nothing but cabs on offer in a shift');
+  const s = state({ chooser: 'garage' }), model = menuModel(s, menuControls(s, actions([])), { garage });
+  assert.deepEqual([...new Set(model.items.map(item => item.group).filter(Boolean))], ['Cab livery', 'Cabs']); assert.match(model.subtitle, /next shift/);
+  garage.liveries.find(livery => livery.id === 'cream').activate(); assert.equal(calls.at(-1), 'livery:cream');
+  // (a stale row is checked again when chosen: TaxiFleet takes only what the rank unlocks)
+  assert.equal(fleet.setLivery('cream', career), false); career.earnings = 2000; assert.equal(fleet.setLivery('cream', career), true);
+  assert.equal(build(true).liveries.find(livery => livery.current).id, 'cream');
 });
 
 test('taxi HUD covers nearby fares, boarding, rating changes, group stops and overtime from run state', () => {
