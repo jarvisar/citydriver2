@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { DrivingController } from '../src/vehicle.js';
+import { DrivingController, createCar } from '../src/vehicle.js';
+import { CARS, CAR_IDS } from '../src/cars.js';
+import { tailPipes } from '../src/car-profile.js';
 import { FrameClock } from '../src/timing.js';
 import { DRIFT_MIN, DRIFT_END, STAGES, TURBOS, TRICK } from '../src/drift.js';
 import { DriftEffects, STAGE_COLOURS } from '../src/drift-effects.js';
@@ -41,7 +43,7 @@ test('the drift button hops the car at speed, a quick hop that keeps its tyres w
     const bumps = c.audioTelemetry.bumpSerial;
     let peak = 0, aloft = false;
     for (let i = 0; i < 60; i++) { c.update(STEP, { forward: 1, handbrake: true }); peak = Math.max(peak, c.y - GROUND); aloft ||= c.aloft; }
-    assert.ok(peak > .07 && peak < .2, `hopped ${peak.toFixed(3)} m`);
+    assert.ok(peak > .14 && peak < .27, `hopped ${peak.toFixed(3)} m`);
     assert.ok(!aloft, 'never off its tyres');
     assert.ok(Math.abs(c.y - GROUND) < 1e-6 && c.audioTelemetry.bumpSerial > bumps, 'down again with a thump');
     // Held on going straight, no drift, no brake and no second hop
@@ -299,6 +301,21 @@ test('sparks fly in the stage\'s colour, a burst at each stage, flames while a t
     assert.equal(effects.flames.count, 0, 'out when the turbo is');
     assert.equal(effects.warmupObjects().length, 4);
   } finally { effects.dispose(); c.disposeModel(); }
+});
+
+test('every car\'s flames start on its back, low down, both sides', () => {
+  const caster = new THREE.Raycaster(), back = new THREE.Vector3(0, 0, -1);
+  for (const id of [...CAR_IDS, 'demolition']) {
+    const model = createCar(id), tail = tailPipes(model.body), box = new THREE.Box3().setFromObject(model.body);
+    assert.ok(tail.y > .1 && tail.y < Math.min(1.8, box.max.y - .2), `${id} at ${tail.y.toFixed(2)} m up`);
+    assert.ok(tail.z > box.max.z - .5, `${id}: ${tail.z.toFixed(2)} against its back at ${box.max.z.toFixed(2)}`);
+    for (const x of [-tail.x, tail.x]) {
+      caster.set(new THREE.Vector3(x, tail.y, box.max.z + 1), back);
+      const hit = caster.intersectObject(model.body, true)[0];
+      assert.ok(hit && Math.abs(hit.point.z - tail.z) < .1, `${id}'s ${x < 0 ? 'left' : 'right'} flame meets its bodywork`);
+    }
+    assert.equal(CARS[id].shape.width > tail.x * 2, true);
+  }
 });
 
 test('each stage chimes a step higher', () => {

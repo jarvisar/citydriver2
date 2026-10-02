@@ -72,22 +72,29 @@ test('controller detection handles sparse slots, disconnects, and missing or res
   input.getGamepads = () => []; assert.doesNotThrow(() => input.update());
 });
 
-test('stick deadzone, analog triggers, D-pad and face-button fallbacks', () => {
+test('stick deadzone and analog triggers, and only the triggers drive', () => {
   const { input, device, actions } = fixture();
   device.axes[0] = .12; hold(device, 7, .04); input.update();
   assert.equal(input.state.right, 0); assert.equal(input.state.forward, 0); assert.deepEqual(actions, []);
   device.axes[0] = -.56; hold(device, 7, .75); input.update();
   assert.ok(Math.abs(input.state.left - .5) < 1e-10);
   assert.ok(input.state.forward > .7 && input.state.forward < .8);
-  hold(device, 7, 0); hold(device, 6, .54); hold(device, 15); input.update();
-  assert.equal(input.state.right, 1); assert.ok(Math.abs(input.state.brake - .5) < 1e-10);
-  device.mapping = ''; device.axes = []; hold(device, 0); hold(device, 1); input.update();
-  assert.equal(input.state.forward, 1); assert.equal(input.state.brake, 1);
+  hold(device, 7, 0); hold(device, 6, .54); input.update();
+  assert.ok(Math.abs(input.state.brake - .5) < 1e-10);
+  // (A and B were gas and brake too, and the D-pad steered while it zoomed the camera)
+  device.axes[0] = 0; hold(device, 6, 0); hold(device, 15); input.update();
+  assert.equal(input.state.right, 0); assert.equal(input.state.moveX, 0, 'the D-pad zooms, it does not steer or walk');
+  hold(device, 15, 0); input.update();
+  hold(device, 0); hold(device, 1); input.update();
+  assert.equal(input.state.forward, 0); assert.equal(input.state.brake, 0);
+  // An unmapped pad is read by the same indices
+  device.mapping = ''; device.axes = []; hold(device, 0, 0); hold(device, 1, 0); hold(device, 7); input.update();
+  assert.equal(input.state.forward, 1);
 });
 
 test('shortcuts fire once per press and Start works while paused', () => {
   const { input, device, actions } = fixture();
-  for (const [index, action] of [[9, 'pause'], [2, 'view'], [3, 'reset'], [5, 'nextJourney'], [8, 'map'], [13, 'fullscreen'], [11, 'recenter'], [14, 'zoomIn'], [15, 'zoomOut']]) {
+  for (const [index, action] of [[9, 'pause'], [1, 'view'], [3, 'use'], [5, 'nextJourney'], [8, 'map'], [13, 'reset'], [11, 'recenter'], [14, 'zoomIn'], [15, 'zoomOut']]) {
     hold(device, index); input.update(); input.update(); input.update();
     assert.equal(actions.filter(item => item === action).length, 1);
     hold(device, index, 0); input.update();
@@ -112,19 +119,36 @@ test('scene shortcut works paused and consumes presses made in a modal', () => {
   assert.deepEqual(actions, ['nextJourney', 'nextJourney']);
 });
 
-test('L1 drifts, and D-pad Down is fullscreen while driving but navigation in menus', () => {
+test('A boosts and X drifts, as in Need for Speed and Burnout, or RB and LB as Shift and Space do', () => {
   const { input, device, actions } = fixture();
-  hold(device, 4); input.update(); input.update();
-  assert.equal(input.state.handbrake, 1);
-  assert.deepEqual(actions, [], 'L1 is no shortcut');
-  hold(device, 4, 0); hold(device, 13); input.update(); input.update();
-  assert.equal(input.state.handbrake, 0, 'D-pad Down no longer drifts');
-  assert.deepEqual(actions, ['fullscreen']);
+  for (const [index, held] of [[0, 'boost'], [5, 'boost'], [2, 'handbrake'], [4, 'handbrake']]) {
+    hold(device, index); input.update(); input.update();
+    assert.equal(input.state[held], 1, `${index} ${held}`);
+    hold(device, index, 0); input.update();
+  }
+  // (only the shoulders climb, descend, jump and sprint, as Space and Shift do)
+  hold(device, 4); input.update(); assert.equal(input.state.climb, 1); assert.equal(input.state.jump, 1); hold(device, 4, 0);
+  hold(device, 5); input.update(); assert.equal(input.state.descend, 1); assert.equal(input.state.sprint, 1); hold(device, 5, 0);
+  hold(device, 2); input.update(); assert.equal(input.state.climb, 0, 'X drifts and nothing else'); hold(device, 2, 0);
+  input.update();
+  assert.deepEqual(actions.filter(action => action !== 'nextJourney'), [], 'none of them is a shortcut');
+});
+
+test('D-pad Down resets the car while driving but moves the focus in menus, and Y gets in and out in every mode', () => {
+  const { input, device, actions } = fixture();
+  hold(device, 13); input.update(); input.update();
+  assert.deepEqual(actions, ['reset']);
   hold(device, 13, 0); input.update();
   hold(device, 13); input.update({ paused: true, menu: 'pause' });
   hold(device, 13, 0); input.update({ paused: true, menu: 'pause' });
   hold(device, 13); input.update({ menu: true });
-  assert.deepEqual(actions, ['fullscreen', 'menuDown', 'menuDown']);
+  hold(device, 13, 0); input.update();
+  assert.deepEqual(actions, ['reset', 'menuDown', 'menuDown']);
+  // (Y used to reset in a run: in a run, main.js asks before ending it, as for E)
+  hold(device, 3); input.update(); input.update();
+  assert.equal(actions.at(-1), 'use');
+  hold(device, 3, 0); input.update(); hold(device, 3); input.update({ paused: true, menu: 'pause' });
+  assert.equal(actions.filter(action => action === 'use').length, 1, 'nothing while paused');
 });
 
 test('D-pad Up toggles autodrive once while driving and remains navigation in menus', () => {
@@ -141,13 +165,13 @@ test('D-pad Up toggles autodrive once while driving and remains navigation in me
 
 test('chooser routes controller inputs to navigation without driving', () => {
   const { input, device, actions } = fixture();
-  for (const [index, action] of [[15, 'menuNext'], [14, 'menuPrevious'], [12, 'menuUp'], [13, 'menuDown'], [0, 'menuConfirm'], [1, 'menuClose'], [8, 'menuClose'], [10, 'menuClose']]) {
+  for (const [index, action] of [[15, 'menuNext'], [14, 'menuPrevious'], [12, 'menuUp'], [13, 'menuDown'], [0, 'menuConfirm'], [1, 'menuClose'], [8, 'menuClose']]) {
     hold(device, index); input.update({ menu: true }); input.update({ menu: true });
     assert.equal(actions.at(-1), action);
     assert.deepEqual(input.state, {});
     hold(device, index, 0); input.update({ menu: true });
   }
-  assert.equal(actions.length, 8);
+  assert.equal(actions.length, 7);
   device.axes[0] = 1; input.update({ menu: true }); input.update({ menu: true });
   assert.equal(actions.at(-1), 'menuNext');
   device.axes[0] = 0; input.update({ menu: true });
@@ -156,13 +180,13 @@ test('chooser routes controller inputs to navigation without driving', () => {
   assert.equal(actions.at(-1), 'menuDown');
   device.axes[1] = -1; input.update({ menu: true }); input.update({ menu: true });
   assert.equal(actions.at(-1), 'menuUp');
-  assert.equal(actions.length, 11);
+  assert.equal(actions.length, 10);
 });
 
 test('the title screen is a menu: the D-pad chooses, A and Start confirm, and only the gas pedal drives', () => {
   const { input, device, actions } = fixture();
   const welcome = { menu: 'welcome' };
-  for (const [index, action] of [[13, 'menuDown'], [12, 'menuUp'], [15, 'menuNext'], [14, 'menuPrevious'], [0, 'menuConfirm'], [9, 'menuConfirm'], [10, 'car'], [2, 'view']]) {
+  for (const [index, action] of [[13, 'menuDown'], [12, 'menuUp'], [15, 'menuNext'], [14, 'menuPrevious'], [0, 'menuConfirm'], [9, 'menuConfirm'], [1, 'view']]) {
     hold(device, index); input.update(welcome); input.update(welcome);
     assert.equal(actions.at(-1), action);
     assert.ok(!input.state.forward && !input.state.left && !input.state.right && !input.state.handbrake, 'a menu press never reaches the car');
@@ -194,7 +218,7 @@ test('the pause screen takes the pad as a menu while its shortcuts stay live', (
   assert.equal(actions.length, 6);
   // The pause screen is a layer over the drive, not a modal, so its shortcuts
   // still work.
-  for (const [index, action] of [[9, 'pause'], [8, 'map'], [10, 'car'], [5, 'nextJourney'], [11, 'recenter']]) {
+  for (const [index, action] of [[9, 'pause'], [8, 'map'], [5, 'nextJourney'], [11, 'recenter']]) {
     hold(device, index); input.update(pauseMenu); input.update(pauseMenu);
     assert.equal(actions.at(-1), action);
     hold(device, index, 0); input.update(pauseMenu);

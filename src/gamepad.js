@@ -9,6 +9,14 @@ const buttonValue = (pad, index) => {
 
 // Use the browser's standard Xbox / PlayStation layout, with the same indices
 // as a best-effort fallback for handhelds exposing an unmapped gamepad.
+//
+// The layout follows the driving games people know (Need for Speed Heat,
+// Burnout Paradise, GTA V): RT / LT gas and brake, A boost, X drift, Y gets
+// in and out, B changes the camera, the right stick looks round. The
+// shoulders do what Space and Shift do on the keyboard, in everything:
+// LB drifts, climbs and jumps, RB boosts, descends and sprints. The D-pad
+// has the rest: Down resets the car, Up autodrive, left and right the
+// camera's distance. View is the city map and Menu pauses.
 export class GamepadInput {
   constructor(onAction, onConnection, getGamepads = () => navigator.getGamepads?.() ?? [], onKonami = () => {}) {
     this.onAction = onAction; this.onConnection = onConnection; this.getGamepads = getGamepads;
@@ -30,8 +38,7 @@ export class GamepadInput {
   }
   // `menu` is 'pause' for the pause screen and the results card, 'welcome' for
   // the title screen, truthy for a modal chooser, and false during a drive.
-  // In free drive (`freeDrive`) Y gets in and out of cars; in a run it resets the car.
-  update({ blocked = false, paused = false, menu = false, freeDrive = false } = {}) {
+  update({ blocked = false, paused = false, menu = false } = {}) {
     let pads;
     try { pads = Array.from(this.getGamepads()).filter(pad => pad?.connected); }
     catch { pads = []; } // Unsupported or restricted Gamepad API: keep other inputs available.
@@ -56,22 +63,22 @@ export class GamepadInput {
     buttons[19] = (pad.axes[1] ?? 0) < -.5;
     buttons[20] = (pad.axes[1] ?? 0) > .5;
     const pressed = index => buttons[index] && !this.previousButtons[index];
-    const steer = deadzone(pad.axes[0]), rise = -deadzone(pad.axes[3], .2), dpad = buttonValue(pad, 15) - buttonValue(pad, 14);
+    const steer = deadzone(pad.axes[0]), rise = -deadzone(pad.axes[3], .2);
     const state = {
-      forward: Math.max(deadzone(buttonValue(pad, 7), .08), buttonValue(pad, 0)),
-      brake: Math.max(deadzone(buttonValue(pad, 6), .08), buttonValue(pad, 1)),
-      left: Math.max(-steer, buttonValue(pad, 14), 0),
-      right: Math.max(steer, buttonValue(pad, 15), 0),
-      boost: buttonValue(pad, 5),
-      // L1 / LB drifts
-      handbrake: buttonValue(pad, 4),
+      forward: deadzone(buttonValue(pad, 7), .08),
+      brake: deadzone(buttonValue(pad, 6), .08),
+      left: Math.max(-steer, 0),
+      right: Math.max(steer, 0),
+      // A / Cross boosts and X / Square drifts, or R1 / RB and L1 / LB
+      boost: Math.max(buttonValue(pad, 0), buttonValue(pad, 5)),
+      handbrake: Math.max(buttonValue(pad, 2), buttonValue(pad, 4)),
       // The helicopter and the plane climb and descend on the right stick, or
       // L1 / LB and R1 / RB: up on the button that jumps on foot, as Space is
       climb: Math.max(rise, buttonValue(pad, 4), 0),
       descend: Math.max(-rise, buttonValue(pad, 5), 0),
       // On foot the left stick walks, the right looks round, A / Cross or
       // L1 / LB jumps and RT / R2 or R1 / RB sprints (see walkingInput)
-      moveX: Math.max(-1, Math.min(1, steer + dpad)), moveY: -deadzone(pad.axes[1]),
+      moveX: steer, moveY: -deadzone(pad.axes[1]),
       lookX: deadzone(pad.axes[2], .2), lookY: deadzone(pad.axes[3], .2),
       jump: Math.max(buttonValue(pad, 0), buttonValue(pad, 4)),
       sprint: Math.max(deadzone(buttonValue(pad, 7), .08), buttonValue(pad, 5)),
@@ -97,8 +104,8 @@ export class GamepadInput {
     // Sample once per display frame, including while paused, so held shortcuts
     // fire once and Start can resume the game without a keyboard or touchscreen.
     this.state = paused ? {} : state;
-    const pause = pressed(9), view = pressed(2), reset = pressed(3), nextJourney = pressed(5);
-    const map = pressed(8), recenter = pressed(11), car = pressed(10), fullscreen = pressed(13);
+    const pause = pressed(9), view = pressed(1), use = pressed(3), nextJourney = pressed(5);
+    const map = pressed(8), recenter = pressed(11), reset = pressed(13);
     const back = pressed(1), confirm = pressed(0), autodrive = pressed(12);
     const previous = pressed(14) || pressed(17), next = pressed(15) || pressed(18);
     const up = pressed(12) || pressed(19), down = pressed(13) || pressed(20);
@@ -107,7 +114,7 @@ export class GamepadInput {
     // directions and A, so the shortcuts below still work from it.
     if (menu && menu !== 'pause' && menu !== 'welcome') {
       this.state = {};
-      if (map || car || back) this.onAction('menuClose');
+      if (map || back) this.onAction('menuClose');
       else if (previous) this.onAction('menuPrevious');
       else if (next) this.onAction('menuNext');
       else if (up) this.onAction('menuUp');
@@ -120,7 +127,6 @@ export class GamepadInput {
     if (menu === 'welcome') {
       this.state = { forward: deadzone(buttonValue(pad, 7), .08) };
       if (this.state.forward) this.onAction('drive');
-      else if (car) this.onAction('car');
       else if (previous) this.onAction('menuPrevious');
       else if (next) this.onAction('menuNext');
       else if (up) this.onAction('menuUp');
@@ -130,7 +136,6 @@ export class GamepadInput {
       return;
     }
     if (map) { this.onAction('map'); return; }
-    if (car) { this.onAction('car'); return; }
     if (pause) { this.onAction('pause'); return; }
     if (nextJourney) { this.onAction('nextJourney'); return; }
     if (recenter) { this.onAction('recenter'); return; }
@@ -151,9 +156,10 @@ export class GamepadInput {
     if (previous) this.onAction('zoomIn');
     if (next) this.onAction('zoomOut');
     if (autodrive) this.onAction('autodrive');
-    // D-pad Down is fullscreen while driving; in a menu it moves the focus
-    if (fullscreen) this.onAction('fullscreen');
+    // (D-pad Down resets while driving, and in a menu moves the focus. Y
+    // in a run asks to end it, as E does: see main.js)
+    if (reset) this.onAction('reset');
     if (view) this.onAction('view');
-    if (reset) this.onAction(freeDrive ? 'use' : 'reset');
+    if (use) this.onAction('use');
   }
 }

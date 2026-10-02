@@ -107,15 +107,15 @@ export class TaxiView {
     this.watch = new THREE.Vector3(); this.unplace = new THREE.Matrix4();
     this.labels = new FloatingLabels(scene, 'taxi-labels'); this.shownCash = 0;
   }
-  // Labels over the cab for pay, time and tips
-  pop(event, vehicle) {
-    const at = { x: vehicle.u, y: ROAD_LEVEL + 1, z: -vehicle.s };
-    const tip = (amount, stunt) => this.labels.pop({ ...at, amount: `+$${amount}`, caption: stunt.toUpperCase(), colour: '#ffe07a', size: 1.9 });
+  // Labels over the cab for pay, time and tips. True if the event has any.
+  pop(event) {
+    const tip = (amount, stunt) => this.labels.pop({ amount: `+$${amount}`, caption: stunt.toUpperCase(), colour: '#ffe07a', size: 1.9 });
     if (event.kind === 'tip') tip(event.tip, `${event.trick}${event.combo > 1 ? ` ×${event.combo}` : ''}`);
     if (event.stunt > 0) tip(event.stunt, 'Crazy stop');
-    if (event.paid) this.labels.pop({ ...at, amount: `+$${event.paid.toLocaleString('en-US')}`, caption: RATINGS.find(rating => rating.id === event.rating)?.label.toUpperCase() ?? '', colour: RATING_COLOURS[event.rating] ?? '#fff8e7', size: 3.2 });
-    else if (event.kind === 'dropoff') this.labels.pop({ ...at, amount: RATINGS.find(rating => rating.id === event.rating)?.label ?? '', colour: RATING_COLOURS[event.rating] ?? '#fff8e7', size: 2.4 });
-    if (event.seconds > 0) this.labels.pop({ ...at, amount: `+${event.seconds}s`, colour: '#8ff0b0', size: 2.2 });
+    if (event.paid) this.labels.pop({ amount: `+$${event.paid.toLocaleString('en-US')}`, caption: RATINGS.find(rating => rating.id === event.rating)?.label.toUpperCase() ?? '', colour: RATING_COLOURS[event.rating] ?? '#fff8e7', size: 3.2 });
+    else if (event.kind === 'dropoff') this.labels.pop({ amount: RATINGS.find(rating => rating.id === event.rating)?.label ?? '', colour: RATING_COLOURS[event.rating] ?? '#fff8e7', size: 2.4 });
+    if (event.seconds > 0) this.labels.pop({ amount: `+${event.seconds}s`, colour: '#8ff0b0', size: 2.2 });
+    return event.kind === 'tip' || event.stunt > 0 || Boolean(event.paid) || event.kind === 'dropoff' || event.seconds > 0;
   }
   // Every waiting fare gets a badge: a dollar sign in the ring's colour, as in
   // Crazy Taxi, plus ×N for a group or an icon for a special rider (bolt for
@@ -225,7 +225,7 @@ export class TaxiView {
     for (const marker of this.markers) marker.reactions = null;
   }
   render(run, vehicle, origin, time, contacts = null, camera = null) {
-    this.labels.render(origin, time, camera);
+    this.labels.render(time, camera, vehicle.car, vehicle.spec?.height);
     // (a cab on standby in free drive shows its fares too: see TaxiRun.standby)
     const shown = run.running || Boolean(run.waiting);
     this.group.visible = shown;

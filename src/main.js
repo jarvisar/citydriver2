@@ -1013,7 +1013,7 @@ async function boot() {
     const free = () => started && gameMode === 'free';
     const driving = () => free() && !vehicle.pilot && !vehicle.walker;
     // (the button a car drifts with, which also tricks and spins it in the air)
-    const driftButton = () => ({ keys: 'Space', pad: 'LB', vr: 'the left grip', touch: 'Drift' })[inputDevice()];
+    const driftButton = () => ({ keys: 'Space', pad: 'X', vr: 'the left grip', touch: 'Drift' })[inputDevice()];
     // The plane's stunts (see Plane), told once each: the roll after a while
     // up in the air, and the loop after the first roll
     const flightHintKey = 'citydriver-flight-hints';
@@ -1704,7 +1704,12 @@ async function boot() {
       if (event.kind === 'goal') {
         // A goal usually completes on a payout, whose toast lands first.
         renderGoals(); setTimeout(() => { if (taxi.running && !paused) { toast(event.text, 'goal'); audio.cue('goal'); } }, 1500);
-      } else { toast(event.text, event.rating ?? event.tone ?? ''); audio.cue(event.kind, event); taxiView.pop(event, vehicle); }
+      } else {
+        // (what the labels over the cab show isn't said again in a toast)
+        const words = taxiView.pop(event) ? event.brief : event.text;
+        if (words) toast(words, event.rating ?? event.tone ?? '');
+        audio.cue(event.kind, event);
+      }
       // (a fare's drop-off finds its place, quietly during the shift)
       if (event.destination) cityGuide.arrive(event.destination.id);
     }
@@ -1714,24 +1719,22 @@ async function boot() {
       for (const event of events) {
         if (event.kind === 'stunt' || event.kind === 'smash') {
           if (event.kind === 'smash') audio.cue('smash', event); else audio.cue('tip', { combo: event.chain });
-          if (event.pop) taxiView.labels.pop({ x: event.x, y: event.y + 1.2, z: event.z, amount: `+$${event.value}`, caption: event.multiplier > 1 ? `${event.label.toUpperCase()} ×${event.multiplier}` : event.label.toUpperCase(), colour: '#9ff2e6', size: 1.6 });
+          if (event.pop) taxiView.labels.pop({ amount: `+$${event.value}`, caption: event.multiplier > 1 ? `${event.label.toUpperCase()} ×${event.multiplier}` : event.label.toUpperCase(), colour: '#9ff2e6', size: 1.6 });
         } else if (event.kind === 'multiplier') { toast(event.text, 'chain'); audio.cue('multiplier', event); }
         else if (event.kind === 'banked') {
-          earn(event.amount); toast(event.text, 'banked'); audio.cue('banked');
-          const p = vehicle.groundedPosition;
-          taxiView.labels.pop({ x: p.x, y: p.y + 1.5, z: p.z, amount: `+$${event.amount.toLocaleString('en-US')}`, caption: 'BANKED', colour: '#ffe07a', size: 2.6 });
+          earn(event.amount); audio.cue('banked');
+          taxiView.labels.pop({ amount: `+$${event.amount.toLocaleString('en-US')}`, caption: 'BANKED', colour: '#ffe07a', size: 2.6 });
         } else if (event.kind === 'lost') { toast(event.text, 'slow'); audio.cue('penalty'); }
       }
     }
     // A flying machine's stunts and landings are said as a car's jumps are: a
-    // word, a label rising off it, a chime for a stunt, and a jolt through the
-    // pad for a hard landing
+    // label rising over it, a chime for a stunt, and a jolt through the pad
+    // for a hard landing
     function pilotEvent(event) {
       const p = vehicle.groundedPosition, stunt = event.kind === 'stunt';
       if (freeStunts()) stunts.flew(event, p);
       if (event.kind === 'bounce') { toast(event.text); rumble(.6, .4, .15); return; }
-      toast(event.text, 'stunt');
-      taxiView.labels.pop({ x: p.x, y: p.y, z: p.z, amount: event.text, caption: stunt ? 'STUNT' : 'LANDING', colour: stunt ? '#ffe07a' : '#9ff2e6', size: 3 });
+      taxiView.labels.pop({ amount: event.text, caption: stunt ? 'STUNT' : 'LANDING', colour: stunt ? '#ffe07a' : '#9ff2e6', size: 3 });
       if (stunt) { audio.cue('bonus'); rumble(0, .35, .1); hintFlight(event.text); }
     }
     // A jump landed counts for whichever run is on, or goes in free drive's
@@ -1749,8 +1752,9 @@ async function boot() {
           earn(pay);
           hintAir(event);
           if (!news) return;
-          toast(pay ? `${news.text} · +$${pay}` : news.text, 'stunt'); if (news.gold) audio.cue('bonus');
-          taxiView.labels.pop({ x: p.x, y: p.y, z: p.z, amount: news.amount, caption: news.caption, colour: news.gold ? '#ffe07a' : '#9ff2e6', size: 2.6 });
+          if (news.gold) audio.cue('bonus');
+          taxiView.labels.pop({ amount: news.amount, caption: news.caption, colour: news.gold ? '#ffe07a' : '#9ff2e6', size: 2.6 });
+          if (pay) taxiView.labels.pop({ amount: `+$${pay.toLocaleString('en-US')}`, caption: news.gained > 1 ? 'STARS' : 'STAR', colour: '#ffe07a', size: 2.2 });
           cityGuide.refreshJumps();
         }
       } else if (event.kind === 'drift') {
@@ -1774,9 +1778,8 @@ async function boot() {
       if (left < shiftTick && left <= 10 && left > 0) audio.cue('tick', { urgent: left <= 5 });
       shiftTick = left;
     }
-    // What a demolition run has to say: prices float up off the wreckage, and
-    // the step's biggest news takes the panel's last line (a contract done
-    // outranks the multiplier's callout on the same smash)
+    // What a demolition run has to say: prices float up over the truck, and
+    // the step's biggest news that no label shows takes the panel's last line
     function demolitionEvents(events) {
       let news = null, later = null;
       const say = (text, tone, weight) => { if (!news || weight >= news.weight) news = { text, tone, weight }; };
@@ -1786,10 +1789,10 @@ async function boot() {
         else if (event.kind === 'smash' || event.kind === 'dent') { demolitionView.pop(event); audio.cue('smash', event); }
         else if (event.kind === 'wreck') {
           demolitionView.pop(event); audio.cue('wreck');
-          if (event.seconds) { demolitionView.pop({ ...event, kind: 'bonus' }); say(`Takedown · +${event.seconds}s`, 'bonus', 2); audio.cue('bonus'); }
+          if (event.seconds) { demolitionView.pop({ ...event, kind: 'bonus' }); audio.cue('bonus'); }
         } else if (event.kind === 'progress') say(event.text, '', 1);
         else if (event.kind === 'multiplier') { say(event.text, 'chain', 3); audio.cue('multiplier', event); }
-        else if (event.kind === 'contract') { demolitionView.pop(event); say(event.text, 'goal', 4); audio.cue('goal'); }
+        else if (event.kind === 'contract') { demolitionView.pop(event); audio.cue('goal'); }
         else if (event.kind === 'banked') {
           say(event.text, 'banked', 3); audio.cue('banked');
           // (the contractor's cut of the damage goes into the fleet balance)
@@ -1797,7 +1800,10 @@ async function boot() {
           // (a new rating is its own news, a moment later, as a taxi goal is)
           if (event.rank) later = `Rating · ${event.rank.name}`;
         } else if (event.kind === 'record') later = later ? `${event.text} ${later}` : event.text;
-        else if (event.kind === 'penalty') { demolitionView.pop(event); say(event.text, 'slow', 5); audio.cue('penalty'); }
+        else if (event.kind === 'penalty') {
+          demolitionView.pop(event); audio.cue('penalty');
+          if (event.fine && event.lost) demolitionView.pop({ ...event, fine: 0 });
+        }
         else if (event.kind === 'overtime') { say(event.text, 'slow', 5); audio.cue('overtime'); }
         else if (event.kind === 'over') {
           haltCar();
@@ -1812,12 +1818,12 @@ async function boot() {
       // The page's frame-rate cap (see Graphics.frameCap). A headset sets its own rate.
       if (pacer.skip(timestamp, vr.active ? null : graphics.frameCap(pacer.displayRate))) return;
       vrStatus.update(vr.active ? currentMenuModel() : null);
-      // (in free drive, Y gets in and out of cars)
+      // (in free drive, a headset's Y gets in and out of cars)
       const freeDrive = started && gameMode === 'free';
       const wokeMenu = menuIdle.update(performance.now());
       if (vr.active) input.xr.update(vr.session.inputSources, { blocked: !vr.visible || changingJourney, paused: paused || vrStatus.visible, freeDrive });
       else {
-        input.gamepad.update({ blocked: wokeMenu || document.hidden || !document.hasFocus() || changingJourney, paused, menu: openChooser() ? 'chooser' : openPauseMenu() ? 'pause' : openWelcomeMenu() ? 'welcome' : false, freeDrive });
+        input.gamepad.update({ blocked: wokeMenu || document.hidden || !document.hasFocus() || changingJourney, paused, menu: openChooser() ? 'chooser' : openPauseMenu() ? 'pause' : openWelcomeMenu() ? 'welcome' : false });
         const menu = input.gamepad.scroll && (openChooser() ?? openPauseMenu() ?? openWelcomeMenu());
         if (menu) scrollMenu(menu, input.gamepad.scroll * 18);
       }
@@ -1856,7 +1862,7 @@ async function boot() {
         // (a parachute the chase camera has been pulled up into is not drawn)
         vehicle.walker?.clearView(rendering.camera.position);
         taxiView.render(taxi, vehicle, world.origin, time, pedestrianContacts, vr.active ? null : rendering.camera);
-        demolitionView.render(world.origin, time, vr.active ? null : rendering.camera);
+        demolitionView.render(vehicle, time, vr.active ? null : rendering.camera);
         driftEffects.update(vehicle, dt, started);
         const at = vehicle.groundedPosition;
         pigeons.gather(world.chunks.values(), at.x, at.z, time, pigeonGround);

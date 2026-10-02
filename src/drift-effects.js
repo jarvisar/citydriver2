@@ -177,12 +177,15 @@ export class DriftEffects {
     const burning = turbo ? Math.min(1, .4 + boost) * (1 + drift.turboStage * .15) : vehicle.boosting ? .65 : 0;
     if (!burning || (vehicle.aloft && !turbo)) { this.flames.count = 0; return; }
     this.flicker += dt * 38;
-    const car = vehicle.car, half = (vehicle.spec?.length ?? 4) / 2, hue = turbo ? STAGE_COLOURS[drift.turboStage] : BOOST_COLOUR;
+    const hue = turbo ? STAGE_COLOURS[drift.turboStage] : BOOST_COLOUR;
+    // (out of the body, so they rock and lift with it, from where its tail is: see tailPipes)
+    const body = vehicle.body ?? vehicle.car, tail = vehicle.spec?.tail ?? { x: .34, y: .36, z: (vehicle.spec?.length ?? 4) / 2 - .05 };
+    body.updateWorldMatrix(true, false); body.getWorldQuaternion(turn);
     let n = 0;
-    for (const x of [-.34, .34]) for (const core of [false, true]) {
+    for (const x of [-tail.x, tail.x]) for (const core of [false, true]) {
       const flicker = 1 + Math.sin(this.flicker + x * 9 + (core ? 2 : 0)) * .14;
       const length = (core ? .55 : 1) * burning * flicker, width = (core ? .55 : 1.05) * Math.min(1.2, .8 + burning * .3);
-      matrix.compose(this.at(car, x, .36, half - .05), car.quaternion, size.set(width, width, length));
+      matrix.compose(point.set(x, tail.y, tail.z).applyMatrix4(body.matrixWorld), turn, size.set(width, width, length));
       this.flames.setMatrixAt(n, matrix);
       // (the core only a little paler than the flame, so the stage's colour holds)
       this.flames.setColorAt(n, core ? colour.set(hue).lerp(WHITE, .45) : colour.set(hue));

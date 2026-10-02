@@ -15,13 +15,13 @@ export const HINTS = {
 };
 const HINTS_KEY = 'citydriver-demolition-hints';
 
-// What each blow's number looks like as it floats up off the wreckage: the
+// What each blow's number looks like as it floats up over the truck: the
 // run's orange for damage, hotter for a car written off, red for a fine and
 // green for time won
 const LABEL_STYLES = {
   smash: { colour: '#ffc07a', size: 2.4 }, dent: { colour: '#ffc07a', size: 2.4 },
   wreck: { colour: '#ff8a2a', size: 3.3, caption: 'WRECKED' }, penalty: { colour: '#ff6d5e', size: 3, caption: 'PEDESTRIAN' },
-  bonus: { colour: '#8ff0b0', size: 2.6 }, contract: { colour: '#8ff0b0', size: 3, caption: 'CONTRACT' },
+  bonus: { colour: '#8ff0b0', size: 2.6, caption: 'TAKEDOWN' }, contract: { colour: '#8ff0b0', size: 3, caption: 'CONTRACT' },
 };
 export class DemolitionView {
   constructor(scene, storage = null) {
@@ -31,7 +31,7 @@ export class DemolitionView {
   // A stand-in for the labels' program, compiled with the city
   warmupObjects() { return this.labels.warmupObjects(); }
   reset() { this.labels.reset(); this.shown = 0; }
-  // A blow's price (or a fine, or time won) rising off where it landed
+  // A blow's price (or a fine, or time won) rising over the truck
   pop(event) {
     const style = LABEL_STYLES[event.kind] ?? LABEL_STYLES.smash;
     const amount = event.kind === 'penalty' ? event.fine ? `−$${event.fine.toLocaleString('en-US')}` : 'CHAIN LOST'
@@ -39,10 +39,10 @@ export class DemolitionView {
     // (a blow in a chain says what it was multiplied by)
     const times = ['smash', 'dent', 'wreck'].includes(event.kind) && event.multiplier > 1 ? `×${event.multiplier}` : '';
     const caption = [style.caption, times].filter(Boolean).join(' ');
-    this.labels.pop({ x: event.x, y: event.y, z: event.z, amount, caption, colour: style.colour, size: style.size });
+    this.labels.pop({ amount, caption, colour: style.colour, size: style.size });
   }
-  // `camera`, if given, keeps near labels small
-  render(origin, time, camera = null) { this.labels.render(origin, time, camera); }
+  // Over the player's car; `camera`, if given, keeps near labels small
+  render(vehicle, time, camera = null) { this.labels.render(time, camera, vehicle.car, vehicle.spec?.height); }
   // The driving HUD, in the taxi's panels: the clock and the banked damage
   // top left, the chain where the fare would be, the boost as a taxi has it
   buildHud(run, vehicle) {

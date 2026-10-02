@@ -816,13 +816,13 @@ test('residents give way to someone on foot, look round at them, and are bowled 
   } finally { props.dispose(); vehicle.disposeModel(); }
 });
 
-test('a controller gets in and out with Y in free drive (still reset in a run), walks on the left stick and looks on the right', () => {
+test('a controller gets in and out with Y in every mode (a run asks first, see main.js), walks on the left stick and looks on the right', () => {
   const device = { index: 0, mapping: 'standard', connected: true, axes: [0, 0, 0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })) };
   const actions = [], input = new GamepadInput(action => actions.push(action), () => {}, () => [device]);
   const press = (index, options) => { device.buttons[index] = { pressed: true, value: 1 }; input.update(options); device.buttons[index] = { pressed: false, value: 0 }; input.update(options); };
   input.update(); input.update();
-  press(3); press(3, { freeDrive: true });
-  assert.deepEqual(actions, ['reset', 'use']);
+  press(3); press(3);
+  assert.deepEqual(actions, ['use', 'use'], 'Y used to reset the car in a run: D-pad Down does now');
   device.axes = [.5, -1, 1, .6]; input.update({ freeDrive: true });
   assert.ok(input.state.moveX > .4 && input.state.moveY === 1 && input.state.lookX === 1 && input.state.lookY > .4);
   device.buttons[0] = { pressed: true, value: 1 }; device.buttons[7] = { pressed: true, value: 1 }; input.update({ freeDrive: true });

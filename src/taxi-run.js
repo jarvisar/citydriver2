@@ -536,7 +536,8 @@ export class TaxiRun {
     // A Crazy stop is the fare's first trick and starts its chain.
     const stunt = this.crazyStop ? this.reward('Crazy stop', TIPS.crazyStop, false) : 0; this.ring = null;
     const who = passenger.passengers > 1 ? `${passenger.passengers} riders aboard` : `${passenger.name} aboard`;
-    this.events.push({ kind: 'pickup', seconds, stunt, first, text: `${stunt ? `Crazy stop +$${stunt} · ` : ''}${who} · +${seconds}s` });
+    // (`brief` is what the labels over the cab leave unsaid: see TaxiView.pop)
+    this.events.push({ kind: 'pickup', seconds, stunt, first, text: `${stunt ? `Crazy stop +$${stunt} · ` : ''}${who} · +${seconds}s`, brief: who });
   }
   // Standby's step: the pickup half of a shift with no clock. Stopping in a
   // ring begins the shift, keeping the fares that were waiting.
@@ -657,7 +658,8 @@ export class TaxiRun {
       const lead = !group ? '' : last ? 'Group complete · ' : `Stop ${this.stopIndex + 1} of ${this.fare.passengers} · `;
       const verdict = rating.id === 'speedy' ? `${rating.label}!` : rating.label;
       const text = [`${lead}${verdict}`, streak && `Streak ${this.streak}`, stunt && `Crazy stop +$${stunt}`, smooth && `Smooth ride +$${smooth}`, paid && `+$${paid}`, seconds && `+${seconds}s`];
-      this.events.push({ kind: last ? 'paid' : 'dropoff', text: text.filter(Boolean).join(' · '), paid, bonus, seconds, streak, stunt,
+      const brief = [lead.slice(0, -3), streak && `Streak ${this.streak}`, smooth && `Smooth ride +$${smooth}`].filter(Boolean).join(' · ');
+      this.events.push({ kind: last ? 'paid' : 'dropoff', text: text.filter(Boolean).join(' · '), brief, paid, bonus, seconds, streak, stunt,
         rating: rating.id, passengers: stop.passengers, destination: stop.destination, groupComplete: last && group });
       if (group) this.boost = Math.min(1, this.boost + .25);
       if (!last) {

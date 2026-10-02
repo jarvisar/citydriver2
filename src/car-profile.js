@@ -35,6 +35,38 @@ export function carProfile(model, length) {
   if (!height) heights.fill(height = 1.5);
   return { heights, slice: SLICE, length, height };
 }
+// Where a car's boost flames come out, in its body's metres (x right, z
+// back): low on the back of the car, found by casting rays at its tail. The
+// backs differ too much for one place: a fixed .36 m up and half the length
+// back hung under the classic's high tail and floated behind the Formula's
+// gearbox. TAIL_DEEP is how far a face can be in front of the back and still
+// count as the back (more is under the car: an axle, the floor).
+const TAIL_DEEP = .3, TAIL_SIDES = [.34, .26, .18];
+const caster = new THREE.Raycaster(), toBody = new THREE.Matrix4(), from = new THREE.Vector3(), back = new THREE.Vector3();
+export function tailPipes(body) {
+  body.updateWorldMatrix(true, true); toBody.copy(body.matrixWorld).invert();
+  const box = new THREE.Box3().setFromObject(body).applyMatrix4(toBody), behind = box.max.z + 1;
+  back.set(0, 0, -1).transformDirection(body.matrixWorld);
+  // How far back the body reaches at (x, y), or -Infinity where the ray misses
+  const reach = (x, y) => {
+    caster.set(from.set(x, y, behind).applyMatrix4(body.matrixWorld), back);
+    const hit = caster.intersectObject(body, true)[0];
+    return hit ? hit.point.applyMatrix4(toBody).z : -Infinity;
+  };
+  for (const x of TAIL_SIDES) {
+    // (both sides, so a lopsided tail doesn't leave one flame in the air)
+    const heights = [];
+    for (let y = Math.max(.08, box.min.y); y < Math.min(1.8, box.max.y); y += .04) heights.push({ y, z: Math.min(reach(x, y), reach(-x, y)) });
+    const rear = Math.max(...heights.map(h => h.z));
+    if (!Number.isFinite(rear)) continue;
+    // The bottom of the back, and the flame's middle a little over it, so the
+    // cone starts in the bodywork rather than under it
+    const bottom = heights.find(h => h.z > rear - TAIL_DEEP);
+    const at = heights.find(h => h.y >= bottom.y + .12 && h.z > rear - TAIL_DEEP) ?? bottom;
+    return { x, y: at.y, z: at.z - .04 };
+  }
+  return { x: .34, y: .36, z: box.max.z - .05 };
+}
 // How high a car stands `along` metres from its middle toward its nose, or
 // -Infinity off either end
 export function profileHeight(profile, along) {

@@ -59,26 +59,28 @@ Every visit generates a new city. Add `?seed=4817` to the URL to load the same c
 
 ## Controls
 
+The controller layout is the one most driving games use (Need for Speed Heat, Burnout Paradise, GTA V): the triggers drive, A boosts, X drifts and Y gets in and out. The shoulder buttons do what Space and Shift do on a keyboard, so LB drifts, climbs and jumps, and RB boosts, descends and sprints.
+
 | Action | Keyboard | Controller |
 | --- | --- | --- |
-| Accelerate | W / Up | RT / R2 or A / Cross |
-| Brake / reverse | S / Down | LT / L2 or B / Circle |
+| Accelerate | W / Up | RT / R2 |
+| Brake / reverse | S / Down | LT / L2 |
 | Steer | A D / Left Right | Left stick |
-| Boost | Shift | RB / R1 |
-| Drift (hold and steer), handbrake when slow | Space | LB / L1 |
-| Trick / spin (in the air) | Space as you take off / hold Space and steer | LB / L1 as you take off / hold LB / L1 and steer |
+| Boost | Shift | A / Cross, or RB / R1 |
+| Drift (hold and steer), handbrake when slow | Space | X / Square, or LB / L1 |
+| Trick / spin (in the air) | Space as you take off / hold Space and steer | X / Square as you take off / hold X / Square and steer |
 | Climb / descend (helicopter, plane) | Space / Shift | Right stick, or LB / L1 and RB / R1 |
 | Barrel roll / loop (plane) | Double-tap A or D / double-tap Space | Flick the left stick twice / double-tap LB / L1 |
-| Camera | V | X / Square |
+| Camera | V | B / Circle |
 | Pause | P / Escape (Escape also frees the mouse) | Start / Menu |
-| Reset car (−5 seconds in a run) | R | Y / Triangle (in a run) |
-| Garage / Taxi fleet | C / G | L3 |
+| Reset car (−5 seconds in a run) | R | D-pad Down |
+| Garage / Taxi fleet | C / G | Pause menu |
 | Autodrive (free drive) | H | D-pad Up |
-| Get out / get in (free drive), end a shift or run (press twice) | E, then E again to jump out | Y / Triangle (free drive) |
+| Get out / get in (free drive), end a shift or run (press twice) | E, then E again to jump out | Y / Triangle, then again to jump out |
 | Walk (on foot) | W A S D / arrows | Left stick |
 | Sprint (on foot) | Shift | RT / R2 or RB / R1 |
 | Jump / jetpack (hold) / parachute (tap up high) (on foot) | Space | A / Cross or LB / L1 |
-| Fullscreen | F, or Fullscreen in the pause menu | D-pad Down (while driving), or Fullscreen in the pause menu |
+| Fullscreen | F, or Fullscreen in the pause menu | Fullscreen in the pause menu |
 | Look around (chase and first-person view) | Mouse, after a click on the view (at once in fullscreen) | Right stick (sideways only when flying) |
 | Camera distance (chase view) | Mouse wheel or [ / ] | D-pad left / right |
 | Recenter camera | Q | R3 / right stick click |

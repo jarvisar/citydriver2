@@ -14,7 +14,7 @@ import { Plane } from './plane.js';
 import { createWalkerModel, Walker, WALKER_SPEC, WALKER_STATS } from './walker.js';
 import { collisionImpulse, footprintMass, heft, leadingPoint, rock, rockFrom, SCENERY_SURFACE } from './impact.js';
 import { steerCurve, steeringResponse, turnRate, corneringLoad, travelHeading } from './handling.js';
-import { carProfile } from './car-profile.js';
+import { carProfile, tailPipes } from './car-profile.js';
 import { RAINBOW_PAINT } from './car-paint.js';
 import { Actor, actorBody } from './actors.js';
 import { CarAir, GRAVITY } from './car-air.js';
@@ -210,6 +210,8 @@ export function createCar(id = DEFAULT_CAR) {
 }
 // Every machine the player drives or flies knocks over trees and bus shelters (see LooseProps)
 const BREAKS = ['tree', 'shelter'];
+// Each kind of car's flame points (see tailPipes), worked out once a visit
+const TAILS = new Map();
 // Who flies each kind of flying machine (see fit)
 const PILOTS = { helicopter: Helicopter, plane: Plane };
 
@@ -324,7 +326,9 @@ export class ActorMotion {
     const profile = carProfile(model.car, length);
     // (and for someone getting in and out, where its door is, metres ahead of
     // its middle, how high its seat, and where to step down: see OnFoot)
-    this.spec = this.drivingSpec = { name: carId, width, length, height: profile.height, profile, mass: entry.mass ?? footprintMass(width, length), breaks: BREAKS, door, seat, exit };
+    // (and where its boost flames come out, the same for every car of a kind)
+    const tail = wheeled ? TAILS.get(carId) ?? TAILS.set(carId, tailPipes(model.body)).get(carId) : null;
+    this.spec = this.drivingSpec = { name: carId, width, length, height: profile.height, profile, tail, mass: entry.mass ?? footprintMass(width, length), breaks: BREAKS, door, seat, exit };
     this.stats = carStats(carId);
     this.setLights(Number(this.night)); this.setAppearance(this.journeyId); this.setPaint(paint);
     Object.assign(model.car.userData, this.car.userData);
