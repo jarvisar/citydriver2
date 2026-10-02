@@ -79,7 +79,7 @@ try {
   await page.reload({ waitUntil: 'networkidle' }); await page.waitForFunction(() => window.__citydriver);
   await startAndPause(page);
   assert.equal(await page.evaluate(() => window.__citydriver.vehicle.carId), 'taxiGT');
-  assert.deepEqual(await page.evaluate(() => [...window.__citydriver.taxi.fleet.owned]), ['taxi', 'taxiGT', 'taxiFormula']);
+  assert.deepEqual(await page.evaluate(() => [...window.__citydriver.taxi.fleet.owned]), ['taxi', 'coast', 'taxiGT', 'taxiFormula']);
   await page.click('#end-run'); await page.waitForFunction(() => window.__citydriver.taxi.status === 'over');
   await page.click('#taxi-keep'); await page.click('#pause');
   assert.equal(await page.evaluate(() => window.__citydriver.gameMode), 'free');
@@ -101,7 +101,7 @@ try {
     await mobile.waitForFunction(() => !window.__citydriver.paused);
     assert.equal(await mobile.evaluate(() => window.__citydriver.vehicle.carId), id);
     assert.equal(await mobile.evaluate(() => window.__citydriver.testDrive.id), id);
-    assert.deepEqual(await mobile.evaluate(() => [...window.__citydriver.taxi.fleet.owned]), ['taxi']);
+    assert.deepEqual(await mobile.evaluate(() => [...window.__citydriver.taxi.fleet.owned]), ['taxi', 'coast']);
     await mobile.waitForTimeout(200);
     assert.equal(await mobile.evaluate(() => window.__citydriver.taxi.status), 'idle', 'a test drive takes no fares');
   }

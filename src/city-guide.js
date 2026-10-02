@@ -120,7 +120,7 @@ export class CityGuide {
     if (this.demolition?.running) { this.updateDemolition(draw); return; }
     attribute(this.canvas, 'title', 'Local street map');
     hide($('taxi-offer'), true);
-    attribute(this.canvas, 'aria-label', `Local street map. Your heading is up; the white arrow is ${vehicle.walker ? 'you' : 'your car'}. Coloured dots are places you have found.${this.onFoot?.parked ? ' The car in a teal ring is your own, where you left it.' : ''}`);
+    attribute(this.canvas, 'aria-label', `Local street map. Your heading is up; the white arrow is ${vehicle.walker ? 'you' : 'your car'}. Coloured dots are places you have found. Yellow cars are cabs and the orange one the demolition truck: get in one to work.${this.onFoot?.parked ? ' The car in a teal ring is your own, where you left it.' : ''}`);
     if (this.expanded && draw) this.draw(vehicle);
   }
   updateTaxi(draw = true) {
@@ -167,17 +167,20 @@ export class CityGuide {
       const known = run?.running || this.demolition?.running ? [] : this.foundPlaces();
       // (and in free drive, the city's named jumps: gold once landed)
       const jumps = run?.running || this.demolition?.running || !this.jumps ? EMPTY : this.jumps.sites;
-      this.mapState = { target, nextStop, parked, targets, known, jumps, landed: this.jumps?.landed, stopIndex: run?.stopIndex,
+      // (and the cars with a job in the traffic, which main.js offers only in free drive)
+      const jobs = this.jobs?.() ?? EMPTY;
+      this.mapState = { target, nextStop, parked, targets, known, jumps, jobs, landed: this.jumps?.landed, stopIndex: run?.stopIndex,
         places: run?.status === 'pickup' || run?.status === 'standby' ? run.customers : target ? [{ ...target, color: '#ffd238' }] : [],
         route: taxiRoute(vehicle, target && run.approach(vehicle)), nextRoute: nextStop ? taxiRoute(target, nextStop) : [],
         key: [run, run?.status, run?.status === 'pickup' || run?.status === 'standby' ? run.customers : null, target, nextStop, run?.stopIndex, parked, parked?.s, parked?.u, targets, known.length, jumps, this.jumps?.landed] };
     }
-    const { target, nextStop, parked, targets, known, jumps, places, route, nextRoute, stopIndex, key } = this.mapState;
+    const { target, nextStop, parked, targets, known, jumps, jobs, places, route, nextRoute, stopIndex, key } = this.mapState;
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
     // Everything the map shows comes from these (the route from the car's
-    // position and its drop-off). While none has changed, as when paused or
-    // waiting in a ring, the canvas already shows it.
-    const shown = [ratio, vehicle.u, vehicle.s, vehicle.heading, ...key];
+    // position and its drop-off, and where the cars with a job are now).
+    // While none has changed, as when paused or waiting in a ring, the canvas
+    // already shows it.
+    const shown = [ratio, vehicle.u, vehicle.s, vehicle.heading, ...key, ...jobs.flatMap(car => [car.s, car.u, car.heading])];
     if (this.shown?.length === shown.length && this.shown.every((value, i) => value === shown[i])) return;
     this.shown = shown;
     const ctx = this.ctx, width = 208, height = 144, scale = MAP_SCALE;
@@ -234,6 +237,15 @@ export class CityGuide {
       ctx.save(); ctx.translate(x, y); ctx.rotate(site.heading - heading);
       ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(4.5, 4); ctx.lineTo(-4.5, 4); ctx.closePath();
       ctx.fillStyle = this.jumps.best.has(site.id) ? '#e3b02c' : '#5fd0c0'; ctx.strokeStyle = '#17262f'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.fill(); ctx.restore();
+    }
+    // A car with a job: a small car the way it is going, a cab in the taxi's
+    // yellow, the demolition truck in its orange
+    for (const car of jobs) {
+      const [x, y] = point(car);
+      if (x < 6 || y < 6 || x > width - 6 || y > height - 6) continue;
+      ctx.save(); ctx.translate(x, y); ctx.rotate(car.heading - heading);
+      ctx.beginPath(); ctx.roundRect(-2.6, car.job === 'taxi' ? -4.2 : -5, 5.2, car.job === 'taxi' ? 8.4 : 10, 1.6);
+      ctx.fillStyle = car.job === 'taxi' ? '#ffd238' : '#ff9433'; ctx.strokeStyle = '#17262f'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.fill(); ctx.restore();
     }
     ctx.fillStyle = '#ff9433'; ctx.strokeStyle = '#17262f'; ctx.lineWidth = 1.5;
     for (const place of targets) {

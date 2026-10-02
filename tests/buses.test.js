@@ -149,7 +149,7 @@ test('the bus keeps to the main roads, comes by now and then, rests out of sight
   const bus = traffic.vehicles.find(car => car.service);
   let duty = 0, rest = 0, onRoutes = 0, calls = 0, state = null;
   try {
-    assert.equal(traffic.vehicles.length, 25);
+    assert.equal(traffic.vehicles.length, 28);
     for (let f = 0; f < 60 * 240; f++) {
       traffic.update(1 / 60, player);
       if (bus.edge) {

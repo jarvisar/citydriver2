@@ -201,7 +201,9 @@ try {
   await press('right', 'b-button'); now = await state();
   check('B goes back from an offer to the garage', now.menu === 'car-dialog' && now.paused, now.menu);
   await press('right', 'b-button');
-  await aim('right', 'Taxi shift'); await press('right', 'trigger');
+  // (back in the cab, on standby: the pause menu offers Free drive in Taxi shift's place, and Resume carries on waiting for a fare)
+  await aim('right', 'Free drive');
+  await aim('right', 'Resume'); await press('right', 'trigger');
   await page.evaluate(() => {
     const game = window.__citydriver, rider = game.taxi.customers.find(rider => rider.id !== game.taxi.blockedPickup?.id);
     Object.assign(game.vehicle, { s: rider.s, u: rider.u, heading: rider.heading, speed: 0 }); game.vehicle.update(0, {});

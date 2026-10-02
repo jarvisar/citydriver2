@@ -102,7 +102,12 @@ try {
       document.querySelector('#taxi-timer').hidden = false;
       document.querySelector('#taxi-timer-fill').style.width = '99%';
       check(JSON.stringify(headsetHudModel(model)) === JSON.stringify(before), 'HUD ignores desktop corruption');
-      await row('demolition').activate(); await game.action('pause');
+      // Demolition puts the truck on standby, and its first hit starts the run
+      await row('demolition').activate();
+      check(game.gameMode === 'free' && game.demolition.status === 'standby' && game.vehicle.carId === 'demolition', 'Demolition puts the truck on standby');
+      game.props.onSmash(['bin'], { x: 0, y: 0, z: 0 });
+      while (game.gameMode !== 'demolition' || game.demolition.chain) await new Promise(requestAnimationFrame);
+      await game.action('pause');
       const demolition = game.demolitionView.hud(game.demolition, game.vehicle);
       check(demolition.timer.fraction === null && headsetHudModel(demolition).timer.fraction === null, 'contracts have no timer bar');
       await row('resume').activate(); game.demolition.timeLeft = .001;

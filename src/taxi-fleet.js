@@ -1,5 +1,5 @@
 import { LIVERIES, liveryById } from './taxi-career.js';
-import { CARS, GARAGE_IDS, STARTING_CAR, carPrice, testDrivePrice } from './cars.js';
+import { CARS, GARAGE_IDS, STARTING_CAB, STARTING_CAR, carPrice, testDrivePrice } from './cars.js';
 import { PAINT_PRICE, RAINBOW_PAINT, isPaint } from './car-paint.js';
 
 export const FLEET_KEY = 'citydriver-taxi-fleet';
@@ -27,7 +27,7 @@ export const KONAMI_PAY = 10000;
 // they used locked.
 export class TaxiFleet {
   constructor(storage = null) {
-    this.storage = storage; this.balance = 0; this.owned = new Set([STARTING_CAR]); this.selected = STARTING_CAR; this.livery = LIVERIES[0].id; this.saved = Boolean(storage);
+    this.storage = storage; this.balance = 0; this.owned = new Set([STARTING_CAB, STARTING_CAR]); this.selected = STARTING_CAB; this.livery = LIVERIES[0].id; this.saved = Boolean(storage);
     // Test drives used (the first of each car is free) and the car being saved for
     this.tried = new Set(); this.goal = null;
     // The garage's paint (null: each car's own) and whether the Konami code has been entered

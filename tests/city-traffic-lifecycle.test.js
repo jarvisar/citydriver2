@@ -40,8 +40,10 @@ test('disabled city traffic stays hidden and still through resets, then respawns
 test('the city fleet uses all road-car shapes, varied paint and finite shared geometry', t => {
   const { traffic } = setup(t);
   const cars = traffic.vehicles.filter(car => !car.service);
-  assert.deepEqual(new Set(cars.map(car => car.spec.name)), new Set(TRAFFIC_MODELS.map(spec => spec.name)));
+  assert.deepEqual(new Set(cars.filter(car => !car.job).map(car => car.spec.name)), new Set(TRAFFIC_MODELS.map(spec => spec.name)));
   assert.ok(new Set(cars.map(car => car.paint.color.getHex())).size >= 3);
+  // (and the cars with a job: cabs, and the demolition truck, borrowed as the garage's of the same name)
+  assert.deepEqual(cars.filter(car => car.job).map(car => [car.job, car.spec.name]), [['taxi', 'taxi'], ['taxi', 'taxi'], ['demolition', 'demolition']]);
   for (const car of cars) {
     const meshes = [];
     car.car.traverse(object => { if (object.isMesh) meshes.push(object); });

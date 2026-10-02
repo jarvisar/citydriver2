@@ -4,7 +4,7 @@ Taxi runs work like Crazy Taxi: a shift clock that fares add time to. The number
 
 ## Fares
 
-- A shift starts with its first fare. Taxi shift on the menus puts you in your cab where you are, with passengers waiting in rings around it, and the clock starts once someone is aboard. A cab the fleet owns has fares around it in free drive too, so stopping in a ring there starts a shift on the spot. Test driving a cab you don't own shows none. End shift in the pause menu ends a shift early, with its results.
+- A shift starts with its first fare. Taxi shift on the menus puts you in your cab where you are, with passengers waiting in rings around it, and the clock starts once someone is aboard. Until then the task card says so. The pause menu has Free drive in place of Taxi shift, to go back to your own car. A cab the fleet owns has fares around it in free drive too, so stopping in a ring there starts a shift on the spot. So does a cab taken from the traffic, which comes by now and then. While you work as a cab, standing by or on a shift, the other cabs stay off the road. Test driving a cab you don't own shows none. End shift in the pause menu ends a shift early, with its results.
 - Passengers waiting for a ride are never navigation targets. Stop in any pickup ring to pick them up. The route only shows up after they get in. Dropping them off, missing the fare or restarting clears the navigation.
 - Driving up to a ring shows where the passenger is going, who they are, the trip length and the fare.
 - Boarding and drop-off need the cab to be stopped for 0.45 seconds.

@@ -6,6 +6,9 @@ import { collisionImpulse, contactPoint, footprintMass, heft, rock, rockFrom, sk
 import { trafficContact, sceneryContacts } from './collision.js';
 import { carProfile, profileHeight } from './car-profile.js';
 import { Actor } from './actors.js';
+import { CARS } from './cars.js';
+import { cabGeometry } from './car-models.js';
+import { specialGeometry } from './special-models.js';
 import { JunctionTraffic, approachControl } from './city-junctions.js';
 import { turnPath, approachSpeed, wayOn, bendSpeed, hasTurnPath, turnPathSteps, bendSpeedSteps, isLink, HAIRPIN } from './world/lane-paths.js';
 const up = new THREE.Vector3(0, 1, 0), tilt = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -103,7 +106,17 @@ const byWait = (a, b) => (b.stopWait ?? 0) - (a.stopWait ?? 0) || a.index - b.in
 // hash lookup. That made the whole update about twice as slow.
 const DRIVER = Object.fromEntries(['pending', 'leaving', 'claim', 'edge', 'direction', 'along', 'lane', 'next', 'turn', 'after', 'stopWait', 'loose', 'recover', 'rock',
   'dazed', 'shoved', 'bumped', 'tries', 'stranded', 'laneTo', 'laneOn', 'slope', 'around', 'merging', 'mergeWait', 'stood', 'laneTime', 'pace', 'cruiseSpeed', 'speed',
-  's', 'u', 'laneHeading', 'heading', 'held', 'waited', 'blocker', 'think', 'targetSpeed', 'moved', 'dropBack', 'waiting', 'service'].map(key => [key, undefined]));
+  's', 'u', 'laneHeading', 'heading', 'held', 'waited', 'blocker', 'think', 'targetSpeed', 'moved', 'dropBack', 'waiting', 'service', 'job', 'duty'].map(key => [key, undefined]));
+// Cars with a job, after the bus: two cabs and the demolition truck. Getting
+// into one on foot puts its job on standby (see main.js). Like the bus they
+// come by now and then, off duty in between (see retire), and coming the
+// player's way. Cabs keep to the quick end of the traffic's pace.
+const JOBS = ['taxi', 'taxi', 'demolition'];
+const JOB_MODELS = {
+  taxi: { spec: CARS.taxi.shape, paint: CARS.taxi.paint, parts: () => cabGeometry(CARS.taxi.shape) },
+  demolition: { spec: { name: 'demolition', width: CARS.demolition.shape.width, length: CARS.demolition.shape.length, mass: CARS.demolition.mass, accel: 1.6 },
+    paint: CARS.demolition.paint, parts: () => specialGeometry(CARS.demolition.shape) },
+};
 // The lanes each way, as offsets right of the centre line: the kerb lane every
 // turn starts and ends in (the profile's), and on a boulevard or the parkway
 // the lane beside the median as well
@@ -161,15 +174,21 @@ export class CityTraffic {
     this.route = route; this.enabled = true; this.time = 0; this.nav = navGraph();
     this.group = new THREE.Group(); this.group.name = 'city-traffic'; scene.add(this.group);
     this.models = createTrafficModels();
+    for (const { spec, parts } of Object.values(JOB_MODELS)) this.models.add(spec, parts);
     this.junctions = new JunctionTraffic(this.nav);
-    this.vehicles = Array.from({ length: 25 }, (_, index) => {
-      const bus = index === 24, model = bus ? this.models.create('bus', BUS_PAINT) : this.models.create(index % TRAFFIC_MODELS.length, TRAFFIC_COLORS[index % TRAFFIC_COLORS.length]);
+    this.vehicles = Array.from({ length: 25 + JOBS.length }, (_, index) => {
+      const bus = index === 24, job = JOBS[index - 25];
+      const model = bus ? this.models.create('bus', BUS_PAINT) : job ? this.models.create(JOB_MODELS[job].spec.name, JOB_MODELS[job].paint)
+        : this.models.create(index % TRAFFIC_MODELS.length, TRAFFIC_COLORS[index % TRAFFIC_COLORS.length]);
       // (its shape, for loose pieces to meet: see carProfile)
       const car = { ...model, actor: null, index, generation: 0, profile: this.profileOf(model), position: new THREE.Vector3(), previousPosition: new THREE.Vector3(), quaternion: new THREE.Quaternion(), previousQuaternion: new THREE.Quaternion(), ...DRIVER };
       new Actor(car, { source: 'traffic', model, control: 'traffic' }); this.group.add(car.car);
       if (bus) car.service = { rest: 0, near: false, stop: null, calling: false, state: null, wait: 0, time: 0 };
+      if (job) { car.job = job; car.duty = { rest: 0, near: false }; }
       return car;
     });
+    // The job whose cars stay off the road, the player's own while they do it (see main.js)
+    this.offDuty = null;
     // The bus stops (see BusStops), when there is a city with them: without,
     // the bus just drives
     this.stops = null;
@@ -214,7 +233,7 @@ export class CityTraffic {
     for (const car of this.vehicles) {
       car.claim = car.leaving = car.pending = null;
       // (the bus turns up any time within a rest)
-      if (car.service) this.retire(car, true);
+      if (car.service || car.duty) this.retire(car, true);
       else this.spawn(car, s, u, true);
     }
   }
@@ -231,6 +250,7 @@ export class CityTraffic {
     car.generation++;
     this.junctions.release(car);
     if (car.service) { this.leaveStop(car); car.service.rest = 0; }
+    if (car.duty) car.duty.rest = 0;
     const r = salt => this.random(car, salt);
     const centreS = s + this.travelS * this.lookAhead, centreU = u + this.travelU * this.lookAhead;
     // Only the streets around the car are worth trying (for the bus, the main
@@ -249,7 +269,7 @@ export class CityTraffic {
       if (distance < (initial ? 25 : SPAWN_CLEARANCE) || distance > LOCAL_RADIUS) continue;
       // (the bus comes the player's way: going off the other way, it was
       // mostly recycled before anyone saw it)
-      if (car.service && Math.sin(pose.heading) * du + Math.cos(pose.heading) * ds > 0) continue;
+      if ((car.service || car.duty) && Math.sin(pose.heading) * du + Math.cos(pose.heading) * ds > 0) continue;
       if (!initial && this.lookAhead && ds * this.travelS + du * this.travelU < 60) continue;
       if (this.vehicles.some(other => other !== car && Math.hypot(pose.s - other.s, pose.u - other.u) < 14)) continue;
       // and never over a stop line, in a junction it has not claimed
@@ -258,7 +278,7 @@ export class CityTraffic {
       Object.assign(car, { edge, direction, along, lane: edge.profile.lane, next: null, turn: null, after: null, stopWait: 0, loose: null, recover: null, rock: null, dazed: 0, shoved: false, bumped: 0, tries: 0, stranded: 0 });
       this.settle(car, edge.profile.lane);
       // Each driver keeps their own pace, a share of every street's speed (the bus a steady one)
-      car.pace = car.service ? .8 + r(4) * .06 : .75 + r(4) * .25; car.cruiseSpeed = edge.profile.speed * car.pace; car.speed = car.cruiseSpeed;
+      car.pace = car.service ? .8 + r(4) * .06 : car.job === 'taxi' ? .92 + r(4) * .08 : .75 + r(4) * .25; car.cruiseSpeed = edge.profile.speed * car.pace; car.speed = car.cruiseSpeed;
       // Knowing its way on from the start, a car is never placed past a turn it
       // has not chosen, nor going faster than it could take the turn ahead
       this.choose(car);
@@ -297,11 +317,13 @@ export class CityTraffic {
   }
   // The bus goes off duty for a while (see REST): out of sight and out of
   // everyone's way, far off where nothing looks for it. If it never came near
-  // the player it is back sooner, and after a reset (`fresh`) any time within a rest.
+  // the player it is back sooner, and after a reset (`fresh`) any time within
+  // a rest. So do the cars with a job.
   retire(car, fresh = false) {
-    const service = car.service, r = this.random(car, 61);
-    service.rest = fresh ? r * (REST + REST_SPREAD) : service.near ? REST + r * REST_SPREAD : r * REST_SPREAD / 5; service.near = false;
-    this.leaveStop(car); this.junctions.release(car);
+    const duty = car.service ?? car.duty, r = this.random(car, 61);
+    duty.rest = fresh ? r * (REST + REST_SPREAD) : duty.near ? REST + r * REST_SPREAD : r * REST_SPREAD / 5; duty.near = false;
+    if (car.service) this.leaveStop(car);
+    this.junctions.release(car);
     Object.assign(car, { edge: null, claim: null, leaving: null, pending: null, loose: null, recover: null, rock: null, speed: 0, s: 1e6, u: 1e6, heading: 0, laneHeading: 0 });
     car.car.visible = false; car.position.set(1e6, 0, -1e6); car.previousPosition.copy(car.position);
   }
@@ -1181,18 +1203,21 @@ export class CityTraffic {
     for (const car of this.vehicles) order.push(car);
     order.sort(byWait);
     for (const car of order) {
-      // (the bus off duty, or with no main road near enough to turn up on, waits out of sight)
-      if (car.service?.rest > 0) { car.service.rest -= dt; car.targetSpeed = 0; continue; }
-      if (!car.edge && !this.spawn(car, player.s, player.u)) { car.targetSpeed = 0; if (car.service) car.service.rest = 4; continue; }
-      const ds = car.s - player.s, du = car.u - player.u;
+      // (the bus off duty, or with no main road near enough to turn up on,
+      // waits out of sight. So does a car with a job, and one with the
+      // player's own job stays there while they do it.)
+      const duty = car.service ?? car.duty, off = Boolean(car.duty) && car.job === this.offDuty;
+      if (duty?.rest > 0 || (off && !car.edge)) { duty.rest = Math.max(0, duty.rest - dt); car.targetSpeed = 0; continue; }
+      if (!car.edge && !this.spawn(car, player.s, player.u)) { car.targetSpeed = 0; if (duty) duty.rest = 4; continue; }
+      const ds = car.s - player.s, du = car.u - player.u, far = Math.hypot(ds, du);
       const behind = ds * this.travelS + du * this.travelU < -RECYCLE_BEHIND;
       const beside = Math.abs(du * this.travelS - ds * this.travelU) > 260;
-      if (Math.hypot(ds, du) > LOCAL_RADIUS || behind || beside) {
+      if (far > LOCAL_RADIUS || behind || beside || (off && far > OUT_OF_SIGHT)) {
         // (the bus goes off to rest instead: see retire)
-        if (car.service) { this.retire(car); car.targetSpeed = 0; continue; }
+        if (duty) { this.retire(car); car.targetSpeed = 0; continue; }
         this.spawn(car, player.s, player.u);
       }
-      if (car.service && Math.abs(ds) < NEAR && Math.abs(du) < NEAR) car.service.near = true;
+      if (duty && Math.abs(ds) < NEAR && Math.abs(du) < NEAR) duty.near = true;
       car.previousPosition.copy(car.position); car.previousQuaternion.copy(car.quaternion);
       // Choose the way on in good time, and arrive at the turn at its own speed
       if (!car.turn && car.edge.length - car.along < 70) this.choose(car);

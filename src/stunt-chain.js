@@ -30,6 +30,8 @@ export const SMASH_SHARE = .001;
 export const REPEATS = [1, .75, .5, .25, .1];
 // Faster than this past traffic going its own speed, and close
 const NEAR_SPEED = 14, NEAR_CLOSING = 7, NEAR_GAP = 2.5;
+// A crash this soon (s) after a chain began is the blow that began it
+const CRASH_GRACE = .25;
 
 // A near miss: the player going past `car` fast, within NEAR_GAP of its side
 // (a taxi shift tips for the same thing)
@@ -47,7 +49,7 @@ export class StuntChain {
     this.events = []; this.elapsed = 0;
     this.scrapedAt = -Infinity; this.lastImpact = null; this.lastCrash = null; this.cooldown = 0;
     this.cars = new WeakMap(); this.passed = new WeakSet();
-    this.chain = 0; this.pot = 0; this.chainTime = 0; this.last = null;
+    this.chain = 0; this.pot = 0; this.chainTime = 0; this.last = null; this.began = -Infinity;
     // (how many of each kind of smash the chain has had)
     this.repeats = new Map();
   }
@@ -60,6 +62,7 @@ export class StuntChain {
   add(value, label, at = null, kind = 'stunt', pop = true) {
     if (!(value > 0) || this.cooldown > 0) return 0;
     const before = this.multiplier;
+    if (!this.chain) this.began = this.elapsed;
     this.chain++;
     const multiplier = this.multiplier, earned = Math.round(value * multiplier);
     this.chainTime = chainSeconds(multiplier); this.pot += earned;
@@ -97,7 +100,10 @@ export class StuntChain {
     if (!active) { this.bank(); return; }
     // (a drift that touched anything pays nothing, so grinding along a wall earns nothing)
     if (collided) this.scrapedAt = this.elapsed;
-    if (crashed) this.lose('Crash');
+    // (a chain the crash itself began, by smashing what it hit, is kept: it
+    // said "+$5" and then "Crash · $5 chain lost" for the one blow)
+    if (crashed && this.chain && this.elapsed - this.began < CRASH_GRACE) this.cooldown = .8;
+    else if (crashed) this.lose('Crash');
     if (!player.walker && !player.pilot && !collided && this.cooldown === 0) {
       for (const car of traffic) {
         if (this.passed.has(car) || !nearMiss(player, car)) continue;

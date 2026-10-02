@@ -436,14 +436,17 @@ const TRAFFIC_LAMPS = { head: '#fff0c3', tail: '#a5382e' }, HEAD_GLOW = new THRE
 export function createTrafficModels() {
   const glow = { head: { value: new THREE.Color() }, tail: { value: new THREE.Color() } };
   const templates = TRAFFIC_MODELS.map(spec => markedBody(vehicleGeometry(spec), TRAFFIC_LAMPS));
-  let busTemplate = null;
+  // Shapes kept out of TRAFFIC_MODELS, by name, each made the first time one
+  // is: the bus, and any added (see CityTraffic's cabs and truck)
+  const named = { bus: { spec: BUS_MODEL, parts: () => busGeometry(BUS_MODEL), template: null } };
   const paints = [];
   const models = {
-    // (`index` 'bus' for the bus, whose shape is only made if one is)
+    add(spec, parts) { named[spec.name] = { spec, parts, template: null }; },
+    // (`index` a name for one of the named shapes)
     create(index, color) {
-      const bus = index === 'bus', spec = bus ? BUS_MODEL : TRAFFIC_MODELS[index], car = new THREE.Group(), paint = bodyMaterial(color, glow, .76);
+      const shape = named[index], spec = shape ? shape.spec : TRAFFIC_MODELS[index], car = new THREE.Group(), paint = bodyMaterial(color, glow, .76);
       paints.push(paint); car.name = `traffic-${spec.name}`;
-      const mesh = new THREE.Mesh(bus ? busTemplate ??= markedBody(busGeometry(spec), TRAFFIC_LAMPS) : templates[index], paint);
+      const mesh = new THREE.Mesh(shape ? shape.template ??= markedBody(shape.parts(), TRAFFIC_LAMPS) : templates[index], paint);
       mesh.receiveShadow = mesh.castShadow = true; stableShadowDepth(mesh);
       // (it never moves in its car)
       mesh.matrixAutoUpdate = false;
@@ -455,7 +458,7 @@ export function createTrafficModels() {
     glow,
     dispose() {
       for (const geometry of templates) geometry.dispose();
-      busTemplate?.dispose();
+      for (const shape of Object.values(named)) shape.template?.dispose();
       for (const mat of paints) mat.dispose();
     },
   };

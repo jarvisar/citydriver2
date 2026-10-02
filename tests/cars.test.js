@@ -305,6 +305,13 @@ test('a chosen car keeps its own paint and kit on every route', () => {
   assert.equal(paints.size, Object.keys(JOURNEYS).length);
 });
 
+test('the demolition truck is the Truck in orange, found in the traffic and never sold', () => {
+  const truck = CARS.demolition;
+  assert.equal(truck.name, 'Demolition truck'); assert.equal(truck.job, 'demolition');
+  assert.equal(truck.shape, CARS.rig.shape); assert.deepEqual(carStats('demolition'), carStats('rig')); assert.equal(truck.mass, CARS.rig.mass);
+  assert.ok(!GARAGE_IDS.includes('demolition') && !CAR_IDS.includes('demolition'));
+});
+
 test('the racers and specials stay in the chooser, and traffic keeps its own five shapes', () => {
   for (const id of CHOOSER_ONLY) {
     assert.ok(CARS[id], `the chooser needs the ${id} car`);

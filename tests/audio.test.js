@@ -168,6 +168,7 @@ test('engine personalities cover the garage and Formula retains its full rev ran
   assert.equal(engineFor('taxiGT'), ENGINES.sports);
   assert.equal(engineFor('pickup'), ENGINES.pickup);
   assert.equal(engineFor('unknown'), ENGINES.city);
+  assert.equal(engineFor('demolition'), ENGINES.rig, 'the demolition truck is the Truck');
   for (const id of CAR_IDS) assert.ok(id === 'auto' || id.startsWith('taxi') || engineFor(id) === ENGINES[id], id);
   const model = new DriveSoundModel(); model.setProfile(ENGINES.formula, carStats('formula').cruise);
   const fast = settle(model, { speed: 50, throttle: 1 }, 5);

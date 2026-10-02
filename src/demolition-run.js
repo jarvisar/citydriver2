@@ -9,8 +9,8 @@
 
 import { randomAt } from './world/route.js';
 
-// The truck, in site-work orange
-export const DEMOLITION_CAR = 'rig', DEMOLITION_PAINT = '#e27a24';
+// The truck, in site-work orange (see CARS.demolition)
+export const DEMOLITION_CAR = 'demolition', DEMOLITION_PAINT = '#e27a24';
 export const RUN_SECONDS = 60;
 // Wrecking a moving car adds this much to the clock, which holds no more than MAX_SECONDS
 export const TAKEDOWN_SECONDS = 3, MAX_SECONDS = 120;
@@ -61,9 +61,9 @@ export const PIECE_NAMES = {
 // Cars by model: what it costs to write one off. A parked car pays
 // PARKED_SHARE of that: they stand in rows, and a truck ploughing a row of
 // them earned most of every big run's score (1.3M of 1.6M in one bot run).
-export const CAR_PRICES = { hatchback: 14000, sedan: 19000, wagon: 21000, pickup: 26000, van: 29000, bus: 45000 };
+export const CAR_PRICES = { hatchback: 14000, sedan: 19000, taxi: 19000, wagon: 21000, pickup: 26000, van: 29000, demolition: 38000, bus: 45000 };
 export const PARKED_SHARE = .5;
-const CAR_NAMES = { hatchback: 'Hatchback', sedan: 'Sedan', wagon: 'Estate', pickup: 'Pickup', van: 'Van', bus: 'Bus' };
+const CAR_NAMES = { hatchback: 'Hatchback', sedan: 'Sedan', taxi: 'Cab', wagon: 'Estate', pickup: 'Pickup', van: 'Van', demolition: 'Truck', bus: 'Bus' };
 const CAR_PRICE = 18000;
 // A blow closing at WRECK_SPEED (m/s) writes a car off at once; slower ones
 // dent it by the square of their speed, so it pays to hit hard. Under
@@ -173,6 +173,9 @@ export class DemolitionRun {
     this.chain = 0; this.pot = 0; this.chainTime = 0; this.boost = 1; this.boostActive = false;
   }
   get running() { return this.status === 'running'; }
+  // On standby in the truck (see main.js): the contracts are dealt and the
+  // clock waits for the first hit, as a taxi shift waits for its first fare
+  get waiting() { return this.status === 'standby'; }
   get multiplier() { return chainMultiplier(this.chain); }
   // What the chain would bank now
   get pending() { return this.pot; }
@@ -194,6 +197,15 @@ export class DemolitionRun {
     this.contracts = runContracts(this.records.runs, demolitionRank(this.records.best).rank);
   }
   stop() { this.status = 'idle'; this.boostActive = false; this.chain = 0; this.pot = 0; this.chainTime = 0; this.overtime = false; this.events = []; }
+  standby() {
+    this.stop(); this.status = 'standby'; this.timeLeft = RUN_SECONDS;
+    this.contracts = runContracts(this.records.runs, demolitionRank(this.records.best).rank);
+  }
+  // The first hit on standby starts the run, and counts in it
+  begin() {
+    if (!this.waiting) return;
+    this.start(); this.events.push({ kind: 'begin' });
+  }
   get contractsDone() { return this.contracts?.filter(contract => contract.done).length ?? 0; }
   // The run so far, in the terms the contracts use
   get stats() { return { ...this.tally, takedowns: this.takedowns, bestChain: this.bestChain, bestBank: this.bestBank }; }
@@ -244,9 +256,10 @@ export class DemolitionRun {
   }
   // Furniture knocked loose: `kinds` are its pieces (see LooseProps)
   smash(kinds, at = null) {
-    if (!this.running || !kinds?.length) return 0;
+    if ((!this.running && !this.waiting) || !kinds?.length) return 0;
     const value = kinds.reduce((sum, kind) => sum + (PRICES[kind] ?? 0), 0);
     if (!value) return 0;
+    this.begin();
     this.smashed++; if (kinds.includes('tree')) this.trees++;
     const kind = kinds[0], label = kinds.length > 1 && kind === 'table' ? 'Cafe terrace' : PIECE_NAMES[kind] ?? 'Street furniture';
     this.tally[kind] = (this.tally[kind] ?? 0) + 1;
@@ -262,7 +275,8 @@ export class DemolitionRun {
   // generation, which a car recycled into a new one, or a stand-in woken for
   // another bay, moves on.
   damageCar(car, closing, at = car?.position) {
-    if (!this.running || !car) return 0;
+    if ((!this.running && !this.waiting) || !car) return 0;
+    if (this.waiting) { if (closing < DENT_SPEED) return 0; this.begin(); }
     let record = this.cars.get(car);
     if (!record || record.generation !== car.generation) this.cars.set(car, record = { generation: car.generation, damage: 0, hit: -Infinity, wrecked: false, parked: Boolean(car.parked) });
     if (record.wrecked || closing < DENT_SPEED || this.elapsed - record.hit < DENT_GAP) return 0;

@@ -13,6 +13,7 @@ import { PedestrianContacts } from '../src/world/pedestrian-reactions.js';
 import { ThirdPersonCamera } from '../src/third-person-camera.js';
 import { FirstPersonCamera } from '../src/first-person-camera.js';
 import { TRAFFIC_MODELS } from '../src/traffic-models.js';
+import { carStats } from '../src/cars.js';
 import { GamepadInput } from '../src/gamepad.js';
 import { XRInput } from '../src/xr-input.js';
 import { DriveSoundModel } from '../src/audio/model.js';
@@ -143,6 +144,23 @@ test('a borrowed traffic car shares its body and scene root through repeated tra
     assert.ok(!actor.disposed, 'the city still owns its car');
   } finally { kit.dispose(); }
   assert.ok(actor.disposed, 'fleet disposal includes every borrowed model');
+});
+
+test('a cab or the demolition truck taken from the traffic is the garage\'s of that name, in its own paint', () => {
+  const kit = actorTraffic(), { vehicle, traffic, feet } = kit;
+  try {
+    feet.getOut();
+    for (const [job, id, name, paint] of [['taxi', 'taxi', 'Taxi', '#f5c42e'], ['demolition', 'demolition', 'Demolition truck', '#e27a24']]) {
+      const car = behind(traffic, traffic.vehicles.find(each => each.job === job), vehicle.s, vehicle.u, vehicle.heading, -12, 0);
+      car.car.visible = true;
+      assert.equal(feet.borrow(car), `${name} · borrowed`);
+      assert.equal(vehicle.carId, id); assert.equal(vehicle.paintColor, paint);
+      // (the truck drives as the garage's Truck, six wheels and all)
+      if (job === 'demolition') { assert.deepEqual(vehicle.stats, carStats('rig')); assert.equal(vehicle.wheels.length, 6); }
+      feet.leave(vehicle.stepOut());
+      assert.ok(traffic.vehicles.includes(car) && car.job === job, 'back to its work in the traffic');
+    }
+  } finally { kit.dispose(); }
 });
 
 test('a borrowed parked body is reserved through traffic resets and returned to the same bay', () => {

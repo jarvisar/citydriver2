@@ -16,7 +16,7 @@ test('everything a car can knock loose has a price and a name, and every traffic
   for (const kind of ['lamp', 'lantern', 'signal', 'mast', 'sign', 'bench', 'bin', 'table', 'chair', 'stall', 'tree', 'shelter', 'hydrant', 'post-box', 'cabinet', 'news-boxes', 'bike-rack']) {
     assert.ok(PRICES[kind] > 0 && PIECE_NAMES[kind], kind);
   }
-  for (const model of [...TRAFFIC_MODELS, BUS_MODEL]) assert.ok(CAR_PRICES[model.name] > 0, model.name);
+  for (const name of [...TRAFFIC_MODELS.map(model => model.name), BUS_MODEL.name, 'taxi', 'demolition']) assert.ok(CAR_PRICES[name] > 0, name);
   // A car is worth more than any furniture but the signal gantry
   const furniture = Object.entries(PRICES).filter(([kind]) => kind !== 'mast').map(([, price]) => price);
   assert.ok(Math.min(...Object.values(CAR_PRICES)) > Math.max(...furniture));
@@ -42,6 +42,28 @@ test('a chain steps its multiplier every few smashes, then banks its pot once it
   run.damageCar(car('van'), WRECK_SPEED); run.damageCar(car('pickup'), WRECK_SPEED); run.update(CHAIN_SECONDS);
   assert.equal(run.drainEvents().find(event => event.kind === 'banked').rank.id, demolitionRank(run.score).id);
   assert.notEqual(run.rank.id, 'none');
+});
+
+test('on standby the truck\'s run waits for its first hit, which starts the clock and counts in it', () => {
+  const run = new DemolitionRun();
+  run.standby();
+  assert.ok(run.waiting && !run.running); assert.equal(run.timeLeft, RUN_SECONDS);
+  assert.equal(run.contracts.length, CONTRACTS_PER_RUN, 'its contracts are dealt, for the card to show');
+  const dealt = run.contracts.map(each => each.id);
+  // (nothing moves the clock, nobody is fined, and a touch is no hit)
+  run.update(5); run.pedestrian(); assert.equal(run.timeLeft, RUN_SECONDS);
+  assert.equal(run.damageCar(car(), DENT_SPEED - .1), 0); assert.ok(run.waiting);
+  assert.equal(run.smash(['person']), 0); assert.ok(run.waiting, 'nothing without a price starts it');
+  assert.equal(run.events.length, 0);
+  assert.equal(run.smash(['lamp']), PRICES.lamp);
+  assert.ok(run.running); assert.equal(run.smashed, 1); assert.equal(run.chain, 1);
+  assert.deepEqual(run.contracts.map(each => each.id), dealt, 'the contracts shown are the ones played');
+  assert.deepEqual(run.drainEvents().map(event => event.kind).slice(0, 2), ['begin', 'smash'], 'begun, then the hit (and any contract it moved on)');
+  // A car dented hard enough starts it the same way, and the standby ends with the truck
+  const other = new DemolitionRun();
+  other.standby(); other.damageCar(car(), 10);
+  assert.ok(other.running && other.carsHit === 1); assert.equal(other.drainEvents()[0].kind, 'begin');
+  other.standby(); other.stop(); assert.equal(other.status, 'idle');
 });
 
 test('a cafe is paid for whole, a tree is counted, and nothing is paid outside a run', () => {

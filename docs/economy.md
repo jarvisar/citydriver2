@@ -1,6 +1,6 @@
 # Money and the Garage
 
-Every mode pays into one balance, and the garage sells every vehicle out of it. You start with the Taxi. Everything else, cabs included, has a price. The aircraft cost the most and are meant to be the long goal.
+Every mode pays into one balance, and the garage sells every vehicle out of it. You start with the Taxi for shifts and the Surf Wagon for free drive. Everything else, cabs included, has a price. The aircraft cost the most and are meant to be the long goal.
 
 ## What Pays
 
@@ -43,7 +43,7 @@ The cars that turn up in traffic are cheapest, since you can borrow them on foot
 | Vehicle | Price | Time |
 | --- | ---: | ---: |
 | Taxi | Included | |
-| Surf Wagon | $1,500 | 3 min |
+| Surf Wagon | Included | |
 | City Hatch | $2,000 | 4 min |
 | Highway Sedan | $2,500 | 5 min |
 | Estate Wagon | $3,000 | 6 min |
@@ -64,11 +64,11 @@ The cars that turn up in traffic are cheapest, since you can borrow them on foot
 | Helicopter | $90,000 | 3 h |
 | Plane | $140,000 | 4.7 h |
 
-Everything together is $580,500, about 19 hours of average play. The prices are in `GARAGE_PRICES` in `src/cars.js`.
+Everything together is $579,000, about 19 hours of average play. The prices are in `GARAGE_PRICES` in `src/cars.js`.
 
 ## Using the Garage
 
-A car you own is picked straight away, like before. Any other car opens its offer: price, how far your balance gets you, and Buy, Test drive and Save for this. Buying puts you in it.
+A car you own is picked straight away, like before. It becomes your free drive car. Cabs are different. Picking one puts you in it with fares waiting and makes it your shift cab, but Free drive on the title still starts in your own car. Any other car opens its offer: price, how far your balance gets you, and Buy, Test drive and Save for this. Buying puts you in it.
 
 A test drive is two minutes in the car, free the first time for each car. After that it costs 2.5% of the price ($2,250 for the helicopter). Stunts pay as usual, but a cab you're only test driving has no fares. When time is up the car stops, or lands itself if it flies, then you're back in your own car. If you'd already got out, it just goes back to the garage. Test drives used are saved with the fleet, so reloading doesn't give you another free one.
 

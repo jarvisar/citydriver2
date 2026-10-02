@@ -63,7 +63,7 @@ test('garage selection uses car and paint state, and preserves paint-first heads
   assert.deepEqual(calls, ['taxi', DEFAULT_PAINT]);
   const s = state({ mode: 'free', chooser: 'garage' }), model = menuModel(s, menuControls(s, actions([])), { garage });
   assert.equal(model.items[0].group, 'Paint'); assert.equal(model.items[0].swatch, '#123456');
-  assert.match(model.subtitle, /\$0 · 2 of 21 owned/);
+  assert.match(model.subtitle, /\$0 · 3 of 21 owned/);
   assert.equal(model.items.find(item => item.id === 'jetpack')?.label, 'Jetpack', 'the gear after the cars');
   assert.ok(!garage.paints.some(item => item.id === 'rainbow'), 'no rainbow before the code');
   assert.ok(garage.paints.filter(item => item.id !== DEFAULT_PAINT).every(item => item.disabled), 'no colour without the money for it');
@@ -107,9 +107,9 @@ test('an unowned car opens its offer: buy it, test drive it or save for it, the 
 
 test('saving for a car: the one chosen, else the cheapest still out of reach, and none once the garage is full', () => {
   const fleet = new TaxiFleet();
-  assert.equal(savingFor(fleet).id, 'coast'); assert.equal(savingFor(fleet).text, 'Surf Wagon in $1,500');
-  fleet.credit(1600);
-  assert.equal(savingFor(fleet).id, 'hatchback', 'one it can buy already is not a goal');
+  assert.equal(savingFor(fleet).id, 'hatchback'); assert.equal(savingFor(fleet).text, 'City Hatch in $2,000');
+  fleet.credit(2100);
+  assert.equal(savingFor(fleet).id, 'sedan', 'one it can buy already is not a goal');
   fleet.setGoal('helicopter');
   assert.equal(savingFor(fleet).id, 'helicopter'); assert.equal(savingFor(fleet).chosen, true); assert.ok(savingFor(fleet).fraction > 0);
   fleet.credit(2e6);

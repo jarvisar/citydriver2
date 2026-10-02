@@ -39,7 +39,7 @@ export const ENGINES = {
   // On foot (see Walker): no engine at all, only footsteps
   walker: voice({ rasp: 0, intake: 0, silent: true }),
 };
-const ALIASES = { auto: 'city', taxiGT: 'sports', taxiFormula: 'formula' };
+const ALIASES = { auto: 'city', taxiGT: 'sports', taxiFormula: 'formula', demolition: 'rig' };
 export const engineFor = car => ENGINES[ALIASES[car] ?? car] ?? ENGINES.city;
 
 // The key of the game's cues (F major), so a run of them always agrees

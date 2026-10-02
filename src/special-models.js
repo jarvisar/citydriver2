@@ -352,6 +352,32 @@ function block(kit, front, rear, category = 'paint', color) {
   geometry.computeVertexNormals();
 }
 
+// A special as the traffic draws it, in one (see createTrafficModels): its
+// four parts with the wheels fixed on as trim, which never turn. The
+// demolition truck drives about in the traffic.
+export function specialGeometry(shape) {
+  const kit = partsKit();
+  BUILDERS[shape.name](kit);
+  for (const { radius, width, x, z } of Object.values(shape.wheels)) for (const side of [-1, 1]) {
+    // (a vertex at the bottom keeps the tyre on the road, as the traffic's do)
+    const tire = new THREE.CylinderGeometry(radius, radius, width, 10);
+    tire.rotateY(Math.PI / 2); tire.rotateZ(Math.PI / 2);
+    kit.parts.details.push(tinted(tire, [side * x, radius, z], DARK));
+    const hub = new THREE.CircleGeometry(radius * .48, 8); hub.rotateY(side * Math.PI / 2);
+    kit.parts.details.push(tinted(hub, [side * (x + width / 2 + .006), radius, z], CHROME));
+  }
+  const parts = Object.fromEntries(Object.entries(kit.parts).map(([key, geometries]) => [key, mergeGeometries(geometries)]));
+  for (const geometries of Object.values(kit.parts)) for (const geometry of geometries) geometry.dispose();
+  return parts;
+}
+function tinted(geometry, location, color) {
+  geometry.deleteAttribute('uv');
+  const tint = new THREE.Color(color), colors = [];
+  for (let i = 0; i < geometry.attributes.position.count; i++) colors.push(tint.r, tint.g, tint.b);
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  return geometry.translate(...location);
+}
+
 export function createSpecialCar(entry) {
   const shape = entry.shape, kit = partsKit();
   BUILDERS[shape.name](kit);

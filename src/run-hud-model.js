@@ -21,7 +21,7 @@ function baseHud(run, vehicle, free = false) {
     boost: run.boost, boostState: run.running ? run.boostActive ? 'Boosting' : run.boost < .1 ? 'Release to fill' : 'Hold'
       : vehicle.boosting ? vehicle.walker ? 'Sprinting' : 'Boosting' : 'Hold',
     speed: Math.round(Math.abs(vehicle.speed) * 2.23694), navigation: null, timer: null, stopProgress: null,
-    combo: '', party: '', band: '', nextStop: '', mood: '', detail: '', info: '', arriving: false, taskUrgent: false, overtime: false };
+    combo: '', party: '', band: '', nextStop: '', mood: '', detail: '', info: '', fareStatus: '', arriving: false, taskUrgent: false, overtime: false };
 }
 
 // The waiting fare the cab is closest to, within sight of its ring
@@ -128,10 +128,10 @@ function testCard(model, test) {
 }
 
 // Free drive's HUD, in the runs' panels. The task card only shows when it
-// has something to say: a stunt chain going, a fare by the cab (standby, see
-// TaxiRun.standby), a test drive's clock or a tip. The rest of the time the
-// view stays clear.
-export function freeHudModel(stunts, vehicle, { taxi = null, test = null, shop = false, hint = () => '' } = {}) {
+// has something to say: a stunt chain going, a job on standby (a cab, with
+// the fare it is by, see TaxiRun.standby, or the demolition truck), a test
+// drive's clock or a tip. The rest of the time the view stays clear.
+export function freeHudModel(stunts, vehicle, { taxi = null, demolition = null, test = null, shop = false, hint = () => '' } = {}) {
   const model = Object.assign(baseHud({ running: false }, vehicle, true), { task: false, status: 'free' });
   if (test?.over) return testCard(model, test);
   if (stunts.chain) {
@@ -147,7 +147,19 @@ export function freeHudModel(stunts, vehicle, { taxi = null, test = null, shop =
       stopProgress: { visible: taxi.hold > 0, label: 'Passenger boarding', fraction: Math.min(1, taxi.hold / STOP_SECONDS) } });
   }
   if (test) return testCard(model, test);
-  const tip = hint(taxi?.waiting ? 'cab' : shop ? 'shop' : '');
+  // (the demolition truck on standby: what starts the run, and its contracts)
+  if (demolition?.waiting) {
+    const contracts = demolition.contracts ?? [];
+    return Object.assign(model, { task: true, status: 'standby', stage: 'Demolition', fareStatus: `Clock ${Math.round(demolition.timeLeft)} s`,
+      title: 'Hit anything to start', party: contracts.length ? `Contracts · ${contracts.map(contract => contract.short).join(', ')}` : '', info: 'party' });
+  }
+  // (and a cab with no fare near: what starts the shift. Said once as a tip,
+  // it left a shift picked on the menus with nothing on screen.)
+  if (taxi?.waiting) {
+    return Object.assign(model, { task: true, status: 'standby', stage: 'Taxi shift', fareStatus: `Clock ${Math.round(taxi.timeLeft)} s`,
+      title: 'Find a passenger', party: 'Stop in a ring · the clock starts with the first fare', info: 'party' });
+  }
+  const tip = hint(shop ? 'shop' : '');
   // (the tip's first part is the title, the rest the line under it)
   const [title, ...more] = tip.split(' · ');
   if (tip) Object.assign(model, { task: true, status: 'tip', stage: 'Tip', title, detail: more.join(' · ') });

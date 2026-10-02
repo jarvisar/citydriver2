@@ -19,8 +19,11 @@ export function menuControls(state, actions) {
     // (free drive's is New city, asked twice: it drops the places found and the jump stars)
     restart: control(run ? 'Restart run' : state.newCityArmed ? 'Again for a new city' : 'New city', state.mode === 'demolition' ? actions.demolition : actions.newCity),
     end: control(taxi ? 'End shift' : 'End run', actions.end),
-    switchMode: control('Taxi shift', actions.taxi),
-    otherRun: control(state.mode === 'demolition' ? 'Taxi shift' : 'Demolition', state.mode === 'demolition' ? actions.taxi : actions.demolition),
+    // (in free drive on a job's standby, its button would start what is
+    // already waiting: Free drive takes its place, back in their own car)
+    switchMode: state.standby === 'taxi' ? control('Free drive', actions.free) : control('Taxi shift', actions.taxi),
+    otherRun: state.mode === 'demolition' ? control('Taxi shift', actions.taxi)
+      : state.standby === 'demolition' ? control('Free drive', actions.free) : control('Demolition', actions.demolition),
     fleet: control('Taxi fleet', actions.fleet, { value: state.fleetName }),
     garage: control('Garage', actions.garage, { value: state.carName, disabled: locked }),
     autodrive: control('Autodrive', actions.autodrive, { toggle: state.autodrive, disabled: locked }),
@@ -62,7 +65,8 @@ export function menuModel(state, controls, { garage, fleet, result, mapImage, ma
   return { id: 'pause', title: 'Paused', subtitle: [state.location.place, state.career].filter(Boolean).join(' · '), columns: 2,
     hint: state.mode === 'free' ? `${VR_CONTROLS} · Y: get out` : VR_CONTROLS, items: [
       item('resume', { primary: true, header: true }),
-      ...(state.mode === 'taxi' ? ['end', 'demolition', 'fleet'] : state.mode === 'demolition' ? ['restart', 'end', 'taxi'] : ['taxi', 'demolition', 'garage', 'fleet', 'autodrive', 'traffic']).map(drive),
+      ...(state.mode === 'taxi' ? ['end', 'demolition', 'fleet'] : state.mode === 'demolition' ? ['restart', 'end', 'taxi']
+        : [state.standby === 'taxi' ? 'free' : 'taxi', state.standby === 'demolition' ? 'free' : 'demolition', 'garage', 'fleet', 'autodrive', 'traffic']).map(drive),
       drive('driftTap'), drive('reset'), item('map', { group: 'The city' }), item('weather', { group: 'The city' }),
       ...['view', 'recenter', 'lookSensitivity', 'comfort', 'graphics'].map(view), ...(state.rates.length ? [view('rate')] : []),
       item('sound', { column: 1, group: 'Sound' }), item('mix', { column: 1, group: 'Sound' }), item('vibration', { column: 1, group: 'Sound' }), item('exit', { footer: true }),

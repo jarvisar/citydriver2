@@ -17,10 +17,10 @@ test('traffic spawns on the streets around the car, drives on and stays on the r
   const scene = new THREE.Scene(), player = new DrivingController(citydriverRoute, journeyStart(), 'taxi');
   const traffic = new CityTraffic(scene, player.route, player.s, 'city', player.u);
   try {
-    // (24 cars and a bus, which may be resting out of sight: see buses.test.js)
-    assert.equal(traffic.vehicles.length, 25);
+    // (24 cars, a bus and the cars with a job, which may be resting out of sight: see buses.test.js)
+    assert.equal(traffic.vehicles.length, 28);
     for (const car of traffic.vehicles) {
-      if (car.service && !car.edge) continue;
+      if ((car.service || car.duty) && !car.edge) continue;
       assert.ok(car.edge && Number.isFinite(car.s) && Number.isFinite(car.u));
       assert.ok(Math.hypot(car.s - player.s, car.u - player.u) < 400);
       assert.ok(onRoadAt(car.s, car.u), 'spawned on a street');
@@ -620,4 +620,32 @@ test('a minute of traffic by each of the two longest boulevards: cars change lan
   }
   assert.ok(changes >= 1, `${changes} lane changes`);
   assert.equal(wrong, 0, 'turns off from the median lane');
+});
+
+test('cabs and the demolition truck come by now and then, and stay off the road while the player does their job', () => {
+  const start = journeyStart(), player = { s: start.s, u: start.u, heading: 0, speed: 0, airborne: true, groundedPosition: new THREE.Vector3(1e5, 0, 1e5), velocity: new THREE.Vector3(), spec: { width: 1.9, length: 4.4 } };
+  const traffic = new CityTraffic(new THREE.Scene(), citydriverRoute, player.s, 'city', player.u);
+  try {
+    const jobs = traffic.vehicles.filter(car => car.job), on = new Map(jobs.map(car => [car, 0]));
+    assert.deepEqual(jobs.map(car => car.job), ['taxi', 'taxi', 'demolition']);
+    for (let f = 0; f < 60 * 240; f++) { traffic.update(1 / 60, player); for (const car of jobs) if (car.edge) on.set(car, on.get(car) + 1); }
+    for (const [car, frames] of on) assert.ok(frames > 60 * 15 && frames < 60 * 235, `${car.job} on duty ${(frames / 60).toFixed(0)} s of 240, resting the rest`);
+    // Working as a cab, no other cab out on the road past OUT_OF_SIGHT, and none coming back
+    traffic.offDuty = 'taxi';
+    let seen = 0, back = 0, truck = 0;
+    for (let f = 0; f < 60 * 180; f++) {
+      const off = jobs.slice(0, 2).map(car => !car.edge);
+      traffic.update(1 / 60, player);
+      // (one may cross OUT_OF_SIGHT in the step's move, after it was
+      // checked, and one held up nearer, in a jam, stays where it is)
+      for (const car of jobs) if (car.edge && car.job === 'taxi' && Math.hypot(car.s - player.s, car.u - player.u) > 125) seen++;
+      back += jobs.slice(0, 2).filter((car, k) => off[k] && car.edge).length;
+      if (jobs[2].edge) truck++;
+    }
+    assert.equal(seen, 0); assert.equal(back, 0, 'no cab comes back on duty meanwhile');
+    assert.ok(truck > 0, 'the truck still comes by');
+    traffic.offDuty = null;
+    for (let f = 0; f < 60 * 120 && !jobs.slice(0, 2).some(car => car.edge); f++) traffic.update(1 / 60, player);
+    assert.ok(jobs.slice(0, 2).some(car => car.edge), 'and back on duty after');
+  } finally { traffic.dispose(); }
 });

@@ -19,11 +19,17 @@ export function setupMenuIdle({ app, welcome, fade, rendering, enabled }) {
     return true;
   }
   function stop() { wake(); lastActivity = null; }
+  // (until when the click of a tap that woke the menu is swallowed)
+  let swallow = -Infinity;
   function activity(event) {
+    if (event.type === 'click' && performance.now() < swallow) { swallow = -Infinity; event.preventDefault(); event.stopImmediatePropagation(); return; }
     const woke = wake();
     // A tap on the sleeping menu should not become a driving gesture.
     if (woke && ['pointerdown', 'keydown', 'click', 'wheel'].includes(event.type)) {
       event.preventDefault(); event.stopImmediatePropagation();
+      // (nor its click, which comes once the menu is awake: on a phone it
+      // pressed whatever button was under the finger, and started a drive)
+      if (event.type === 'pointerdown') swallow = performance.now() + 1000;
     }
   }
   for (const name of ['pointermove', 'pointerdown', 'pointerup', 'pointercancel', 'keydown', 'keyup', 'wheel', 'click', 'focusin']) {

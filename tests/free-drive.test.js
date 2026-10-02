@@ -53,12 +53,17 @@ test('the stunt chain multiplies as it grows, banks when it waits too long, and 
   step(stunts, car, CHAIN_SECONDS);
   const banked = stunts.drainEvents().find(event => event.kind === 'banked');
   assert.equal(banked.amount, 70); assert.equal(stunts.chain, 0);
-  stunts.add(10, 'Test');
+  stunts.add(10, 'Test'); step(stunts, car, .5);
   car.audioTelemetry.crashSerial++; step(stunts, car);
   const lost = stunts.drainEvents().find(event => event.kind === 'lost');
   assert.equal(lost.lost, 10); assert.equal(stunts.chain, 0);
   assert.equal(stunts.add(10, 'Test'), 0, 'nothing counts for a moment after a crash');
   step(stunts, car, 1); assert.ok(stunts.add(10, 'Test') > 0);
+  // A chain the crash began, smashing what it hit, is kept: it was "+$5" then "$5 chain lost" for one blow
+  step(stunts, car, CHAIN_SECONDS); stunts.drainEvents();
+  stunts.smashed(['lamp']); car.audioTelemetry.crashSerial++; step(stunts, car, 1 / 60);
+  assert.equal(stunts.chain, 1); assert.ok(!stunts.drainEvents().some(event => event.kind === 'lost'));
+  assert.equal(stunts.add(10, 'Test'), 0, 'though nothing counts for a moment after it either');
 });
 
 test('a chain waits for a car in the air, and autodrive banks it and counts nothing', () => {
@@ -125,8 +130,26 @@ test('free drive\'s card shows the chain, then a fare by the cab, and otherwise 
   assert.equal(model.stage, 'Chain ×1'); assert.equal(model.title, 'Near miss'); assert.equal(model.timer.tone, 'chain');
   const headset = headsetHudModel(model, { heading: 'N', place: 'Harbour', cash: '$40' });
   assert.equal(headset.free, true); assert.equal(headset.cash, '$40'); assert.match(headset.stage, /^Chain/);
-  const tipped = freeHudModel(new StuntChain(), player(), { taxi: { waiting: true, customers: [], boarding: null }, hint: id => id === 'cab' ? 'A tip · more on it' : '' });
-  assert.equal(tipped.title, 'A tip', 'a cab with no fare near gets its tip'); assert.equal(tipped.detail, 'more on it');
+  // With no fare near, the cab's card still says what starts the shift (it was a one-off tip, then nothing)
+  const waiting = freeHudModel(new StuntChain(), player(), { taxi: { waiting: true, customers: [], boarding: null, timeLeft: SHIFT_SECONDS } });
+  assert.equal(waiting.task, true); assert.equal(waiting.stage, 'Taxi shift'); assert.equal(waiting.title, 'Find a passenger');
+  assert.equal(waiting.fareStatus, `Clock ${SHIFT_SECONDS} s`); assert.match(waiting.party, /clock starts/);
+  const tipped = freeHudModel(new StuntChain(), player(), { shop: true, hint: id => id === 'shop' ? 'A tip · more on it' : '' });
+  assert.equal(tipped.title, 'A tip'); assert.equal(tipped.detail, 'more on it');
+  assert.equal(tipped.fareStatus, '', 'and nothing in the money corner (it said "undefined")');
+});
+
+test('the demolition truck on standby says what starts its run, and which contracts it holds', () => {
+  const run = new DemolitionRun();
+  assert.equal(freeHudModel(new StuntChain(), player(), { demolition: run }).task, false, 'nothing until it is on standby');
+  run.standby();
+  const card = freeHudModel(new StuntChain(), player(), { demolition: run });
+  assert.equal(card.task, true); assert.equal(card.running, false, 'no clock yet');
+  assert.equal(card.stage, 'Demolition'); assert.equal(card.title, 'Hit anything to start'); assert.equal(card.fareStatus, 'Clock 60 s');
+  assert.equal(card.party, `Contracts · ${run.contracts.map(contract => contract.short).join(', ')}`);
+  const chain = new StuntChain(); chain.add(10, 'Near miss');
+  assert.equal(freeHudModel(chain, player(), { demolition: run }).status, 'chain', 'a stunt chain going comes first');
+  assert.equal(headsetHudModel(card, { heading: 'N', place: 'Harbour', cash: '$40' }).title, 'Hit anything to start');
 });
 
 test('money earned anywhere counts toward the rank, and a promotion says what it unlocked', () => {

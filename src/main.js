@@ -82,10 +82,23 @@ let paused = false, started = false, time = 0, hudTime = 0, gameMode = 'taxi';
 document.body.dataset.mode = gameMode;
 const frameClock = new FrameClock(), pacer = new FramePacer();
 let toastTimer, toastShown = -Infinity; let sceneReady = false;
-// The chosen car outlives the visit; positions and mileage do not.
+// The chosen car outlives the visit, positions and mileage do not. It is
+// free drive's car, so a cab is never kept as it (cabs are the shift's: see
+// chooseCar), and a save holding one, from when new players had only the
+// Taxi, starts in the Surf Wagon.
 const carStorageKey = 'citydriver-car';
 let carId = STARTING_CAR;
-try { const saved = localStorage.getItem(carStorageKey); if (saved && GARAGE_IDS.includes(saved)) carId = saved; } catch { /* Storage is optional. */ }
+try { const saved = localStorage.getItem(carStorageKey); if (saved && GARAGE_IDS.includes(saved) && !carEntry(saved).taxi) carId = saved; } catch { /* Storage is optional. */ }
+// (free drive's car, which `carId`, the garage's pick, is too unless that is a cab)
+let freeCarId = carId;
+// The garage's pick: a cab is driven now and becomes the shift's cab,
+// anything else is free drive's car from now on
+function pickCar(id, fleet) {
+  carId = id;
+  if (carEntry(id).taxi) { fleet.select(id); return; }
+  freeCarId = id;
+  try { localStorage.setItem(carStorageKey, id); } catch { /* Still drive it for this visit. */ }
+}
 // One colour dresses the whole garage and follows the player from car to car.
 // It is saved with the fleet (it costs money: see TaxiFleet.setPaint), and
 // Default hands every car its own finish back.
@@ -253,7 +266,7 @@ async function boot() {
     let taxiStorage; try { taxiStorage = localStorage; } catch { /* Optional storage. */ }
     const taxi = new TaxiRun(taxiStorage), taxiView = new TaxiView(scene, taxiStorage); cityGuide.taxi = taxi;
     // Only a car the player owns comes out of the garage (anything else is a test drive)
-    if (!taxi.fleet.owned.has(carId)) carId = taxi.fleet.selected;
+    if (!taxi.fleet.owned.has(carId)) carId = freeCarId = STARTING_CAR;
     paint = taxi.fleet.paint;
     // Free drive's stunt chain (see stunt-chain.js)
     const stunts = new StuntChain();
@@ -277,11 +290,13 @@ async function boot() {
     // Whether free drive's stunts count: not under autodrive, which would
     // earn for nobody
     const freeStunts = () => started && gameMode === 'free' && !autodrive.enabled;
-    props.onSmash = (kinds, at) => demolition.running ? demolition.smash(kinds, at) : freeStunts() ? stunts.smashed(kinds, at) : 0;
+    // (in the demolition truck on standby, the first hit starts the run: see DemolitionRun.begin)
+    const wrecking = () => demolition.running || demolition.waiting;
+    props.onSmash = (kinds, at) => wrecking() ? demolition.smash(kinds, at) : freeStunts() ? stunts.smashed(kinds, at) : 0;
     // Free drive's jumps: what a landing is worth saying, and how far the
     // city's named jumps have been taken (see jump-book.js)
     const jumpBook = new JumpBook(taxiStorage); cityGuide.jumps = jumpBook; cityGuide.refreshJumps();
-    traffic.onDamage = (car, closing) => demolition.running ? demolition.damageCar(car, closing) : freeStunts() ? stunts.damaged(car, closing) : 0;
+    traffic.onDamage = (car, closing) => wrecking() ? demolition.damageCar(car, closing) : freeStunts() ? stunts.damaged(car, closing) : 0;
     pedestrianContacts.onKnock = (by, at, kind) => {
       if (by === 'traffic') return;
       if (demolition.running) demolition.pedestrian(at, by, kind);
@@ -306,6 +321,10 @@ async function boot() {
       if (open.has('takedowns') && traffic.enabled) for (const car of traffic.vehicles) if (car.car.visible && !car.loose) targets.push({ u: car.position.x, s: -car.position.z });
       return targets;
     };
+    // In free drive, out of work, the street map shows where it is: the cabs
+    // and the demolition truck in the traffic
+    cityGuide.jobs = () => started && gameMode === 'free' && traffic.enabled && !taxi.waiting && !demolition.waiting
+      ? traffic.vehicles.filter(car => car.job && car.car.visible) : [];
     const runOver = () => taxi.status === 'over' || demolition.status === 'over';
     const fleetMenu = createFleetMenu(taxi.fleet, { running: () => taxi.running, career: taxi.career, onChange: () => { needsRender = true; },
       // A livery is only paint, so unlike a cab it can change mid-run.
@@ -501,94 +520,109 @@ async function boot() {
       world.update(vehicle.s, vehicle.u); vehicle.render(0, world.origin); rendering.snap(); needsRender = true;
     }
     // Into car `id` where the player is (on the road nearby if they were on
-    // foot or flying), unless they're already in it
+    // foot or flying), unless they're already in it. The swap is a cut
+    // through dark: under the camera it popped from one car to the other.
     function takeCar(id, carPaint) {
       if (vehicle.carId === id && !vehicle.walker && !onFoot.borrowed && !onFoot.bay) return;
-      onFoot.setCar(id, { paint: carPaint }); recoverCar();
+      dipToDark(); onFoot.setCar(id, { paint: carPaint }); recoverCar();
     }
     // Free drive in a cab the fleet owns is a taxi on standby: the fares wait
     // round it, and stopping in a ring starts a shift there and then (see
-    // TaxiRun.standby). Getting out, or into anything else, puts it away. A
-    // cab the fleet doesn't own is only a test drive.
+    // TaxiRun.standby). So is a cab taken from the traffic. Getting out, or
+    // into anything else, puts it away. A cab the fleet doesn't own is only a
+    // test drive. The demolition truck is the same: the run's clock waits for
+    // the first thing it hits (see DemolitionRun.standby).
     const ownCab = id => carEntry(id).taxi && taxi.fleet.owned.has(id);
-    const cabbing = () => started && gameMode === 'free' && !autodrive.enabled && ownCab(vehicle.carId) && !vehicle.walker;
+    const streetCar = () => vehicle.actor.source !== 'garage';
+    const workingCab = () => carEntry(vehicle.carId).taxi && (streetCar() || ownCab(vehicle.carId));
+    const onStandby = () => started && gameMode === 'free' && !autodrive.enabled && !vehicle.walker;
+    const cabbing = () => onStandby() && workingCab();
+    const trucking = () => onStandby() && vehicle.carId === DEMOLITION_CAR;
     function syncStandby() {
       if (cabbing() && taxi.status === 'idle') taxi.standby(vehicle);
       else if (!cabbing() && taxi.waiting) taxi.stop();
-      const standby = String(taxi.waiting);
+      if (trucking() && demolition.status === 'idle') demolition.standby();
+      else if (!trucking() && demolition.waiting) demolition.stop();
+      const standby = taxi.waiting ? 'taxi' : demolition.waiting ? 'demolition' : 'false';
       if (document.body.dataset.standby === standby) return;
       document.body.dataset.standby = standby;
-      // (the headset's menus and HUD take the taxi's accent too)
-      vrStatus.setAccent(taxi.waiting ? 'taxi' : gameMode);
+      // (the headset's menus and HUD take its accent too)
+      vrStatus.setAccent(standby === 'false' ? gameMode : standby);
     }
     // A taxi shift from a menu: into the player's cab where they are, on
-    // standby, so the clock starts with the first fare as it does in free drive
+    // standby, so the clock starts with the first fare as it does in free
+    // drive. A cab they took off the street stays theirs.
     function beginTaxi() {
       if (changingJourney) return;
       leaveRun(); menuIdle.stop(); started = true; stopAutodrive(); testDrive.stop();
-      takeCar(taxi.fleet.selected, taxi.fleet.liveryColor);
+      if (vehicle.walker || !workingCab() || !streetCar()) takeCar(taxi.fleet.selected, taxi.fleet.liveryColor);
       taxi.stop(); taxiView.reset();
       showFree();
     }
-    // The first fare aboard: the shift is on, wherever the cab is
-    function startShift() {
-      if (freeTraffic === undefined || gameMode === 'free') freeTraffic = traffic.enabled;
-      stunts.bank(); stuntEvents(stunts.drainEvents());
-      gameMode = 'taxi'; traffic.setEnabled(true, vehicle);
-      if (ownCab(vehicle.carId)) taxi.fleet.select(vehicle.carId);
-      renderGoals(); cityGuide.lately = []; document.body.dataset.standby = 'false';
-      $('#traffic').setAttribute('aria-pressed', 'true'); $('#autodrive').setAttribute('aria-pressed', 'false');
-      modeUi(); updateHud();
-    }
-    // Demolition: the truck, a minute on the clock, and a city to wreck. The
-    // furniture and parked cars a previous go knocked about are put back.
+    // Demolition from a menu: the truck where they are, on standby, its clock
+    // waiting for the first thing it hits. The furniture and parked cars a
+    // previous go knocked about are put back.
     function beginDemolition() {
       if (changingJourney) return;
-      taxi.stop(); props.reset(); stunts.bank(); stuntEvents(stunts.drainEvents());
-      enterRun('demolition', DEMOLITION_CAR, DEMOLITION_PAINT);
-      demolition.start(); demolitionView.reset(); driftEffects.reset();
-      showRun();
-      toast('Wreck everything · Mind the pedestrians');
+      leaveRun(); menuIdle.stop(); started = true; stopAutodrive(); testDrive.stop();
+      props.reset(); stunts.bank(); stuntEvents(stunts.drainEvents());
+      if (vehicle.walker || vehicle.carId !== DEMOLITION_CAR) takeCar(DEMOLITION_CAR, DEMOLITION_PAINT);
+      demolition.stop(); demolitionView.reset(); driftEffects.reset();
+      showFree();
+      toast(`Demolition · ${standbyText('demolition')}`);
     }
-    // What either run does first: the player at the wheel of its car, in traffic
-    function enterRun(mode, id, carPaint) {
-      menuIdle.stop(); testDrive.stop();
+    // What a job on standby asks, said on getting into its car
+    const standbyText = job => job === 'taxi' ? 'Stop in a ring for a fare' : 'Hit anything to start the clock';
+    // Into a cab or the demolition truck off the street: its job
+    function tellJob() {
+      const job = carEntry(vehicle.carId).taxi ? 'taxi' : vehicle.carId === DEMOLITION_CAR ? 'demolition' : null;
+      if (job && streetCar() && gameMode === 'free') toast(`${carEntry(vehicle.carId).name} · ${standbyText(job)}`);
+    }
+    // Either run, once its first fare is aboard or its first hit lands: on,
+    // wherever the car is, in traffic. (Traffic already on is left as it is:
+    // turning it on again puts every car somewhere new, the one just hit too.)
+    function startRun(mode) {
       if (freeTraffic === undefined || gameMode === 'free') freeTraffic = traffic.enabled;
-      started = true; gameMode = mode; stopAutodrive();
-      onFoot.setCar(id, { paint: carPaint }); recoverCar(); traffic.setEnabled(true, vehicle);
+      stunts.bank(); stuntEvents(stunts.drainEvents());
+      gameMode = mode; outAfter = false;
+      if (!traffic.enabled) traffic.setEnabled(true, vehicle);
+      if (mode === 'taxi' && ownCab(vehicle.carId) && !streetCar()) taxi.fleet.select(vehicle.carId);
+      cityGuide.lately = []; document.body.dataset.standby = 'false';
+      $('#traffic').setAttribute('aria-pressed', 'true'); $('#autodrive').setAttribute('aria-pressed', 'false');
+      modeUi(); updateHud();
     }
     // (autodrive is free drive's alone)
     function stopAutodrive() {
       if (autodrive.enabled) { autodrive.toggle(); revealTouchControls(); }
       autodrive.reset();
     }
-    // and last, once the run itself has started
-    function showRun() {
-      $('#traffic').setAttribute('aria-pressed', 'true'); $('#autodrive').setAttribute('aria-pressed', 'false');
-      $('#taxi-results').hidden = true; $('#demolition-results').hidden = true; $('#welcome').classList.add('hidden');
-      rendering.useCameraProfile('driving', true); updateViewUi(); setPaused(false); modeUi(); updateHud();
-      taxiView.render(taxi, vehicle, world.origin, time); rendering.update(vehicle.car, 1, world.origin);
-    }
     // Free drive from the title, in the garage's car
     function beginFree({ preserveInput = false } = {}) {
       if (changingJourney) return;
       menuIdle.stop(); leaveRun(); started = true;
+      // (in their own car: a cab picked in the garage was for the shift)
+      if (carEntry(carId).taxi) carId = freeCarId;
       autodrive.reset(); takeCar(carId, paint);
       showFree({ preserveInput });
     }
     // Free drive after a run, in whatever the run left the player in, where
-    // they are: nothing is swapped or moved
+    // they are: nothing is swapped or moved. A run ended by getting out
+    // (`outAfter`) gets them out now.
+    let leaveUntil = -Infinity, outAfter = false;
+    const useKey = () => ({ keys: 'E', pad: 'Y', vr: 'Y', touch: 'Get out' })[inputDevice()];
     function keepDriving() {
       if (changingJourney) return;
       leaveRun(); started = true; showFree();
+      if (outAfter) { outAfter = false; const said = onFoot.use(); if (said) toast(said); changedCar(); }
     }
     // Ends any run (unrecorded, as a run left half way always was) and puts
     // free drive's traffic setting back
     function leaveRun() {
-      const wasRun = taxi.running || taxi.status === 'over' || demolition.status !== 'idle';
+      const wasRun = taxi.running || taxi.status === 'over' || demolition.running || demolition.status === 'over';
       if (!taxi.waiting) taxi.stop();
-      demolition.stop(); gameMode = 'free';
-      if (wasRun && freeTraffic !== undefined) traffic.setEnabled(freeTraffic, vehicle);
+      if (!demolition.waiting) demolition.stop();
+      gameMode = 'free';
+      if (wasRun && freeTraffic !== undefined && freeTraffic !== traffic.enabled) traffic.setEnabled(freeTraffic, vehicle);
     }
     function showFree({ preserveInput = false } = {}) {
       $('#traffic').setAttribute('aria-pressed', String(traffic.enabled)); $('#autodrive').setAttribute('aria-pressed', String(autodrive.enabled));
@@ -858,11 +892,10 @@ async function boot() {
       if (testDrive.id === id) testDrive.stop();
       const here = (!vehicle.walker && vehicle.actor.source === 'garage' && vehicle.carId === id) || onFoot.garage?.carId === id;
       if (id === carId && here) return;
-      carId = id;
-      try { localStorage.setItem(carStorageKey, id); } catch { /* Still drive it for this visit. */ }
+      pickCar(id, taxi.fleet);
       if (started && !here) swapCar(id);
       else { updateCarUi(); updateHud(); }
-      toast(`${carEntry(id).name} ${bought ? 'bought' : 'selected'}${flightHelp(id)}`, bought ? 'goal' : '');
+      toast(`${carEntry(id).name} ${bought ? 'bought' : 'selected'}${carEntry(id).taxi ? started ? ` · ${standbyText('taxi')}` : ' for shifts' : flightHelp(id)}`, bought ? 'goal' : '');
     }
     function buyCar(id) {
       if ((started && gameMode !== 'free') || !taxi.fleet.buy(id)) return;
@@ -908,8 +941,7 @@ async function boot() {
       if (!inTestCar() && onFoot.garage?.carId !== id) { testDrive.stop(); return; }
       // (bought meanwhile, in the Taxi fleet: theirs to keep driving)
       if (taxi.fleet.owned.has(id)) {
-        testDrive.stop(); carId = id;
-        try { localStorage.setItem(carStorageKey, id); } catch { /* Still drive it for this visit. */ }
+        testDrive.stop(); pickCar(id, taxi.fleet);
         updateCarUi(); return;
       }
       const v = vehicle, still = Math.abs(v.speed) < .8 && (!v.pilot || v.pilot.landed) && !v.aloft;
@@ -1065,6 +1097,21 @@ async function boot() {
         try { localStorage.setItem('citydriver-jetpack-hint', 'shown'); } catch { /* Told for this visit. */ }
       });
     }
+    // A cab or the demolition truck going by, told once each: it can be
+    // taken, and what for (from another car, getting out first)
+    const jobHintKey = 'citydriver-job-hints';
+    let jobHints = {};
+    try { jobHints = JSON.parse(localStorage.getItem(jobHintKey)) ?? {}; } catch { /* Storage is optional. */ }
+    const working = () => taxi.waiting || demolition.waiting;
+    function hintJobs() {
+      if (!free() || vehicle.pilot || working() || !traffic.enabled || autodrive.enabled) return;
+      for (const car of traffic.vehicles) {
+        if (!car.job || jobHints[car.job] || !car.car.visible || Math.hypot(car.s - vehicle.s, car.u - vehicle.u) > 25) continue;
+        const job = car.job, take = vehicle.walker ? 'get in' : 'get out and take it';
+        hint(job === 'taxi' ? `That's a cab · ${take} to pick up fares` : `That's the demolition truck · ${take} for a run`,
+          () => free() && !vehicle.pilot && !working() && !jobHints[job], () => { jobHints[job] = true; try { localStorage.setItem(jobHintKey, JSON.stringify(jobHints)); } catch { /* Told for this visit. */ } });
+      }
+    }
     function openCars() {
       if (started && gameMode === 'taxi') { openFleet(); return; }
       if (started && gameMode === 'demolition') { toast('Garage: free drive only'); return; }
@@ -1144,8 +1191,15 @@ async function boot() {
       // E, Y or the button: out of the car, or into the one within reach (free drive only)
       if (name === 'use') {
         if (!started || paused) return;
-        // (a run keeps the player at the wheel: say so, rather than ignore the press)
-        if (gameMode !== 'free') { toast(gameMode === 'taxi' ? 'End the shift to get out (pause menu)' : 'Finish the run to get out'); return; }
+        // In a run, getting out ends it, as leaving the cab ends GTA's taxi
+        // work. The first press asks: a second within a few seconds ends it,
+        // and they get out once its results are put away (see keepDriving).
+        if (gameMode !== 'free') {
+          const shift = gameMode === 'taxi' ? 'shift' : 'run';
+          if (performance.now() > leaveUntil) { leaveUntil = performance.now() + 4000; toast(`Press ${useKey()} again to end the ${shift} and get out`); return; }
+          leaveUntil = -Infinity; outAfter = true; endRun();
+          return;
+        }
         // (a test drive that is over is handed back first)
         if (testDrive.over && inTestCar()) return;
         if (autodrive.enabled) action('autodrive');
@@ -1478,12 +1532,11 @@ async function boot() {
     }
     // Free drive's tips, each shown once in the task card (see freeHudModel)
     const freeTips = new OnceHints({
-      cab: 'Stop in any ring for a fare · your shift starts with it',
       chain: 'Stunts chain up · a crash loses it',
       shop: 'Enough for your first car · open the Garage',
     }, 'citydriver-free-hints', taxiStorage);
-    // (enough for a car, and none bought yet)
-    const firstCar = () => taxi.fleet.owned.size === 1 && GARAGE_IDS.some(id => !taxi.fleet.owned.has(id) && carPrice(id) <= taxi.fleet.balance);
+    // (enough for a car, and none bought yet: only the free ones are theirs)
+    const firstCar = () => [...taxi.fleet.owned].every(id => !carPrice(id)) && GARAGE_IDS.some(id => !taxi.fleet.owned.has(id) && carPrice(id) <= taxi.fleet.balance);
     // The car being saved for is said once, in free drive, when the balance first covers it
     function tellGoal() {
       const goal = taxi.fleet.goal;
@@ -1497,7 +1550,7 @@ async function boot() {
       renderMenuControls(controls());
       cityGuide.update(started && !paused && !changingJourney, { draw: !vr?.active });
       const run = gameMode === 'demolition' ? demolitionView.buildHud(demolition, vehicle)
-        : started && gameMode === 'free' ? freeHudModel(stunts, vehicle, { taxi, test: testCard(), shop: firstCar(), hint: id => freeTips.get(id) })
+        : started && gameMode === 'free' ? freeHudModel(stunts, vehicle, { taxi, demolition, test: testCard(), shop: firstCar(), hint: id => freeTips.get(id) })
         : taxiView.buildHud(taxi, vehicle);
       renderRunHud(run); placeToast(); tellGoal();
       updateUseUi();
@@ -1535,7 +1588,7 @@ async function boot() {
         fleetName: carEntry(taxi.fleet.selected).name, autodrive: autodrive.enabled, traffic: traffic.enabled, driftTap: vehicle.driftMode === 'tap', vibration,
         weather: weather.mode, view: rendering.viewLabel, lookSensitivity: cameraPreferences.inputs.controller.sensitivity, comfort: comfort.enabled, graphics: graphics.auto ? 'Auto' : graphics.settings.label,
         rates: headsetRates(), rateChoice: graphics.rateChoice, frameRate: vr.session?.frameRate, sound: audio.enabled, mix: audio.preset,
-        career: careerText(), newCityArmed: performance.now() < newCityUntil };
+        career: careerText(), newCityArmed: performance.now() < newCityUntil, standby: taxi.waiting ? 'taxi' : demolition.waiting ? 'demolition' : null };
     }
     // A new city is asked twice, the second press within a few seconds: it
     // throws away the places found and the jump stars
@@ -1605,16 +1658,18 @@ async function boot() {
       }
       // (a car's jumps, and the river it came down in: see CarAir)
       for (const event of vehicle.drain()) carEvent(event);
-      hintDrift(null, dt); hintJetpack(dt);
+      hintDrift(null, dt); hintJetpack(dt); hintJobs();
       if (vehicle.audioTelemetry.crashSerial !== crashesFelt) { crashesFelt = vehicle.audioTelemetry.crashSerial; rumble(.8, .6, .2); }
       // Furniture the player hits may be knocked flying, and a parked car
       // knocked loose while there is traffic to take it; on foot, nothing is
       collideScenery(vehicle, world.chunks, dt, vehicle.walker ? null : (collider, contact) => collider.prop ? props.hit(collider, contact, vehicle) : traffic.enabled && traffic.wake(collider));
+      // (working as a cab, on standby or in a shift, the other cabs keep off the road, and the same for the truck)
+      traffic.offDuty = taxi.waiting || taxi.running ? 'taxi' : demolition.waiting || demolition.running ? 'demolition' : null;
       traffic.update(dt, vehicle, world.chunks);
       // Out of the car once it has stopped, and the car left parked
       const walked = onFoot.walking, said = onFoot.update(dt, world.chunks);
       if (said) toast(said);
-      if (onFoot.walking !== walked) changedCar();
+      if (onFoot.walking !== walked) { changedCar(); if (walked) tellJob(); }
       if (started && gameMode === 'free' && testDrive.active) testDriveStep(dt);
       if (started && gameMode === 'free' && jetTrial.active && vehicle.walker) jetTrialStep(dt);
       props.update(dt, vehicle, traffic, world.chunks);
@@ -1645,7 +1700,7 @@ async function boot() {
         return;
       }
       // (the first fare from standby: the shift begins with it)
-      if (event.first) startShift();
+      if (event.first) startRun('taxi');
       if (event.kind === 'goal') {
         // A goal usually completes on a payout, whose toast lands first.
         renderGoals(); setTimeout(() => { if (taxi.running && !paused) { toast(event.text, 'goal'); audio.cue('goal'); } }, 1500);
@@ -1726,7 +1781,9 @@ async function boot() {
       let news = null, later = null;
       const say = (text, tone, weight) => { if (!news || weight >= news.weight) news = { text, tone, weight }; };
       for (const event of events) {
-        if (event.kind === 'smash' || event.kind === 'dent') { demolitionView.pop(event); audio.cue('smash', event); }
+        // (the first hit from standby: the run begins with it)
+        if (event.kind === 'begin') { startRun('demolition'); say('Wreck everything · Mind the pedestrians', 'goal', 6); audio.cue('goal'); }
+        else if (event.kind === 'smash' || event.kind === 'dent') { demolitionView.pop(event); audio.cue('smash', event); }
         else if (event.kind === 'wreck') {
           demolitionView.pop(event); audio.cue('wreck');
           if (event.seconds) { demolitionView.pop({ ...event, kind: 'bonus' }); say(`Takedown · +${event.seconds}s`, 'bonus', 2); audio.cue('bonus'); }

@@ -158,24 +158,29 @@ export const CARS = {
   },
 };
 
+// The demolition contractor's truck: the garage's in site-work orange. It
+// isn't sold. One drives about in the traffic, and getting into it (or
+// Demolition on the menus) puts a demolition run on standby.
+CARS.demolition = { ...CARS.rig, name: 'Demolition truck', job: 'demolition', paint: '#e27a24' };
+
 // The wheeled fleet, which the handling is built for, and the garage, which
-// has the flying machines too.
-export const CAR_IDS = Object.keys(CARS).filter(id => !CARS[id].flies);
+// has the flying machines too. Neither has the demolition truck, a copy of the Truck.
+export const CAR_IDS = Object.keys(CARS).filter(id => !CARS[id].flies && !CARS[id].job);
 // Citydriver 1's wagons, one per old route, and the plain Default card are
 // near copies of the Surf Wagon. They still drive (the handling and audio
 // tests use the Default as their baseline) but the garage leaves them out.
 const RETIRED = new Set(['auto', 'desert', 'snow', 'jungle', 'plains', 'city']);
-export const GARAGE_IDS = Object.keys(CARS).filter(id => !RETIRED.has(id));
+export const GARAGE_IDS = Object.keys(CARS).filter(id => !RETIRED.has(id) && !CARS[id].job);
 // What the garage sells each one for, out of the one fleet balance every mode
 // pays into. An average player makes about $500 a minute (a taxi shift at
 // 16-19 m/s with its goals, or a B-rated demolition run), so the first car
 // is a few minutes away, the specials an hour or two, and the aircraft are
 // the long goal: three and five hours or so. The cars that turn up in the
-// traffic, which can be borrowed on foot anyway, are the cheapest. See
-// docs/economy.md.
+// traffic, which can be borrowed on foot anyway, are the cheapest. Everyone
+// starts with the Taxi and the Surf Wagon. See docs/economy.md.
 export const GARAGE_PRICES = {
   taxi: 0, taxiGT: 10000, taxiFormula: 40000,
-  coast: 1500, hatchback: 2000, sedan: 2500, wagon: 3000, pickup: 4000, van: 4500, sports: 12000, exotic: 45000,
+  coast: 0, hatchback: 2000, sedan: 2500, wagon: 3000, pickup: 4000, van: 4500, sports: 12000, exotic: 45000,
   micro: 5000, buggy: 8000, hotrod: 15000, bus: 18000, rig: 25000, monster: 30000, formula: 65000,
   helicopter: 90000, plane: 140000,
   jetpack: 60000,
@@ -198,8 +203,10 @@ export const garageGroup = id => {
   return entry.taxi ? 'cab' : entry.flies ? 'air' : ['special', 'formula'].includes(entry.kind) ? 'special' : 'car';
 };
 export const DEFAULT_CAR = 'auto';
-// What a new player drives: their cab, so the fares are there from the start
-export const STARTING_CAR = 'taxi';
+// What a new player has: the Taxi for shifts, and Citydriver 1's Surf Wagon
+// for free drive. Free drive used to start in the cab, with fares waiting all
+// round it, which read as a taxi shift that hadn't been asked for.
+export const STARTING_CAB = 'taxi', STARTING_CAR = 'coast';
 export const carEntry = id => CARS[id] ?? CARS[DEFAULT_CAR];
 
 // Rolling and air drag. They live here because the surface figures below are

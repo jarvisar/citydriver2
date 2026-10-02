@@ -24,9 +24,11 @@
 }
 body[data-mode=demolition] { --city-accent: #ff9433; --city-accent-hover: #ffb46e; --city-accent-soft: #ffd6ad; }
 body[data-mode=free] { --city-accent: #5fd0c0; --city-accent-hover: #8fe0d4; --city-accent-soft: #c4f1ea; }
-/* In the player's own cab the fares are on offer (see TaxiRun.standby), so
-   free drive takes the taxi's accent until they get out or change car. */
-body[data-mode=free][data-standby=true] { --city-accent: #ffd238; --city-accent-hover: #ffe177; --city-accent-soft: #fff1ad; }
+/* In a cab the fares are on offer (see TaxiRun.standby), and in the
+   demolition truck a run waits for its first hit, so free drive takes that
+   mode's accent until they get out or change car. */
+body[data-mode=free][data-standby=taxi] { --city-accent: #ffd238; --city-accent-hover: #ffe177; --city-accent-soft: #fff1ad; }
+body[data-mode=free][data-standby=demolition] { --city-accent: #ff9433; --city-accent-hover: #ffb46e; --city-accent-soft: #ffd6ad; }
 body, body[data-journey] {
   --ink: var(--city-text);
   --cream: var(--city-panel);

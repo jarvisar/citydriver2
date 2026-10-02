@@ -4,7 +4,7 @@ Demolition is a timed run in the truck. The goal is to cause as much property da
 
 ## The Clock
 
-A run starts at 60 seconds. Finishing a contract adds 10 seconds, and wrecking a moving car (a takedown) adds 3. The clock holds at most 120 seconds. Parked cars don't add time, since a street lined with them would keep the clock going forever. Resetting the truck costs 5 seconds, and so does driving it into the river. The last 10 seconds tick.
+A run starts at 60 seconds, from the first thing the truck hits. Demolition on the menus puts you in the truck where you are, and so does taking the orange truck when it comes by in the traffic. Until that first hit the task card shows the run's contracts, and the truck can drive anywhere without the clock running. Finishing a contract adds 10 seconds, and wrecking a moving car (a takedown) adds 3. The clock holds at most 120 seconds. Parked cars don't add time, since a street lined with them would keep the clock going forever. Resetting the truck costs 5 seconds, and so does driving it into the river. The last 10 seconds tick.
 
 If time runs out while a chain is going, the chain keeps going. The clock says LAST CHAIN, and the run ends once the chain is banked or lost. Nothing adds time after that, but every hit still counts.
 
@@ -85,7 +85,7 @@ Running someone over costs a $10,000 fine and the whole chain in progress. Someo
 
 The best five runs are saved as high scores, with the total damage of every run. The table is on the results screen and in the pause menu during a run. Once a run passes your best, the score panel says so.
 
-Each chain banked also pays a cut of its damage into the fleet balance: 0.4% of a run's first $100,000, then less of each band after it, so a C rating pays about $460, B $780 and S $1,600 (see [money and the garage](economy.md)). The results screen shows what the run paid and how far off the next car is. When a run ends, Keep driving carries on in free drive in the truck, from where it stopped.
+Each chain banked also pays a cut of its damage into the fleet balance: 0.4% of a run's first $100,000, then less of each band after it, so a C rating pays about $460, B $780 and S $1,600 (see [money and the garage](economy.md)). The results screen shows what the run paid and how far off the next car is. When a run ends, Keep driving carries on in free drive in the truck, from where it stopped, and the next thing it hits starts another run. Pressing E twice during a run ends it, and you get out once the results are put away.
 
 ## Balance
 
