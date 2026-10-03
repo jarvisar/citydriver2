@@ -222,6 +222,17 @@ test('either stick walks a menu, sideways crosses columns, and X selects rather 
   assert.ok(!actions.includes('reset'), 'a menu is no place for a stray reset');
 });
 
+test('starting or resuming with only hands pauses again and keeps the menus reachable', () => {
+  const actions = [], input = new XRInput(action => actions.push(action));
+  const hands = [{ handedness: 'right', hand: {}, gamepad: { mapping: '', axes: [], buttons: [{ value: 0 }] } }];
+  input.update(hands, { paused: true }); assert.deepEqual(actions, []);
+  input.update(hands); input.update(hands); assert.deepEqual(actions, ['pause']);
+  input.update(hands, { paused: true });
+  input.update(hands); assert.deepEqual(actions, ['pause', 'pause']);
+  input.update(hands, { blocked: true }); input.update(hands, { paused: true });
+  assert.equal(actions.length, 2);
+});
+
 test('VR rig stays upright when entering or recentering with a tilted head on hills', () => {
   const source = new THREE.PerspectiveCamera(), rig = new XRCameraRig();
   const up = new THREE.Vector3(0, 1, 0);

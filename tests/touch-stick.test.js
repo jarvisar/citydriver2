@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { touchDrivingInput } from '../src/touch-stick.js';
+import { touchDrivingInput, pressOnRelease } from '../src/touch-stick.js';
 import { DrivingController } from '../src/vehicle.js';
 import { citydriverRoute } from '../src/world/city-route.js';
 
@@ -10,6 +10,25 @@ function cameraAt(offset, aspect) {
   camera.position.set(...offset); camera.lookAt(0, 0, 0); camera.updateMatrixWorld();
   return camera;
 }
+
+test('HUD pointer presses free keyboard focus while keyboard activation keeps it', () => {
+  const listeners = {}, button = {
+    addEventListener(type, handler) { listeners[type] = handler; },
+    getBoundingClientRect() { return { left: 0, top: 0, right: 100, bottom: 100 }; },
+    blur() { focused = false; },
+  };
+  let focused = true, presses = 0;
+  pressOnRelease(button, () => presses++);
+  listeners.click({ pointerType: 'mouse', detail: 1 });
+  assert.equal(presses, 1); assert.equal(focused, false);
+  focused = true;
+  listeners.click({ pointerType: '', detail: 0 });
+  assert.equal(presses, 2); assert.equal(focused, true);
+  listeners.pointerup({ pointerType: 'touch', clientX: 50, clientY: 50, preventDefault() {} });
+  listeners.click({ pointerType: 'touch', detail: 1 });
+  assert.equal(presses, 3, 'a touch and its compatibility click activate once');
+  assert.equal(focused, false);
+});
 const directions = [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, 1], [1, -1], [-1, -1]];
 
 test('touch travel follows screen direction across city cameras and distant coordinates', () => {

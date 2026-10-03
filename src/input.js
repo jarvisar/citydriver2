@@ -16,21 +16,29 @@ export class Input {
     // uses to drift and boost, which they have no use for; on foot they jump
     // and sprint (see walkingInput). E gets out of all of them.
     this.codes = { forward: ['KeyW', 'ArrowUp', 'Numpad8'], brake: ['KeyS', 'ArrowDown', 'Numpad2'], left: ['KeyA', 'ArrowLeft', 'Numpad4'], right: ['KeyD', 'ArrowRight', 'Numpad6'], handbrake: ['Space'], boost: ['ShiftLeft', 'ShiftRight'], climb: ['Space'], descend: ['ShiftLeft', 'ShiftRight'], jump: ['Space'], sprint: ['ShiftLeft', 'ShiftRight'] };
-    this.touchButtons = {};
+    this.touchButtons = {}; this.buttonPointers = new Map();
     // Each touch button presses what its key does: Space's drifts, climbs or jumps, Shift's boosts, descends or sprints
     for (const [key, actions] of [['boost', ['boost', 'descend', 'sprint']], ['handbrake', ['handbrake', 'climb', 'jump']]]) {
       const button = document.querySelector(`[data-drive-button="${key}"]`);
       if (!button) continue;
       const hold = held => { for (const action of actions) this.touchButtons[action] = held; };
-      button.addEventListener('pointerdown', event => { event.preventDefault(); button.setPointerCapture(event.pointerId); hold(true); });
-      for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(event, () => hold(false));
+      button.addEventListener('pointerdown', event => {
+        event.preventDefault(); this.buttonPointers.set(event.pointerId, button);
+        button.setPointerCapture(event.pointerId); hold(true);
+      });
+      for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(type, event => {
+        this.buttonPointers.delete(event.pointerId);
+        hold([...this.buttonPointers.values()].includes(button));
+        if (type === 'pointerup') button.blur();
+      });
     }
+    window.addEventListener('resize', () => this.clearTouchButtons());
     // The driving simulation reads this up to twelve times per displayed frame, so
     // it fills one reused record rather than building a fresh object each step.
     this.actions = Object.keys(this.codes);
     this.driving = Object.fromEntries([...this.actions.map(action => [action, false]), ['moveX', 0], ['moveY', 0], ['lookX', 0], ['lookY', 0], ['touchStick', null], ['touchDrive', null]]);
     this.gamepad = new GamepadInput(onAction, connected => {
-      this.keys.clear(); this.touchStick.clear();
+      this.keys.clear(); this.touchStick.clear(); this.clearTouchButtons();
       document.body.dataset.controller = String(connected);
       onControllerConnection(connected);
     }, undefined, () => { this.clear(); onKonami(); });
@@ -118,5 +126,9 @@ export class Input {
     else if (this.touchStick.engaged) state.touchStick = this.touchStick.vector;
     return state;
   }
-  clear(options) { this.keys.clear(); this.touchButtons = {}; this.touchStick.clear(); this.gamepad.clear(options); this.xr.clear(); this.konami.reset(); }
+  clearTouchButtons() {
+    const pointers = [...this.buttonPointers]; this.buttonPointers.clear(); this.touchButtons = {};
+    for (const [id, button] of pointers) if (button.hasPointerCapture(id)) button.releasePointerCapture(id);
+  }
+  clear(options) { this.keys.clear(); this.clearTouchButtons(); this.touchStick.clear(); this.gamepad.clear(options); this.xr.clear(); this.konami.reset(); }
 }

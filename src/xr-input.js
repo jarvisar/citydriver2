@@ -22,6 +22,7 @@ export class XRInput {
     this.previous = {};
     this.sources = [];
     this.requireNeutral = true;
+    this.missingControllers = false;
   }
   clear() { this.state = {}; this.requireNeutral = true; }
   // A pulse in both controllers' hands, 0 to 1 for `seconds`, where they have haptics
@@ -35,11 +36,14 @@ export class XRInput {
   update(sources = [], { blocked = false, paused = false, freeDrive = false } = {}) {
     const controllers = Array.from(sources).filter(source => source.gamepad?.mapping === 'xr-standard' && !source.hand);
     if (this.sources.some(source => !controllers.includes(source)) || controllers.some(source => !this.sources.includes(source))) this.clear();
-    const lost = this.sources.length > 0 && !controllers.length;
     this.sources = controllers;
     // Putting the controllers down (or picking up hands) pauses the drive, as
-    // a gamepad's disconnecting does, and hands can then work the menu.
-    if (lost && !paused && !blocked) this.onAction('pause');
+    // a gamepad's disconnecting does. Starting or resuming with only hands
+    // must stop too, so their menu remains reachable.
+    const missing = !controllers.length && !paused && !blocked;
+    const pauseForControllers = missing && !this.missingControllers;
+    this.missingControllers = missing;
+    if (pauseForControllers) this.onAction('pause');
     const left = controllers.find(source => source.handedness === 'left')?.gamepad;
     const right = controllers.find(source => source.handedness === 'right')?.gamepad;
     const steer = deadzone(left?.axes[2] ?? right?.axes[2]), ahead = -deadzone(left?.axes[3] ?? right?.axes[3]), rise = left && right ? -deadzone(right.axes[3]) : 0;

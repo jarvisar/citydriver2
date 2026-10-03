@@ -9,6 +9,7 @@ function fakeButton() {
   const listeners = {};
   return {
     listeners,
+    blur() {},
     addEventListener(type, listener) { (listeners[type] ??= []).push(listener); },
     getBoundingClientRect: () => ({ left: 300, right: 344, top: 20, bottom: 64 }),
     fire(type, fields = {}) {

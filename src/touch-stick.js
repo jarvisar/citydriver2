@@ -81,12 +81,18 @@ export class TouchStick {
 // and resumed at once and only a long press (no click) paused. A mouse, pen
 // or key presses it with the click, as usual.
 export function pressOnRelease(button, press, slop = 16) {
-  button.addEventListener('click', event => { if (event.pointerType !== 'touch') press(); });
+  button.addEventListener('click', event => {
+    if (event.pointerType === 'touch') return;
+    press();
+    // A mouse click must not leave Space activating the HUD instead of jumping.
+    if (event.detail) button.blur();
+  });
   button.addEventListener('pointerup', event => {
     if (event.pointerType !== 'touch') return;
     event.preventDefault();
     const box = button.getBoundingClientRect();
     if (event.clientX > box.left - slop && event.clientX < box.right + slop && event.clientY > box.top - slop && event.clientY < box.bottom + slop) press();
+    button.blur();
   });
   button.addEventListener('touchend', event => { if (event.cancelable) event.preventDefault(); }, { passive: false });
 }

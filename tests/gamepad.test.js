@@ -282,3 +282,40 @@ test('the pad in use rumbles, where it has motors, and one without them is left 
   assert.doesNotThrow(() => input.rumble(1, 1, .1));
   assert.equal(effects.length, 1);
 });
+
+test('steering never changes camera distance while left-stick menu navigation still works', () => {
+  const { input, device, actions } = fixture();
+  for (const direction of [1, 0, -1, 0, .6, -.6]) {
+    device.axes[0] = direction; input.update();
+    assert.equal(actions.includes('zoomIn') || actions.includes('zoomOut'), false);
+  }
+  device.axes[0] = 0; input.update({ paused: true, menu: 'pause' });
+  device.axes[0] = 1; input.update({ paused: true, menu: 'pause' });
+  assert.equal(actions.at(-1), 'menuNext');
+  device.axes[0] = -1; input.update({ menu: 'chooser' });
+  assert.equal(actions.at(-1), 'menuPrevious');
+});
+
+test('Menu stays reachable with held gas after pause, but driving still requires neutral', () => {
+  const { input, device, actions } = fixture();
+  let paused = false;
+  input.onAction = action => { actions.push(action); if (action === 'pause') { paused = !paused; input.clear(); } };
+  hold(device, 7); input.update();
+  hold(device, 9); input.update(); assert.equal(paused, true);
+  hold(device, 9, 0); input.update({ paused, menu: 'pause' });
+  hold(device, 9); input.update({ paused, menu: 'pause' }); assert.equal(paused, false);
+  input.update(); assert.deepEqual(input.state, {});
+  hold(device, 9, 0); hold(device, 7, 0); input.update();
+  hold(device, 7); input.update(); assert.equal(input.state.forward, 1);
+  input.clear(); hold(device, 9); input.update({ blocked: true });
+  assert.equal(paused, false, 'system UI consumes Menu presses');
+});
+
+test('RB boost and sprint do not swallow a simultaneous vehicle or camera action', () => {
+  for (const [button, expected] of [[3, 'use'], [1, 'view'], [15, 'zoomOut']]) {
+    const { input, device, actions } = fixture();
+    hold(device, 5); hold(device, button); input.update();
+    assert.equal(input.state.boost, 1);
+    assert.equal(actions.includes(expected), true, expected);
+  }
+});

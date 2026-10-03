@@ -84,6 +84,12 @@ export class GamepadInput {
       sprint: Math.max(deadzone(buttonValue(pad, 7), .08), buttonValue(pad, 5)),
     };
     const active = Object.values(state).some(Boolean) || buttons.some(Boolean);
+    // Menu stays usable while a held pedal waits for neutral.
+    if (!blocked && pressed(9) && this.requireNeutral && (!menu || menu === 'pause')) {
+      this.state = {}; this.scroll = 0; this.previousButtons = buttons;
+      this.onAction('pause');
+      return;
+    }
     if (blocked || this.requireNeutral) {
       if (blocked) this.konami.reset();
       this.state = {}; this.scroll = 0; this.previousButtons = buttons;
@@ -107,7 +113,8 @@ export class GamepadInput {
     const pause = pressed(9), view = pressed(1), use = pressed(3), nextJourney = pressed(5);
     const map = pressed(8), recenter = pressed(11), reset = pressed(13);
     const back = pressed(1), confirm = pressed(0), autodrive = pressed(12);
-    const previous = pressed(14) || pressed(17), next = pressed(15) || pressed(18);
+    const zoomIn = pressed(14), zoomOut = pressed(15);
+    const previous = zoomIn || pressed(17), next = zoomOut || pressed(18);
     const up = pressed(12) || pressed(19), down = pressed(13) || pressed(20);
     this.previousButtons = buttons;
     // A chooser takes the whole pad. The pause screen only borrows the
@@ -137,7 +144,7 @@ export class GamepadInput {
     }
     if (map) { this.onAction('map'); return; }
     if (pause) { this.onAction('pause'); return; }
-    if (nextJourney) { this.onAction('nextJourney'); return; }
+    if (nextJourney) this.onAction('nextJourney');
     if (recenter) { this.onAction('recenter'); return; }
     if (paused) {
       // Paused, the D-pad and sticks move the pause screen's focus ring rather
@@ -153,8 +160,8 @@ export class GamepadInput {
       return;
     }
     if (state.forward || state.brake) this.onAction('drive');
-    if (previous) this.onAction('zoomIn');
-    if (next) this.onAction('zoomOut');
+    if (zoomIn) this.onAction('zoomIn');
+    if (zoomOut) this.onAction('zoomOut');
     if (autodrive) this.onAction('autodrive');
     // (D-pad Down resets while driving, and in a menu moves the focus. Y
     // in a run asks to end it, as E does: see main.js)
