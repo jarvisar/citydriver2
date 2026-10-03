@@ -134,9 +134,6 @@ test('free drive\'s card shows the chain, then a fare by the cab, and otherwise 
   const waiting = freeHudModel(new StuntChain(), player(), { taxi: { waiting: true, customers: [], boarding: null, timeLeft: SHIFT_SECONDS } });
   assert.equal(waiting.task, true); assert.equal(waiting.stage, 'Taxi shift'); assert.equal(waiting.title, 'Find a passenger');
   assert.equal(waiting.fareStatus, `Clock ${SHIFT_SECONDS} s`); assert.match(waiting.party, /clock starts/);
-  const tipped = freeHudModel(new StuntChain(), player(), { shop: true, hint: id => id === 'shop' ? 'A tip · more on it' : '' });
-  assert.equal(tipped.title, 'A tip'); assert.equal(tipped.detail, 'more on it');
-  assert.equal(tipped.fareStatus, '', 'and nothing in the money corner (it said "undefined")');
 });
 
 test('the demolition truck on standby says what starts its run, and which contracts it holds', () => {
@@ -205,5 +202,4 @@ test('a test drive warns before its end, then waits for the car to stop or land 
   assert.equal(freeHudModel(chain, player(), { test: { label: 'Plane', clock: '1:40', left: 100, fraction: .8, over: false } }).status, 'chain', 'a chain going comes first');
   const ending = freeHudModel(chain, player(), { test: { label: 'Plane', clock: '0:00', left: 0, fraction: 0, over: true, landing: true, own: 'Taxi' } });
   assert.equal(ending.title, 'Landing…'); assert.equal(ending.party, 'Back to your Taxi', 'but not over the end of a test drive');
-  assert.equal(freeHudModel(new StuntChain(), player(), { shop: true, hint: id => id === 'shop' ? 'Enough for your first car · open the Garage' : '' }).title, 'Enough for your first car');
 });

@@ -78,7 +78,7 @@ The jetpack is sold under the cars, in its own Gear section. Without it, holding
 
 Paint costs $100 a colour, the rainbow included. Going back to each car's own colour is free, and so is picking the colour you already have. Paint is saved with the fleet now, since it costs money. The custom colour picker only charges when you let go of it, and closing the garage on a colour you were still picking puts the old one back.
 
-The Konami code (up, up, down, down, left, right, left, right, B, A, or the same on a controller's D-pad) pays $10,000 once per save and adds Rainbow to the paint swatches. Entering it again only reminds you where the paint is. The $10,000 goes into the balance but not toward the driver rank.
+The Konami code (up, up, down, down, left, right, left, right, B, A, or the same on a controller's D-pad) adds $10,000 to your balance every time and unlocks Rainbow paint in the garage. It works again after a reload. The money does not count toward the driver rank.
 
 The cabs and their liveries are in the garage too (it replaced the separate Taxi fleet dialog). During a shift it shows only those, for the next shift.
 

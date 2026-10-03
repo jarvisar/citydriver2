@@ -13,7 +13,7 @@ export const TAXI_FLEET = [
 ].map(cab => ({ ...cab, price: carPrice(cab.id) }));
 const validMoney = value => Number.isSafeInteger(value) && value >= 0;
 const isCab = id => Boolean(CARS[id]?.taxi);
-// What the Konami code pays, the first time it is entered on a save
+// What each entry of the Konami code pays
 export const KONAMI_PAY = 10000;
 
 // Everything the player owns: the one balance that every mode pays into, the
@@ -137,11 +137,9 @@ export class TaxiFleet {
     if (this.balance < cost) return false;
     this.balance -= cost; this.paint = color; this.save(); return true;
   }
-  // The Konami code: KONAMI_PAY and the rainbow paint, once a save, so it
-  // is a treat rather than a money tree. Returns what it paid.
+  // Each entry adds KONAMI_PAY and unlocks rainbow paint. Returns what it paid.
   enterKonami() {
     this.sync();
-    if (this.konami) return 0;
     this.konami = true;
     const paid = this.credit(KONAMI_PAY) ? KONAMI_PAY : 0;
     if (!paid) this.save();

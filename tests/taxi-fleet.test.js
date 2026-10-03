@@ -64,7 +64,7 @@ test('the garage sells every car but the starting cab, cheapest in the traffic a
   assert.equal(fleet.testDriveCost('jetpack'), null, 'nothing to try once it is yours');
 });
 
-test('paint costs a little, a car\'s own colour is free, and the Konami code pays once and unlocks the rainbow', () => {
+test('paint costs a little, a car\'s own colour is free, and each Konami entry adds money and unlocks the rainbow', () => {
   const disk = storage(), fleet = new TaxiFleet(disk);
   assert.equal(fleet.setPaint('#123456'), false, 'not without the money');
   fleet.credit(PAINT_PRICE * 2);
@@ -73,10 +73,12 @@ test('paint costs a little, a car\'s own colour is free, and the Konami code pay
   assert.equal(fleet.setPaint(null), true); assert.equal(fleet.balance, PAINT_PRICE, 'each car\'s own colour is free');
   assert.equal(fleet.setPaint(RAINBOW_PAINT), false, 'the rainbow waits for the code'); assert.equal(fleet.setPaint('nope'), false);
   assert.equal(fleet.enterKonami(), KONAMI_PAY); assert.equal(fleet.balance, PAINT_PRICE + KONAMI_PAY);
-  assert.equal(fleet.enterKonami(), 0, 'once a save');
+  assert.equal(fleet.enterKonami(), KONAMI_PAY); assert.equal(fleet.balance, PAINT_PRICE + KONAMI_PAY * 2);
   assert.equal(fleet.setPaint(RAINBOW_PAINT), true);
   const loaded = new TaxiFleet(disk);
-  assert.equal(loaded.paint, RAINBOW_PAINT); assert.equal(loaded.konami, true); assert.equal(loaded.enterKonami(), 0, 'nor after a reload');
+  assert.equal(loaded.paint, RAINBOW_PAINT); assert.equal(loaded.konami, true);
+  assert.equal(loaded.balance, KONAMI_PAY * 2);
+  assert.equal(loaded.enterKonami(), KONAMI_PAY); assert.equal(loaded.balance, KONAMI_PAY * 3, 'adds again after a reload');
   disk.setItem(FLEET_KEY, JSON.stringify({ version: 2, balance: 0, owned: ['taxi'], paint: 'rainbow' }));
   assert.equal(new TaxiFleet(disk).paint, null, 'no rainbow without the code');
 });
@@ -151,7 +153,8 @@ test('two tabs on one fleet keep both tabs\' money and purchases', () => {
   // The Konami code adds to what the other tab saved, not to this tab's old balance
   const fresh = storage(), first = new TaxiFleet(fresh), second = new TaxiFleet(fresh);
   first.credit(5000); assert.equal(second.enterKonami(), KONAMI_PAY); assert.equal(second.balance, 5000 + KONAMI_PAY);
-  assert.equal(new TaxiFleet(fresh).balance, 5000 + KONAMI_PAY);
+  assert.equal(first.enterKonami(), KONAMI_PAY); assert.equal(first.balance, 5000 + KONAMI_PAY * 2);
+  assert.equal(new TaxiFleet(fresh).balance, 5000 + KONAMI_PAY * 2);
   // A tab whose save is untouched keeps its own state, changes made directly included (the dev hook's)
   b.owned.add('taxiGT'); assert.equal(b.select('taxiGT'), true); assert.equal(new TaxiFleet(disk).selected, 'taxiGT');
   // While its saves fail, a tab never swaps the progress it holds for another tab's save

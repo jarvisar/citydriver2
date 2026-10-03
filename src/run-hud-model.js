@@ -130,8 +130,8 @@ function testCard(model, test) {
 // Free drive's HUD, in the runs' panels. The task card only shows when it
 // has something to say: a stunt chain going, a job on standby (a cab, with
 // the fare it is by, see TaxiRun.standby, or the demolition truck), a test
-// drive's clock or a tip. The rest of the time the view stays clear.
-export function freeHudModel(stunts, vehicle, { taxi = null, demolition = null, test = null, shop = false, hint = () => '' } = {}) {
+// drive's clock. The rest of the time the view stays clear.
+export function freeHudModel(stunts, vehicle, { taxi = null, demolition = null, test = null, hint = () => '' } = {}) {
   const model = Object.assign(baseHud({ running: false }, vehicle, true), { task: false, status: 'free' });
   if (test?.over) return testCard(model, test);
   if (stunts.chain) {
@@ -159,10 +159,6 @@ export function freeHudModel(stunts, vehicle, { taxi = null, demolition = null, 
     return Object.assign(model, { task: true, status: 'standby', stage: 'Taxi shift', fareStatus: `Clock ${Math.round(taxi.timeLeft)} s`,
       title: 'Find a passenger', party: 'Stop in a ring · the clock starts with the first fare', info: 'party' });
   }
-  const tip = hint(shop ? 'shop' : '');
-  // (the tip's first part is the title, the rest the line under it)
-  const [title, ...more] = tip.split(' · ');
-  if (tip) Object.assign(model, { task: true, status: 'tip', stage: 'Tip', title, detail: more.join(' · ') });
   return model;
 }
 

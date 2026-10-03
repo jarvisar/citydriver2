@@ -1305,9 +1305,8 @@ async function boot() {
       if (!connected && started && !paused) setPaused(true);
     }, () => {
       if (changingJourney) return;
-      // (once a save: the money and the rainbow paint in the garage)
       const paid = taxi.fleet.enterKonami();
-      toast(paid ? `Konami code · +${money(paid)} · Rainbow paint in the Garage` : 'Rainbow paint is in the Garage', 'goal');
+      toast(paid ? `+${money(paid)}` : 'Balance limit reached', 'goal');
       if (!paid) return;
       audio.cue('goal'); buildPaintSwatches(); renderGarage(); needsRender = true;
       // (entered on the pause screen, its header shows the new balance)
@@ -1579,10 +1578,7 @@ async function boot() {
     // Free drive's tips, each shown once in the task card (see freeHudModel)
     const freeTips = new OnceHints({
       chain: 'Stunts chain up · a crash loses it',
-      shop: 'Enough for your first car · open the Garage',
     }, 'citydriver-free-hints', taxiStorage);
-    // (enough for a car, and none bought yet: only the free ones are theirs)
-    const firstCar = () => [...taxi.fleet.owned].every(id => !carPrice(id)) && GARAGE_IDS.some(id => !taxi.fleet.owned.has(id) && carPrice(id) <= taxi.fleet.balance);
     // The car being saved for is said once, in free drive, when the balance first covers it
     function tellGoal() {
       const goal = taxi.fleet.goal;
@@ -1596,7 +1592,7 @@ async function boot() {
       renderMenuControls(controls());
       cityGuide.update(started && !paused && !changingJourney, { draw: !vr?.active });
       const run = gameMode === 'demolition' ? demolitionView.buildHud(demolition, vehicle)
-        : started && gameMode === 'free' ? freeHudModel(stunts, vehicle, { taxi, demolition, test: testCard(), shop: firstCar(), hint: id => freeTips.get(id) })
+        : started && gameMode === 'free' ? freeHudModel(stunts, vehicle, { taxi, demolition, test: testCard(), hint: id => freeTips.get(id) })
         : taxiView.buildHud(taxi, vehicle);
       renderRunHud(run); placeToast(); tellGoal();
       updateUseUi();
