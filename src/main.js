@@ -1318,7 +1318,7 @@ async function boot() {
       onStart() {
         menuIdle.stop();
         $('#vr-error').hidden = true;
-        input.xrActive = true; input.clear();
+        input.xrActive = true; input.clear(); input.xr.clear({ consumeEdges: true });
         vrStatus.attach(vr.session); vrHintTime = 0;
         rendering.enterVR(); rendering.update(vehicle.car, 0, world.origin); updateViewUi();
         rendering.vrCamera.recenter(); graphics.suspend();
@@ -1342,6 +1342,7 @@ async function boot() {
       },
       onVisibility(visible) {
         input.clear(); frameClock.suspend(); audio.setHidden(!visible);
+        input.xr.clear({ consumeEdges: true }); vrStatus.clearPointers();
         // (the title holds the car still, and has no pause screen to leave behind on exit)
         if (!visible) { if (changingJourney) journeyWasPaused = true; if (started) setPaused(true); }
         needsRender = true;

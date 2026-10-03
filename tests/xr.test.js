@@ -118,6 +118,27 @@ test('menus open in front of wherever the player is looking, level and a little 
   }
 });
 
+test('pointer input must release after a frame-free visibility interruption', () => {
+  const model = { id: 'pause', title: 'Paused', items: [item('Resume', { primary: true })] };
+  const { rig, status } = panelFixture(model);
+  const source = { handedness: 'right', targetRaySpace: {}, gamepad: { buttons: [{ value: 0 }] } };
+  const mesh = status.menu.mesh, region = status.regions[0];
+  mesh.updateWorldMatrix(true, false);
+  const target = new THREE.Vector3((region.x + region.width / 2) / status.menu.width - .5,
+    .5 - (region.y + region.height / 2) / status.menu.height, 0).applyMatrix4(mesh.matrixWorld);
+  const hand = new THREE.Vector3(.2, -.3, -.2);
+  const matrix = new THREE.Matrix4().lookAt(hand, target, new THREE.Vector3(0, 1, 0)).setPosition(hand);
+  const frame = { session: { inputSources: [source] }, getPose: () => ({ transform: { matrix: matrix.elements } }) };
+  status.point(frame, null, rig, true);
+  status.clearPointers();
+  source.gamepad.buttons[0].value = 1;
+  status.point(frame, null, rig, true);
+  assert.equal(model.items[0].pressed, undefined, 'a held system-menu trigger must not press Resume');
+  source.gamepad.buttons[0].value = 0; status.point(frame, null, rig, true);
+  source.gamepad.buttons[0].value = 1; status.point(frame, null, rig, true);
+  assert.equal(model.items[0].pressed, 1);
+});
+
 const controller = handedness => ({ handedness, gamepad: { mapping: 'xr-standard', axes: [0, 0, 0, 0], buttons: Array.from({ length: 7 }, () => ({ value: 0 })) } });
 function inputFixture() {
   const left = controller('left'), right = controller('right'), actions = [];
@@ -188,6 +209,29 @@ test('pause remains reachable with held driving controls, including left stick c
   left.gamepad.buttons[3].value = 0; input.update(sources, { paused: true });
   right.gamepad.buttons[5].value = 1; input.update(sources, { paused: true });
   assert.deepEqual(actions, ['pause', 'pause']);
+});
+
+test('held pause and recenter buttons cannot leak from a frame-free interruption', () => {
+  for (const [pad, index] of [['right', 5], ['left', 5], ['left', 3], ['right', 3]]) {
+    const fixture = inputFixture(), { input, sources, actions } = fixture;
+    input.clear({ consumeEdges: true });
+    fixture[pad].gamepad.buttons[index].value = 1;
+    input.update(sources, { paused: true }); input.update(sources, { paused: true });
+    assert.deepEqual(actions, [], `${pad} button ${index} must be released after returning`);
+    fixture[pad].gamepad.buttons[index].value = 0; input.update(sources, { paused: true });
+    fixture[pad].gamepad.buttons[index].value = 1; input.update(sources, { paused: true });
+    assert.deepEqual(actions, [index === 3 && pad === 'right' ? 'recenterVR' : 'pause']);
+  }
+});
+
+test('a controller picked up with B held cannot resume the pause menu', () => {
+  const { input, right, actions, sources } = inputFixture();
+  input.update([], { paused: true });
+  right.gamepad.buttons[5].value = 1; input.update(sources, { paused: true });
+  assert.deepEqual(actions, []);
+  right.gamepad.buttons[5].value = 0; input.update(sources, { paused: true });
+  right.gamepad.buttons[5].value = 1; input.update(sources, { paused: true });
+  assert.deepEqual(actions, ['pause']);
 });
 
 test('paused XR stick and A operate menus without driving or changing camera', () => {

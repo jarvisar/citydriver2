@@ -22,9 +22,10 @@ export class XRInput {
     this.previous = {};
     this.sources = [];
     this.requireNeutral = true;
+    this.consumeEdges = true;
     this.missingControllers = false;
   }
-  clear() { this.state = {}; this.requireNeutral = true; }
+  clear({ consumeEdges = false } = {}) { this.state = {}; this.requireNeutral = true; this.consumeEdges ||= consumeEdges; }
   // A pulse in both controllers' hands, 0 to 1 for `seconds`, where they have haptics
   rumble(intensity, seconds) {
     for (const source of this.sources) {
@@ -35,7 +36,7 @@ export class XRInput {
   // the results or the title. The drive is still, and the sticks walk the menu.
   update(sources = [], { blocked = false, paused = false, freeDrive = false } = {}) {
     const controllers = Array.from(sources).filter(source => source.gamepad?.mapping === 'xr-standard' && !source.hand);
-    if (this.sources.some(source => !controllers.includes(source)) || controllers.some(source => !this.sources.includes(source))) this.clear();
+    if (this.sources.some(source => !controllers.includes(source)) || controllers.some(source => !this.sources.includes(source))) this.clear({ consumeEdges: true });
     this.sources = controllers;
     // Putting the controllers down (or picking up hands) pauses the drive, as
     // a gamepad's disconnecting does. Starting or resuming with only hands
@@ -69,7 +70,10 @@ export class XRInput {
       vrMenuPrevious: stick(left, right, 3) < -.5, vrMenuNext: stick(left, right, 3) > .5,
       vrMenuLeft: stick(left, right, 2) < -.5, vrMenuRight: stick(left, right, 2) > .5,
     };
-    const pressed = Object.keys(buttons).filter(action => buttons[action] && !this.previous[action]);
+    // Hidden sessions can stop delivering frames. Snapshot the first returning
+    // buttons so a system-menu press cannot resume or recenter the game.
+    const pressed = this.consumeEdges ? [] : Object.keys(buttons).filter(action => buttons[action] && !this.previous[action]);
+    this.consumeEdges = false;
     this.previous = buttons;
     // Pause must remain reachable while a trigger/stick is held after focus
     // changes. Driving still requires neutral, and blocked sessions consume

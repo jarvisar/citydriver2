@@ -22,6 +22,7 @@ The page's menus and HUD can't be seen in a headset, so `src/vr-status.js` draws
 - The garage lists the page's own buttons in two columns under headings, with pages. The city map shows as a picture.
 - Closing the map or a garage goes back to the row that opened it.
 - While a menu is open each controller shows a short beam, with a dot where it points. Moving a pointer onto a row selects it. A pointer already resting on the panel when it opens doesn't change the selection. A trigger held when a menu opens has to be released before it can press anything.
+- Returning from the headset's system menu stays paused. Held triggers and shortcut buttons need a release before they can act again, even if the hidden session delivered no frames. A controller picked up with B held cannot resume the game.
 - Hand tracking can point at menus and pinch to select. Driving needs controllers.
 
 ## HUD
@@ -51,3 +52,5 @@ See the [README](../README.md#vr). B pauses, and so does Y in a run, so no singl
 - Run `npm run dev` and add `?xr` to the URL (`?xr=stereo` shows both eyes). This installs Meta's Immersive Web Emulation Runtime (IWER) as a Quest 3 and reports a Quest's user agent. It is only in development builds. `window.__xr` moves the headset and controllers, for example `__xr.controllers.right.updateButtonValue('trigger', 1)`.
 - `node scripts/vr-review.mjs [output directory]` enters VR this way, steps through every menu, gets out of the car and walks in free drive, and checks the game's state at each step. It saves the headset's view, a close-up at about a Quest 3's sharpness and each panel's canvas.
 - `tests/xr.test.js` covers the controls, menu layout, pointing, rig and vignette.
+- `npm run test:vr` adds stereo, interruptions without hidden frames, controller and hand switching, settings, walking, both aircraft, demolition, every weather and camera view, and repeated exit and reentry. It writes screenshots and `results.json` under `.artifacts/vr-qa`. Run `node scripts/vr-qa.mjs output-directory` to choose another destination. `SEED=2 SOFTWARE=1` selects another city and SwiftShader (set these environment variables in your shell).
+- These checks use an emulated Quest 3. They do not measure standalone headset performance, optical text clarity, physical haptics or comfort. Check those on a headset before calling VR ready for release.

@@ -28,6 +28,7 @@
     "test:fog": "node scripts/fog-test.mjs",
     "test:touch-camera": "node scripts/touch-camera-test.mjs",
     "test:camera-controls": "node scripts/camera-controls-test.mjs",
+    "test:vr": "node scripts/vr-qa.mjs",
     "city:svg": "node scripts/city-map-svg.mjs"
   },
   "dependencies": {

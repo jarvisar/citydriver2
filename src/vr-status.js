@@ -185,9 +185,13 @@ export class VRStatus {
   }
   // Hand-tracked pinches arrive as select events rather than a trigger.
   attach(session) {
-    this.selecting.clear();
+    this.clearPointers();
     session.addEventListener('selectstart', event => this.selecting.add(event.inputSource));
     session.addEventListener('selectend', event => this.selecting.delete(event.inputSource));
+  }
+  clearPointers() {
+    this.triggers.clear(); this.hovers.clear(); this.selecting.clear(); this.settle = true;
+    for (const { ray, cursor } of this.rays ?? []) ray.visible = cursor.visible = false;
   }
   get visible() { return Boolean(this.model); }
   toast(text, tone = '') { this.flash = { text, tone, until: performance.now() + 2200 }; }
