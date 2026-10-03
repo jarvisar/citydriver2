@@ -61,7 +61,7 @@ export function menuModel(state, controls, { garage, result, mapImage, mapKey, m
   if (state.over) return { id: `${state.mode}-results`, title: `Time up · ${result.cash}`,
     subtitle: [result.name, state.mode === 'demolition' ? result.next : result.best].filter(Boolean).join(' · '), hint: VR_POINTING,
     items: [item('retry', { primary: true }), item('keep'), item(state.mode === 'demolition' ? 'taxi' : 'garage', { value: undefined }), item('exit', { footer: true })] };
-  if (!state.started) return { id: 'title', title: 'citydriver', wordmark: true, mark, subtitle: 'Pick up. Drop off. Beat the clock.', hint: VR_CONTROLS,
+  if (!state.started) return { id: 'title', title: 'citydriver', wordmark: true, mark, hint: VR_CONTROLS,
     items: [item('start', { primary: true }), item('demolition'), item('free'), item('exit')] };
   if (!state.paused) return null;
   const drive = key => item(key, { group: 'Driving' });

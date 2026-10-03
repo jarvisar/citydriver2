@@ -61,14 +61,14 @@ test('the drift button hops the car at speed, a quick hop that keeps its tyres w
   } finally { c.disposeModel(); }
 });
 
-test('a drift hop off an edge becomes a real jump with ordinary gravity', () => {
-  const c = car();
+test('a drift hop off a ramp becomes a real jump with ordinary gravity', () => {
+  const c = car('taxi', 32, chunks(ramp(40, 3.4, 12, 0)));
   try {
-    c.route = { ...road, height: s => s < 28 ? GROUND : GROUND - 8 };
-    c.update(0, {});
+    c.s = 50; c.update(0, {});
     hold(c, STEP, { forward: 1, handbrake: true });
+    assert.ok(c.carAir.hopping, 'hopped just before the lip');
     for (let i = 0; i < 60 && !c.aloft; i++) c.update(STEP, { forward: 1, handbrake: true });
-    assert.ok(c.aloft && c.carAir.flight, 'left the edge during the hop');
+    assert.ok(c.aloft && c.carAir.flight, 'left the ramp during the hop');
     const vy = c.vy;
     c.update(STEP, { forward: 1, handbrake: true });
     assert.ok(Math.abs(c.vy - (vy - GRAVITY * STEP)) < 1e-9, 'falls with the gravity of a real jump');

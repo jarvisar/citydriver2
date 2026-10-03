@@ -21,7 +21,6 @@
 #city-cash { font-size: 11px; color: #e5eceab3; letter-spacing: .15px; }
 #app:has(#welcome:not(.hidden)) .city-hud,
 #app:has(#pause-overlay:not([hidden])) .city-hud { visibility: hidden; }
-#welcome .menu-tagline { margin: 20px 0 0; max-width: none; font: italic 17px/1.5 Georgia, 'Times New Roman', serif; letter-spacing: .2px; color: #fffdf3; }
 #welcome .wordmark { letter-spacing: -.065em; }
 .weather-setting {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -43,14 +42,10 @@
   .city-heading { min-width: 30px; height: 30px; font-size: 11px; }
   #city-location { font-size: 8px; letter-spacing: 1px; }
   #city-cash { font-size: 10px; }
-  #welcome .menu-tagline { margin-top: 16px; font-size: 14px; }
 }
 @media (max-width: 390px) {
   .city-hud { gap: 6px; padding-right: 8px; }
   #city-location { max-width: 92px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-}
-@media (max-height: 560px) {
-  #welcome .menu-tagline { margin-top: 10px; font-size: 13px; }
 }
 
 .city-guide {
