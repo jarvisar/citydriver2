@@ -6,6 +6,7 @@ import { CARS, CAR_IDS } from '../src/cars.js';
 import { tailPipes } from '../src/car-profile.js';
 import { FrameClock } from '../src/timing.js';
 import { DRIFT_MIN, DRIFT_END, STAGES, TURBOS, TRICK } from '../src/drift.js';
+import { GRAVITY } from '../src/car-air.js';
 import { DriftEffects, STAGE_COLOURS } from '../src/drift-effects.js';
 import { TaxiRun, TIPS } from '../src/taxi-run.js';
 import { taxiHudModel } from '../src/run-hud-model.js';
@@ -41,9 +42,13 @@ test('the drift button hops the car at speed, a quick hop that keeps its tyres w
   const c = car();
   try {
     const bumps = c.audioTelemetry.bumpSerial;
-    let peak = 0, aloft = false;
-    for (let i = 0; i < 60; i++) { c.update(STEP, { forward: 1, handbrake: true }); peak = Math.max(peak, c.y - GROUND); aloft ||= c.aloft; }
+    let peak = 0, aloft = false, landed = null;
+    for (let i = 0; i < 60; i++) {
+      c.update(STEP, { forward: 1, handbrake: true }); peak = Math.max(peak, c.y - GROUND); aloft ||= c.aloft;
+      if (peak > 0 && !c.carAir.free && landed === null) landed = (i + 1) * STEP;
+    }
     assert.ok(peak > .14 && peak < .27, `hopped ${peak.toFixed(3)} m`);
+    assert.ok(landed >= .14 && landed <= .2, `landed in ${landed} s`);
     assert.ok(!aloft, 'never off its tyres');
     assert.ok(Math.abs(c.y - GROUND) < 1e-6 && c.audioTelemetry.bumpSerial > bumps, 'down again with a thump');
     // Held on going straight, no drift, no brake and no second hop
@@ -53,6 +58,20 @@ test('the drift button hops the car at speed, a quick hop that keeps its tyres w
     // Slow, no hop: it is the handbrake
     const slow = car('taxi', 2);
     try { slow.update(STEP, { handbrake: true }); assert.equal(slow.drift.hops, 0); } finally { slow.disposeModel(); }
+  } finally { c.disposeModel(); }
+});
+
+test('a drift hop off an edge becomes a real jump with ordinary gravity', () => {
+  const c = car();
+  try {
+    c.route = { ...road, height: s => s < 28 ? GROUND : GROUND - 8 };
+    c.update(0, {});
+    hold(c, STEP, { forward: 1, handbrake: true });
+    for (let i = 0; i < 60 && !c.aloft; i++) c.update(STEP, { forward: 1, handbrake: true });
+    assert.ok(c.aloft && c.carAir.flight, 'left the edge during the hop');
+    const vy = c.vy;
+    c.update(STEP, { forward: 1, handbrake: true });
+    assert.ok(Math.abs(c.vy - (vy - GRAVITY * STEP)) < 1e-9, 'falls with the gravity of a real jump');
   } finally { c.disposeModel(); }
 });
 

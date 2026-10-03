@@ -14,9 +14,9 @@ import * as THREE from 'three';
 // Slow, the button is still the handbrake (see ActorMotion.update).
 
 // A drift starts from DRIFT_MIN m/s and ends below DRIFT_END. The hop is
-// from HOP_MIN, at HOP m/s up (about 20 cm, a third of a second in the air)
+// from HOP_MIN, at HOP m/s up (about 20 cm in .17 s, see CarAir's HOP_GRAVITY)
 export const DRIFT_MIN = 8, DRIFT_END = 5.5;
-const HOP = 2.3, HOP_MIN = 3;
+const HOP = 4.6, HOP_MIN = 3;
 // Steering past PICK either way picks the drift's way
 const PICK = .3;
 // Steered out of the drift, not at all, and into it: how fast the way it

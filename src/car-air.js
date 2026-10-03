@@ -16,6 +16,9 @@ import { propTop } from './loose-props.js';
 //   AIRBORNE   up this far over the street it clears traffic, people, walls
 //              and railings, as the helicopter does
 export const GRAVITY = 13;
+// Twice the hop's launch speed and four times gravity keep its height,
+// but halve its time. A real jump off a ramp uses ordinary gravity.
+const HOP_GRAVITY = GRAVITY * 4;
 const TRAVEL = .3;
 export const STEP = .45;
 const BELLY = .2, AIRBORNE = 2.5;
@@ -81,7 +84,7 @@ export class CarAir {
   reset() {
     const m = this.motion;
     m.y = NaN; m.vy = 0; m.aloft = false; m.air = 0; m.lift = 0; m.liftRate = 0; m.sinking = null;
-    this.turn = 0; this.spinRate = 0; this.spinning = 0; this.flair = -1; this.free = 0; this.flight = null; this.settle = SETTLE;
+    this.turn = 0; this.spinRate = 0; this.spinning = 0; this.flair = -1; this.free = 0; this.flight = null; this.settle = SETTLE; this.hopping = false;
     this.pitchRate = 0; this.rollRate = 0;
     this.water = false; this.splashed = false; this.under = null; this.floor = NaN; this.held = NaN; this.rate = 0; this.street = true; this.last.fill(NaN);
   }
@@ -121,6 +124,7 @@ export class CarAir {
     const m = this.motion;
     if (m.aloft || this.free > 0 || !Number.isFinite(m.y)) return false;
     m.vy = Math.max(0, m.vy) + v;
+    this.hopping = true;
     return true;
   }
   // The ramp or mound under the car's middle, when that is what it stands on
@@ -192,14 +196,14 @@ export class CarAir {
   update(dt, vs, vu) {
     const m = this.motion, telemetry = m.audioTelemetry;
     // (a step of no time is a car put down somewhere: on the ground there)
-    if (!dt) { m.sinking = null; m.aloft = false; this.flight = null; this.turn = this.spinRate = 0; }
+    if (!dt) { m.sinking = null; m.aloft = false; this.flight = null; this.turn = this.spinRate = 0; this.hopping = false; }
     const placed = Number.isFinite(m.y) && dt > 0;
     this.sample(!placed);
     if (m.sinking) { this.sink(dt); return; }
     // (put down, it sits as the ground under it tilts it)
     if (!placed) { const tilt = this.groundTilt(0); m.pitch = tilt.pitch; m.roll = tilt.roll; }
     const held = this.support(), rate = this.groundRate(vs, vu);
-    let vy = m.vy - GRAVITY * dt, y = placed ? m.y + vy * dt : held, landing = -1;
+    let vy = m.vy - (this.hopping ? HOP_GRAVITY : GRAVITY) * dt, y = placed ? m.y + vy * dt : held, landing = -1;
     // A kerb stepped down (no deeper than the suspension reaches) the wheels
     // follow at once and the body settles after them. Only the street has
     // kerbs: a ramp or a mound falls away smoothly, and that is left to
@@ -233,6 +237,7 @@ export class CarAir {
     const sp = Math.sin(m.pitch), sr = Math.sin(m.roll), reach = i => y + this.layout[i][0] * sp + this.layout[i][1] * sr - this.floors[i];
     const belly = contact && this.floors[4] - BELLY >= held - 1e-6;
     m.aloft = y - held > TRAVEL || (!belly && Math.min(reach(0), reach(1)) > TRAVEL + .1);
+    if (contact || m.aloft) this.hopping = false;
     m.airborne = y - this.ground[4] > AIRBORNE && !this.water;
     this.free = contact ? 0 : this.free + dt;
     // On the ground: what it stands on, for where a jump leaves from
