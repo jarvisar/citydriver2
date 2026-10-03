@@ -108,16 +108,25 @@ export function circleContact(circle, solid) {
   }
   // The nearest point of the outline; from inside, the way out is through the nearest edge
   const corners = (solid.corners ? solid : boxOutline(solid)).corners;
-  let best = Infinity, nx = 0, nz = 0;
+  let best = Infinity, nx = 0, nz = 0, edge = null;
   for (let i = 0; i < corners.length; i++) {
     const a = corners[i], b = corners[(i + 1) % corners.length], ex = b.x - a.x, ez = b.z - a.z, length = ex * ex + ez * ez;
     const t = length > 1e-12 ? clamp(((circle.x - a.x) * ex + (circle.z - a.z) * ez) / length, 0, 1) : 0;
     const px = a.x + ex * t, pz = a.z + ez * t, d = (circle.x - px) ** 2 + (circle.z - pz) ** 2;
-    if (d < best) { best = d; nx = px; nz = pz; }
+    if (d < best) { best = d; nx = px; nz = pz; edge = [a, b]; }
   }
-  const inside = insideConvex(circle, corners), dx = circle.x - nx, dz = circle.z - nz, distance = Math.sqrt(best);
+  // The roof queries' 2 cm allowance would treat a point just outside as
+  // inside and push it into the wall.
+  const inside = insideConvex(circle, corners, 0), dx = circle.x - nx, dz = circle.z - nz, distance = Math.sqrt(best);
   if (!inside && distance >= r) return null;
-  const sign = inside ? -1 : 1, x = distance > 1e-6 ? sign * dx / distance : 1, z = distance > 1e-6 ? sign * dz / distance : 0;
+  const sign = inside ? -1 : 1;
+  let x = sign * dx / distance, z = sign * dz / distance;
+  if (distance <= 1e-6) {
+    const [a, b] = edge, length = Math.hypot(b.x - a.x, b.z - a.z);
+    x = (b.z - a.z) / length; z = -(b.x - a.x) / length;
+    const cx = corners.reduce((sum, p) => sum + p.x, 0) / corners.length, cz = corners.reduce((sum, p) => sum + p.z, 0) / corners.length;
+    if (x * (cx - a.x) + z * (cz - a.z) > 0) { x = -x; z = -z; }
+  }
   return { x, z, depth: inside ? r + distance : r - distance, point: { x: nx, z: nz } };
 }
 // The outline of a rectangle turned by its heading, as trafficContact reads one.
@@ -128,13 +137,13 @@ function boxOutline(box) {
   })) };
 }
 // Whether a point stands inside (or within 2 cm of) a convex outline, whichever way round it runs.
-export function insideConvex(p, polygon) {
+export function insideConvex(p, polygon, margin = .02) {
   let sign = 0;
   for (let i = 0; i < polygon.length; i++) {
     const a = polygon[i], b = polygon[(i + 1) % polygon.length], length = Math.hypot(b.x - a.x, b.z - a.z);
     if (length < 1e-8) continue;
     const cross = ((b.x - a.x) * (p.z - a.z) - (b.z - a.z) * (p.x - a.x)) / length;
-    if (Math.abs(cross) <= .02) continue;
+    if (Math.abs(cross) <= margin) continue;
     if (sign && Math.sign(cross) !== sign) return false;
     sign = Math.sign(cross);
   }

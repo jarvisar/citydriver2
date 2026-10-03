@@ -231,6 +231,21 @@ test('a round footprint meets posts and outlines from outside and in, and slides
   assert.ok(circleContact({ x: 0, z: 1.1, radius: .3 }, { x: 0, z: 0, heading: 0, halfWidth: 1, halfLength: 1, reach: 1.5 }));
 });
 
+test('walking onto a wall edge or just outside it always pushes outward', () => {
+  for (const winding of [1, -1]) for (const angle of [0, .37, Math.PI / 2, 2.1]) {
+    const cos = Math.cos(angle), sin = Math.sin(angle), turn = (x, z) => ({ x: x * cos - z * sin, z: x * sin + z * cos });
+    const corners = [[-2, -2], [2, -2], [2, 2], [-2, 2]].map(([x, z]) => turn(x, z));
+    if (winding < 0) corners.reverse();
+    for (const [x, z] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) for (const offset of [0, .001, .01, -.01]) {
+      const normal = turn(x, z), p = turn(x * (2 + offset), z * (2 + offset)), circle = { ...p, radius: .32 };
+      const solid = { corners }, contact = circleContact(circle, solid);
+      assert.ok(contact && contact.x * normal.x + contact.z * normal.z > .999, `outward at ${angle}, ${x}, ${z}, ${offset}`);
+      const moved = { ...circle, x: p.x + contact.x * (contact.depth + .005), z: p.z + contact.z * (contact.depth + .005) };
+      assert.equal(circleContact(moved, solid), null, 'one correction leaves the whole outline clear');
+    }
+  }
+});
+
 test('out of the car the controller walks one of the residents, and the car it left is kept whole', () => {
   const { scene, vehicle } = onFoot();
   const car = vehicle.car, parked = vehicle.stepOut();

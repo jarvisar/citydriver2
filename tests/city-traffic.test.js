@@ -243,6 +243,43 @@ function onlooker(traffic, edge, along) {
   return { s: p.s, u: p.u, heading: 0, speed: 0, airborne: true, groundedPosition: new THREE.Vector3(1e5, 0, 1e5) };
 }
 
+test('an aircraft parked on a roof does not block or collide with traffic below', () => {
+  const player = new DrivingController(citydriverRoute, journeyStart(), 'taxi');
+  const { traffic, edge, pinned: [car] } = pinnedStreet(player, [[30, 10]]);
+  const rail = traffic.nav.pose(edge, 50, 1, edge.profile.lane);
+  const aircraft = new DrivingController(citydriverRoute, rail, 'helicopter'), parked = aircraft.actor.body;
+  parked.loose = { vx: 0, vz: 0, spin: 0 }; parked.handbrake = true; aircraft.actor.transfer('parked');
+  traffic.playerCars.push(parked);
+  const observer = onlooker(traffic, edge, 30);
+  try {
+    const ground = parked.position.y;
+    parked.perch = ground + 30; parked.position.y = parked.perch;
+    assert.equal(traffic.following(car, observer), Infinity, 'no braking for an aircraft above the lane');
+    const nearby = []; traffic.others(car, observer, other => nearby.push(other));
+    assert.ok(!nearby.includes(parked), 'lane changes ignore it too');
+    car.loose = { vx: 0, vz: -10, spin: 0 }; car.s = parked.s; car.u = parked.u; traffic.pose(car);
+    assert.equal(traffic.crowded(car), false, 'the road below it is free');
+    const before = { s: parked.s, u: parked.u, y: parked.position.y };
+    traffic.knockOn(car);
+    assert.deepEqual({ s: parked.s, u: parked.u, y: parked.position.y }, before, 'a crash below leaves the aircraft alone');
+    assert.deepEqual(parked.loose, { vx: 0, vz: 0, spin: 0 });
+    car.loose = null; car.along = 30; traffic.pose(car);
+    parked.perch = undefined; parked.position.y = ground;
+    assert.ok(Number.isFinite(traffic.following(car, observer)), 'the same aircraft on the road still blocks it');
+  } finally { traffic.playerCars.length = 0; traffic.dispose(); aircraft.disposeModel(); player.disposeModel(); }
+});
+
+test('nudging a parked aircraft on its roof preserves its height', () => {
+  const aircraft = new DrivingController(citydriverRoute, journeyStart(), 'helicopter');
+  const traffic = new CityTraffic(new THREE.Scene(), aircraft.route, aircraft.s, 'city', aircraft.u);
+  try {
+    const car = aircraft.actor.body;
+    car.perch = car.position.y + 30; car.position.y = car.perch;
+    traffic.nudge(car, .2, .1);
+    assert.equal(car.position.y, car.perch);
+  } finally { traffic.dispose(); aircraft.disposeModel(); }
+});
+
 test('rear, head-on and reversing impacts with city traffic separate the cars and report the blow', () => {
   for (const kind of ['rear', 'head-on', 'reverse', 'hit from behind']) {
     const player = new DrivingController(citydriverRoute, journeyStart(), 'taxi');

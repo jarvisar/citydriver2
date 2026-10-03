@@ -7,6 +7,17 @@ import { createCar, DrivingController } from '../src/vehicle.js';
 import { TRAFFIC_MODELS } from '../src/traffic-models.js';
 import { JOURNEYS } from '../src/journeys.js';
 import { PAINTS, DEFAULT_PAINT, isPaint, paintName } from '../src/car-paint.js';
+import { profileHeight } from '../src/car-profile.js';
+
+test('a car roof profile ends at the bumper, including a partial last slice', () => {
+  for (const length of [3.1, 4.4, 6.8]) {
+    const profile = { length, slice: .25, heights: new Float32Array(Math.ceil(length / .25)).fill(1.5) };
+    assert.equal(profileHeight(profile, length / 2 - .001), 1.5);
+    assert.equal(profileHeight(profile, -length / 2 + .001), 1.5);
+    assert.equal(profileHeight(profile, length / 2 + .001), -Infinity, 'no support past the nose');
+    assert.equal(profileHeight(profile, -length / 2 - .001), -Infinity, 'no support past the tail');
+  }
+});
 
 const straightRoute = {
   frame: () => ({ angle: 0, scale: 1 }),

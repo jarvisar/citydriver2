@@ -70,6 +70,7 @@ export function tailPipes(body) {
 // How high a car stands `along` metres from its middle toward its nose, or
 // -Infinity off either end
 export function profileHeight(profile, along) {
+  if (along < -profile.length / 2 || along >= profile.length / 2) return -Infinity;
   const k = Math.floor((along + profile.length / 2) / profile.slice);
   return k >= 0 && k < profile.heights.length ? profile.heights[k] : -Infinity;
 }

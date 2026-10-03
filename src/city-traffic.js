@@ -67,6 +67,14 @@ const WARM_SLICE = .1, WARM_MOST = 64;
 // short of it, and pulls out at OUT_SPEED at most.
 const REST = 25, REST_SPREAD = 50, NEAR = 150, BUS_DECEL = 1.6, PULL_IN = 45, OUT_SPEED = 6;
 const wrap = angle => Math.atan2(Math.sin(angle), Math.cos(angle));
+// A parked aircraft can be on a roof above the lane. Missing heights are
+// used by navigation-only callers, which still need the ground-plane test.
+const sameHeight = (a, b) => {
+  const ay = (a.groundedPosition ?? a.position)?.y, by = (b.groundedPosition ?? b.position)?.y;
+  if (!Number.isFinite(ay) || !Number.isFinite(by)) return true;
+  const ah = a.profile?.height ?? a.spec?.profile?.height ?? a.spec?.height ?? 1.5, bh = b.profile?.height ?? b.spec?.profile?.height ?? b.spec?.height ?? 1.5;
+  return ay < by + bh && by < ay + ah;
+};
 // Scratch reused every step, so the traffic leaves next to nothing for the
 // collector (see pose, following, pathAhead and steer)
 const HERE = { s: 0, u: 0, heading: 0, tx: 0, ty: 0, segment: 0 }, BOX = new Float64Array(4), DISCS = new Float64Array(10), NONE = [];
@@ -335,7 +343,7 @@ export class CityTraffic {
       car.s = pose.s; car.u = pose.u; car.laneHeading = pose.heading; car.heading = pose.heading + Math.atan(car.laneOn === car.edge ? car.slope ?? 0 : 0);
     }
     const p = this.route.position(car.s, car.u);
-    car.position.set(p.x, p.y, p.z);
+    car.position.set(p.x, car.perch ?? p.y, p.z);
     if (car.rock) car.quaternion.setFromEuler(tilt.set(car.rock.pitch, -car.heading, car.rock.roll));
     else car.quaternion.setFromAxisAngle(up, -car.heading);
   }
@@ -392,7 +400,7 @@ export class CityTraffic {
   crowded(car) {
     const a = this.motion(car);
     return [this.vehicles, this.woken, this.playerCars].some(list => list.some(other => other !== car && other.car.visible && (list === this.playerCars || other.edge || other.parked)
-      && Math.abs(other.position.x - car.position.x) < 7 && Math.abs(other.position.z - car.position.z) < 7 && trafficContact(a, this.motion(other))));
+      && Math.abs(other.position.x - car.position.x) < 7 && Math.abs(other.position.z - car.position.z) < 7 && sameHeight(car, other) && trafficContact(a, this.motion(other))));
   }
   // Whether a loose car has the scenery hard behind it the way (nx, nz) a
   // push would move it, near enough square on (pushed at a slant, it slides
@@ -705,7 +713,7 @@ export class CityTraffic {
   // pinned against the scenery, see pinned)
   knockOn(car) {
     for (const list of [this.vehicles, this.woken, this.playerCars]) for (const other of list) {
-      if (other === car || (list !== this.playerCars && !(other.edge || other.parked)) || Math.abs(other.position.x - car.position.x) > 7 || Math.abs(other.position.z - car.position.z) > 7) continue;
+      if (other === car || (list !== this.playerCars && !(other.edge || other.parked)) || Math.abs(other.position.x - car.position.x) > 7 || Math.abs(other.position.z - car.position.z) > 7 || !sameHeight(car, other)) continue;
       const a = this.motion(car), b = this.motion(other), contact = trafficContact(a, b);
       if (!contact) continue;
       // (two pinned between walls are parted all the same, rather than left in each other)
@@ -882,6 +890,7 @@ export class CityTraffic {
       const other = i === total ? player : i < count ? this.vehicles[i] : i < woken ? this.woken[i - count] : this.playerCars[i - woken];
       if (other === car || (i < woken && !other.edge && !other.parked) || !Number.isFinite(other.heading) || other.airborne) continue;
       if (Math.abs(other.s - car.s) > reach + 6 || Math.abs(other.u - car.u) > reach + 6) continue;
+      if (!sameHeight(car, other)) continue;
       if (other !== player && other.edge && crossing && this.passes(car, other)) continue;
       if (points < 0) points = this.pathAhead(car, reach);
       const length = other.spec?.length ?? 4.4, reachAlong = length / 2 * .62, clear = (car.spec.width + (other.spec?.width ?? 2)) / 2 + .2;
@@ -1050,10 +1059,10 @@ export class CityTraffic {
   // Everything on the road but this car: the traffic, parked cars knocked
   // loose, the car the player left and the player
   others(car, player, visit) {
-    for (const other of this.vehicles) if (other !== car && other.edge) visit(other);
-    for (const other of this.woken) if (other.parked) visit(other);
-    for (const other of this.playerCars) visit(other);
-    if (!player.airborne && Number.isFinite(player.heading)) visit(player);
+    for (const other of this.vehicles) if (other !== car && other.edge && sameHeight(car, other)) visit(other);
+    for (const other of this.woken) if (other.parked && sameHeight(car, other)) visit(other);
+    for (const other of this.playerCars) if (sameHeight(car, other)) visit(other);
+    if (!player.airborne && Number.isFinite(player.heading) && sameHeight(car, player)) visit(player);
   }
   // Where another is from this car, along its lane and across (to the right),
   // and how fast it is going along the lane

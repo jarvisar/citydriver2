@@ -5,6 +5,7 @@ import { trafficContact, collideScenery, postContact, sightLine, cameraClearance
 import { DrivingController } from '../src/vehicle.js';
 import { CHUNK_LENGTH } from '../src/world/route.js';
 import { solidBox, solidPost, solidSpan, solidModel } from '../src/world/colliders.js';
+import { CARS, CAR_IDS } from '../src/cars.js';
 
 // A flat, straight road: x is u and z is -s, as in the traffic tests.
 const straightRoute = {
@@ -65,6 +66,29 @@ test('a wall met head-on stops the car outside it and reports the impact', () =>
   for (let i = 0; i < 120; i++) { car.update(1 / 60, { brake: true }); collideScenery(car, chunks, 1 / 60); }
   assert.ok(car.s < 74 && car.speed < -2);
   car.disposeModel();
+});
+
+test('every wheeled car stays outside a thin wall at its boosted speed in forward and reverse', () => {
+  for (const id of CAR_IDS) {
+    if (['helicopter', 'plane'].includes(CARS[id].kind)) continue;
+    for (const reverse of [false, true]) {
+      const direction = reverse ? -1 : 1, route = { ...straightRoute, laneAssist: false };
+      const chunks = scenery(chunk => solidBox(chunk, 0, -direction * 12, 0, 20, .06));
+      const car = new DrivingController(route, { s: 0, u: 0, heading: 0 }, id);
+      try {
+        car.freeDriving = true;
+        car.speed = reverse ? -car.stats.reverseSpeed : car.stats.topSpeed * 1.35; car.update(0, {});
+        for (let i = 0; i < 240; i++) {
+          car.update(1 / 120, reverse ? { brake: 1 } : { forward: 1, boost: true });
+          collideScenery(car, chunks, 1 / 120);
+          assert.ok([car.s, car.u, car.y, car.heading, car.speed, car.knock.x, car.knock.z, car.knock.spin].every(Number.isFinite), id);
+          assert.ok(car.s * direction < 12, `${id} crossed the wall ${reverse ? 'in reverse' : 'forward'}`);
+          assert.ok(overlap(car, chunks) < .01, `${id} stayed embedded`);
+        }
+        assert.ok(car.audioTelemetry.impactSerial > 0, `${id} reached the wall`);
+      } finally { car.disposeModel(); }
+    }
+  }
 });
 
 test('a sideways slide into a wall loses speed even when the body faces along it', () => {
