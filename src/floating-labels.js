@@ -1,17 +1,18 @@
 import * as THREE from 'three';
 
 // Labels that float up and fade: demolition prices, taxi pay and tips. A pool
-// of canvas sprites drawn over everything, reusing the oldest when full. Near
-// the camera a label is at most NEAR times its distance wide, so it cannot
-// cover the road.
+// of canvas sprites drawn over everything, reusing the oldest when full.
+// Screen-size caps keep them readable without covering the road.
 // They rise over the player's car and go along with it: left where they
 // popped, they were behind the car before they could be read. Through the
 // driver's eyes (the camera within FIRST_PERSON of the car) over the roof is
 // out of view, so they rise AHEAD metres in front instead.
-const LABELS = 12, LABEL_LIFE = 1.8, LABEL_RISE = 2, LABEL_HEIGHT = 2.4, NEAR = .3, FIRST_PERSON = 3, AHEAD = 7;
+const LABELS = 12, LABEL_LIFE = 1.8, LABEL_RISE = 2, LABEL_HEIGHT = 2.4, FIRST_PERSON = 3, AHEAD = 7;
 const PIXEL_HEIGHT = 88, WORLD_HEIGHT = 1;
 const eye = new THREE.Vector3(), base = new THREE.Vector3(), front = new THREE.Vector3(), up = new THREE.Vector3(), depth = new THREE.Vector3(), screen = new THREE.Vector3();
-const stackSlots = () => Math.max(1, Math.min(4, Math.floor(((globalThis.innerHeight || 800) - 180) / (PIXEL_HEIGHT * 1.12))));
+// Use CSS pixels and the shorter edge so rotating a phone cannot enlarge its rewards.
+const pixelHeight = () => Math.max(56, Math.min(PIXEL_HEIGHT, Math.min(globalThis.innerWidth || 1280, globalThis.innerHeight || 800) * .15));
+const stackSlots = () => Math.max(1, Math.min(4, Math.floor(((globalThis.innerHeight || 800) - 180) / (pixelHeight() * 1.12))));
 
 export class FloatingLabels {
   constructor(scene, name) {
@@ -43,7 +44,7 @@ export class FloatingLabels {
     const centre = canvas.width / 2, accent = colour ?? '#9ff2e6';
     ctx.font = "700 112px Oswald, 'Arial Narrow', Arial, sans-serif";
     const amountWidth = Math.min(680, ctx.measureText(amount).width);
-    ctx.font = "600 34px Oswald, 'Arial Narrow', Arial, sans-serif";
+    ctx.font = "600 44px Oswald, 'Arial Narrow', Arial, sans-serif";
     const captionWidth = Math.min(650, ctx.measureText(caption).width);
     const width = Math.min(744, Math.max(176, amountWidth + 64, captionWidth + 68));
     // Crop empty texture space so short rewards get the same readable type as long ones.
@@ -91,10 +92,10 @@ export class FloatingLabels {
     }
     const dt = this.lastTime === null ? 0 : Math.min(.1, Math.max(0, time - this.lastTime));
     this.lastTime = time;
-    const viewportHeight = globalThis.innerHeight || 800, viewportWidth = globalThis.innerWidth || 1280;
+    const viewportHeight = globalThis.innerHeight || 800, viewportWidth = globalThis.innerWidth || 1280, labelHeight = pixelHeight();
     let highest = 0;
     for (const label of this.labels) if (label.age < LABEL_LIFE) highest = Math.max(highest, label.stack);
-    const ceiling = 1 - (2 * Math.min(90, viewportHeight * .18) + PIXEL_HEIGHT * 1.15 + highest * PIXEL_HEIGHT * 2.24) / viewportHeight;
+    const ceiling = 1 - (2 * Math.min(90, viewportHeight * .18) + labelHeight * 1.15 + highest * labelHeight * 2.24) / viewportHeight;
     for (const label of this.labels) {
       if (label.age >= LABEL_LIFE) { if (label.sprite.visible) label.sprite.visible = false; continue; }
       label.age += dt;
@@ -102,15 +103,15 @@ export class FloatingLabels {
       label.sprite.position.copy(base);
       if (!this.calm) label.sprite.position.y += LABEL_RISE * (1 - (1 - t) ** 3);
       const pixels = camera ? 2 * (camera.isPerspectiveCamera ? Math.max(camera.near, depth.copy(label.sprite.position).sub(eye).dot(front)) : 1) / (camera.projectionMatrix.elements[5] * viewportHeight) : 0;
-      const wantedHeight = camera ? PIXEL_HEIGHT * pixels : WORLD_HEIGHT;
+      const wantedHeight = camera ? labelHeight * pixels : WORLD_HEIGHT;
       // Bring the whole stack down when its top would run into the HUD or off screen.
       if (camera) {
         screen.copy(label.sprite.position).project(camera);
         if (screen.y > ceiling) label.sprite.position.addScaledVector(up, (ceiling - screen.y) * viewportHeight * pixels / 2);
       }
       label.sprite.position.addScaledVector(up, label.stack * wantedHeight * 1.12);
-      const width = Math.min(pop * wantedHeight * label.aspect, camera ? Math.min(label.sprite.position.distanceTo(eye) * NEAR, viewportWidth * .55 * pixels, 340 * pixels) : 4);
-      label.sprite.scale.set(width, pop * wantedHeight, 1);
+      const width = Math.min(pop * wantedHeight * label.aspect, camera ? Math.min(viewportWidth * .55, 340) * pixels : 4);
+      label.sprite.scale.set(width, width / label.aspect, 1);
       label.material.opacity = t > .75 ? 1 - (t - .75) / .25 : 1;
     }
   }

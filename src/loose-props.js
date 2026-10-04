@@ -603,6 +603,13 @@ export class LooseProps {
     // Hydrants knocked off their stumps, spraying: { x, y, z, left, due }
     this.spouts = [];
   }
+  warmupObjects() {
+    return [this.bits.mesh, this.bits.puffs].map(mesh => {
+      const standIn = new THREE.InstancedMesh(mesh.geometry, mesh.material, 1);
+      standIn.setColorAt(0, white);
+      return standIn;
+    });
+  }
   // A car running into standing furniture (`contact` as sceneryContacts
   // gives it, `car` as motion() gives it plus its ground height `y`): null if
   // it stands firm, too heavy for the speed or not built yet; otherwise it

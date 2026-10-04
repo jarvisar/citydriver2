@@ -24,6 +24,7 @@
     "pwa:screenshots": "node scripts/pwa-screenshots.mjs",
     "test:pwa": "node scripts/pwa-test.mjs",
     "test:smoke": "node scripts/citydriver-smoke.mjs",
+    "test:startup": "node scripts/startup-test.mjs",
     "test:rendering": "node scripts/rendering-compat-test.mjs",
     "test:fog": "node scripts/fog-test.mjs",
     "test:touch-camera": "node scripts/touch-camera-test.mjs",

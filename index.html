@@ -346,22 +346,24 @@
       <div id="error" class="error" hidden role="alert"><h2>Unable to start the game</h2><p>The game could not finish loading. Select Try again to reload.</p><button onclick="location.reload()">Try again</button></div>
     </main>
     <script>
-      const failedStartup = event => {
-        if (event.type === 'error' && event.target !== window && !event.target.matches?.('script[type="module"]')) return;
+      const failedStartup = error => {
         const loading = document.getElementById('loading');
         if (loading.classList.contains('loaded')) return;
+        console.error('Could not load Citydriver:', error);
         loading.classList.add('loaded');
         document.getElementById('error').hidden = false;
         document.querySelector('#error button').focus();
       };
-      window.addEventListener('error', failedStartup, true);
-      window.addEventListener('unhandledrejection', failedStartup);
+      // The built loader can fail to download before its import catch exists.
+      window.addEventListener('error', event => {
+        if (event.target.matches?.('script[type="module"][src]') && new URL(event.target.src).origin === location.origin) failedStartup(event);
+      }, true);
       window.addEventListener('keydown', event => {
         if (document.getElementById('error').hidden || event.key !== 'Tab' || event.ctrlKey || event.metaKey || event.altKey) return;
         event.preventDefault(); event.stopPropagation();
         document.querySelector('#error button').focus();
       }, true);
     </script>
-    <script type="module" src="/src/main.js"></script>
+    <script type="module">import('/src/main.js').catch(failedStartup);</script>
   </body>
 </html>

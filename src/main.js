@@ -1973,7 +1973,7 @@ async function boot() {
     await signSheet;
     // (someone on foot, and their parachute)
     const onFootWarmup = createWalkerModel(); onFootWarmup.canopy.visible = true;
-    await rendering.precompile([...world.warmupObjects(), ...taxiView.warmupObjects(), ...demolitionView.warmupObjects(), ...driftEffects.warmupObjects(), ...enterMarker.warmupObjects(), ...pigeons.warmupObjects(), onFootWarmup.figure, onFootWarmup.canopy]);
+    await rendering.precompile([...world.warmupObjects(), ...props.warmupObjects(), ...taxiView.warmupObjects(), ...demolitionView.warmupObjects(), ...driftEffects.warmupObjects(), ...enterMarker.warmupObjects(), ...pigeons.warmupObjects(), onFootWarmup.figure, onFootWarmup.canopy]);
     try { taxiView.navigation.prepare(); } catch { /* The first fare tries again. */ }
     // Soft shading too, where it is on: loaded and drawn once behind the
     // loading screen, since its first frame compiles for ~200 ms.

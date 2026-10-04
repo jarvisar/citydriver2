@@ -50,6 +50,7 @@ In VR the shadows cover the area around the headset in every direction. Standalo
 - Each block's residents are bounded by the loops they walk plus 40 m, instead of a sphere round the whole block and its neighbours. That sphere kept every block's residents drawn and animated, and stopped whole blocks from being culled.
 - Window panes don't cast shadows, and in skyline blocks only buildings do.
 - Loading compiles every shader before the first frame, including stand-ins for things that aren't on screen yet, like fare markers. Compiling a shader mid-drive stalls a phone for 50-200 ms.
+- Stand-ins also draw into a tiny corner of the canvas behind loading, with and without fog. Linking alone leaves some GPU setup until the first draw, which used to hitch on the first drift, boost or debris burst.
 - Loading also uploads every texture, so the 4096 px sign atlas doesn't upload in the first frame that shows a sign.
 - Each shadow caster has its own depth material, so the shadow pass never has to build a new shader.
 - Each traffic car is one draw, shadow included. Its paint, trim and lamps share one material that paints only the parts marked as paint and lights the lamps from shared uniforms. The player's road cars, taxis and special vehicles draw their body the same way, and road cars and the classic car draw each wheel (tyre and hub) in one draw. That took traffic from four draws a car to one and a taxi from 15 to 8.

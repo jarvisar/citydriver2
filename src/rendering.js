@@ -263,7 +263,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   }
   // Fog is part of every material's program, and only the perspective views
   // draw with it, so compile the scene both ways. Warm-up objects stand in for
-  // materials that are not on screen yet; they are compiled, never drawn.
+  // materials that are not on screen yet.
   // Otherwise the first chase-camera frame, river or fare stalls the drive
   // while the browser compiles shaders, which phones feel the most.
   function precompile(warmupObjects = []) {
@@ -290,7 +290,38 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
     // A program's first draw also reads back its uniforms and info log, which
     // for the fogged half waited for the first chase-camera frame (the title's
     // overhead views draw without fog). Do that now, behind the loading screen.
-    return Promise.all(pending).then(() => programs.warm());
+    return Promise.all(pending).then(() => {
+      programs.warm();
+      // Linking does not finish a driver's first-draw setup. Exercise the real
+      // vertex layouts behind loading, on the same framebuffer as gameplay.
+      // A render target would select different tone-mapping/output programs.
+      const drawScene = new THREE.Scene(); drawScene.add(warmup);
+      drawScene.environment = scene.environment;
+      scene.traverseVisible(object => { if (object.isLight) drawScene.add(object.clone()); });
+      warmup.traverse(object => { object.visible = true; object.frustumCulled = false; });
+      const viewport = renderer.getViewport(new THREE.Vector4()), scissor = renderer.getScissor(new THREE.Vector4());
+      const scissorTest = renderer.getScissorTest(), target = renderer.getRenderTarget();
+      const cubeFace = renderer.getActiveCubeFace(), mipLevel = renderer.getActiveMipmapLevel();
+      const shadowAutoUpdate = renderer.shadowMap.autoUpdate, shadowNeedsUpdate = renderer.shadowMap.needsUpdate;
+      const xrEnabled = renderer.xr.enabled, autoClear = renderer.autoClear;
+      try {
+        renderer.xr.enabled = false; renderer.autoClear = true;
+        renderer.shadowMap.autoUpdate = renderer.shadowMap.needsUpdate = false;
+        renderer.setRenderTarget(null);
+        renderer.setViewport(0, 0, 1, 1); renderer.setScissor(0, 0, 1, 1); renderer.setScissorTest(true);
+        for (const variant of [null, drivingFog]) { drawScene.fog = variant; renderer.render(drawScene, lens); }
+        // Finish the queued draws before loading clears, rather than merely
+        // moving the stall to the next frame.
+        const gl = renderer.getContext();
+        gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+        programs.warm();
+      } finally {
+        renderer.setRenderTarget(target, cubeFace, mipLevel);
+        renderer.setViewport(viewport); renderer.setScissor(scissor); renderer.setScissorTest(scissorTest);
+        renderer.shadowMap.autoUpdate = shadowAutoUpdate; renderer.shadowMap.needsUpdate = shadowNeedsUpdate;
+        renderer.xr.enabled = xrEnabled; renderer.autoClear = autoClear;
+      }
+    });
   }
   function setView(index, remember = false, glide = false) {
     if (!Number.isInteger(index) || !views[index]) return views[view].label;

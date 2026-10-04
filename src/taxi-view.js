@@ -149,8 +149,7 @@ export class TaxiView {
     });
     return this.palette.get(color);
   }
-  // Stand-ins for the marker programs, compiled with the city before the first
-  // fare appears. They are never drawn.
+  // Stand-ins for the marker programs, warmed with the city before the first fare.
   warmupObjects() {
     const { solid, glow } = this.markerMaterials('#ffd240'), badge = this.badge(1, '#ffd240');
     return [new THREE.Mesh(this.ring, solid), new THREE.Mesh(this.beam, glow), new THREE.Mesh(this.navigation.geometry, this.navigation.material), ...(badge ? [new THREE.Sprite(badge)] : []), ...this.labels.warmupObjects()];
