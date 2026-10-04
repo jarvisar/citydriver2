@@ -51,6 +51,32 @@ test('a driver can save directly for Formula, and malformed saves cannot unlock 
   unavailable.credit(carPrice('taxiGT')); assert.equal(unavailable.buy('taxiGT'), true); assert.equal(unavailable.saved, false);
 });
 
+test('fleet saves ignore malformed and inherited shop IDs without losing valid progress', () => {
+  const disk = storage(), malformed = { toString: null };
+  const invalid = [malformed, {}, ['taxiGT'], null, 42, 'constructor', '__proto__', 'toString'];
+  for (const id of invalid) assert.equal(carPrice(id), null);
+  for (const version of [1, 2]) {
+    disk.setItem(FLEET_KEY, JSON.stringify({ version, balance: 321, owned: ['taxiGT', ...invalid],
+      tried: ['helicopter', ...invalid], selected: malformed, goal: malformed, paint: malformed }));
+    const fleet = new TaxiFleet(disk);
+    assert.equal(fleet.balance, 321);
+    assert.deepEqual([...fleet.owned], ['taxi', 'coast', 'taxiGT']);
+    assert.equal(fleet.selected, 'taxi'); assert.equal(fleet.goal, null); assert.equal(fleet.paint, null);
+    assert.deepEqual([...fleet.tried], version === 2 ? ['helicopter'] : []);
+    assert.equal(fleet.buy(malformed), false); assert.equal(fleet.buy('constructor'), false);
+    assert.equal(fleet.setGoal(malformed), false); assert.equal(fleet.testDrive(malformed), false);
+    assert.equal(fleet.credit(1), true);
+    assert.equal(new TaxiFleet(disk).balance, 322);
+  }
+  const fleet = new TaxiFleet(disk);
+  disk.setItem(FLEET_KEY, JSON.stringify({ version: 2, balance: 654, owned: ['taxiFormula', ...invalid],
+    tried: ['plane', ...invalid], selected: malformed, goal: malformed }));
+  assert.doesNotThrow(() => fleet.credit(1), 'a corrupt save from another tab is safe too');
+  assert.equal(fleet.balance, 655);
+  assert.deepEqual([...fleet.owned], ['taxi', 'coast', 'taxiFormula']);
+  assert.deepEqual([...fleet.tried], ['plane']);
+});
+
 test('the garage sells every car but the starting cab, cheapest in the traffic and dearest in the air', () => {
   for (const id of GARAGE_IDS) assert.ok(Number.isSafeInteger(GARAGE_PRICES[id]) && GARAGE_PRICES[id] >= 0, `${id} has a price`);
   assert.equal(carPrice('taxi'), 0); assert.equal(carPrice('auto'), null, 'retired cars are not for sale');

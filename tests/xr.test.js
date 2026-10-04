@@ -118,6 +118,24 @@ test('menus open in front of wherever the player is looking, level and a little 
   }
 });
 
+test('headset driving hints keep every control, including pause, inside the dashboard', () => {
+  const hints = [
+    'Right trigger: gas · Left trigger: brake · Left stick: steer · Grips: drift, boost · Y: get out · B: pause',
+    'Triggers: forward, back · Left stick: turn · Right stick or grips: up, down · Y: get out · B: pause',
+    'Left stick: walk · Right stick: look · Left grip: jump · Right grip: sprint · Y: get in · B: pause',
+    'B: pause',
+  ];
+  for (const hint of hints) {
+    const { status } = panelFixture(pauseModel()), text = [];
+    Object.defineProperty(status.hudPanel.ctx, 'fillText', { value: (value, x, y) => text.push({ value, x, y }) });
+    status.hud({ heading: 'N', place: 'Old town', weather: 'Day', hint });
+    const lines = text.filter(row => row.y > 150);
+    assert.equal(lines.map(row => row.value).join(' · '), hint, 'no control is shortened or omitted');
+    assert.ok(lines.length <= 2 && lines.every(row => row.y <= 208), 'both hint lines fit the existing hint strip');
+    assert.equal(status.hudPanel.height, 212, 'the dashboard keeps its footprint');
+  }
+});
+
 test('pointer input must release after a frame-free visibility interruption', () => {
   const model = { id: 'pause', title: 'Paused', items: [item('Resume', { primary: true })] };
   const { rig, status } = panelFixture(model);

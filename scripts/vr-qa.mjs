@@ -32,6 +32,9 @@ try {
     localStorage.setItem('citydriver.camera', JSON.stringify({ version: 2, profiles: { driving: { view: 1, zoom: 2 }, walking: { view: 3, zoom: .8 } } }));
   });
   const wait = ms => page.waitForTimeout(ms);
+  // Software rendering can take longer than a whole short button press.
+  // Both edges need a sampled frame, including the neutral frame between them.
+  const frames = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const get = () => page.evaluate(() => {
     const g = window.__citydriver, v = g.vehicle, r = g.rendering;
     return { active: g.vr.active, visible: g.vr.visible, started: g.started, paused: g.paused, mode: g.gameMode,
@@ -48,11 +51,13 @@ try {
   });
   const set = async (hand, id, value) => {
     await page.evaluate(([hand, id, value]) => window.__xr.controllers[hand].updateButtonValue(id, value), [hand, id, value]);
+    await frames();
     await wait(130);
   };
   const press = async (hand, id) => { await set(hand, id, 1); await set(hand, id, 0); };
   const axes = async (hand, x, y) => {
     await page.evaluate(([hand, x, y]) => window.__xr.controllers[hand].updateAxes('thumbstick', x, y), [hand, x, y]);
+    await frames();
     await wait(180);
   };
   const neutral = async () => {
@@ -64,6 +69,7 @@ try {
         c.updateAxes('thumbstick', 0, 0);
       }
     });
+    await frames();
     await wait(250);
   };
   const aim = async (label, hand = 'right', hands = false) => {
@@ -99,6 +105,7 @@ try {
       g.beginFree(); g.chooseCar(id); g.vehicle.reset(); g.input.clear();
       g.rendering.setView(2); g.rendering.snap(); g.traffic.setEnabled(false, g.vehicle);
     }, id);
+    await frames();
     await wait(350);
   };
   const shot = async name => {
@@ -163,8 +170,31 @@ try {
     await press('left', 'y-button'); s = await get(); check('Y gets out in free drive', s.walker && !s.paused && s.hud);
     await axes('left', 0, -.8); await set('right', 'squeeze', 1); s = await get();
     check('walking analog stick and sprint are mapped', s.input.moveY > .7 && s.input.sprint);
-    await axes('left', 0, 0); await set('right', 'squeeze', 0); await set('left', 'squeeze', 1); s = await get();
-    check('left grip jumps on foot', !s.grounded); await set('left', 'squeeze', 0);
+    await axes('left', 0, 0); await set('right', 'squeeze', 0);
+    await page.waitForFunction(() => {
+      const walker = window.__citydriver.vehicle.walker;
+      return walker?.grounded && !walker.down;
+    });
+    // Observe the rise inside the page: a delayed automation round trip can
+    // otherwise inspect the walker after a perfectly good jump has landed.
+    const jump = await page.evaluate(() => new Promise(resolve => {
+      const g = window.__citydriver, walker = g.vehicle.walker, start = walker.y;
+      let peak = start, frame, timer;
+      const finish = ok => {
+        clearTimeout(timer); cancelAnimationFrame(frame);
+        window.__xr.controllers.left.updateButtonValue('squeeze', 0);
+        resolve({ ok, start, peak, grounded: walker.grounded, input: g.input.xr.state.jump });
+      };
+      const sample = () => {
+        peak = Math.max(peak, walker.y);
+        if (g.input.xr.state.jump && !walker.grounded && peak > start + .05) finish(true);
+        else frame = requestAnimationFrame(sample);
+      };
+      window.__xr.controllers.left.updateButtonValue('squeeze', 1);
+      timer = setTimeout(() => finish(false), 1500);
+      frame = requestAnimationFrame(sample);
+    }));
+    check('left grip jumps on foot', jump.ok, jump); await wait(130);
     await shot('02-stereo-walking');
     await stage(); await page.keyboard.down('KeyW'); await wait(250);
     check('keyboard gas cannot move VR vehicle', Math.abs((await get()).speed) < .2); await page.keyboard.up('KeyW');
@@ -281,7 +311,10 @@ try {
     for (const id of ['helicopter', 'plane']) {
       await stage(id); const before = await get(); await set('right', 'trigger', 1); await set('left', 'squeeze', 1); await wait(2200); let s = await get();
       if (s.y <= before.y + 1) {
-        await page.waitForFunction(y => window.__citydriver.vehicle.groundedPosition.y > y + 1, before.y, { timeout: 15000 }); s = await get();
+        // FrameClock caps a slow frame at 0.1 s. At software-rendered stereo
+        // rates, a few seconds of takeoff need much longer on the wall clock.
+        await page.waitForFunction(y => window.__citydriver.vehicle.groundedPosition.y > y + 1, before.y,
+          { timeout: process.env.SOFTWARE || process.platform !== 'win32' ? 60000 : 15000 }); s = await get();
       }
       check(`${id} takes off with gas and left grip`, s.pilot && s.y > before.y + 1 && s.input.climb === 1, { before: before.y, after: s.y });
       await set('left', 'squeeze', 0); await axes('right', 0, -1); check(`${id} right stick climbs`, (await get()).input.climb === 1);

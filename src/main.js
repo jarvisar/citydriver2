@@ -33,7 +33,7 @@ import { LooseProps } from './loose-props.js';
 import { cityDistrict, citySoundscape, cityHeight, nearestLanePose, journeyStart, lanePose, roadAt, surfaceAt, waterAt } from './world/city-route.js';
 import { CITY } from './world/city.js';
 import { signSheet } from './world/city-signs.js';
-import { loadingStage } from './loading-status.js';
+import { loadingStage, startupErrorMessage } from './loading-status.js';
 import { navGraph } from './world/nav-graph.js';
 import { CityGuide, placePay } from './city-guide.js';
 import { CITY_PLACES } from './world/city-places.js';
@@ -67,7 +67,7 @@ import { FrameClock, FramePacer } from './timing.js';
 import { setupControlHelp, controlHelpDismissed, updateControlHelp } from './control-help.js';
 import { BrowserVR } from './vr.js';
 import { VRStatus } from './vr-status.js';
-import { moveMenuFocus, confirmMenuFocus, scrollMenu } from './menu-focus.js';
+import { moveMenuFocus, confirmMenuFocus, scrollMenu, handleMenuKey } from './menu-focus.js';
 import { setupMenuIdle } from './menu-idle.js';
 import { OnceHints, readHintFlags } from './hud-dom.js';
 
@@ -123,6 +123,8 @@ const toast = (message, tone = '') => {
 
 async function boot() {
   try {
+    // Without the fixed app layout, menus and controls are not usable.
+    if (getComputedStyle($('#app')).position !== 'fixed') throw new Error('Game styles could not load');
     // `?ao=0` turns soft shading off for this visit, whatever was saved or detected.
     const graphics = new Graphics({ ambientOcclusion: new URLSearchParams(window.location.search).get('ao') === '0' ? false : null });
     // How much of the route stays built is a quality setting too, so it has to
@@ -1455,14 +1457,18 @@ async function boot() {
       });
     }
     window.addEventListener('keydown', event => {
+      const menu = openChooser() ?? openPauseMenu();
+      if (menu) handleMenuKey(menu, event);
+    }, { capture: true });
+    window.addEventListener('keydown', event => {
       if (event.key !== 'Enter' || event.ctrlKey || event.metaKey || event.altKey || event.defaultPrevented) return;
       if (started || paused || changingJourney || document.querySelector('dialog[open]')) return;
       if (event.target.closest?.('button, a, input, select, textarea, [contenteditable]') && event.target !== $('#start')) return;
       event.preventDefault();
       if (!event.repeat) start();
     });
-    document.addEventListener('visibilitychange', () => { if (vr.active || vr.pending) return; audio.setHidden(document.hidden); if (document.hidden) { if (openChooser() || changingJourney) journeyWasPaused = true; if (started) setPaused(true); input.clear(); } frameClock.suspend(); });
-    window.addEventListener('blur', () => { if (vr.active || vr.pending) return; audio.setHidden(true); if (openChooser() || changingJourney) journeyWasPaused = true; if (started) setPaused(true); });
+    document.addEventListener('visibilitychange', () => { if (vr.active || vr.pending) return; audio.setHidden(document.hidden); if (document.hidden) { if (openChooser() || changingJourney) journeyWasPaused = true; if (started && !paused) setPaused(true); input.clear(); } frameClock.suspend(); });
+    window.addEventListener('blur', () => { if (vr.active || vr.pending) return; audio.setHidden(true); if (openChooser() || changingJourney) journeyWasPaused = true; if (started && !paused) setPaused(true); });
     window.addEventListener('focus', () => audio.setHidden(hidden()));
     window.addEventListener('pointerdown', () => audio.unlock(), { capture: true, passive: true });
     window.addEventListener('keydown', () => audio.unlock(), { capture: true });
@@ -1477,7 +1483,7 @@ async function boot() {
       if (carDialog.open) renderGarage();
     });
     $('#scene').addEventListener('webglcontextlost', event => { event.preventDefault(); setPaused(true); toast('Graphics lost. Reload to restart.'); });
-    $('#scene').addEventListener('webglcontextrestored', () => { needsRender = true; });
+    $('#scene').addEventListener('webglcontextrestored', () => { needsRender = true; toast('Graphics restored. Resume when ready.'); });
     const qualityButtons = [...document.querySelectorAll('[data-quality]')];
     const graphicsToggle = $('#graphics-toggle'), graphicsPanel = $('#graphics-settings');
     graphicsToggle.addEventListener('click', () => {
@@ -1947,7 +1953,7 @@ async function boot() {
           vrStatus.point(xrFrame, renderer.xr.getReferenceSpace(), rendering.vrCamera.rig, vr.visible && !changingJourney);
           vrStatus.update(vr.active ? currentMenuModel() : null);
         }); needsRender = false;
-        if (!sceneReady) { sceneReady = true; $('#loading').classList.add('loaded'); }
+        if (!sceneReady) { sceneReady = true; $('#loading').classList.add('loaded'); $('#error').hidden = true; }
       }
       updateFPS(timestamp, rendered);
     }
@@ -1982,6 +1988,6 @@ async function boot() {
     if (import.meta.env.DEV) window.__citydriver = { seed: SEED, city: CITY, nav: navGraph(), lanePose, roadAt, nearestLanePose, vehicle, onFoot, pigeons, traffic, props, nightLighting, weather, autodrive, audio, graphics, vr, vrStatus, currentMenuModel, stunts, keepDriving, endRun, cityGuide, taxi, taxiView, beginTaxi, beginFree, demolition, demolitionView, beginDemolition, testDrive, jetTrial, startTestDrive, buyCar, get gameMode() { return gameMode; }, world, rendering, input, action,
       // (review kits stage any car through this, so it hands the car over first, as the garage once did)
       chooseCar: id => { if (CARS[id]) taxi.fleet.owned.add(id); chooseCar(id); }, applyPaint, get carId() { return carId; }, get paint() { return paint; }, get journey() { return journey; }, get changingJourney() { return changingJourney; }, get paused() { return paused; }, get started() { return started; } };
-  } catch (error) { console.error('Could not start Citydriver:', error); $('#loading').classList.add('loaded'); $('#error').hidden = false; }
+  } catch (error) { console.error('Could not start Citydriver:', error); $('#loading').classList.add('loaded'); $('#error p').textContent = startupErrorMessage(error); $('#error').hidden = false; $('#error button').focus(); }
 }
 boot();

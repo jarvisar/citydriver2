@@ -95,7 +95,7 @@ Zoom all the way in to enter first person. Zoom out to return to a close third-p
 
 V or B / Circle cycles through Far, Close, Third person and First person.
 
-On tablets, the camera buttons under the pause button zoom and recenter the view. Phones leave them out to keep the screen clear, and the camera recenters by itself after you look around. On phones the reset button only shows up in a run, after the car has been stopped for a few seconds. Pause → Display → Camera has view, distance, sensitivity and vertical inversion settings. Mouse, touch and controller each keep their own look settings; driving and walking remember separate views and distances. Recenter keeps the chosen distance. F3 toggles the FPS counter.
+On tablets, the camera buttons under the pause button zoom and recenter the view. Phones leave them out to keep the screen clear, and the camera recenters by itself after you look around. On phones the reset button appears after the car has been stopped for three seconds, in free drive or a run. Pause → Display → Camera has view, distance, sensitivity and vertical inversion settings. Mouse, touch and controller each keep their own look settings; driving and walking remember separate views and distances. Recenter keeps the chosen distance. F3 toggles the FPS counter.
 
 If holding Drift gets tiring, turn on Tap to drift in the pause menu. Then one tap starts holding the button and the next one lets go. Controllers, VR controllers and Android phones vibrate for drift sparks, boosts, crashes and hard landings. Vibration in the pause menu turns it off.
 

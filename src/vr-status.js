@@ -482,9 +482,13 @@ export class VRStatus {
     }
     let height = H;
     if (model.hint) {
-      ctx.font = font(23); const hw = Math.min(W - 40, ctx.measureText(model.hint).width + 44);
+      ctx.font = font(23);
+      const hints = wrap(ctx, model.hint, W - 76), size = hints.length > 1 ? 21 : 23;
+      ctx.font = font(size);
+      const hw = Math.min(W - 40, Math.max(...hints.map(text => ctx.measureText(text).width)) + 44);
       box(ctx, (W - hw) / 2, H + 14, hw, 44, 22, UI.glass, UI.edge);
-      line(model.hint, W / 2, H + 44, 23, 400, UI.text, hw - 36, 'center');
+      // Keep the same dashboard footprint, including the final pause control.
+      hints.forEach((text, i) => line(text, W / 2, hints.length > 1 ? H + 31 + i * 21 : H + 44, size, 400, UI.text, hw - 36, 'center'));
       height = H + 60;
     }
     panel.crop(W, height + 2);

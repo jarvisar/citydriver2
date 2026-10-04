@@ -4,13 +4,16 @@ const FILES = __PRECACHE_FILES__;
 const SCOPE = self.registration.scope;
 const PREFIX = `citydriver:${SCOPE}:`;
 const CACHE = `${PREFIX}${VERSION}`;
+const PREVIOUS = new URL('.previous-caches', SCOPE).href;
 const urls = FILES.map(file => new URL(file, SCOPE).href);
 
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
+    const previous = (await caches.keys()).filter(name => name.startsWith(PREFIX) && name !== CACHE);
     const cache = await caches.open(CACHE);
     try {
       await cache.addAll(urls.map(url => new Request(url, { cache: 'reload' })));
+      await cache.put(PREVIOUS, new Response(JSON.stringify(previous)));
     } catch (error) {
       await caches.delete(CACHE);
       throw error;
@@ -26,7 +29,11 @@ self.addEventListener('message', event => {
 
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
-    for (const name of await caches.keys()) {
+    // A newer worker can already be downloading while this one activates.
+    // Only remove caches that preceded our install. Persist the list because
+    // the worker may have stopped between downloading and activation.
+    const previous = await (await caches.open(CACHE)).match(PREVIOUS);
+    for (const name of previous ? await previous.json() : []) {
       if (name.startsWith(PREFIX) && name !== CACHE) await caches.delete(name);
     }
     await self.clients.claim();
@@ -43,7 +50,8 @@ self.addEventListener('fetch', event => {
   const cacheKey = isAppPage ? new URL('index.html', SCOPE).href : url.href;
   if (!urls.includes(cacheKey)) return;
   event.respondWith((async () => {
-    const cache = await caches.open(CACHE);
-    return (await cache.match(cacheKey)) || fetch(request);
+    // An old tab's request can finish after activation removed its cache.
+    // Reading it must not recreate the discarded version.
+    return (await caches.match(cacheKey, { cacheName: CACHE })) || fetch(request);
   })());
 });

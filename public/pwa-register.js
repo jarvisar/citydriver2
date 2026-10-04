@@ -3,7 +3,7 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
   const workerUrl = new URL('sw.js', document.currentScript.src);
   const CHECK_EVERY = 10 * 60 * 1000;
   // A first visit gets a controller too, which is not an update.
-  const hadController = Boolean(navigator.serviceWorker.controller);
+  let controller = navigator.serviceWorker.controller;
   let reloading = false;
   let shown = false;
 
@@ -46,8 +46,10 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
       worker?.addEventListener('statechange', () => { if (worker.state === 'installed') ready(); });
     });
     navigator.serviceWorker.addEventListener('controllerchange', () => {
+      const previous = controller;
+      controller = navigator.serviceWorker.controller;
       if (reloading) location.reload();
-      else if (hadController) showUpdate(registration);
+      else if (previous && controller !== previous) showUpdate(registration);
     });
 
     // The browser only looks for a new sw.js on navigation, so keep asking

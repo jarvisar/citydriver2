@@ -9,6 +9,12 @@ export const LOADING_STAGES = {
   skyline: 'Loading skyline…', graphics: 'Compiling shaders…',
 };
 
+export function startupErrorMessage(error) {
+  return /Error creating WebGL context|WebGL 1 is not supported/i.test(error?.message ?? '')
+    ? 'WebGL 2 required. Update your browser and enable hardware acceleration.'
+    : 'The game could not finish loading. Select Try again to reload.';
+}
+
 export function loadingStage(stage) {
   const line = globalThis.document?.getElementById('loading-status');
   if (!line) return Promise.resolve();

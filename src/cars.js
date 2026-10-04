@@ -185,7 +185,7 @@ export const GARAGE_PRICES = {
   helicopter: 90000, plane: 140000,
   jetpack: 60000,
 };
-export const carPrice = id => GARAGE_PRICES[id] ?? null;
+export const carPrice = id => typeof id === 'string' && Object.hasOwn(GARAGE_PRICES, id) ? GARAGE_PRICES[id] : null;
 // What the garage sells that isn't a vehicle, in its own section. The
 // jetpack works on foot (see Walker): until it is bought, a held jump in
 // the air does nothing more. The parachute stays free.

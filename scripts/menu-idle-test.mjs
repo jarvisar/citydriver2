@@ -5,7 +5,7 @@ import { createServer } from 'vite';
 
 const out = '.scratch/menu-idle';
 await mkdir(out, { recursive: true });
-const server = await createServer({ server: { port: 0, host: '127.0.0.1', watch: null, hmr: false }, logLevel: 'error' });
+const server = await createServer({ cacheDir: '.scratch/vite-menu-idle-test', server: { port: 0, host: '127.0.0.1', watch: null, hmr: false }, logLevel: 'error' });
 await server.listen();
 let browser;
 try {
@@ -33,7 +33,7 @@ try {
     });
     const advance = async ms => {
       await page.evaluate(ms => { window.idleTestElapsed += ms; }, ms);
-      await page.waitForTimeout(100);
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     };
     const state = () => page.evaluate(() => ({
       idle: document.querySelector('#app').classList.contains('menu-idle'),
@@ -89,7 +89,9 @@ try {
       window.idleTestPad = { index: 0, connected: true, mapping: 'standard', axes: [0, 0, 0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })) };
       navigator.getGamepads = () => [window.idleTestPad];
     });
-    await page.waitForTimeout(150);
+    // Connecting focuses Start and resets the idle delay. Settle that input
+    // before advancing the clock, even when loading makes a frame slow.
+    await page.waitForFunction(() => window.__citydriver.input.gamepad.connected);
     await advance(60_100);
     assert.equal((await state()).idle, true, 'resting controller does not prevent idle');
     await page.evaluate(() => { window.idleTestPad.buttons[0] = { pressed: true, value: 1 }; });

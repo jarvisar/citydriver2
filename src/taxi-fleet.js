@@ -12,7 +12,7 @@ export const TAXI_FLEET = [
   { id: 'taxiFormula', title: 'The ultimate fare', description: 'Open wheels and formula power, with the best grip in the fleet.' },
 ].map(cab => ({ ...cab, price: carPrice(cab.id) }));
 const validMoney = value => Number.isSafeInteger(value) && value >= 0;
-const isCab = id => Boolean(CARS[id]?.taxi);
+const isCab = id => typeof id === 'string' && Object.hasOwn(CARS, id) && Boolean(CARS[id].taxi);
 // What each entry of the Konami code pays
 export const KONAMI_PAY = 10000;
 

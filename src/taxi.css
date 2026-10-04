@@ -224,6 +224,9 @@ body[data-controller=true] #city-map-open svg { display: none; }
   #taxi-buttons button { width: 64px; min-width: 64px; }
   #taxi-buttons { gap: 8px; }
   .taxi-task { gap: 7px; padding: 7px 9px; }
+  .taxi-task-heading { gap: 5px; }
+  #taxi-stage { flex-shrink: 0; }
+  #taxi-timer { padding-inline: 6px; }
   .taxi-dash { left: var(--ui-left); bottom: calc(var(--ui-bottom) + 82px); transform: none; }
   #taxi-speed { font-size: 20px; }
   .city-guide[data-expanded=true], body:not([data-mode=free]) .city-guide[data-expanded=true] { --map-bottom: calc(var(--ui-bottom) + 132px); width: 208px; }
@@ -409,9 +412,11 @@ body[data-controller=true] #city-map-open svg { display: none; }
   #app .city-guide[data-expanded=true] { grid-template-columns: minmax(0, 140px) minmax(min-content, 1fr); }
 }
 /* A narrow one keeps the stage, pill and money on the task card's first line */
-@media (any-pointer: coarse) and (max-height: 560px) and (orientation: landscape) and (max-width: 600px) {
+@media (max-height: 560px) and (orientation: landscape) and (max-width: 600px) {
   .taxi-task { gap: 6px; padding: 7px 8px; grid-template-columns: 32px minmax(0, 1fr); }
-  .taxi-task-heading { gap: 5px; }
+  .taxi-task-heading { gap: 2px; }
+  #taxi-stage { flex-shrink: 0; font-size: 12px; letter-spacing: 0; }
+  #taxi-timer { padding-inline: 2px; }
 }
 /* The results card keeps to the screen, buttons and all, with the balance under it */
 #taxi-result-bank { color: #ffd238; line-height: 1.6; }

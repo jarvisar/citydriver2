@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { chromium } from '@playwright/test';
+import { chromium, expect } from '@playwright/test';
 import { build, createServer as createViteServer } from 'vite';
 
 const launchOptions = {
@@ -12,6 +12,29 @@ const launchOptions = {
 };
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
   '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.svg': 'image/svg+xml' };
+// This Playwright build treats an async waitForFunction predicate as truthy.
+const waitForPage = (page, predicate) => expect.poll(() => page.evaluate(predicate), { timeout: 60_000 }).toBe(true);
+
+async function waitForAutomaticActivation(context, page, scriptURL) {
+  // An uncontrolled observer waits while all app clients are closed. Reopening
+  // the game sooner can hold the old worker alive and block natural activation.
+  const observer = await context.newPage();
+  const session = await context.newCDPSession(observer), versions = new Map();
+  session.on('ServiceWorker.workerVersionUpdated', ({ versions: changed }) => {
+    for (const version of changed) versions.set(version.versionId, version);
+  });
+  try {
+    await session.send('ServiceWorker.enable');
+    const installed = () => [...versions.values()].find(version => version.scriptURL === scriptURL && version.status === 'installed');
+    await expect.poll(() => Boolean(installed()), { timeout: 60_000 }).toBe(true);
+    const candidate = installed();
+    await page.close();
+    await expect.poll(() => versions.get(candidate.versionId)?.status, { timeout: 60_000 }).toBe('activated');
+  } finally {
+    await session.detach();
+    await observer.close();
+  }
+}
 
 async function checkProduction(base) {
   const outDir = path.resolve('.artifacts', base === '/' ? 'pwa-root' : 'pwa-subpath');
@@ -28,6 +51,8 @@ async function checkProduction(base) {
       if (relative === 'sw.js' && version) {
         content = content.toString().replace(/const VERSION = "[^"]+";/, `const VERSION = "${version}";`);
       }
+      // Fixture-only identity: all real versions have the same script URL.
+      if (relative === 'sw.js') content = content.toString() + '\nself.addEventListener("message", event => { if (event.data === "test-version") event.ports[0].postMessage(VERSION); });';
       res.writeHead(200, { 'Content-Type': mime[path.extname(filename)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
       res.end(content);
     } catch { res.writeHead(404).end(); }
@@ -40,6 +65,13 @@ async function checkProduction(base) {
   // Detailed graphics are exercised separately by the city browser check.
   await context.addInitScript(() => {
     try { localStorage.setItem('citydriver.graphics', JSON.stringify({ mode: 'basic' })); } catch { /* about:blank has no storage */ }
+    window.testWorkerVersion = worker => !worker ? Promise.resolve(null) : new Promise(resolve => {
+      const channel = new MessageChannel();
+      const finish = version => { clearTimeout(timer); channel.port1.close(); resolve(version); };
+      const timer = setTimeout(() => finish(null), 1000);
+      channel.port1.onmessage = event => finish(event.data);
+      worker.postMessage('test-version', [channel.port2]);
+    });
   });
   context.setDefaultNavigationTimeout(60_000);
   context.setDefaultTimeout(60_000);
@@ -105,18 +137,18 @@ async function checkProduction(base) {
     const oldCache = await page.evaluate(async () => (await caches.keys()).find(name => name.startsWith('citydriver:')));
     version = 'test-update';
     await page.evaluate(async () => (await navigator.serviceWorker.getRegistration()).update());
-    await page.waitForFunction(async () => Boolean((await navigator.serviceWorker.getRegistration()).waiting));
+    await waitForPage(page, async () => Boolean((await navigator.serviceWorker.getRegistration()).waiting));
     assert.ok((await page.evaluate(() => caches.keys())).includes(oldCache), 'Active version stays cached during play');
     await page.locator('#pause-overlay .update-notice').waitFor({ state: 'attached' });
     assert.equal(await page.locator('.update-notice').first().isVisible(), false, 'No update notice over a drive');
     await page.keyboard.press('KeyP');
     await page.locator('#pause-overlay .update-notice button').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#welcome .update-notice').count(), 1);
-    await page.close();
+    await waitForAutomaticActivation(context, page, new URL('sw.js', url).href);
     page = await context.newPage();
     console.log(`Checking ${base}: activate the waiting update after closing the game`);
     await page.goto(url, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(async () => {
+    await waitForPage(page, async () => {
       const names = await caches.keys();
       return names.some(name => name.endsWith(':test-update')) && names.filter(name => name.startsWith('citydriver:')).length === 1;
     });
@@ -160,11 +192,22 @@ async function checkProduction(base) {
     await context.setOffline(false);
     version = 'test-update-2';
     await page.evaluate(async () => (await navigator.serviceWorker.getRegistration()).update());
+    // An earlier activation can leave its Reload notice on this page. Wait
+    // for this download before pressing it, rather than reloading the old one.
+    await waitForPage(page, async () => {
+      const registration = await navigator.serviceWorker.getRegistration();
+      return registration.waiting?.state === 'installed' && await window.testWorkerVersion(registration.waiting) === 'test-update-2';
+    });
     const reload = page.locator('#pause-overlay .update-notice button');
     await reload.waitFor({ state: 'visible' });
     await page.screenshot({ path: path.resolve('.artifacts', base === '/' ? 'pwa-update.png' : 'pwa-update-subpath.png') });
     await Promise.all([page.waitForEvent('load'), reload.click()]);
+    await waitForPage(page, async () => await window.testWorkerVersion(navigator.serviceWorker.controller) === 'test-update-2');
     await page.waitForFunction(() => document.querySelector('#loading.loaded') && document.querySelector('#error').hidden);
+    await waitForPage(page, async () => {
+      const names = (await caches.keys()).filter(name => name.startsWith('citydriver:'));
+      return names.length === 1 && names[0].endsWith(':test-update-2');
+    });
     const names = (await page.evaluate(() => caches.keys())).filter(name => name.startsWith('citydriver:'));
     assert.deepEqual(names.map(name => name.split(':').pop()), ['test-update-2']);
     assert.equal(await page.locator('.update-notice').count(), 0);
@@ -180,7 +223,7 @@ if (!process.argv.includes('--dev-only')) {
   await checkProduction('/');
   await checkProduction('/citydriver/');
 }
-const dev = await createViteServer({ server: { port: 0, host: '127.0.0.1' } });
+const dev = await createViteServer({ cacheDir: '.scratch/vite-pwa-test', server: { port: 0, host: '127.0.0.1' } });
 try {
   await dev.listen();
   const html = await (await fetch(`http://127.0.0.1:${dev.httpServer.address().port}/`)).text();

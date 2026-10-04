@@ -10,6 +10,35 @@ export function menuTargets(root) {
     && element.checkVisibility?.({ visibilityProperty: true }) !== false);
 }
 
+export function handleMenuKey(root, event) {
+  if (!root || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return false;
+  let targets, next;
+  if (event.key === 'Tab') {
+    targets = menuTargets(root);
+    if (!targets.length) return false;
+    const index = targets.indexOf(document.activeElement);
+    next = targets[index < 0 ? event.shiftKey ? targets.length - 1 : 0
+      : (index + (event.shiftKey ? -1 : 1) + targets.length) % targets.length];
+  } else {
+    const radio = event.target.closest?.('button[role="radio"]');
+    const group = radio?.closest('[role="radiogroup"]');
+    if (!group || !root.contains(group)) return false;
+    targets = menuTargets(group).filter(element => element.matches('button[role="radio"]'));
+    const index = targets.indexOf(radio);
+    if (index < 0) return false;
+    if (event.key === 'Home') next = targets[0];
+    else if (event.key === 'End') next = targets.at(-1);
+    else if (['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'].includes(event.key)) {
+      const step = ['ArrowLeft', 'ArrowUp'].includes(event.key) ? -1 : 1;
+      next = targets[(index + step + targets.length) % targets.length];
+    } else return false;
+  }
+  event.preventDefault(); event.stopPropagation();
+  next.focus();
+  if (event.key !== 'Tab') next.click();
+  return true;
+}
+
 // Left and right change a slider or a list in place, since each fills its own
 // row. The custom paint well sits in a row of swatches, so left and right pass
 // it by and A turns its hue instead: no native picker is ever needed.

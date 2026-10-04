@@ -17,7 +17,7 @@ export const starText = count => STAR.repeat(count) + NO_STAR.repeat(3 - count);
 
 export class JumpBook {
   constructor(storage = null) {
-    this.storage = storage; this.best = new Map();
+    this.storage = storage; this.saved = Boolean(storage); this.best = new Map();
     this.records = { longest: 0, air: 0, turns: 0, jumps: 0 };
     // The save as this tab last read or wrote it, so another tab's records
     // are picked up before a landing changes them (see TaxiFleet.sync)
@@ -25,6 +25,7 @@ export class JumpBook {
     this.sync();
   }
   sync() {
+    if (!this.saved) return;
     try {
       const text = this.storage?.getItem(KEY) ?? null;
       if (text === this.seen) return;
@@ -35,9 +36,10 @@ export class JumpBook {
   }
   save() {
     try {
+      if (!this.storage) throw new Error('Storage unavailable');
       const text = JSON.stringify(this.records);
-      this.storage?.setItem(KEY, text); if (this.storage) this.seen = text;
-    } catch { /* Optional storage. */ }
+      this.storage.setItem(KEY, text); this.seen = text; this.saved = true;
+    } catch { this.saved = false; }
   }
   // The city's named jumps: loading ramps and the river jump (mounds have no names)
   get sites() { return cityJumps().sites.filter(site => site.stars); }

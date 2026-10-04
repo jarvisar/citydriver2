@@ -198,6 +198,23 @@ test('free drive\'s book of jumps: stars by distance, a best for each jump, and 
   assert.ok(book.records.longest >= site.stars[2] && book.records.turns === 1);
 });
 
+test('jump records keep unsaved landings when another tab saves, then retry', () => {
+  let text = JSON.stringify({ longest: 10, air: 1, turns: 0, jumps: 10 }), fail = false;
+  const disk = { getItem: () => text, setItem(key, value) { if (fail) throw Error('Quota exceeded'); text = value; } };
+  const a = new JumpBook(disk), b = new JumpBook(disk);
+  const jump = distance => ({ distance, air: 1.2, turns: 0, landing: 'clean' });
+  fail = true; a.land(jump(100));
+  assert.equal(a.saved, false); assert.equal(a.records.longest, 100);
+  fail = false; b.land(jump(50));
+  a.land(jump(30));
+  assert.equal(a.saved, true);
+  assert.equal(a.records.longest, 100, 'the landing held only in memory survives another tab');
+  assert.equal(new JumpBook(disk).records.longest, 100, 'the next landing retries the save');
+  b.land(jump(60));
+  assert.equal(b.records.longest, 100, 'successful saves still synchronize other tabs');
+  assert.equal(b.records.jumps, 13);
+});
+
 test('a jump with a fare aboard tips as a Crazy jump, and a spin out loses the combo', () => {
   const run = new TaxiRun(null);
   Object.assign(run, { status: 'driving', fare: { mood: null, passengers: 1 }, onboard: 1, combo: 2, crashCooldown: 0 });
