@@ -297,7 +297,6 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
       // A render target would select different tone-mapping/output programs.
       const drawScene = new THREE.Scene(); drawScene.add(warmup);
       drawScene.environment = scene.environment;
-      scene.traverseVisible(object => { if (object.isLight) drawScene.add(object.clone()); });
       warmup.traverse(object => { object.visible = true; object.frustumCulled = false; });
       const viewport = renderer.getViewport(new THREE.Vector4()), scissor = renderer.getScissor(new THREE.Vector4());
       const scissorTest = renderer.getScissorTest(), target = renderer.getRenderTarget();
@@ -306,9 +305,18 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
       const xrEnabled = renderer.xr.enabled, autoClear = renderer.autoClear;
       try {
         renderer.xr.enabled = false; renderer.autoClear = true;
-        renderer.shadowMap.autoUpdate = renderer.shadowMap.needsUpdate = false;
         renderer.setRenderTarget(null);
         renderer.setViewport(0, 0, 1, 1); renderer.setScissor(0, 0, 1, 1); renderer.setScissorTest(true);
+        // Allocate real shadow maps before the stand-ins sample them. A null
+        // map binds a colour fallback, which is invalid for a shadow sampler.
+        renderer.shadowMap.needsUpdate = true; renderer.render(scene, lens);
+        renderer.shadowMap.autoUpdate = renderer.shadowMap.needsUpdate = false;
+        scene.traverseVisible(object => {
+          if (!object.isLight) return;
+          const light = object.clone();
+          if (light.shadow) { light.shadow.map = object.shadow.map; light.shadow.matrix.copy(object.shadow.matrix); }
+          drawScene.add(light);
+        });
         for (const variant of [null, drivingFog]) { drawScene.fog = variant; renderer.render(drawScene, lens); }
         // Finish the queued draws before loading clears, rather than merely
         // moving the stall to the next frame.

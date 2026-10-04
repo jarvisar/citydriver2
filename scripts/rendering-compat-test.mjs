@@ -110,6 +110,75 @@ try {
     if (replacement === first || replacement.usedTimes !== 2) throw new Error('Restored context did not retain its new program');
     mesh.material.dispose(); mesh.geometry.dispose(); renderer.dispose(); renderer.forceContextLoss();
   });
+  if (source === '/src') await page.evaluate(async () => {
+    const module = await fetch('/src/rendering.js').then(response => response.text());
+    const THREE = await import(module.match(/import \* as THREE from ["']([^"']+)["']/)[1]);
+    const { createRendering } = await import('/src/rendering.js');
+    const { Graphics } = await import('/src/graphics.js');
+    const { DriftEffects } = await import('/src/drift-effects.js');
+    const { LooseProps } = await import('/src/loose-props.js');
+    for (const parallel of [true, false]) {
+      const canvas = document.createElement('canvas'); canvas.style.width = canvas.style.height = '64px';
+      document.body.append(canvas);
+      const rendering = createRendering(canvas, new Graphics({ storage: null, ambientOcclusion: false, detect: () => 1 }));
+      const { renderer, scene } = rendering;
+      const effects = new DriftEffects(scene), material = new THREE.MeshStandardMaterial({ vertexColors: true });
+      const props = new LooseProps(scene, material);
+      const stands = [...effects.warmupObjects(), ...props.warmupObjects()];
+      const geometries = new Set(stands.map(mesh => mesh.geometry)), drawn = new Map();
+      const direct = renderer.renderBufferDirect;
+      renderer.renderBufferDirect = function (...args) {
+        if (geometries.has(args[2]) && args[4].count > 0) {
+          const fog = Boolean(args[1].fog), modes = drawn.get(args[2]) ?? new Set();
+          modes.add(fog); drawn.set(args[2], modes);
+        }
+        return direct.apply(this, args);
+      };
+      const has = renderer.extensions.has.bind(renderer.extensions);
+      if (!parallel) renderer.extensions.has = name => name === 'KHR_parallel_shader_compile' ? false : has(name);
+      const viewport = new THREE.Vector4(2, 3, 40, 41), scissor = new THREE.Vector4(4, 5, 30, 31);
+      renderer.setViewport(viewport); renderer.setScissor(scissor); renderer.setScissorTest(true);
+      renderer.autoClear = false; renderer.shadowMap.needsUpdate = true;
+      const fog = scene.fog, children = [...scene.children];
+      await rendering.precompile(stands);
+      const gl = renderer.getContext();
+      if (gl.getError() !== gl.NO_ERROR) throw new Error('Hidden warm-up draw failed WebGL');
+      for (const geometry of geometries) {
+        if (drawn.get(geometry)?.size !== 2) throw new Error('Effect was not drawn with and without fog during warm-up');
+      }
+      if (!renderer.getViewport(new THREE.Vector4()).equals(viewport) || !renderer.getScissor(new THREE.Vector4()).equals(scissor)
+        || !renderer.getScissorTest() || renderer.autoClear || !renderer.shadowMap.autoUpdate || !renderer.shadowMap.needsUpdate
+        || scene.fog !== fog || children.some((child, i) => scene.children[i] !== child)) throw new Error('Warm-up changed scene or renderer state');
+      if (effects.group.children.some(mesh => mesh.count !== 0) || props.bits.mesh.count || props.bits.puffs.visible) throw new Error('Warm-up activated live particles');
+      renderer.setViewport(0, 0, 64, 64); renderer.setScissorTest(false); renderer.autoClear = true;
+      const link = gl.linkProgram.bind(gl);
+      let links = 0;
+      gl.linkProgram = (...args) => { links++; return link(...args); };
+      const lens = new THREE.PerspectiveCamera(45, 1, .1, 10); lens.position.z = 5;
+      const matrix = new THREE.Matrix4();
+      for (const mesh of [...effects.group.children, props.bits.mesh, props.bits.puffs]) {
+        mesh.visible = true; mesh.count = 1; mesh.setMatrixAt(0, matrix);
+      }
+      for (const fogged of [false, true, false, true]) {
+        rendering.setView(fogged ? 2 : 0);
+        renderer.render(scene, lens);
+      }
+      const glError = gl.getError();
+      if (links !== 0 || glError !== gl.NO_ERROR) throw new Error(`First use of a warmed effect compiled ${links} new programs or failed WebGL (${glError}, parallel ${parallel})`);
+      // A failed hidden draw must restore state too.
+      const render = renderer.render, failure = new Error('injected warm-up draw failure');
+      const failedViewport = renderer.getViewport(new THREE.Vector4()), failedScissor = renderer.getScissor(new THREE.Vector4());
+      let draws = 0;
+      renderer.render = (...args) => { if (++draws === 2) throw failure; return render.apply(renderer, args); };
+      let caught;
+      try { await rendering.precompile(effects.warmupObjects()); } catch (error) { caught = error; }
+      renderer.render = render;
+      if (caught !== failure || renderer.getScissorTest() || !renderer.shadowMap.autoUpdate || renderer.shadowMap.needsUpdate || !renderer.autoClear
+        || !renderer.getViewport(new THREE.Vector4()).equals(failedViewport) || !renderer.getScissor(new THREE.Vector4()).equals(failedScissor)) throw new Error('Failed warm-up left renderer state changed');
+      effects.dispose(); props.dispose(); material.dispose(); rendering.ambientOcclusion.dispose();
+      renderer.dispose(); renderer.forceContextLoss(); canvas.remove();
+    }
+  });
   const shots = [];
   for (const shot of result.shots) {
     const pixels = Buffer.from(shot.pixels);
