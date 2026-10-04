@@ -95,6 +95,16 @@ export class FloatingLabels {
     const viewportHeight = globalThis.innerHeight || 800, viewportWidth = globalThis.innerWidth || 1280, labelHeight = pixelHeight();
     let highest = 0;
     for (const label of this.labels) if (label.age < LABEL_LIFE) highest = Math.max(highest, label.stack);
+    const slots = stackSlots();
+    // A rotation can leave more live rewards than the shorter screen can hold.
+    if (highest >= slots) {
+      const rising = this.labels.filter(label => label.age < LABEL_LIFE).sort((a, b) => a.age - b.age);
+      for (const [slot, label] of rising.entries()) {
+        if (slot < slots) label.stack = slot;
+        else { label.age = LABEL_LIFE; label.sprite.visible = false; }
+      }
+      highest = Math.min(rising.length, slots) - 1;
+    }
     const ceiling = 1 - (2 * Math.min(90, viewportHeight * .18) + labelHeight * 1.15 + highest * labelHeight * 2.24) / viewportHeight;
     for (const label of this.labels) {
       if (label.age >= LABEL_LIFE) { if (label.sprite.visible) label.sprite.visible = false; continue; }
