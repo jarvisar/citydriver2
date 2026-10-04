@@ -25,13 +25,13 @@ try {
   const report = await page.evaluate(() => {
     const a = window.__citydriver, r = a.rendering.renderer, scene = a.world.scene;
     const lights = scene.getObjectByName('night-lighting'), records = [];
-    for (let view = 0; view < 6; view++) {
+    for (let view = 0; view < 4; view++) {
       a.rendering.setView(view); a.rendering.update(a.vehicle.car, 1, a.world.origin);
       a.rendering.render();
       if (!lights.getObjectByName('street-light-pools').count) throw new Error('Street lamps missing');
       const enabled = { calls: r.info.render.calls, triangles: r.info.render.triangles, textures: r.info.memory.textures };
       lights.visible = false;
-      if (view === 5) a.vehicle.car.visible = false;
+      if (view === 3) a.vehicle.car.visible = false;
       r.render(scene, a.rendering.camera);
       a.vehicle.car.visible = true;
       const disabled = { calls: r.info.render.calls, triangles: r.info.render.triangles, textures: r.info.memory.textures };
@@ -41,7 +41,7 @@ try {
   });
   assert.ok(report.every(row => row.calls <= 4 && row.calls > 0), JSON.stringify(report));
   assert.ok(report.every(row => row.triangles <= 96 * 16 + 25 * 2), JSON.stringify(report));
-  for (const view of [2, 4, 5]) {
+  for (const view of [1, 2, 3]) {
     await page.evaluate(view => { const a = window.__citydriver; a.rendering.setView(view); a.rendering.snap(); a.rendering.update(a.vehicle.car, 2, a.world.origin); a.rendering.render(); }, view);
     await page.screenshot({ path: `.artifacts/night-lighting/view-${view}.png` });
   }

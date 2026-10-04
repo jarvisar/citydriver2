@@ -86,7 +86,7 @@ try {
         g.world.update(v.s, v.u);
         while (g.world.pending.length || g.world.distantPending.length) g.world.update(v.s, v.u);
         const r = g.rendering;
-        r.setView(4); r.snap(); v.render(0, g.world.origin); r.update(v.car, 1, g.world.origin);
+        r.setView(2); r.snap(); v.render(0, g.world.origin); r.update(v.car, 1, g.world.origin);
         r.scene.updateMatrixWorld(true);
         const found = [], m = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), scale = new THREE.Vector3(), colour = new THREE.Color();
         r.scene.traverse(o => {

@@ -10,9 +10,10 @@
 #welcome #demolition:not(.menu-secondary) .demolition-icon { width: 43px; height: 43px; flex-shrink: 0; }
 #app #welcome #demolition.menu-secondary .demolition-icon { color: #ff9433; }
 /* Free drive the same, in its teal */
-#app #welcome #free-drive:not(.menu-secondary) { margin-top: 14px; color: #17262f; background: var(--city-gloss), linear-gradient(#a4eade, #2fab9a); border-color: #1a6a5f; }
-#app #welcome #free-drive:not(.menu-secondary):hover { background: var(--city-gloss), linear-gradient(#f2fffc, #8fe0d4); box-shadow: inset 0 1px 0 #ffffffcc, 0 0 0 3px #ffffff1a, 0 2px 10px #5fd0c08c; }
-#app #welcome #free-drive:not(.menu-secondary):active { background: linear-gradient(#2fab9a, #a4eade); }
+#app #welcome #free-drive:not(.menu-secondary) { margin-top: 14px; }
+#app #welcome #free-drive:not(.menu-secondary), #app .taxi-result-card button[data-job=free] { color: #17262f; background: var(--city-gloss), linear-gradient(#a4eade, #2fab9a); border-color: #1a6a5f; text-shadow: var(--city-emboss); }
+#app #welcome #free-drive:not(.menu-secondary):hover, #app .taxi-result-card button[data-job=free]:hover { background: var(--city-gloss), linear-gradient(#f2fffc, #8fe0d4); box-shadow: inset 0 1px 0 #ffffffcc, 0 0 0 3px #ffffff1a, 0 2px 10px #5fd0c08c; }
+#app #welcome #free-drive:not(.menu-secondary):active, #app .taxi-result-card button[data-job=free]:active { background: linear-gradient(#2fab9a, #a4eade); }
 #welcome #free-drive:not(.menu-secondary) .free-icon { width: 43px; height: 43px; flex-shrink: 0; }
 #app #welcome #free-drive.menu-secondary .free-icon { color: #5fd0c0; }
 @media (max-height: 700px) {

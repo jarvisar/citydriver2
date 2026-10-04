@@ -23,7 +23,7 @@ I wanted drifting to work like the inside drift in Mario Kart Wii and Mario Kart
 - Once it's drifting the car goes round its own arc until you let go. Steering into the drift tightens it and steering out of it widens it, but centring or countersteering doesn't end it. Braking tightens it more.
 - The nose only points 6 to 16° into the corner, so the car follows the inside line instead of swinging its tail out.
 - A drift gets less than half the engine's pull and scrubs off a little speed, so holding one down a straight doesn't pay. At city speeds it isn't tighter than full lock. In the Taxi at 20 m/s it turns on about a 15 m radius, or 10 m steered in, against 9 m for full lock. From about 23 m/s a drift steered in is tighter than the tires can manage. Grippier cars drift tighter and loose ground widens it.
-- Sparks at the back wheels show the charge. They turn blue after 0.6 seconds, orange after 1.35 and pink after 2.3, steered more than halfway into the drift. Steering less than that charges at 40% of the speed.
+- Sparks at the back wheels show the charge. They turn blue after 0.42 seconds, orange after 0.945 and pink after 1.61, steered more than halfway into the drift. Steering less than that charges at 40% of the speed.
 - Letting go fires a turbo. Blue lasts 0.55 seconds, orange 1.05 and pink 1.7. Each one kicks the speed up straight away and then pushes on past the car's usual top speed, by up to 15%, 21% or 27%. A small turbo never cuts a bigger one short.
 - Dropping below 5.5 m/s or crashing loses the charge, and a crash ends a turbo too. The next drift needs a fresh press.
 - In the air the drift waits for the landing. Letting go in the air fires the turbo when the wheels touch down.

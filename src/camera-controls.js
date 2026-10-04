@@ -11,7 +11,7 @@ export function setupCameraControls(rendering, { action, chooseView, changed, in
   view.replaceChildren(...CAMERA_VIEWS.map((view, index) => new Option(view.label, index)));
   source.value = inputSource();
   function refresh() {
-    const chase = rendering.chaseView, perspective = rendering.camera.isPerspectiveCamera;
+    const chase = rendering.chaseView, firstPerson = rendering.firstPersonView, perspective = rendering.camera.isPerspectiveCamera;
     view.value = String(rendering.viewIndex);
     $('camera-summary').textContent = rendering.viewLabel;
     $('camera-profile-note').textContent = `View and distance are saved separately for driving and walking. Now: ${rendering.cameraMode === 'walking' ? 'walking' : 'driving'}.`;
@@ -24,9 +24,14 @@ export function setupCameraControls(rendering, { action, chooseView, changed, in
     $('camera-tools').hidden = !perspective;
     for (const button of document.querySelectorAll('[data-camera-action]')) {
       const name = button.dataset.cameraAction;
-      button.hidden = name !== 'recenter' && !chase;
-      button.disabled = name === 'zoomIn' ? rendering.zoomLevel <= CAMERA_ZOOM_MIN + 1e-6
-        : name === 'zoomOut' ? rendering.zoomLevel >= CAMERA_ZOOM_MAX - 1e-6 : false;
+      button.hidden = name === 'zoomOut' ? !perspective : name === 'zoomIn' && !chase;
+      button.disabled = name === 'zoomIn' ? firstPerson
+        : name === 'zoomOut' ? !firstPerson && rendering.zoomLevel >= CAMERA_ZOOM_MAX - 1e-6 : false;
+      if (name === 'zoomIn' || name === 'zoomOut') {
+        const label = name === 'zoomOut' ? firstPerson ? 'Switch to third-person view' : 'Move camera farther away'
+          : rendering.zoomLevel <= CAMERA_ZOOM_MIN + 1e-6 ? 'Switch to first-person view' : 'Move camera closer';
+        button.title = label; button.setAttribute('aria-label', label);
+      }
     }
     const settings = preferences.inputs[source.value], percent = Math.round(settings.sensitivity * 100);
     sensitivity.value = String(percent);

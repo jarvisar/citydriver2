@@ -22,7 +22,7 @@ try {
       const car = a.vehicle.car;
       document.querySelector('#pause-overlay').hidden = true;
       const original = car.position.clone(), measured = [];
-      for (let view = 0; view < 4; view++) {
+      for (let view = 0; view < 2; view++) {
         car.position.copy(original); r.setView(view); r.snap();
         let origin = a.world.origin;
         for (let step = 0; step < 20; step++) {
@@ -35,7 +35,7 @@ try {
           measured.push({ view, step, offsetX: projected.x * innerWidth / 2, offsetY: projected.y * innerHeight / 2 });
         }
       }
-      car.position.copy(original); r.setView(3); r.snap(); r.update(car, 1, a.world.origin); r.render();
+      car.position.copy(original); r.setView(1); r.snap(); r.update(car, 1, a.world.origin); r.render();
       const silhouette = r.scene.getObjectByName('car-silhouette');
       return { measured, silhouetteColor: silhouette.children[0].material.color.getHexString() };
     });

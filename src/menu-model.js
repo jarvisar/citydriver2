@@ -13,11 +13,11 @@ export function menuControls(state, actions) {
   const control = (label, activate, extra = {}) => ({ label, activate, ...extra });
   const run = state.mode !== 'free', taxi = state.mode === 'taxi', locked = state.started && run;
   return {
-    start: control('Taxi shift', actions.start), taxi: control('Taxi shift', actions.taxi), demolition: control('Demolition', actions.demolition), free: control('Free drive', actions.free),
+    start: control('Taxi shift', actions.start), taxi: control('Taxi shift', actions.taxi), demolition: control('Demolition', actions.demolition), free: control('Free drive', actions.free, { job: 'free' }),
     resume: control('Resume', actions.resume), back: control('Back', actions.back), exit: control('Exit VR', actions.exit),
     retry: control(taxi ? 'Next shift' : 'Play again', state.mode === 'demolition' ? actions.demolition : actions.taxi),
     // Carrying on in free drive after a run, in the same car at the same spot
-    keep: control('Keep driving', actions.keep),
+    keep: control('Free drive', actions.keep, { job: 'free' }),
     // (free drive's is New city, asked twice: it drops the places found and the jump stars)
     restart: control(run ? 'Restart run' : state.newCityArmed ? 'Again for a new city' : 'New city', state.mode === 'demolition' ? actions.demolition : actions.newCity),
     end: control(taxi ? 'End shift' : 'End run', actions.end),

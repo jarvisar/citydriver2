@@ -24,7 +24,7 @@ try {
   await page.click('#free-drive');
   await page.waitForTimeout(500);
   // Teleport the car and settle the world around it
-  const place = (pose, view = 4) => page.evaluate(({ pose, view }) => {
+  const place = (pose, view = 2) => page.evaluate(({ pose, view }) => {
     const g = window.__citydriver, v = g.vehicle;
     v.s = pose.s; v.u = pose.u; v.heading = pose.heading ?? v.heading; v.speed = 0; v.update(0, {});
     g.world.update(v.s, v.u); while (g.world.pending.length || g.world.distantPending.length) g.world.update(v.s, v.u);
@@ -54,10 +54,10 @@ try {
     if (!pose) continue;
     console.log(name, JSON.stringify(await place(pose, 4)));
     await shot(`${name}-chase`);
-    if (name === 'coast' || name === 'downtown') { await page.evaluate(() => { const g = window.__citydriver; g.rendering.setView(0); g.rendering.update(g.vehicle.car, 1, g.world.origin); }); await shot(`${name}-scenic`); }
+    if (name === 'coast' || name === 'downtown') { await page.evaluate(() => { const g = window.__citydriver; g.rendering.setView(0); g.rendering.update(g.vehicle.car, 1, g.world.origin); }); await shot(`${name}-far`); }
   }
   // Night at the junction
-  await page.evaluate(() => { const g = window.__citydriver; g.weather.setMode('night', { immediate: true }); g.rendering.setView(4); });
+  await page.evaluate(() => { const g = window.__citydriver; g.weather.setMode('night', { immediate: true }); g.rendering.setView(2); });
   await page.waitForTimeout(1500); await shot('night');
   await page.evaluate(() => window.__citydriver.weather.setMode('clear', { immediate: true }));
   // Autodrive for a few seconds

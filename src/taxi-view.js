@@ -109,12 +109,12 @@ export class TaxiView {
   }
   // Labels over the cab for pay, time and tips. True if the event has any.
   pop(event) {
-    const tip = (amount, stunt) => this.labels.pop({ amount: `+$${amount}`, caption: stunt.toUpperCase(), colour: '#ffe07a', size: 1.9 });
+    const tip = (amount, stunt) => this.labels.pop({ amount: `+$${amount}`, caption: stunt.toUpperCase(), colour: '#ffe07a' });
     if (event.kind === 'tip') tip(event.tip, `${event.trick}${event.combo > 1 ? ` ×${event.combo}` : ''}`);
     if (event.stunt > 0) tip(event.stunt, 'Crazy stop');
-    if (event.paid) this.labels.pop({ amount: `+$${event.paid.toLocaleString('en-US')}`, caption: RATINGS.find(rating => rating.id === event.rating)?.label.toUpperCase() ?? '', colour: RATING_COLOURS[event.rating] ?? '#fff8e7', size: 3.2 });
-    else if (event.kind === 'dropoff') this.labels.pop({ amount: RATINGS.find(rating => rating.id === event.rating)?.label ?? '', colour: RATING_COLOURS[event.rating] ?? '#fff8e7', size: 2.4 });
-    if (event.seconds > 0) this.labels.pop({ amount: `+${event.seconds}s`, colour: '#8ff0b0', size: 2.2 });
+    if (event.paid) this.labels.pop({ amount: `+$${event.paid.toLocaleString('en-US')}`, caption: RATINGS.find(rating => rating.id === event.rating)?.label.toUpperCase() ?? '', colour: RATING_COLOURS[event.rating] ?? '#fff8e7' });
+    else if (event.kind === 'dropoff') this.labels.pop({ amount: RATINGS.find(rating => rating.id === event.rating)?.label ?? '', colour: RATING_COLOURS[event.rating] ?? '#fff8e7' });
+    if (event.seconds > 0) this.labels.pop({ amount: `+${event.seconds}s`, colour: '#8ff0b0' });
     return event.kind === 'tip' || event.stunt > 0 || Boolean(event.paid) || event.kind === 'dropoff' || event.seconds > 0;
   }
   // Every waiting fare gets a badge: a dollar sign in the ring's colour, as in

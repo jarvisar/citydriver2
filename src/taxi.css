@@ -98,7 +98,7 @@ body[data-controller=true] .taxi-dash { bottom: var(--ui-bottom); left: 50%; tra
 #taxi-buttons { position: absolute; left: var(--ui-left); bottom: var(--ui-bottom); display: flex; align-items: stretch; gap: 10px; }
 /* Arcade buttons: Boost glossy in the accent, the rest dark, and both press in */
 #taxi-buttons button {
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; width: 80px; min-width: 80px; min-height: 76px; height: 100%; padding: 9px 7px 12px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; width: 80px; min-width: 80px; min-height: 76px; padding: 9px 7px 12px;
   border: 1px solid var(--city-accent-edge); border-radius: 8px; color: #172229; background: var(--city-accent-fill);
   box-shadow: inset 0 1px 0 #ffffffa6, 0 2px 6px #00000099; text-shadow: var(--city-emboss); font-weight: 800; font-size: 15px; touch-action: none;
 }
@@ -106,7 +106,8 @@ body[data-controller=true] .taxi-dash { bottom: var(--ui-bottom); left: 50%; tra
 #taxi-buttons > button { color: var(--city-text); background: var(--city-hud-fill); border-color: var(--city-edge); box-shadow: inset 0 1px 0 var(--city-shine), var(--city-shadow); text-shadow: var(--city-engrave); }
 #taxi-buttons small { font-size: 11px; font-weight: 600; }
 #taxi-buttons kbd { width: auto; height: auto; padding: 2px 4px; font-size: 11px; line-height: 1.2; }
-.taxi-boost-control { position: relative; }
+/* Stretch the nested Boost/Sprint button with the rest of the row. */
+.taxi-boost-control { position: relative; display: flex; }
 #taxi-boost { position: absolute; left: 8px; right: 8px; bottom: 6px; height: 5px; border-radius: 3px; background: #00000033; box-shadow: inset 0 1px 1px #00000066, 0 1px 0 #ffffff66; overflow: hidden; pointer-events: none; }
 #taxi-boost-fill { display: block; height: 100%; background: linear-gradient(#3a4650, #172229); }
 #taxi-buttons[data-boosting=true] [data-drive-button=boost] { background: linear-gradient(var(--city-accent-bottom), var(--city-accent-top)); box-shadow: inset 0 3px 7px #00000080, 0 0 14px var(--city-accent-glow); }

@@ -21,7 +21,7 @@ try {
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(() => {
       localStorage.setItem('citydriver.graphics', JSON.stringify({ mode: 'basic', ambientOcclusion: false }));
-      localStorage.setItem('citydriver.camera', JSON.stringify({ profiles: { driving: { view: 5, zoom: 2.5 } } }));
+      localStorage.setItem('citydriver.camera', JSON.stringify({ version: 2, profiles: { driving: { view: 3, zoom: 2.5 } } }));
     });
     await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/?seed=4817&ao=0`);
     await page.waitForFunction(() => window.__citydriver && document.querySelector('#loading.loaded'));
@@ -56,12 +56,12 @@ try {
     await page.waitForTimeout(1400);
     assert.equal((await state()).opacity, 0);
     assert.equal((await state()).inert, true);
-    await page.screenshot({ path: `${out}/${mobile ? 'phone' : 'desktop'}-scenic.png` });
+    await page.screenshot({ path: `${out}/${mobile ? 'phone' : 'desktop'}-title.png` });
     await advance(25_000);
     await advance(200);
     assert.ok((await state()).fade > 0, 'camera fades before changing');
     await advance(500);
-    assert.equal((await state()).view, 4, 'default third-person view');
+    assert.equal((await state()).view, 2, 'default third-person view');
     await advance(500);
     assert.equal((await state()).fade, 0);
     assert.equal((await state()).saved, initial.saved);
@@ -105,10 +105,10 @@ try {
     await page.keyboard.press('Escape');
     await page.waitForTimeout(150);
     await page.click('#free-drive');
-    assert.equal((await state()).view, 5, 'starting restores the saved driving view');
+    assert.equal((await state()).view, 3, 'starting restores the saved driving view');
     await advance(90_000);
     assert.equal((await state()).idle, false, 'driving never idles');
-    assert.equal((await state()).view, 5);
+    assert.equal((await state()).view, 3);
     await page.keyboard.press('Escape');
     await advance(90_000);
     assert.equal((await state()).idle, false, 'pause menu stays visible');

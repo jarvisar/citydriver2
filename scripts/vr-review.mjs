@@ -25,7 +25,7 @@ page.on('pageerror', error => errors.push(error.message));
 page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
 await page.addInitScript(() => {
   localStorage.setItem('citydriver.graphics', JSON.stringify({ mode: 'balanced' })); localStorage.setItem('citydriver-weather', 'clear');
-  localStorage.setItem('citydriver.camera', JSON.stringify({ profiles: { driving: { view: 2, zoom: 2 }, walking: { view: 5, zoom: .8 } } }));
+  localStorage.setItem('citydriver.camera', JSON.stringify({ version: 2, profiles: { driving: { view: 1, zoom: 2 }, walking: { view: 3, zoom: .8 } } }));
 });
 const wait = ms => page.waitForTimeout(ms);
 // Controls, as a hand would work them: a press lasts a few headset frames.
@@ -134,7 +134,7 @@ try {
   check('look speed does not rotate tracked head orientation', await page.evaluate(before => window.__citydriver.rendering.vrCamera.camera.quaternion.toArray().every((value, i) => Math.abs(value - before[i]) < 1e-6), beforeLook));
   check('headset view changes leave screen preferences alone', await page.evaluate(() => {
     const r = window.__citydriver.rendering, before = JSON.stringify(r.cameraPreferences.profiles);
-    r.toggleView(); r.setView(4); r.cameraPreferences.setInput('controller', { sensitivity: 1 });
+    r.toggleView(); r.setView(2); r.cameraPreferences.setInput('controller', { sensitivity: 1 });
     return JSON.stringify(r.cameraPreferences.profiles) === before;
   }));
   await page.evaluate(() => window.__xr.quaternion.set(0, 0, 0, 1));
@@ -154,9 +154,9 @@ try {
   await press('right', 'b-button');
   await aim('right', 'End shift'); await press('right', 'trigger'); await wait(300);
   check('End shift opens the results', (await state()).menu === 'taxi-results');
-  await aim('right', 'Keep driving'); await press('right', 'trigger'); await wait(1000);
+  await aim('right', 'Free drive'); await press('right', 'trigger'); await wait(1000);
   now = await shot('11-free');
-  check('Keep driving carries on in free drive, where the cab is', now.mode === 'free' && !now.paused);
+  check('Free drive carries on in free drive, where the cab is', now.mode === 'free' && !now.paused);
   const address = await page.evaluate(() => location.href);
   await press('left', 'x-button'); await wait(500);
   check('X resets the car and keeps the session and the city', (await state()).vr && await page.evaluate(() => location.href) === address);
@@ -213,12 +213,12 @@ try {
   await page.waitForFunction(() => window.__citydriver.taxi.status === 'over', null, { timeout: 20000 }).catch(() => {});
   now = await shot('14-results');
   check('the results open on Next shift', now.menu === 'taxi-results' && now.selected === 'Next shift', now.selected);
-  await aim('right', 'Keep driving'); await press('right', 'trigger');
+  await aim('right', 'Free drive'); await press('right', 'trigger');
   await press('right', 'b-button');
   await aim('right', 'Exit VR'); await press('right', 'trigger'); await wait(800);
   now = await shot('15-exited');
   check('Exit VR returns to the page, paused', !now.vr && now.paused);
-  check('Exit VR restores the saved screen camera', await page.evaluate(() => window.__citydriver.rendering.viewIndex === 2 && window.__citydriver.rendering.zoomLevel === 2));
+  check('Exit VR restores the saved screen camera', await page.evaluate(() => window.__citydriver.rendering.viewIndex === 1 && window.__citydriver.rendering.zoomLevel === 2));
 } catch (error) { errors.push(error.stack); }
 finally { await browser.close(); await server.close(); }
 await writeFile(`${out}/checks.txt`, `${checks.join('\n')}\n\nerrors: ${errors.join('\n') || 'none'}\n`);

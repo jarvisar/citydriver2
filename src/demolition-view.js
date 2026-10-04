@@ -19,9 +19,9 @@ const HINTS_KEY = 'citydriver-demolition-hints';
 // run's orange for damage, hotter for a car written off, red for a fine and
 // green for time won
 const LABEL_STYLES = {
-  smash: { colour: '#ffc07a', size: 2.4 }, dent: { colour: '#ffc07a', size: 2.4 },
-  wreck: { colour: '#ff8a2a', size: 3.3, caption: 'WRECKED' }, penalty: { colour: '#ff6d5e', size: 3, caption: 'PEDESTRIAN' },
-  bonus: { colour: '#8ff0b0', size: 2.6, caption: 'TAKEDOWN' }, contract: { colour: '#8ff0b0', size: 3, caption: 'CONTRACT' },
+  smash: { colour: '#ffc07a' }, dent: { colour: '#ffc07a' },
+  wreck: { colour: '#ff8a2a', caption: 'WRECKED' }, penalty: { colour: '#ff6d5e', caption: 'PEDESTRIAN' },
+  bonus: { colour: '#8ff0b0', caption: 'TAKEDOWN' }, contract: { colour: '#8ff0b0', caption: 'CONTRACT' },
 };
 export class DemolitionView {
   constructor(scene, storage = null) {
@@ -39,7 +39,7 @@ export class DemolitionView {
     // (a blow in a chain says what it was multiplied by)
     const times = ['smash', 'dent', 'wreck'].includes(event.kind) && event.multiplier > 1 ? `×${event.multiplier}` : '';
     const caption = [style.caption, times].filter(Boolean).join(' ');
-    this.labels.pop({ amount, caption, colour: style.colour, size: style.size });
+    this.labels.pop({ amount, caption, colour: style.colour });
   }
   // Over the player's car; `camera`, if given, keeps near labels small
   render(vehicle, time, camera = null) { this.labels.render(time, camera, vehicle.car, vehicle.spec?.height); }

@@ -41,28 +41,28 @@ try {
       const result = g.city.districts.map(d => {
         const e = edges.filter(e => { const p = middle(e); return cityStyleDistrict(p.s, p.u) === d.style; })
           .sort((a, b) => { const p = middle(a), q = middle(b); return Math.hypot(p.u - d.centre.x, p.s - d.centre.y) - Math.hypot(q.u - d.centre.x, q.s - d.centre.y); })[0];
-        return e && { name: d.style.toLowerCase().replaceAll(' ', '-'), ...middle(e), view: 4 };
+        return e && { name: d.style.toLowerCase().replaceAll(' ', '-'), ...middle(e), view: 2 };
       }).filter(Boolean);
       for (const kind of ['coast', 'riverbank', 'main', 'ring']) {
         const e = edges.filter(e => e.kind === kind).sort((a, b) => b.length - a.length)[0];
-        if (e) result.push({ name: kind, ...middle(e), view: 5 });
+        if (e) result.push({ name: kind, ...middle(e), view: 3 });
       }
       for (const type of ['park', 'plaza']) {
         const place = cityPlaces().find(p => p.type === type);
         if (!place) continue;
         const p = g.nearestLanePose(place.entrance.s, place.entrance.u, place.entrance.heading ?? 0, 150);
-        if (p) result.push({ name: type, ...p, heading: Math.atan2(place.u - p.u, place.s - p.s), view: 5 });
+        if (p) result.push({ name: type, ...p, heading: Math.atan2(place.u - p.u, place.s - p.s), view: 3 });
       }
       const bridge = g.world.bridges.slice().sort((a, b) => (b.to - b.from) - (a.to - a.from))[0];
       if (bridge) {
         const a = bridge.points[0], b = bridge.points[1], heading = Math.atan2(b.x - a.x, b.y - a.y);
         const p = g.nearestLanePose(a.y - Math.cos(heading) * 12, a.x - Math.sin(heading) * 12, heading, 80);
-        if (p) result.push({ name: 'bridge', ...p, view: 4 });
+        if (p) result.push({ name: 'bridge', ...p, view: 2 });
       }
       let state = g.seed >>> 0;
       for (let i = 0; i < 4; i++) {
         state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
-        result.push({ name: `sample-${i}`, ...middle(edges[state % edges.length]), view: i % 2 ? 5 : 4 });
+        result.push({ name: `sample-${i}`, ...middle(edges[state % edges.length]), view: i % 2 ? 3 : 2 });
       }
       // Look across the street at the details a forward-facing tour can miss.
       const lots = [...g.world.lotsByChunk.values()].flat();
@@ -77,7 +77,7 @@ try {
           const x = (a.x + q.x) / 2 + dx / length * offset, y = (a.y + q.y) / 2 + dy / length * offset;
           const p = g.nearestLanePose(y - dx / length * 14, x + dy / length * 14, Math.atan2(dx, dy), 35);
           if (!p) continue;
-          result.push({ name, ...p, heading: Math.atan2(x - p.u, y - p.s), view: 5 });
+          result.push({ name, ...p, heading: Math.atan2(x - p.u, y - p.s), view: 3 });
           break;
         }
       }
@@ -93,7 +93,7 @@ try {
           const x = (a.x + q.x) / 2, y = (a.y + q.y) / 2;
           const p = g.nearestLanePose(y - (q.x - a.x) / length * 10, x + (q.y - a.y) / length * 10, 0, 25);
           if (!p || Math.hypot(x - p.u, y - p.s) > 22) continue;
-          result.push({ name: `front-${type}`, ...p, heading: Math.atan2(x - p.u, y - p.s), view: 5 });
+          result.push({ name: `front-${type}`, ...p, heading: Math.atan2(x - p.u, y - p.s), view: 3 });
           break;
         }
       }
@@ -104,7 +104,7 @@ try {
         if (!drive) continue;
         const { mouth: m } = drive, p = g.nearestLanePose(m.y, m.x, 0, 35);
         if (!p || !g.roadAt(p.s, p.u)?.road.profile.parking) continue;
-        result.push({ name: 'driveway', ...p, heading: Math.atan2(m.x - p.u, m.y - p.s), view: 5 });
+        result.push({ name: 'driveway', ...p, heading: Math.atan2(m.x - p.u, m.y - p.s), view: 3 });
         break;
       }
       // Four different venues per seed cover the full catalogue in the default tour.
@@ -113,7 +113,7 @@ try {
         const type = venues[(seedIndex * 4 + i) % venues.length], place = cityPlaces().find(p => p.type === type);
         if (!place) continue;
         const p = g.nearestLanePose(place.entrance.s, place.entrance.u, place.entrance.heading ?? 0, 150);
-        if (p) result.push({ name: `venue-${type}`, ...p, heading: Math.atan2(place.u - p.u, place.s - p.s), view: 5 });
+        if (p) result.push({ name: `venue-${type}`, ...p, heading: Math.atan2(place.u - p.u, place.s - p.s), view: 3 });
       }
       result.push({ ...result.find(p => p.name === 'shopfront'), name: 'basic-shopfront', quality: 'basic' });
       // Public-space details, viewed from the closest ordinary driving lane.
@@ -126,13 +126,13 @@ try {
         const chosen = candidates[0];
         if (chosen) {
           const { f, p } = chosen;
-          result.push({ name: `detail-${kind}`, ...p, heading: Math.atan2(f.u - p.u, f.s - p.s), view: 5 });
+          result.push({ name: `detail-${kind}`, ...p, heading: Math.atan2(f.u - p.u, f.s - p.s), view: 3 });
           if (['cafe', 'stall', 'bench', 'bandstand'].includes(kind)) {
             // Also inspect the actual furniture at eye height in its square.
             const angle = (f.yaw ?? 0) + (kind === 'bench' ? -Math.PI / 3 : Math.PI / 4);
             const distance = kind === 'bandstand' ? 13 : kind === 'bench' ? 5 : 8;
             const u = f.u + Math.sin(angle) * distance, s = f.s - Math.cos(angle) * distance;
-            result.push({ name: `detail-${kind}-close`, u, s, heading: Math.atan2(f.u - u, f.s - s), view: 5 });
+            result.push({ name: `detail-${kind}-close`, u, s, heading: Math.atan2(f.u - u, f.s - s), view: 3 });
           }
         }
       }
@@ -140,14 +140,14 @@ try {
       const entrance = square?.walks.find(w => w.length === 2)?.[0];
       if (entrance) {
         const p = g.nearestLanePose(entrance.y, entrance.x, 0, 100);
-        if (p) result.push({ name: 'square-entrance', ...p, heading: Math.atan2(entrance.x - p.u, entrance.y - p.s), view: 5 });
+        if (p) result.push({ name: 'square-entrance', ...p, heading: Math.atan2(entrance.x - p.u, entrance.y - p.s), view: 3 });
       }
       // These are ordinary first-person views from the drivable park paths.
       const junction = g.nav.nodes.find(n => n.edges.length >= 3 && n.edges.every(e => e.kind === 'path') && n.edges.some(e => e.length > 35));
       if (junction) {
         const e = junction.edges.find(e => e.length > 35), direction = e.a === junction.id ? -1 : 1;
         const p = g.nav.pose(e, e.length - 14, direction, 0);
-        result.push({ name: 'path-junction', ...p, view: 5 });
+        result.push({ name: 'path-junction', ...p, view: 3 });
       }
       result.push({ ...result[0], name: 'night', weather: 'night' });
       return result.filter(p => Number.isFinite(p.s)).map(({ name, s, u, heading, view, weather, quality }) => ({ name, s, u, heading, view, weather, quality }));
@@ -204,7 +204,7 @@ try {
       v.s = p.s; v.u = p.u; v.heading = p.heading; v.speed = 0; v.update(0, {});
       g.world.update(v.s, v.u);
       while (g.world.pending.length || g.world.distantPending.length) g.world.update(v.s, v.u);
-      g.rendering.setView(4); g.rendering.snap();
+      g.rendering.setView(2); g.rendering.snap();
       g.weather.setMode('clear', { immediate: true });
       g.traffic.setEnabled(true, g.vehicle);
       if (g.paused) g.action('pause');

@@ -29,7 +29,7 @@ try {
   await page.addInitScript(() => {
     localStorage.setItem('citydriver.graphics', JSON.stringify({ mode: 'basic', ambientOcclusion: false, frameCap: 30 }));
     localStorage.setItem('citydriver-weather', 'clear');
-    localStorage.setItem('citydriver.camera', JSON.stringify({ profiles: { driving: { view: 2, zoom: 2 }, walking: { view: 5, zoom: .8 } } }));
+    localStorage.setItem('citydriver.camera', JSON.stringify({ version: 2, profiles: { driving: { view: 1, zoom: 2 }, walking: { view: 3, zoom: .8 } } }));
   });
   const wait = ms => page.waitForTimeout(ms);
   const get = () => page.evaluate(() => {
@@ -97,7 +97,7 @@ try {
     await page.evaluate(id => {
       const g = window.__citydriver;
       g.beginFree(); g.chooseCar(id); g.vehicle.reset(); g.input.clear();
-      g.rendering.setView(4); g.rendering.snap(); g.traffic.setEnabled(false, g.vehicle);
+      g.rendering.setView(2); g.rendering.snap(); g.traffic.setEnabled(false, g.vehicle);
     }, id);
     await wait(350);
   };
@@ -157,7 +157,7 @@ try {
     check('left stick steers without zoom', s.input.left === 1 && s.zoom === before.zoom); await axes('left', 0, 0);
     await axes('right', 1, 0); await wait(350); s = await get();
     check('right stick turns view without zoom', Math.abs(s.look - before.look) > .2 && s.zoom === before.zoom); await axes('right', 0, 0);
-    await stage(); await press('right', 'a-button'); check('A changes view without exiting', (await get()).active && (await get()).view === 5);
+    await stage(); await press('right', 'a-button'); check('A changes view without exiting', (await get()).active && (await get()).view === 3);
     await press('right', 'thumbstick'); check('right stick click recenters and stays in VR', (await get()).active && !(await get()).paused);
     await press('left', 'x-button'); check('X recovers without reloading', (await get()).active && (await get()).speed < .5);
     await press('left', 'y-button'); s = await get(); check('Y gets out in free drive', s.walker && !s.paused && s.hud);
@@ -287,7 +287,7 @@ try {
       await set('left', 'squeeze', 0); await axes('right', 0, -1); check(`${id} right stick climbs`, (await get()).input.climb === 1);
       await axes('right', 0, 1); check(`${id} right stick descends`, (await get()).input.descend === 1); await axes('right', 0, 0);
       await set('right', 'squeeze', 1); check(`${id} right grip descends`, (await get()).input.descend === 1); await set('right', 'squeeze', 0);
-      await page.evaluate(() => window.__citydriver.rendering.setView(5)); await wait(250);
+      await page.evaluate(() => window.__citydriver.rendering.setView(3)); await wait(250);
       check(`${id} first-person rig stays level`, await page.evaluate(() => {
         const q = window.__citydriver.rendering.vrCamera.rig.quaternion;
         return Math.abs(q.x) + Math.abs(q.z) < 1e-8;
@@ -305,7 +305,7 @@ try {
     const disabled = await page.evaluate(() => window.__citydriver.vrStatus.entries.filter(e => e.disabled).map(e => e.label));
     observations.push({ name: 'demolition-disabled', disabled });
     await pick('End run'); check('demolition results remain in headset', (await get()).menu === 'demolition-results'); await shot('08-demolition-results');
-    await pick('Keep driving'); check('demolition results return to free drive', (await get()).mode === 'free' && !(await get()).paused);
+    await pick('Free drive'); check('demolition results return to free drive', (await get()).mode === 'free' && !(await get()).paused);
   });
 
   await scenario('Weather and camera views', async () => {
@@ -326,7 +326,7 @@ try {
       if (mode === 'snow') check('snow precipitation is visible', sample.snow);
       await shot(`10-weather-${mode}`);
     }
-    for (const view of [0, 1, 2, 3, 4, 5]) {
+    for (const view of [0, 1, 2, 3]) {
       await page.evaluate(view => { const g = window.__citydriver; g.rendering.setView(view); g.rendering.snap(); }, view); await wait(250);
       const sample = await page.evaluate(() => {
         const r = window.__citydriver.rendering, q = r.vrCamera.rig.quaternion;

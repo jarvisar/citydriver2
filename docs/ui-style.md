@@ -27,6 +27,8 @@ Light text on dark gets `--city-engrave` (a dark shadow above it), dark text on 
 
 Use the dark button for secondary actions and the accent for primary actions and selections. Use the tokens instead of a fixed yellow so buttons, switches and the HUD follow the mode. Fare ratings keep their own colors in every mode. Use the muted text color as is instead of lowering the opacity on translucent panels. Red and green are used for urgent deadlines and arrivals.
 
+Mode buttons keep their own color. Free drive on either results screen uses the title's teal button finish, including hover and pressed states. The headset uses the same free-drive accent.
+
 There is no backdrop blur. The city moves every frame, so a blur gets redrawn every frame for every panel, which phones can't spare, and the panels are nearly opaque anyway. The grain is an SVG noise tile, kept to panels and not every button.
 
 The action bar matches the district/compass panel's background, border, corners, font and height. The compass, steering stick and switches stay circular.

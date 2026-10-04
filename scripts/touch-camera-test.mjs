@@ -42,7 +42,7 @@ try {
   });
   const view = firstPerson => page.evaluate(firstPerson => {
     const g = window.__citydriver;
-    for (let i = 0; i < 6 && !(firstPerson ? g.rendering.firstPersonView : g.rendering.chaseView); i++) g.action('view');
+    for (let i = 0; i < 4 && !(firstPerson ? g.rendering.firstPersonView : g.rendering.chaseView); i++) g.action('view');
   }, firstPerson);
   const changed = (a, b) => a.some((v, i) => Math.abs(v - b[i]) > .01);
   for (const [name, width, height] of [['portrait', 390, 844], ['landscape', 844, 390]]) {

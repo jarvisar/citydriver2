@@ -37,8 +37,8 @@ export const BRAKE_BEND = .6, BRAKE_SHARE = .55, DRAG = .6, POWER = .45;
 const SLIP_RATE = 7, BEND_RATE = 12;
 // Charge a second steered more than halfway into the drift, and otherwise
 const TIGHT = 1, LOOSE = .4;
-// The charge each stage needs: blue, orange, pink
-export const STAGES = [.6, 1.35, 2.3];
+// The charge each stage needs: blue, orange, pink, timed for city corners
+export const STAGES = [.42, .945, 1.61];
 // Each stage's turbo: how long it lasts (s), the kick it gives at once and
 // the speed it may reach (both shares of the car's top speed), and its push
 // (a share of the car's own acceleration)

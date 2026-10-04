@@ -52,7 +52,7 @@ test('menu choices and commands cover the title, pause modes, choosers and resul
   for (const mode of ['taxi', 'demolition']) {
     model = build(state({ mode, over: true }), { result: { cash: '$500', name: 'Class D', next: 'Next rating', best: 'Best $600' } });
     assert.equal(model.title, 'Time up · $500');
-    assert.deepEqual(model.items.slice(0, 3).map(item => item.label), mode === 'taxi' ? ['Next shift', 'Keep driving', 'Garage'] : ['Play again', 'Keep driving', 'Taxi shift']);
+    assert.deepEqual(model.items.slice(0, 3).map(item => item.label), mode === 'taxi' ? ['Next shift', 'Free drive', 'Garage'] : ['Play again', 'Free drive', 'Taxi shift']);
     assert.equal(model.items[2].value, undefined, 'results keep the short action labels');
     model.items[0].activate(); assert.equal(calls.at(-1), mode);
     model.items[1].activate(); assert.equal(calls.at(-1), 'keep');

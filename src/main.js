@@ -1217,8 +1217,8 @@ async function boot() {
         needsRender = true; return;
       }
       if (name === 'zoomIn' || name === 'zoomOut') {
-        if (!started || paused || vr.active || !rendering.chaseView) return;
-        rendering.zoom(name === 'zoomIn' ? 1 / 1.2 : 1.2); return;
+        if (!started || paused || changingJourney || vr.active || !(rendering.chaseView || rendering.firstPersonView)) return;
+        zoomCamera(name === 'zoomIn' ? 1 / 1.2 : 1.2); return;
       }
       if (taxi.status === 'over') { if (name === 'reset') beginTaxi(); return; }
       if (demolition.status === 'over') { if (name === 'reset') beginDemolition(); return; }
@@ -1398,16 +1398,20 @@ async function boot() {
       desktop.onUpdate(showUpdate);
       desktop.getUpdate().then(showUpdate);
     }
-    // Driving in the chase view, the wheel brings the camera in or out, and
+    // In either perspective view, the wheel brings the camera in or out, and
     // the mouse looks round the car, or through the player's eyes, once a
     // click on the scene has taken the pointer (in fullscreen, at once)
-    const chasing = () => started && !paused && !changingJourney && !vr.active && rendering.chaseView;
     const looking = () => started && !paused && !changingJourney && !vr.active && (rendering.chaseView || rendering.firstPersonView);
+    function zoomCamera(factor) {
+      const view = rendering.viewIndex;
+      rendering.zoom(factor);
+      if (rendering.viewIndex !== view) updateViewUi();
+    }
     const lookHintKey = 'citydriver-mouse-look';
     let lookHint = 0, lookKnown = false, lookHinted = false;
     try { lookKnown = lookHinted = localStorage.getItem(lookHintKey) === 'known'; } catch { /* Storage is optional. */ }
     const cameraPreferences = rendering.cameraPreferences;
-    const mouseLook = new MouseLook($('#scene'), { lookable: looking, automatic: () => fullscreen.active, zoomable: chasing, look: (yaw, pitch) => cameraPreferences.look('mouse', yaw, pitch, rendering.look), zoom: rendering.zoom,
+    const mouseLook = new MouseLook($('#scene'), { lookable: looking, automatic: () => fullscreen.active, zoomable: looking, look: (yaw, pitch) => cameraPreferences.look('mouse', yaw, pitch, rendering.look), zoom: zoomCamera,
       released: () => fullscreen.released(),
       captured: () => {
         fullscreen.captured();
@@ -1760,11 +1764,11 @@ async function boot() {
       for (const event of events) {
         if (event.kind === 'stunt' || event.kind === 'smash') {
           if (event.kind === 'smash') audio.cue('smash', event); else audio.cue('tip', { combo: event.chain });
-          if (event.pop) taxiView.labels.pop({ amount: `+$${event.value}`, caption: event.multiplier > 1 ? `${event.label.toUpperCase()} ×${event.multiplier}` : event.label.toUpperCase(), colour: '#9ff2e6', size: 1.6 });
+          if (event.pop) taxiView.labels.pop({ amount: `+$${event.value}`, caption: event.multiplier > 1 ? `${event.label.toUpperCase()} ×${event.multiplier}` : event.label.toUpperCase(), colour: '#9ff2e6' });
         } else if (event.kind === 'multiplier') { toast(event.text, 'chain'); audio.cue('multiplier', event); }
         else if (event.kind === 'banked') {
           earn(event.amount); audio.cue('banked');
-          taxiView.labels.pop({ amount: `+$${event.amount.toLocaleString('en-US')}`, caption: 'BANKED', colour: '#ffe07a', size: 2.6 });
+          taxiView.labels.pop({ amount: `+$${event.amount.toLocaleString('en-US')}`, caption: 'BANKED', colour: '#ffe07a' });
         } else if (event.kind === 'lost') { toast(event.text, 'slow'); audio.cue('penalty'); }
       }
     }
@@ -1775,7 +1779,7 @@ async function boot() {
       const p = vehicle.groundedPosition, stunt = event.kind === 'stunt';
       if (freeStunts()) stunts.flew(event, p);
       if (event.kind === 'bounce') { toast(event.text); rumble(.6, .4, .15); return; }
-      taxiView.labels.pop({ amount: event.text, caption: stunt ? 'STUNT' : 'LANDING', colour: stunt ? '#ffe07a' : '#9ff2e6', size: 3 });
+      taxiView.labels.pop({ amount: event.text, caption: stunt ? 'STUNT' : 'LANDING', colour: stunt ? '#ffe07a' : '#9ff2e6' });
       if (stunt) { audio.cue('bonus'); rumble(0, .35, .1); hintFlight(event.text); }
     }
     // A jump landed counts for whichever run is on, or goes in free drive's
@@ -1794,8 +1798,8 @@ async function boot() {
           hintAir(event);
           if (!news) return;
           if (news.gold) audio.cue('bonus');
-          taxiView.labels.pop({ amount: news.amount, caption: news.caption, colour: news.gold ? '#ffe07a' : '#9ff2e6', size: 2.6 });
-          if (pay) taxiView.labels.pop({ amount: `+$${pay.toLocaleString('en-US')}`, caption: news.gained > 1 ? 'STARS' : 'STAR', colour: '#ffe07a', size: 2.2 });
+          taxiView.labels.pop({ amount: news.amount, caption: news.caption, colour: news.gold ? '#ffe07a' : '#9ff2e6' });
+          if (pay) taxiView.labels.pop({ amount: `+$${pay.toLocaleString('en-US')}`, caption: news.gained > 1 ? 'STARS' : 'STAR', colour: '#ffe07a' });
           cityGuide.refreshJumps();
         }
       } else if (event.kind === 'drift') {

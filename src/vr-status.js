@@ -367,9 +367,10 @@ export class VRStatus {
   row({ x, y, width, height }, item, selected) {
     const ctx = this.menu.ctx, middle = y + height / 2;
     ctx.globalAlpha = item.disabled ? .5 : 1;
-    const fill = item.primary ? selected ? ['#fffbe9', UI.accentHover] : [UI.accentTop, UI.accentBottom] : selected ? UI.hover : UI.raised;
-    box(ctx, x, y, width, height, 10, fill, item.primary ? UI.accentEdge : UI.edge);
-    shine(ctx, x + 1, y + 1, width - 2, height - 2, 9, item.primary);
+    const accent = item.job === 'free' ? ACCENTS.free : null, filled = item.primary || Boolean(accent);
+    const fill = filled ? selected ? ['#fffbe9', accent?.[1] ?? UI.accentHover] : accent ? [accent[2], accent[3]] : [UI.accentTop, UI.accentBottom] : selected ? UI.hover : UI.raised;
+    box(ctx, x, y, width, height, 10, fill, filled ? accent?.[4] ?? UI.accentEdge : UI.edge);
+    shine(ctx, x + 1, y + 1, width - 2, height - 2, 9, filled);
     if (selected) {
       ctx.beginPath(); ctx.roundRect(x - 6, y - 6, width + 12, height + 12, 19);
       ctx.strokeStyle = UI.gold; ctx.lineWidth = 4; ctx.stroke();
@@ -394,16 +395,16 @@ export class VRStatus {
       // (a colour is ticked, as the page's swatches are ringed)
       const tick = item.current && item.swatch;
       ctx.font = font(tick ? 32 : item.current ? 22 : 26, item.current ? 750 : 400); ctx.textAlign = 'right';
-      ctx.fillStyle = item.current ? item.primary ? UI.onAccent : UI.accent : item.primary ? UI.onAccent : UI.muted;
+      ctx.fillStyle = item.current ? filled ? UI.onAccent : UI.accent : filled ? UI.onAccent : UI.muted;
       const value = tick ? '✓' : item.current ? 'CURRENT' : fit(ctx, item.value, width * .45);
       ctx.fillText(value, right, middle + 1);
       right -= ctx.measureText(value).width + 16;
     }
-    const centred = item.primary || item.footer || item.header || this.narrow;
+    const centred = filled || item.footer || item.header || this.narrow;
     // (the main action in the page's big-button capitals)
-    ctx.font = item.primary ? display(34) : font(31, 600); ctx.fillStyle = item.primary ? UI.onAccent : UI.text;
+    ctx.font = filled ? display(34) : font(31, 600); ctx.fillStyle = filled ? UI.onAccent : UI.text;
     ctx.textAlign = centred && item.toggle === undefined && !item.value && !item.current ? 'center' : 'left';
-    const label = fit(ctx, item.primary ? item.label.toUpperCase() : item.label, right - left);
+    const label = fit(ctx, filled ? item.label.toUpperCase() : item.label, right - left);
     ctx.fillText(label, ctx.textAlign === 'center' ? x + width / 2 : left, middle + 1);
     ctx.globalAlpha = 1; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
   }

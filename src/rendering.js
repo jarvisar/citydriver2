@@ -2,9 +2,10 @@ import * as THREE from 'three';
 import { fitSunShadow, fitSunShadowAround } from './shadows.js';
 import { stabilizeShadowFiltering, rendererPrograms, precompileShadowPrograms, installPlayerFog } from './rendering-compat.js';
 import { PlayerFog, fitFogDistance } from './player-fog.js';
-import { CAMERA_VIEWS, CameraPreferences } from './camera-preferences.js';
+import { CAMERA_VIEWS, CAMERA_ZOOM_MIN, CameraPreferences } from './camera-preferences.js';
 import { Handoff, ThirdPersonCamera } from './third-person-camera.js';
 import { FirstPersonCamera } from './first-person-camera.js';
+import { CameraTransition, carryCameraLook } from './camera-transition.js';
 import { AmbientOcclusion } from './ambient-occlusion.js';
 import { CarSilhouette } from './car-silhouette.js';
 import { SkyClouds } from './sky-clouds.js';
@@ -83,6 +84,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 1200);
   const thirdPerson = new ThirdPersonCamera();
   const firstPerson = new FirstPersonCamera();
+  const cameraTransition = new CameraTransition(), subjectBounds = new THREE.Box3();
   const cameraPreferences = new CameraPreferences();
   let cameraMode = null, headsetCamera = false;
   let followedCar;
@@ -124,8 +126,9 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   const touchScreen = window.matchMedia('(any-pointer: coarse)');
   const sunOffset = new THREE.Vector3(-110, 240, 100);
   const views = CAMERA_VIEWS;
-  const activeCamera = () => views[view].firstPerson ? firstPerson.camera : views[view].thirdPerson ? thirdPerson.camera : camera;
-  let initialized = false; let view = touchScreen.matches ? 2 : 1; let viewHeight = views[view].height; let previousOrigin = 0;
+  const perspectiveCamera = () => views[view].firstPerson ? firstPerson.camera : thirdPerson.camera;
+  const activeCamera = () => cameraTransition.active ? cameraTransition.camera : views[view].firstPerson || views[view].thirdPerson ? perspectiveCamera() : camera;
+  let initialized = false; let view = touchScreen.matches ? 1 : 0; let viewHeight = views[view].height; let previousOrigin = 0;
   let weatherFog = null;
   const weatherSun = new THREE.Vector3();
   const cityFog = { thirdNear: 190, thirdFar: 420 };
@@ -171,8 +174,19 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
     // A fixed azimuth and elevation keep the miniature city easy to read.
     camera.position.copy(target).add(cameraOffset); camera.lookAt(target);
     camera.userData.focusDistance = cameraOffset.length();
-    if (views[view].thirdPerson) { thirdPerson.update(car, dt); target.copy(car.position); }
-    if (views[view].firstPerson) { firstPerson.update(car, dt, renderer.xr.isPresenting || reducedMotion); target.copy(car.position); }
+    if (views[view].thirdPerson || cameraTransition.active) { thirdPerson.update(car, dt); target.copy(car.position); }
+    if (views[view].firstPerson || cameraTransition.active) { firstPerson.update(car, dt, renderer.xr.isPresenting || reducedMotion); target.copy(car.position); }
+    if (cameraTransition.active) {
+      cameraTransition.update(perspectiveCamera(), car, dt);
+      if (cameraTransition.active) {
+        const lens = cameraTransition.camera, eye = firstPerson.camera.position;
+        thirdPerson.clampHeight(lens.position, thirdPerson.lid);
+        const open = thirdPerson.sight?.(eye, lens.position) ?? 1;
+        lens.position.sub(eye).multiplyScalar(open).add(eye);
+        thirdPerson.clampHeight(lens.position, thirdPerson.lid);
+        lens.updateMatrixWorld();
+      }
+    }
     shakeTime += dt;
     if ((views[view].thirdPerson || views[view].firstPerson) && !renderer.xr.isPresenting && !reducedMotion) shakeCamera(activeCamera(), car.userData.trauma ?? 0, shakeTime, views[view].firstPerson ? .6 : 1);
     updateFog();
@@ -218,7 +232,9 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
     carSilhouette.update(followedCar, showCarSilhouette() && !stereo && viewCamera.isOrthographicCamera);
     // Hide the player's exterior for the whole first-person draw, including
     // shadows and AO. Restore it for other views and after render failures.
-    const car = views[view].firstPerson ? followedCar : null;
+    // Leave the exterior visible until the gliding lens reaches the body.
+    const inside = cameraTransition.active && followedCar && subjectBounds.setFromObject(followedCar).expandByScalar(.2).containsPoint(viewCamera.position);
+    const car = (cameraTransition.active ? inside : views[view].firstPerson) ? followedCar : null;
     const visible = car?.visible;
     if (car) car.visible = false;
     try {
@@ -276,27 +292,37 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
     // overhead views draw without fog). Do that now, behind the loading screen.
     return Promise.all(pending).then(() => programs.warm());
   }
-  function setView(index, remember = false) {
+  function setView(index, remember = false, glide = false) {
     if (!Number.isInteger(index) || !views[index]) return views[view].label;
-    view = index; updateFog(); thirdPerson.snap(); firstPerson.snap();
+    const carry = glide && followedCar && !headsetCamera && activeCamera().isPerspectiveCamera && (views[index].thirdPerson || views[index].firstPerson);
+    if (carry) cameraTransition.start(activeCamera(), followedCar);
+    else cameraTransition.cancel();
+    view = index; thirdPerson.snap(); firstPerson.snap();
+    if (carry) {
+      carryCameraLook(views[view].firstPerson ? firstPerson : thirdPerson, cameraTransition.camera, followedCar, reducedMotion);
+      if (reducedMotion) cameraTransition.cancel();
+    }
+    updateFog();
     if (remember && !headsetCamera) cameraPreferences.setProfile(cameraMode, { view });
     return views[view].label;
   }
   function setZoom(value, immediate = false) {
     thirdPerson.setZoom(value);
-    if (immediate) thirdPerson.zoom = thirdPerson.zoomTarget;
+    if (immediate) { cameraTransition.cancel(); thirdPerson.zoom = thirdPerson.zoomTarget; }
     if (!headsetCamera) cameraPreferences.setProfile(cameraMode, { zoom: thirdPerson.zoomTarget });
   }
   function useCameraProfile(mode, restore = false) {
     if (!cameraPreferences.profiles[mode] || (cameraMode === mode && !restore)) return;
     cameraMode = mode;
     if (headsetCamera) return;
+    cameraTransition.cancel();
     const profile = cameraPreferences.profiles[mode];
     thirdPerson.setZoom(profile.zoom);
     if (view !== profile.view) setView(profile.view);
   }
   function recenter(immediate = false) {
     if (!followedCar || !activeCamera().isPerspectiveCamera) return;
+    if (immediate || reducedMotion) cameraTransition.cancel();
     (views[view].firstPerson ? firstPerson : thirdPerson).recenter(followedCar, immediate || reducedMotion);
   }
   let desktopView;
@@ -334,11 +360,22 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   function setGround(ground, decked = null) { thirdPerson.ground = ground; thirdPerson.decked = decked; }
   function setCameraClearance(clearance) { thirdPerson.clearance = clearance; firstPerson.clearance = clearance; vrCamera.clearance = clearance; }
   // The mouse turns the chase camera round the car, or the view through the
-  // player's eyes, and the wheel brings the chase camera in or out (see MouseLook)
+  // player's eyes. Zoom crosses between those seats at the closest distance.
   const look = (yaw, pitch) => (views[view].firstPerson ? firstPerson : thirdPerson).look(yaw, pitch);
-  const zoom = factor => { if (Number.isFinite(factor) && factor > 0) setZoom(thirdPerson.zoomTarget * factor); };
+  const zoom = factor => {
+    if (!Number.isFinite(factor) || factor <= 0 || factor === 1 || headsetCamera) return;
+    if (views[view].firstPerson) {
+      if (factor < 1) return;
+      setZoom(CAMERA_ZOOM_MIN * factor);
+      setView(views.findIndex(view => view.thirdPerson), true, true);
+    } else if (views[view].thirdPerson) {
+      const distance = thirdPerson.zoomTarget * factor;
+      setZoom(distance);
+      if (factor < 1 && distance <= CAMERA_ZOOM_MIN + 1e-6) setView(views.findIndex(view => view.firstPerson), true, true);
+    }
+  };
   const stencil = renderer.getContext().getContextAttributes()?.stencil === true;
   return { renderer, scene, graphics, ambientOcclusion, vrCamera, stencil, render, precompile, addCuller, setSightLine, setGround, setCameraClearance, look, zoom, setZoom, recenter, cameraPreferences, useCameraProfile,
     get cameraMode() { return cameraMode; }, get viewIndex() { return view; }, get zoomLevel() { return thirdPerson.zoomTarget; },
-    enterVR, exitVR, setView, toggleAO() { return graphics.toggleAmbientOcclusion(); }, get camera() { return activeCamera(); }, update, resize, recordFrame, setWeather, get viewLabel() { return views[view].label; }, get chaseView() { return Boolean(views[view].thirdPerson); }, get firstPersonView() { return Boolean(views[view].firstPerson); }, toggleView() { return setView((view + 1) % views.length, true); }, snap() { initialized = false; thirdPerson.snap(); firstPerson.snap(); } };
+    enterVR, exitVR, setView, toggleAO() { return graphics.toggleAmbientOcclusion(); }, get camera() { return activeCamera(); }, update, resize, recordFrame, setWeather, get viewLabel() { return views[view].label; }, get chaseView() { return Boolean(views[view].thirdPerson); }, get firstPersonView() { return Boolean(views[view].firstPerson); }, toggleView() { return setView((view + 1) % views.length, true); }, snap() { initialized = false; cameraTransition.cancel(); thirdPerson.snap(); firstPerson.snap(); } };
 }

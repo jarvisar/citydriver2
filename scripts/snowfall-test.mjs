@@ -57,7 +57,7 @@ try {
       }
     }
     target.dispose();
-    for (const view of [4, 5]) {
+    for (const view of [2, 3]) {
       a.rendering.setView(view);
       a.rendering.update(a.vehicle.car, 1, a.world.origin);
       a.rendering.render();
@@ -73,7 +73,7 @@ try {
     assert.ok(result.rebased, 'Origin rebase moved snowfall');
   }
   await mkdir('.artifacts/snowfall', { recursive: true });
-  await page.screenshot({ path: '.artifacts/snowfall/scenic.png' });
+  await page.screenshot({ path: '.artifacts/snowfall/far.png' });
   assert.deepEqual(errors, []);
   console.log(`Snowfall covers all 16 screen regions at ${results.length} zoom/aspect combinations; pause and origin rebases remain stable.`);
 } finally {

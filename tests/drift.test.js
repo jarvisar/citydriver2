@@ -81,14 +81,14 @@ test('steering into a drift turns it tighter and charges two and a half times as
     const c = car();
     try {
       hold(c, .1, { right: 1, handbrake: true }, 18);
-      const events = hold(c, 3, { right: Math.max(0, steer), left: Math.max(0, -steer), handbrake: true }, 18);
+      const events = hold(c, 2, { right: Math.max(0, steer), left: Math.max(0, -steer), handbrake: true }, 18);
       assert.ok(c.drifting && c.driftDirection === 1, `${name}: still drifting right`);
       yaw[name] = c.yawRate;
       stage[name] = events.filter(e => e.kind === 'drift').map(e => e.stage);
     } finally { c.disposeModel(); }
   }
   assert.ok(yaw.in > yaw.none * 1.2 && yaw.none > yaw.out * 1.3 && yaw.out > 0, JSON.stringify(yaw));
-  assert.deepEqual(stage.in, [1, 2, 3], 'all three stages steered in, within three seconds');
+  assert.deepEqual(stage.in, [1, 2, 3], 'all three stages steered in, within two seconds');
   assert.deepEqual(stage.none, [1], 'only blue otherwise');
   // (the thresholds: inward seconds)
   const c = car();
@@ -129,7 +129,7 @@ test('letting go fires a turbo by the stage reached: a kick at once, then past t
 test('a drift ends and loses its charge when too slow or in a crash, and a crash stops a turbo too', () => {
   const c = car();
   try {
-    hold(c, 1, { right: 1, handbrake: true }, 18);
+    hold(c, .75, { right: 1, handbrake: true }, 18);
     assert.equal(c.drift.stage, 1);
     const losses = c.drift.losses;
     c.speed = DRIFT_END - .5;
@@ -287,7 +287,7 @@ test('the Drift button shows the charge toward the next stage, then the turbo', 
   try {
     let model = taxiHudModel(run, c, { free: true });
     assert.equal(model.driftState, null);
-    hold(c, .3, { right: 1, handbrake: true }, 18);
+    hold(c, .2, { right: 1, handbrake: true }, 18);
     model = taxiHudModel(run, c, { free: true });
     assert.ok(model.driftState === 'Drifting' && model.driftStage === 0 && model.driftCharge > .3 && model.driftCharge < .7);
     hold(c, .5, { right: 1, handbrake: true }, 18);
