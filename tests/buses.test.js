@@ -24,7 +24,7 @@ const busStops = () => { const { nav, shelters } = city(); return new BusStops(n
 // Someone watching from the block behind a stop, out of everyone's way
 const watcher = (s, u) => ({ s, u, heading: 0, speed: 0, airborne: true, groundedPosition: new THREE.Vector3(1e5, 0, 1e5), velocity: new THREE.Vector3(), spec: { width: 1.9, length: 4.4 } });
 
-// The bus on a stop's street `before` metres short of it at its own pace
+// The bus on a stop's street `before` meters short of it at its own pace
 // (room to stop from a boulevard's), the rest of the traffic out of the
 // way, and whoever is to wait there
 function stage(waiting = 2, before = 90) {
@@ -56,15 +56,15 @@ function run(scene, seconds, each = () => {}) {
   }
 }
 
-test('every bus stop is a shelter by a bus road, where the bus stops by the kerb with its front door at the shelter', () => {
+test('every bus stop is a shelter by a bus road, where the bus stops by the curb with its front door at the shelter', () => {
   const { shelters } = city(), stops = busStops().stops;
   assert.ok(stops.length > 50 && stops.length > shelters.length * .3, `${stops.length} stops of ${shelters.length} shelters`);
   const { nav } = city();
   for (const stop of stops) {
     const profile = stop.edge.profile, half = BUS_MODEL.width / 2;
     assert.ok(BUS_ROADS.has(stop.edge.kind), stop.edge.kind);
-    // (pulled in from the kerb lane to just short of the kerb)
-    assert.ok(stop.lane >= profile.lane && stop.lane + half <= stop.kerb - .25 && stop.kerb - stop.lane - half < 1.5, `lane ${stop.lane} kerb ${stop.kerb}`);
+    // (pulled in from the curb lane to just short of the curb)
+    assert.ok(stop.lane >= profile.lane && stop.lane + half <= stop.kerb - .25 && stop.kerb - stop.lane - half < 1.5, `lane ${stop.lane} curb ${stop.kerb}`);
     const at = nav.pose(stop.edge, stop.along, stop.direction, stop.lane);
     assert.equal(surfaceAt(at.s, at.u), 'road', 'the bus waits in the road');
     const door = nav.pose(stop.edge, stop.along + BUS_DOORS.on, stop.direction, stop.kerb);
@@ -72,7 +72,7 @@ test('every bus stop is a shelter by a bus road, where the bus stops by the kerb
   }
 });
 
-test('the bus calls where someone waits: pulls in by the kerb, lets them on and someone off, and pulls out into its lane', () => {
+test('the bus calls where someone waits: pulls in by the curb, lets them on and someone off, and pulls out into its lane', () => {
   const scene = stage(2), { traffic, bus, stop, state, stops, riders } = scene;
   // (someone on board wants to get off here)
   stops.random = () => .2;

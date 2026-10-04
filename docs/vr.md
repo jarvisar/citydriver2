@@ -14,7 +14,7 @@ The page's menus and HUD can't be seen in a headset, so `src/vr-status.js` draws
 
 ## Menus
 
-- Menus use the page's look: gunmetal panels with a title bar, bevelled rows, a glossy yellow main action and a gold ring round the selected row. See [UI styles](ui-style.md).
+- Menus use the page's look: gunmetal panels with a title bar, beveled rows, a glossy yellow main action and a gold ring round the selected row. See [UI styles](ui-style.md).
 - A menu opens 1.5 m away and 5° below eye level, in front of wherever the player is looking. It then stays in place. Menus are never locked to the head.
 - Rows are about 2.6° tall and labels about 1.1°.
 - The pause menu has the same groups as the pause screen: Driving, The city, View and Sound. Resume is at the top right and is selected first. Exit VR is at the bottom.
@@ -45,7 +45,7 @@ The headset lowers its own quality to hold its refresh rate: first the share of 
 
 ## Controls
 
-See the [README](../README.md#vr). B pauses, and so does Y in a run, so no single button leaves VR. In free drive Y gets out of the car, or into the car the player is standing by, and X puts the car back on the road. The controllers buzz when a drift's sparks change colour, for a drift boost, a crash and a hard landing. Vibration in the pause menu turns that off.
+See the [README](../README.md#vr). B pauses, and so does Y in a run, so no single button leaves VR. In free drive Y gets out of the car, or into the car the player is standing by, and X puts the car back on the road. The controllers buzz when a drift's sparks change color, for a drift boost, a crash and a hard landing. Vibration in the pause menu turns that off.
 
 ## Testing
 

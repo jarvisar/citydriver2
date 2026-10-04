@@ -58,7 +58,7 @@ export function createEngineBuffer(ctx, profile, rpm, loaded, seed = 0xeca17) {
   const normalize = .2 / Math.max(.001, Math.sqrt(energy / length));
   for (let i = 0; i < length; i++) data[i] *= normalize;
   // Align the firing fundamental between all takes. Equal-power fades alone
-  // cannot prevent two exhaust recordings from cancelling when their phases
+  // cannot prevent two exhaust recordings from canceling when their phases
   // oppose; align once here instead of compensating with extra volume.
   const omega = 2 * Math.PI * cycles * cylinders / length;
   let real = 0, imaginary = 0;

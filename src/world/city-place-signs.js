@@ -1,5 +1,5 @@
 // One deliberate face per destination, in SPACE_NAMES order. Shared public
-// services use recognisable systems; commercial names have their own identity.
+// services use recognizable systems; commercial names have their own identity.
 const face = (shape, aspect, layout, background, ink, accent, options = {}) => ({
   shape, aspect, layout, background, ink, accent,
   font: 'sans-serif', weight: 'bold', subtitle: '', ...options,
@@ -99,7 +99,7 @@ export const PLACE_SIGN_DESIGNS = {
     face('rect', 3.3, 'frame', '#e6e3d6', '#344851', '#84969a', { uppercase: true }), // Market Square
     face('rect', 3.5, 'frame', '#e6e3d6', '#344851', '#84969a', { uppercase: true }), // Old Town Square
     face('rect', 3.4, 'frame', '#e6e3d6', '#344851', '#84969a', { uppercase: true }), // Station Square
-    face('rect', 3.5, 'frame', '#e6e3d6', '#344851', '#84969a', { uppercase: true }), // Harbour Square
+    face('rect', 3.5, 'frame', '#e6e3d6', '#344851', '#84969a', { uppercase: true }), // Harbor Square
     face('rect', 3.5, 'frame', '#e6e3d6', '#344851', '#84969a', { uppercase: true }), // Jubilee Square
   ],
   postoffice: [

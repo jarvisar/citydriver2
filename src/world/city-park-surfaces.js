@@ -6,7 +6,7 @@ import { circle, SQUARE_WALK, pondShore } from './city-parks.js';
 // network, never across its junctions. All clipping happens once at load.
 export const PATH_EDGE = .18;
 
-// Match Surface.ribbon's mitres, including the closing join of a loop.
+// Match Surface.ribbon's miters, including the closing join of a loop.
 // Union individual panels so folds cannot turn into holes at tight bends.
 export function walkRegion(points, width) {
   if (points.length < 2) return [];
@@ -18,7 +18,7 @@ export function walkRegion(points, width) {
   return union(solids(panels));
 }
 
-// Square walks used to finish half a metre inside their lawn. Carry only
+// Square walks used to finish half a meter inside their lawn. Carry only
 // those entrance ends through to the surrounding pavement; inner ends and
 // complete loops retain their layout. The full width is clipped below.
 export function connectWalk(walk, lawn, kerb) {
@@ -37,7 +37,7 @@ export function connectWalk(walk, lawn, kerb) {
       const d = Math.hypot(hit.x - p.x, hit.y - p.y);
       if (d < distance) { nearest = hit; distance = d; }
     }
-    // Overshoot before clipping, so an oblique mouth meets the kerb across
+    // Overshoot before clipping, so an oblique mouth meets the curb across
     // its whole width rather than stopping in a triangular notch.
     if (nearest) result[end] = { x: nearest.x + (p.x - back.x) / length * SQUARE_WALK * 2,
       y: nearest.y + (p.y - back.y) / length * SQUARE_WALK * 2 };

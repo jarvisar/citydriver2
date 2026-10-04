@@ -37,7 +37,7 @@ export function cityAffinePoint(s, u, anchor, frame = cityRigidFrame(anchor.s, a
 
 // One convention for turning props on the map (x east, y north). An item's
 // yaw turns its local +x to (cos yaw, sin yaw) and its local +z, the side
-// signs and signals are modelled facing, to (sin yaw, -cos yaw).
+// signs and signals are modeled facing, to (sin yaw, -cos yaw).
 // A rigid frame's heading turns the other way: frame heading h lays out the
 // same axes as item yaw -h, so a collider in cityRigidFrame(s, u, -yaw)
 // matches an item placed with yaw.

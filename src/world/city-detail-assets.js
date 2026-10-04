@@ -43,7 +43,7 @@ export function round(c, x, y, s, w, h, d, color, axis = 'y', kind = 'solid', ya
 function clockGeometry() {
   const p = new Parts();
   // Inlaid markings share one surface with the dial. Stacked planes only a few
-  // millimetres apart flicker as depth precision falls off down the street.
+  // millimeters apart flicker as depth precision falls off down the street.
   p.add(new THREE.RingGeometry(.89, 1, 24), [0, 0, .05], '#577e77');
   const dial = new THREE.Shape(Array.from({ length: 24 }, (_, i) => {
     const a = i / 24 * Math.PI * 2; return new THREE.Vector2(Math.cos(a) * .89, Math.sin(a) * .89);

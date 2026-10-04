@@ -51,7 +51,7 @@ test('unknown fog shader layouts cannot leave a partly patched shader', () => {
   assert.throws(() => patchPlayerFogShader(shader, THREE.ShaderChunk, '999'), RenderingCompatibilityError);
 });
 
-test('AO uses the same player-centred fog after camera motion and projection changes', () => {
+test('AO uses the same player-centered fog after camera motion and projection changes', () => {
   const { integration, pass, scene } = aoFixture();
   scene.fog = new PlayerFog('white'); scene.fog.origin.set(3, 4, -100);
   try {

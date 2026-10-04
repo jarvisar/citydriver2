@@ -5,7 +5,7 @@ export { cityCell, cityDistrict, citySoundscape } from './city.js';
 
 // The route the car drives: a flat plane with s pointing north and u east,
 // answered from the generated city. The surfaces
-// are the ones the city draws: inside a kerb (a block's pavement, a park, a
+// are the ones the city draws: inside a curb (a block's pavement, a park, a
 // quay) is pavement, the water is water, and everything else inside the city
 // is roadway, junction corners included.
 export const ROAD_LEVEL = 24;
@@ -46,7 +46,7 @@ export function cityHeight(s, u) {
   const surface = surfaceAt(s, u);
   return surface === 'pavement' ? PAVEMENT_LEVEL : surface === 'median' ? ROAD_LEVEL + MEDIAN_KERB : surface === 'water' ? WATER_LEVEL : ROAD_LEVEL;
 }
-// How loose the ground is under a tyre: kerbed paving, the grass of a median
+// How loose the ground is under a tire: curbed paving, the grass of a median
 const LOOSENESS = { pavement: .3, median: .45 };
 // A pose in the lane of the nearest road, facing the way the heading points.
 export function nearestLanePose(s, u, heading = 0, radius = 200) {
@@ -58,7 +58,7 @@ export function lanePose(road, heading) {
   const roadHeading = Math.atan2(road.tx, road.ty);
   const direction = Math.cos(heading - roadHeading) >= 0 ? 1 : -1;
   const du = road.tx * direction, ds = road.ty * direction, lane = road.road.profile.lane;
-  // Drive on the right: the lane centre sits to the right of the direction of travel.
+  // Drive on the right: the lane center sits to the right of the direction of travel.
   return { s: road.y - du * lane, u: road.x + ds * lane, heading: Math.atan2(du, ds), road: road.road, direction };
 }
 // Where a drive begins: a wide road near the middle of the city, facing a

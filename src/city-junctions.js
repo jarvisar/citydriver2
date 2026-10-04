@@ -133,7 +133,7 @@ export function approachControl(nav, edge, direction) {
 // autodrive share one of these.
 const DECEL = 4;  // comfortable braking toward a stop line, m/s²
 const GIVE_WAY = 4.5;  // seconds of warning a driver giving way wants
-const CLEAR = 2.9;  // two paths closer than this, centre to centre, share road
+const CLEAR = 2.9;  // two paths closer than this, center to center, share road
 const LOOK = 70;  // how far ahead of a junction a driver starts to think about it
 const YIELD_SPEED = 5;  // how fast a driver giving way crosses its line, m/s
 const PATIENCE = 10;  // seconds at a stop or give-way line before the traffic lets a driver out (half on a green light)
@@ -165,7 +165,7 @@ export class JunctionTraffic {
     if (driver.pending === claim) driver.pending = null;
   }
   // The way through the junction at the end of `edge`: the lane from the stop
-  // line, the turn, and the first metres of the lane beyond, as points a metre
+  // line, the turn, and the first meters of the lane beyond, as points a meter
   // apart, and every junction node it crosses (two across a junction complex)
   movement(edge, direction, next, turn) {
     // (the last one found for this turn, if asked for the same way, which means the same key)
@@ -227,8 +227,8 @@ export class JunctionTraffic {
   }
   // Two drivers coming from one approach in its two lanes (a boulevard's):
   // one turning across the other's lane meets it, as a car turning left
-  // from the kerb lane meets one going straight on by the median. (A
-  // driver's `lane` is its offset right of the centre line; the autodrive
+  // from the curb lane meets one going straight on by the median. (A
+  // driver's `lane` is its offset right of the center line; the autodrive
   // has none.)
   acrossLanes(a, am, b, bm) {
     if (am.edge !== bm.edge || am.direction !== bm.direction || !Number.isFinite(a.lane) || !Number.isFinite(b.lane) || Math.abs(a.lane - b.lane) < 1) return false;

@@ -18,7 +18,7 @@ import { nightLit } from './city-glass.js';
 
 // Buildings follow their lots. A lot is one plot of a block's frontage strip
 // (see mapgen/lots.js) and knows which of its edges face the street, which
-// its neighbours and which the yard behind. The building is the lot stepped
+// its neighbors and which the yard behind. The building is the lot stepped
 // in edge by edge: a small step from the pavement in front, a party wall or a
 // garden gap at the sides by district, and a yard behind so the building is
 // only as deep as its kind of building is. Facades bend with the streets and
@@ -29,7 +29,7 @@ const ACCENTS = ['#386f73', '#a9503e', '#cc9a48', '#456282', '#687b59'];
 const LAWN = '#7f9a5e';
 const ROOFS = ['#647c7a', '#667789', '#987463', '#758a7d', '#8b8874'];
 // Each district's building kinds (for narrow and for wide frontages), walls,
-// share of shopfronts, and the storeys its street walls rise to
+// share of shopfronts, and the stories its street walls rise to
 const STYLES = {
   'Old town': { narrow: ['townhouse', 'townhouse', 'brick', 'shop'], wide: ['brick', 'deco', 'apartment'], walls: ['#c88368', '#d4bb91', '#a65e52', '#ead2b0', '#7b9d95'], shops: .75, floors: [3, 5] },
   'Garden quarter': { narrow: ['townhouse', 'pavilion', 'townhouse'], wide: ['apartment', 'townhouse', 'pavilion'], walls: ['#cbd6b5', '#86b1a1', '#e6d1ad', '#d5a998', '#9daec1'], shops: .12, floors: [1, 3] },
@@ -40,7 +40,7 @@ const STYLES = {
 };
 const HEIGHTS = { brick: [2, 6], apartment: [3, 8], shop: [1, 2], warehouse: [1, 3], office: [6, 18], deco: [4, 12], townhouse: [2, 4], loft: [3, 5], pavilion: [1, 2], atrium: [5, 12] };
 // How a building stands on its lot: its step back from the pavement, the gap
-// to each neighbour (a hair for a party wall), how deep the building itself
+// to each neighbor (a hair for a party wall), how deep the building itself
 // is, the least yard behind it, and whether its plot is a garden.
 const INSETS = {
   'Old town': { front: .45, side: .08, depth: [11, 15], rear: 1.5, lawn: false },
@@ -52,7 +52,7 @@ const INSETS = {
 };
 // How far a district's buildings stand back from the pavement
 export const frontSetback = district => (INSETS[district] ?? INSETS.Midtown).front;
-// The biggest tree (its scale) whose crown only brushes a wall `room` metres
+// The biggest tree (its scale) whose crown only brushes a wall `room` meters
 // from its trunk (see city-assets.js: the widest cluster on the widest tree)
 export const treeRoom = room => (room + .9) / .52;
 // The share of a district's plain four-sided buildings under a pitched roof:
@@ -148,7 +148,7 @@ function massBuilding(footprint, wallKinds, depth) {
   }
   // Tidy: no slivers of wall, no corners that are not corners. A front round
   // a curve is a chain of slight corners, so it keeps those that hold it
-  // within a few centimetres of the curve, not one wall straight across it
+  // within a few centimeters of the curve, not one wall straight across it
   // (from the sharpest corner, which always stays)
   shape = dedupePolygon(shape, .6);
   if (shape.length >= 3) {
@@ -205,7 +205,7 @@ const convex = polygon => polygon.every((p, i) => {
   const a = polygon[(i - 1 + polygon.length) % polygon.length], b = polygon[(i + 1) % polygon.length];
   return (p.x - a.x) * (b.y - p.y) - (p.y - a.y) * (b.x - p.x) >= -1e-6;
 });
-// Storeys a block's street walls rise to, shared by its buildings
+// Stories a block's street walls rise to, shared by its buildings
 function blockFloors(block, style) {
   const random = seededRandom((block * 7919 + CITY.seed * 31) >>> 0);
   return integer(random, style.floors[0], style.floors[1]);
@@ -226,7 +226,7 @@ function shopSlot(lot) {
 
 // Lot subdivision also calls an exposed edge beside a yard or a missing lot
 // a 'side'. Only a wall with another plot close outside it is a party wall.
-// Keep three metres of outlook over the whole face, including concave corners.
+// Keep three meters of outlook over the whole face, including concave corners.
 export function wallHasOutlook(ring, i, neighbours) {
   const a = ring[i], b = ring[(i + 1) % ring.length], length = edgeLength(ring, i);
   if (length < 3.2) return false;
@@ -237,7 +237,7 @@ export function wallHasOutlook(ring, i, neighbours) {
     const other = polygonBounds(polygon);
     if (other.maxX < bounds.minX || other.minX > bounds.maxX || other.maxY < bounds.minY || other.minY > bounds.maxY) return true;
     // (nor a plot wholly to one side of the strip, along the wall or out
-    // from it, by more than the booleans' millimetres could close)
+    // from it, by more than the booleans' millimeters could close)
     let first = Infinity, last = -Infinity, near = Infinity, far = -Infinity;
     for (const p of polygon) {
       const along = (p.x - a.x) * tx + (p.y - a.y) * ty, out = (p.x - a.x) * ty - (p.y - a.y) * tx;
@@ -351,7 +351,7 @@ export function planLot(c, lot) {
   // No slender towers on small footprints
   floors = Math.max(Math.min(low, 2), Math.min(floors, Math.round(breadth * .9)));
   // A small detached house has a hipped roof; a terraced one, between its
-  // neighbours' party walls, takes a pitched one below
+  // neighbors' party walls, takes a pitched one below
   const house = footprintOut.length === 4 && massedArea < 330 && ['townhouse', 'pavilion', 'shop', 'brick'].includes(type) && insets.side > .5 && random() < (district === 'Garden quarter' ? .9 : .5);
   // A big lot becomes a perimeter block round a courtyard; a huge one that
   // cannot is a low hall.
@@ -501,7 +501,7 @@ function frontDoor(c, b, f, offset, head) {
   const frameKind = c.distant ? 'inlay' : 'solid';
   for (const side of [-1, 1]) f.add(offset + side * .635, G + bottom + height / 2, .15, .12, height, .18, trim, frameKind, true);
   f.add(offset, G + head + .065, .15, 1.39, .13, .18, trim, frameKind, true);
-  // Two wide panels read from the opposite kerb. Some doors have upper
+  // Two wide panels read from the opposite curb. Some doors have upper
   // glazing; the building's existing variation chooses it without new draws.
   const rows = [[.16, paint], [.67, panel], [.16, paint], [height - 1.17, b.variation % 2 ? panel : '#42616a'], [.18, paint]];
   for (const side of [-1, 1]) f.add(offset + side * .495, G + bottom + height / 2, .21, .16, height, 0, paint, 'inlay');
@@ -528,12 +528,12 @@ export function groundFloor(c, b, f, base, primary, random) {
     footing.add(0, G + .08, .3, span + .4, .16, .8, '#d5c19e', 'solid', true);
     // (the plinth stands on the ledge: running down through it, their cut ends
     // at a doorway shared a plane and flickered. It runs on past each end of
-    // the front as far as the gap to a neighbour's, so a terrace's plinths meet)
+    // the front as far as the gap to a neighbor's, so a terrace's plinths meet)
     footing.add(0, G + .32, .06, span + .2, .32, .16, '#939b98', 'solid', true);
   }
   if (entry?.shop) shopFront(c, b, f, base, primary);
   else if (b.type === 'office' || b.type === 'atrium') {
-    // (a sliver of a curved front is only the pier between its neighbours' glazing)
+    // (a sliver of a curved front is only the pier between its neighbors' glazing)
     if (span < .9) return;
     // The lobby's double door interrupts the glazing and its mullions.
     // Keeping glass beside/above the opening avoids two overlapping panes
@@ -585,7 +585,7 @@ export function groundFloor(c, b, f, base, primary, random) {
       }
     }
   } else {
-    // A house's ground floor is a storey like the ones above it; the tall
+    // A house's ground floor is a story like the ones above it; the tall
     // ground floor of a block has windows as tall as it is, their transoms
     // level with the head of a door that has a fanlight over it
     const tall = base > 4, loft = b.type === 'loft', frame = b.type === 'brick' || b.type === 'townhouse' ? '#e0ccab' : '#b3c5bc';
@@ -932,13 +932,13 @@ function lotTop(index) {
 // as city firewalls are, with an advert for one of the city's businesses on
 // a panel of flat paint, or a mural of low-poly triangles in one palette's
 // shades. Which walls, and what, by a hash of the building, never a stream.
-// Only on the band of wall between the top of the neighbour's roof and the
+// Only on the band of wall between the top of the neighbor's roof and the
 // cornice, and only close to: the signs are not drawn far off either.
 const MURALS = [['#f3c47a', '#e0735b', '#6d4d86'], ['#a6dcd6', '#5fa0bf', '#355d8c'], ['#c3d98a', '#6fa25c', '#33614c'], ['#f6cbd8', '#c98ec7', '#6f69ad'], ['#f1e2a6', '#e39c4b', '#a8483f']];
 const AD_PAINT = ['#e9e0c9', '#d8e0dc', '#e8d3c2', '#2f3f4a'];
 const AD_SIGNS = [...new Set([...SIGNS_BY_USE.shop, ...SIGNS_BY_USE.works])].filter(sign => sign.aspect > 1.3 && sign.aspect < 6 && !sign.letters);
 // Whether a party wall is painted, and the band it may have: { ad, bottom,
-// ceiling } in metres above the pavement, or null
+// ceiling } in meters above the pavement, or null
 export function wallPainting(c, b, ring, i, top) {
   const a = ring[i], q = ring[(i + 1) % ring.length], span = edgeLength(ring, i);
   if (span < 7) return null;
@@ -966,7 +966,7 @@ function paintWall(c, b, ring, i, top) {
     return;
   }
   // A mural: a grid of triangles over a panel, its inner corners jittered,
-  // coloured along a slant from one end of the palette to the other, in a frame
+  // colored along a slant from one end of the palette to the other, in a frame
   const w = Math.min(wide, room * 2.4), h = Math.min(room - .4, w * .9), columns = Math.max(3, Math.round(w / 1.6)), rows = Math.max(2, Math.round(h / 1.6));
   const palette = MURALS[Math.floor(randomAt(b.seed >>> 4, 7462 + i, CITY.seed) * MURALS.length)].map(colour => new THREE.Color(colour));
   const slant = randomAt(b.seed >>> 4, 7463 + i, CITY.seed) * Math.PI, sx = Math.cos(slant), sy = Math.sin(slant), jitter = (k, salt) => randomAt(b.seed >>> 4, 7470 + k * 7 + salt + i * 1013, CITY.seed) - .5;
@@ -1055,7 +1055,7 @@ function fireEscape(c, b, f, bottom, floors) {
 // The runs of walls round a ring that turn less than 30 degrees where they
 // meet: for each wall in a run of two or more, where along the run it
 // starts, how long the run is, and its walls in groups for bayLayout (each
-// at least 3.6 m of front, so a short wall joins its neighbours)
+// at least 3.6 m of front, so a short wall joins its neighbors)
 export function facadeRuns(ring, facade, kind) {
   const n = ring.length, runs = new Array(n);
   const gentle = k => {
@@ -1100,7 +1100,7 @@ export function runJoins(ring, runs) {
 }
 
 // How tall a building's ground floor is: a shed's loading bay, a house's
-// storey, or a block's tall shop or lobby floor
+// story, or a block's tall shop or lobby floor
 const baseHeight = b => b.type === 'warehouse' ? 4.8 : b.domestic ? 3.6 : 5.4;
 
 function buildBuilding(c, b) {
@@ -1119,7 +1119,7 @@ function buildBuilding(c, b) {
     for (let i = 0; i < 24 && trees.length < wanted; i++) {
       const p = insidePoint(b.lotLocal, random);
       if (!p || insidePolygon(p, ring) || distanceToPolyline(p, edge) < 1.6 || trees.some(t => Math.hypot(t.x - p.x, t.y - p.y) < 5.5)) continue;
-      // (a neighbour's wall may stand on the lot line)
+      // (a neighbor's wall may stand on the lot line)
       const room = Math.min(distanceToPolyline(p, walls), distanceToPolyline(p, edge) + .2);
       if (room < 2.2) continue;
       const size = Math.min(5 + random() * 3, treeRoom(room));
@@ -1187,7 +1187,7 @@ function buildBuilding(c, b) {
     if (f.street) groundFloor(c, b, f, base, i === primary, random);
     else if (b.windows[i] && (b.type === 'office' || b.type === 'atrium')) groundFloor(c, { ...b, shopfront: false }, f, base, false, random);
     if (i === primary && b.signs?.upstairs && b.windows[i]) upstairsSign(c, f, b.signs.upstairs, windowBays(b, f), b.variation % 2 ? -1 : 1, G + base, lowerTop);
-    // (a detached house's ground floor is a storey like the others, windowed
+    // (a detached house's ground floor is a story like the others, windowed
     // round its garden)
     const garden = b.domestic && b.lawn && !f.street;
     if (b.windows[i]) edgeWindows(c, b, f, garden ? G : G + base, garden ? lower + 1 : lower, random);
@@ -1243,7 +1243,7 @@ export function buildGarden(c, lot) {
     if (!p || trees.some(t => Math.hypot(t.x - p.x, t.y - p.y) < 6)) continue;
     const room = distanceToPolyline(p, edge);
     if (room < (lawn ? 1.4 : 2.2)) continue;
-    // (as big as the garden, or where a neighbour's wall may stand on the lot line, as that allows)
+    // (as big as the garden, or where a neighbor's wall may stand on the lot line, as that allows)
     c.tree(p.x, p.y, Math.min(6 + random() * 3, 3.5 + room * 1.6, treeRoom(room + (lawn ? GARDEN_RIM : 0)))); trees.push(p);
   }
 }

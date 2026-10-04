@@ -3,8 +3,8 @@ import { CityMapCache, drawParkedCar } from './city-map.js';
 import { CITY_PLACES } from './world/city-places.js';
 
 // The whole city on one page for the pause screen: every block tinted by its
-// district, each neighbourhood named where its blocks are, downtown, the
-// places found so far in their notebook colours, the jumps, and the car. The
+// district, each neighborhood named where its blocks are, downtown, the
+// places found so far in their notebook colors, the jumps, and the car. The
 // streets, water, parks and venues' grounds come from the street map's cached
 // paths.
 export const DISTRICT_COLORS = {
@@ -114,7 +114,7 @@ export class WorldMap {
       ctx.strokeStyle = '#2b3f47'; ctx.lineWidth = Math.max(key, 1.4 / scale); ctx.stroke(path);
     }
     ctx.restore();
-    // The places found, in their notebook colours, under the names
+    // The places found, in their notebook colors, under the names
     const small = width < 560;
     for (const place of found) {
       const [x, y] = toCanvas(place.u, place.s);

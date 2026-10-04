@@ -75,7 +75,7 @@ export function createClassicCar(entry = carEntry(DEFAULT_CAR)) {
     box(body, [.1, .1, .1], [side * .97, 1.34, -.68], paint);
     box(body, [.2, .13, .07], [side * 1.1, 1.42, -.68], paint);
     box(body, [.17, .1, .01], [side * 1.1, 1.42, -.64], glass);
-    // Squared arches stand out over the tyres, their feet just under the sill.
+    // Squared arches stand out over the tires, their feet just under the sill.
     for (const z of [-1.18, 1.21]) {
       const arch = [[z - .7, .575], [z - .46, 1.07], [z + .46, 1.07], [z + .7, .575], [z + .58, .575], [z + .37, .99], [z - .37, .99], [z - .58, .575]];
       outline(body, arch, side < 0 ? [-1.175, -.995] : [.995, 1.175], paint);
@@ -90,7 +90,7 @@ export function createClassicCar(entry = carEntry(DEFAULT_CAR)) {
   box(body, [1.98, .14, .17], [0, .64, -1.97], chrome);
   box(body, [1.98, .14, .17], [0, .64, 1.97], chrome);
   const plate = box(body, [.6, .22, .03], [0, .91, 1.96], roof);
-  // The plate still moves for the spare tyre; accessories and animated
+  // The plate still moves for the spare tire; accessories and animated
   // wheels stay separate.
   mergeParts(body, plate);
   // One roof or tail accessory per wagon trim (see cars.js). The rack's bars
@@ -177,8 +177,8 @@ export function createClassicCar(entry = carEntry(DEFAULT_CAR)) {
     wheels.push({ pivot, wheel, hub: wheel, front: z < 0 });
   }
   // Reuse the model and its materials so repeated route changes stay bounded.
-  // A chosen trim ignores the route; the default car follows it. A garage colour
-  // outranks both, so a repainted car keeps that colour wherever it drives.
+  // A chosen trim ignores the route; the default car follows it. A garage color
+  // outranks both, so a repainted car keeps that color wherever it drives.
   let customPaint = null, kitJourney = 'coast';
   function applyTrim(journey) {
     kitJourney = journey;
@@ -221,7 +221,7 @@ const STEEP = 1.2;
 // length, so whichever way it faces no corner hangs over a quay or a cliff.
 const FOOTING = 2.5;
 export const impassable = ground => ground.blocked;
-// How fast the tyres take back what a collision knocked into the car: the
+// How fast the tires take back what a collision knocked into the car: the
 // slide within about half a second, the turn a little sooner. The fastest a
 // blow can set the car turning, in radians a second.
 const SLIDE_GRIP = 5, SPIN_GRIP = 8, SPIN_MOST = 5;
@@ -234,14 +234,14 @@ const TOUCH = 1;
 // can land as blows a frame or two apart (a car met, then met again as it is
 // shoved), so the speed lost is summed, fading over CRASH_FADE seconds.
 const CRASH = 6, HARD = 9, CRASH_FADE = .1;
-// Pushing another car, the engine can only drive as hard as the tyres grip
+// Pushing another car, the engine can only drive as hard as the tires grip
 // (m/s²), however quick the car is, so weight decides who moves whom: a truck
 // bulldozes a hatchback, the taxi shoves one aside, and a light racer cannot
 // shift a van. PUSHING is how long, in seconds, a touch counts as a push.
 const PUSH_GRIP = 9, PUSHING = .15;
-// How far the body leans, in radians, when the tyres are giving everything.
+// How far the body leans, in radians, when the tires are giving everything.
 const LEAN = .105;
-// How far, in metres, render() may carry the last step forward, so that a
+// How far, in meters, render() may carry the last step forward, so that a
 // collision correction (the one step that is not smooth motion) cannot throw
 // the body ahead of itself.
 const LEAD_REACH = .5;
@@ -324,7 +324,7 @@ export class ActorMotion {
     this.car.userData.chaseLift = chaseLift;
     // (its shape along its length, for loose pieces to meet: see carProfile)
     const profile = carProfile(model.car, length);
-    // (and for someone getting in and out, where its door is, metres ahead of
+    // (and for someone getting in and out, where its door is, meters ahead of
     // its middle, how high its seat, and where to step down: see OnFoot)
     // (and where its boost flames come out, the same for every car of a kind)
     const tail = wheeled ? TAILS.get(carId) ?? TAILS.set(carId, tailPipes(model.body)).get(carId) : null;
@@ -334,7 +334,7 @@ export class ActorMotion {
     Object.assign(model.car.userData, this.car.userData);
   }
   disposeModel() { this.actor.dispose(); }
-  // A garage colour, the rainbow, or null for the finish the car left the factory in.
+  // A garage color, the rainbow, or null for the finish the car left the factory in.
   setPaint(color) { this.paintColor = color ?? null; this.updatePaint(); }
   get rainbow() { return this.paintColor === RAINBOW_PAINT; }
   updatePaint(dt = 0) {
@@ -378,13 +378,13 @@ export class ActorMotion {
   drain() { const events = this.events; this.events = []; return events; }
   // Which way the car is really going: its own drive, and any knock on top.
   get velocity() { if (this.pilot) return this.pilot.velocity; if (this.walker) return this.walker.velocity; const heading = this.slideHeading ?? this.heading; return { x: Math.sin(heading) * this.speed + this.knock.x, z: -Math.cos(heading) * this.speed + this.knock.z }; }
-  // A move in world metres, in the road's terms, as a step of driving is.
+  // A move in world meters, in the road's terms, as a step of driving is.
   shift(dx, dz) {
     const frame = this.route.frame(this.s);
     this.s += (dx * Math.sin(frame.angle) - dz * Math.cos(frame.angle)) / frame.scale;
     this.u += dx * Math.cos(frame.angle) + dz * Math.sin(frame.angle);
   }
-  // A slide and a turn fade as the tyres bite, and then are gone altogether.
+  // A slide and a turn fade as the tires bite, and then are gone altogether.
   // In the air (`grip` false) there is nothing to bite, and a knock carries on.
   carryKnock(dt, grip = true) {
     const knock = this.knock;
@@ -433,7 +433,7 @@ export class ActorMotion {
   }
   // Another car gives way as far as its weight allows. This one is put back
   // outside it and takes its share of the blow (see impact.js and strike),
-  // and while `pushing` a car its engine holds to its tyres' grip (a loose
+  // and while `pushing` a car its engine holds to its tires' grip (a loose
   // piece of furniture is no car to push: see LooseProps).
   resolveTrafficCollision(dx, dz, dvx = 0, dvz = 0, spin = 0, impact = Math.hypot(dvx, dvz), scrape = 0, pushing = true) {
     if (this.walker) { this.walker.resolveTrafficCollision(dx, dz, dvx, dvz, spin, impact); return; }
@@ -443,7 +443,7 @@ export class ActorMotion {
     this.placeAfterCollision();
   }
   // How the car moves as a body, for a blow to read: its velocity, the turn
-  // both the tyres and any earlier knock are giving it, and what it weighs
+  // both the tires and any earlier knock are giving it, and what it weighs
   // against another car (see heft).
   motion() {
     const p = this.groundedPosition, v = this.velocity;
@@ -477,7 +477,7 @@ export class ActorMotion {
   // it (see collideScenery): a flying machine over it, a car up on a ramp or
   // jumping over it (`contact`, where they would meet: see CarAir.passes), or
   // someone on foot on a roof, standing on it or above it. A car sinking in
-  // the harbour meets nothing more.
+  // the harbor meets nothing more.
   passes(solid, contact = null) {
     if (this.pilot) return this.pilot.passes(solid);
     if (this.walker) return this.walker.passes(solid);
@@ -527,8 +527,8 @@ export class ActorMotion {
     this.copyPose(this.previousPose, this.currentPose);
     const { frame: roadFrame, position: positionAt } = this.route;
     const stats = this.stats;
-    // Off its wheels the tyres have nothing to push against (see CarAir), and
-    // sinking in the harbour nothing answers the controls
+    // Off its wheels the tires have nothing to push against (see CarAir), and
+    // sinking in the harbor nothing answers the controls
     const aloft = this.aloft && dt > 0;
     if (this.sinking) input = {};
     const touch = aloft ? null : input.touchDrive;
@@ -569,7 +569,7 @@ export class ActorMotion {
     drift.control(dt, input, steering, aloft, Boolean(touch));
     const drifting = drift.active && !aloft;
     this.drifting = drifting; this.driftDirection = drift.dir;
-    // (let go, the tyres take the slide back over a moment: see travelHeading)
+    // (let go, the tires take the slide back over a moment: see travelHeading)
     this.driftAmount = dt && !touch ? THREE.MathUtils.damp(this.driftAmount, drifting ? 1 : 0, drifting ? 10 : 22, dt) : 0;
     let acceleration = 0;
     // The handbrake: the drift button when too slow to drift, or `stop`
@@ -616,7 +616,7 @@ export class ActorMotion {
     }
     const oldSpeed = this.speed;
     const boostCoast = Math.max(0, this.speed - stats.topSpeed - stats.braking * .4 * dt);
-    // (a boosted car keeps its way in the air: no tyres to shed it)
+    // (a boosted car keeps its way in the air: no tires to shed it)
     if (aloft) this.speed += acceleration * dt;
     else this.speed = clamp(this.speed + acceleration * dt, touch ? 0 : -stats.reverseSpeed, Math.max(stats.topSpeed + (boosting ? 10 : boostCoast), turboTop));
     // A held brake should settle the cab long enough to board/drop off before
@@ -660,7 +660,7 @@ export class ActorMotion {
       difference = this.heading - frame.angle;
     }
     const step = this.speed * dt, fromS = this.s, fromU = this.u;
-    // (a landing a little off the way the car is going slides a moment before the tyres bite: see CarAir.grip)
+    // (a landing a little off the way the car is going slides a moment before the tires bite: see CarAir.grip)
     if (!aloft && !drifting) {
       if (!dt || touch || oldSpeed * this.speed <= 0 || !Number.isFinite(this.slideHeading)) this.slideHeading = this.heading;
       this.slideHeading = travelHeading(this.slideHeading, this.heading, dt, grip * (this.carAir?.grip ?? 1), this.driftAmount, this.load);
@@ -693,14 +693,14 @@ export class ActorMotion {
       }
     }
     // Up and down with what the wheels drive over, or off it into the air
-    // (see CarAir). Models put their tyre bottoms at zero.
+    // (see CarAir). Models put their tire bottoms at zero.
     const v = this.velocity;
     this.carAir.update(dt, -v.z, v.x);
     const p = positionAt(this.s, this.u, this.y);
     this.groundedPosition.set(p.x, p.y, p.z); this.car.position.copy(this.groundedPosition);
     this.carAir.tilt(dt, this.speed);
     this.car.rotation.set(0, -this.heading, 0, 'YXZ'); this.car.rotateX(this.pitch); this.car.rotateZ(this.roll);
-    // Lean and dive read the same numbers the tyres do (in the air there are none).
+    // Lean and dive read the same numbers the tires do (in the air there are none).
     this.bodyRoll = THREE.MathUtils.damp(this.bodyRoll, aloft ? 0 : -clamp(yaw * this.speed * .0042, -LEAN, LEAN), 11, dt);
     this.bodyPitch = THREE.MathUtils.damp(this.bodyPitch, aloft ? 0 : -clamp(acceleration, -15, 12) * .0034, 7, dt);
     this.bodyLift = this.lift;
@@ -732,7 +732,7 @@ export class ActorMotion {
     this.audioTelemetry.boost = this.boosting || turbo ? 1 : 0;
     this.audioTelemetry.driftStage = drift.stage; this.audioTelemetry.driftStages = drift.stagesReached;
     this.audioTelemetry.turbos = drift.turbos; this.audioTelemetry.turboStage = drift.turboStage;
-    // (in the air the wheels spin free: the engine revs and the tyres go quiet)
+    // (in the air the wheels spin free: the engine revs and the tires go quiet)
     this.audioTelemetry.aloft = this.aloft ? 1 : 0;
     this.slip = Math.atan2(Math.sin(this.heading - this.slideHeading), Math.cos(this.heading - this.slideHeading));
     // Scraping along a wall or a car sounds only while it goes on.
@@ -755,7 +755,7 @@ for (const [name, field] of Object.entries({ s: 's', u: 'u', speed: 'speed', hea
   });
 }
 
-// (the rainbow's hue carries over, so a car swapped in picks up the colour where it was)
+// (the rainbow's hue carries over, so a car swapped in picks up the color where it was)
 const CONTEXT = ['route', 'freeDriving', 'arcade', 'scenery', 'props', 'traffic', 'driftMode', 'jetpack', 'night', 'journeyId', 'rainbowHue', 'distance'];
 
 // The player holds a controller, not a replaceable car body. Camera, input and

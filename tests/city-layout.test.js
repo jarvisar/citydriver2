@@ -17,12 +17,12 @@ test('every city has its boulevards, a parkway round it, collectors, and side st
     assert.ok(boulevards.reduce((sum, road) => sum + lengthOf(road.points), 0) > 1500, `seed ${city.seed}: too little boulevard`);
     for (const road of boulevards) assert.equal(road.profile, PROFILES.boulevard);
     for (const road of city.roads.filter(road => road.kind === 'ring')) assert.ok(road.profile.median > 0, 'the ring is a divided parkway');
-    // (a collector, carrying a neighbourhood through, is a little wider and has a centre line)
+    // (a collector, carrying a neighborhood through, is a little wider and has a center line)
     for (const road of city.roads.filter(road => road.kind === 'minor')) assert.ok((road.collector ? [PROFILES.collector, PROFILES.bayCollector] : [PROFILES.side, PROFILES.lane, PROFILES.parking]).includes(road.profile));
   }
 });
 
-test('no block is left as bare ground: a kerb that reaches a carriageway is cut back instead', () => {
+test('no block is left as bare ground: a curb that reaches a carriageway is cut back instead', () => {
   for (const city of cities) {
     assert.equal(city.blocks.filter(block => block.broken).length, 0, `seed ${city.seed}`);
     for (const block of city.blocks.filter(block => block.repaired)) assert.ok(block.sidewalk.length >= 3 && block.inner.length >= 3);
@@ -56,7 +56,7 @@ test('a square park gets a gate on each side, a loop and walks to a plaza that m
     junctionNear: (p, road, reach) => Boolean(index.nearest(p.x, p.y, reach + 14, (segment, distance) => segment.road !== road && distance - segment.road.profile.halfWidth < reach ? 0 : Infinity)),
   });
   assert.ok(layout.loop && layout.plaza && layout.gates.length >= 4, JSON.stringify({ loop: Boolean(layout.loop), plaza: layout.plaza, gates: layout.gates.length }));
-  // Each gate's walk starts across its street's centre line
+  // Each gate's walk starts across its street's center line
   const walks = layout.paths.filter(path => path !== layout.loop && path.length > 3 && path[0].distanceTo(path.at(-1)) > 1);
   for (const walk of walks) assert.ok(streets.some(street => segmentIntersection(walk[0], walk[1], street.points[0], street.points[1])), 'a walk reaches its street');
   // Two walks from different gates meet only on the plaza's ring

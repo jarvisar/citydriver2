@@ -81,7 +81,7 @@ function chunkBounds(group) {
   return bounds;
 }
 
-// How much of its own colour a sign gives off at full night
+// How much of its own color a sign gives off at full night
 const SIGN_GLOW = .85;
 // and a lit shop window (see city-glass.js)
 const SHOP_GLOW = .8;
@@ -116,7 +116,7 @@ const SMALL_CASTERS = new Set(['residents', 'lantern', 'bin', 'bollard', 'railin
   'hydrant', 'post-box', 'cabinet', 'news-boxes', 'bike-rack']);
 const smallCaster = key => SMALL_CASTERS.has(key) || key.startsWith('square-flowers-');
 const facadeTrim = ({ scale: [x, y, z] }) => Math.min(x, y, z) < .3 && Math.min(x, z) < .6;
-// A kerbside fitting's collider: a post's radius, or a box across and along the kerb
+// A curbside fitting's collider: a post's radius, or a box across and along the curb
 const FITTINGS = { hydrant: [.2], 'post-box': [.3], cabinet: [.5, .9], 'news-boxes': [.5, 1.65], 'bike-rack': [.8, 1.3] };
 function castFirst() {
   if (!this.userData.lowShadow) return;
@@ -154,10 +154,10 @@ function finishBatchMesh(mesh, { castShadow, receiveShadow, ambientOcclusion }, 
 }
 
 // Small batches that share a material draw as one merged mesh per chunk,
-// with each instance's transform and colour baked into the vertices; big
+// with each instance's transform and color baked into the vertices; big
 // batches stay instanced. A chunk bakes at most this many vertices in all:
 // the cheapest groups merge first, so the draws saved come cheap and a busy
-// street corner stays instanced. (21000 since the kerbside fittings: at
+// street corner stays instanced. (21000 since the curbside fittings: at
 // 18000 they took the room the bins and lamps had merged in.)
 const MERGE_INSTANCE_LIMIT = 32, MERGE_VERTEX_LIMIT = 6000, MERGE_CHUNK_VERTICES = 21000;
 const LIVE_BATCHES = new Set(['residents', 'signal-lens', 'water']);
@@ -356,7 +356,7 @@ function resources() {
     residents: createWalkerMaterial(),
     bark: standard({ color: '#625548', vertexColors: true, roughness: .97 }),
     leaves: standard({ color: '#ffffff', vertexColors: true, roughness: .8 }),
-    // Ground, kerbs, lawns, quays and markings share one vertex-coloured material.
+    // Ground, curbs, lawns, quays and markings share one vertex-colored material.
     ground: standard({ color: '#ffffff', vertexColors: true, roughness: .92, side: THREE.DoubleSide }),
   };
   for (const name of ['solid', 'props', 'bark', 'leaves']) {
@@ -436,8 +436,8 @@ export class CityChunk {
   box(x, y, s, width, height, depth, color, kind = 'solid', yaw = 0, roll = 0) {
     return this.item(kind, boxGeometry, this.materials[kind], [x, y, -s], [width, height, depth], color, yaw, roll);
   }
-  // A sign's painted face centred at (x, y, s), looking along its yaw (see
-  // faceYaw), with its board `back` metres behind it: the sign's own
+  // A sign's painted face centered at (x, y, s), looking along its yaw (see
+  // faceYaw), with its board `back` meters behind it: the sign's own
   // silhouette a `border` wider all round, so the board is the sign's shape
   signFace(key, sign, x, y, s, yaw, width, height, back = .05, border = .09) {
     if (this.distant || !sign) return;
@@ -445,7 +445,7 @@ export class CityChunk {
     this.item(key, windowGeometry, this.materials.signs, [x, y, -s], [width, height, 1], '#ffffff', yaw).signTile = sign.tint;
     if (back !== null) this.item('sign-edge', windowGeometry, this.materials.signEdges, [x - nx * back, y, -(s - ns * back)], [width + 2 * border, height + 2 * border, 1], '#ffffff', yaw).signTile = sign.tint;
   }
-  // A board painted on both faces, `gap` metres either side of its middle,
+  // A board painted on both faces, `gap` meters either side of its middle,
   // the dark silhouette between them: the first face looks along the yaw
   doubleSign(key, sign, x, y, s, yaw, width, height, gap = .045, border = .09) {
     if (this.distant || !sign) return;
@@ -572,7 +572,7 @@ export class CityChunk {
       }
       else if (piece.kind === 'bin') { const bin = this.prop('bin', x, s); this.post(x, s, .36); this.knockable([bin], [{ kind: 'bin', geometry: cityAssets.bin }]); }
       else if (piece.kind === 'bollard') { this.prop('bollard', x, s); this.post(x, s, .16); }
-      // The kerbside fittings (see placeStreetFurniture), round or a box along the kerb
+      // The curbside fittings (see placeStreetFurniture), round or a box along the curb
       else if (FITTINGS[piece.kind]) {
         const item = this.prop(piece.kind, x, s, piece.yaw), [width, length] = FITTINGS[piece.kind];
         if (length) this.rigid(x, s, () => this.solid(x, s, width, length), itemFrame(piece.s, piece.u, piece.yaw));
@@ -580,7 +580,7 @@ export class CityChunk {
         this.knockable([item], [{ kind: piece.kind, geometry: cityAssets[piece.kind] }]);
       }
       else if (piece.kind === 'railing') {
-        // (a quay's lengths are all four metres; a bridge's are fitted between its posts)
+        // (a quay's lengths are all four meters; a bridge's are fitted between its posts)
         const length = piece.length ?? 4;
         // (and a bridge's parapet, drawn with the streets, only stops the car)
         if (!piece.parapet) this.prop('railing', x, s, piece.yaw, piece.y ?? PAVEMENT_LEVEL, [1, 1, length / 4]);
@@ -601,7 +601,7 @@ export class CityChunk {
       }
       else if (piece.kind === 'signal') {
         const yaw = piece.yaw, cos = Math.cos(yaw), sin = Math.sin(yaw);
-        // A head `along` metres out along local -x from the pole, its middle lamp `height` up
+        // A head `along` meters out along local -x from the pole, its middle lamp `height` up
         const head = (along, height) => {
           if (this.distant) return [];
           const hx = x - along * cos, hs = s - along * sin, indices = [], lenses = [];
@@ -758,7 +758,7 @@ export class CityChunk {
   }
   animateSignals(signalTime) {
     const phase = Math.floor(signalTime % 24);
-    // The lamps change at six moments in each cycle; recolour only then.
+    // The lamps change at six moments in each cycle; recolor only then.
     const northGreen = cityGreen('north', signalTime), eastGreen = cityGreen('east', signalTime);
     const lights = (northGreen ? 1 : phase === 10 ? 2 : 0) + (eastGreen ? 3 : phase === 22 ? 6 : 0);
     if (lights === this.signalLights || !this.signalMesh) return;
@@ -795,7 +795,7 @@ export class CityChunk {
       this.peopleMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       // Their initial positions don't bound the walk around the block, so bound
       // the loops they walk, with room for anyone shoved or knocked flying. The old
-      // sphere round the whole cell and its neighbours kept every chunk's residents
+      // sphere round the whole cell and its neighbors kept every chunk's residents
       // drawn and animated, and the chunk itself couldn't be culled.
       const walks = new THREE.Box3();
       for (const loop of new Set(this.walkers.map(walker => walker.loop))) {
@@ -874,7 +874,7 @@ export class CitydriverWorld {
     // (a square's loop has an index of its own, past the blocks', for its walkers' looks)
     const SQUARE_LOOPS = 1e5;
     this.lotsByChunk = new Map(); this.blocksByChunk = new Map();
-    // A walking loop just inside every block's kerb
+    // A walking loop just inside every block's curb
     CITY.blocks.forEach((block, index) => {
       if (block.kerb.length < 3) return;
       const points = offsetPolygon(block.kerb, -1.5);
@@ -960,7 +960,7 @@ export class CitydriverWorld {
     this.track(s, u);
     if (this.center !== cell.key || this.radius !== radius) {
       // After a jump (the first frame, a reset, a new route) the whole
-      // collision neighbourhood is built before the car moves
+      // collision neighborhood is built before the car moves
       const last = this.centerCell;
       this.jumped = !last || Math.max(Math.abs(last.ix - cell.ix), Math.abs(last.iz - cell.iz)) > 1;
       this.center = cell.key; this.centerCell = cell; this.radius = radius;
@@ -1052,7 +1052,7 @@ export class CitydriverWorld {
     }
     return null;
   }
-  // The way the car has been going, over the last few metres
+  // The way the car has been going, over the last few meters
   track(s, u) {
     const moved = this.trail ? Math.hypot(s - this.trail.s, u - this.trail.u) : Infinity;
     if (moved > 60) { this.trail = { s, u }; this.heading = null; return; }

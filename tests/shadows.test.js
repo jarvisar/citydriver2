@@ -190,7 +190,7 @@ test('the shadow reaches back to the tallest caster however low the sun, and no 
     }
     const depth = shadow.far - shadow.near, spread = shadow.right - shadow.left;
     assert.ok(depth <= spread * SHADOW_FADE + CASTER_TOP / toSun.y + 2, `${elevation} deg: ${depth.toFixed(0)} m deep`);
-    assert.ok(Math.abs(sun.shadow.bias * depth + .035) < 1e-9, 'a fixed depth bias in metres');
+    assert.ok(Math.abs(sun.shadow.bias * depth + .035) < 1e-9, 'a fixed depth bias in meters');
     assert.ok(Math.abs(sun.shadow.normalBias - Math.min(.2, Math.max(.05, spread / 2048 * 1.15))) < 1e-9, 'a normal bias of a texel and a bit');
     if (elevation === 22.6) evening = depth;
     if (elevation === 53) noon = depth;
@@ -202,14 +202,14 @@ test('the shadow reaches back to the tallest caster however low the sun, and no 
 
 test('four blended taps weigh the texels exactly as the nine-tap tent did', () => {
   // One axis of a compare texture: 0 or 1 per texel, blended linearly as the
-  // hardware does between texel centres (t = coordinate * size - .5)
+  // hardware does between texel centers (t = coordinate * size - .5)
   const texels = Array.from({ length: 64 }, (_, i) => (Math.sin(i * 12.9898) * 43758.5453 % 1 + 1) % 1 > .5 ? 1 : 0);
   const blend = t => { const i = Math.floor(t), f = t - i; return texels[i] * (1 - f) + texels[i + 1] * f; };
   for (let k = 0; k < 400; k++) {
     const t = 3 + (k * .6180339887 % 1) * 56;
     const nine = (blend(t - 1) + 2 * blend(t) + blend(t + 1)) / 4;
     const cell = Math.floor(t), f = t - cell;
-    // (the shader's lo/hi weights and a/b places, in texel-centre units)
+    // (the shader's lo/hi weights and a/b places, in texel-center units)
     const four = (3 - 2 * f) / 4 * blend(cell - 1 + (2 - f) / (3 - 2 * f)) + (1 + 2 * f) / 4 * blend(cell + 1 + f / (1 + 2 * f));
     assert.ok(Math.abs(nine - four) < 1e-12, `at ${t}: ${nine} vs ${four}`);
   }

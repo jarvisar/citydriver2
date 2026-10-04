@@ -9,13 +9,13 @@ import { filletPolyline } from './road-network.js';
 // park, round a pond). Every walk joins the others and a street, so the
 // network has no dead end, and every walk stays on the lawn.
 //
-// park: the face of the streets round it (their centre lines).
+// park: the face of the streets round it (their center lines).
 // halfWidthAt(a, b): the half width of the street along a face edge.
 // junctionNear(p, road, reach): whether a road other than `road` comes
 //   within `reach` of p: where a gate would crowd a junction.
-// streetAt(p): the nearest street's centre-line point { x, y, road }.
+// streetAt(p): the nearest street's center-line point { x, y, road }.
 // Returns { paths: [polyline], plaza, pond, lawn, loop, gates }: each gate
-// where a walk leaves its street, with the street's centre-line point there.
+// where a walk leaves its street, with the street's center-line point there.
 export const PARK_PATH = { overshoot: .6, step: 4 };
 
 const v = (x, y) => new Vector(x, y);
@@ -152,7 +152,7 @@ export function parkLayout(park, { halfWidthAt, sidewalk = 4.2, junctionNear, st
   const candidates = edge.map(({ p, tx, ty, d }, k) => {
     const street = streetAt(p);
     if (!street) return null;
-    // A corner: the edge turns sharply within a few metres either side
+    // A corner: the edge turns sharply within a few meters either side
     const before = edge[(k - 5 + edge.length) % edge.length], after = edge[(k + 5) % edge.length];
     const straight = before.tx * after.tx + before.ty * after.ty > .88 && before.tx * tx + before.ty * ty > .95;
     return { p, d, street, straight, tx, ty };
@@ -182,7 +182,7 @@ export function parkLayout(park, { halfWidthAt, sidewalk = 4.2, junctionNear, st
     const s = v(gate.street.x, gate.street.y), g = gate.p, inward = g.clone().sub(s);
     if (inward.length() < 1) continue;
     inward.normalize();
-    // In from the street, across its pavement to the lawn's edge and a few metres on
+    // In from the street, across its pavement to the lawn's edge and a few meters on
     const entry = [s.clone().sub(inward.clone().multiplyScalar(overshoot)), s, g.clone().add(inward.clone().multiplyScalar(pathHalfWidth + 2))];
     const from = entry[entry.length - 1];
     // Toward the plaza: where the ring faces the gate

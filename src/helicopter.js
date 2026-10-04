@@ -15,7 +15,7 @@ import { propTop } from './loose-props.js';
 // bumps into buildings and traffic; the rotor passes over them. `rotor` is
 // the main rotor's radius. Like the specials' shapes, `eye` seats the
 // first-person camera and `chaseLift` raises the chase camera over the rotor,
-// and `door` (metres ahead of the middle) and `seat` (metres up) are where
+// and `door` (meters ahead of the middle) and `seat` (meters up) are where
 // someone climbs in and out (see OnFoot).
 export const HELICOPTER_SHAPE = { name: 'helicopter', width: 2.3, length: 7.3, eye: [.3, 1.72, -2.5], chaseLift: 1.4, rotor: 4.2, door: 1.7, seat: .9 };
 
@@ -25,7 +25,7 @@ const MAST = new THREE.Vector3(0, 1.6, -1.35);
 const DARK = '#2b3434', CHROME = '#bfc4b9', GLASS = '#4d737c';
 
 // Faceted parts in the road cars' manner, merged by material. Paint takes the
-// garage colour; `details` carry their own. Everything is placed in car space
+// garage color; `details` carry their own. Everything is placed in car space
 // and moved to hang from `pivot` (the mast here; the plane has its own).
 // A category is a list of parts to merge, started by the first part put in it.
 export function partsKit(pivot = MAST) {
@@ -183,7 +183,7 @@ export function createHelicopter(entry) {
     part.castShadow = true; part.receiveShadow = true; parent.add(part); return part;
   };
   mesh(shells.paint, paint); mesh(shells.details, trim); mesh(shells.beacon, beacon);
-  // The rotors turn about their own hubs, so each is re-centred on its pivot
+  // The rotors turn about their own hubs, so each is re-centered on its pivot
   const rotor = new THREE.Group(), tail = new THREE.Group();
   rotor.position.set(0, 2.84 - MAST.y, 0); tail.position.set(.22, 2.05 - MAST.y, 3.5 - MAST.z);
   shells.rotor.translate(0, -rotor.position.y, 0); shells.tail.translate(-tail.position.x, -tail.position.y, -tail.position.z);
@@ -204,16 +204,16 @@ export function createHelicopter(entry) {
   };
 }
 
-// How it flies. Speeds in m/s, rates in 1/s, heights in metres.
+// How it flies. Speeds in m/s, rates in 1/s, heights in meters.
 //   CLIMB, SINK      vertical speed with climb or descend held
 //   LIFT, LOW        a pedal on the ground lifts it at LIFT to LOW, so W takes off
-//   FLARE            descending, it slows to FLARE m/s per metre left, so it sets down gently
+//   FLARE            descending, it slows to FLARE m/s per meter left, so it sets down gently
 //   YAW, YAW_FAST    turn rate at a hover and at full speed
 //   SIDE             how fast a sideways slide is taken back into the travel
 //   HOVER            how fast it slows with neither pedal held
 //   BACKWARD         the speed it backs up at
 //   SKIDS            friction on the ground
-//   STEP             the highest a roof or kerb can be above the skids to be set down on;
+//   STEP             the highest a roof or curb can be above the skids to be set down on;
 //                    anything higher is a wall
 //   AIRBORNE         above the street by this much it clears traffic, people, walls and
 //                    railings; furniture it clears only over its top

@@ -20,7 +20,7 @@ function travelAlong(edge, direction, u, s) {
   return { along: direction > 0 ? along : edge.length - along, off };
 }
 // How far through a turn a point is, by its projection onto the turn's
-// curve (sampled once a metre), carried on past its end
+// curve (sampled once a meter), carried on past its end
 const turnSamples = new WeakMap();
 function turnProgress(turn, u, s) {
   if (!turnSamples.has(turn)) {
@@ -99,7 +99,7 @@ export class CityAutodrive {
     }
     // The car heads straight for a point ahead, so round a curve it takes the
     // chord: in and near a turn the point is close enough that the chord cuts
-    // the corner by no more than a quarter of a metre, clear of the kerb
+    // the corner by no more than a quarter of a meter, clear of the curb
     const inTurn = turn && path.along + 16 > turn.start && path.along < turn.start + turn.length;
     const lookahead = Math.min(Math.max(7, Math.abs(player.speed ?? 0) * .7), inTurn && Number.isFinite(turn.radius) ? Math.max(3, Math.sqrt(8 * turn.radius * .25)) : Infinity), ahead = path.along + lookahead;
     let aim, turnSpeed = Infinity;

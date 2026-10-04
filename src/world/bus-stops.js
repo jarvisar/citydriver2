@@ -9,7 +9,7 @@ import { BUS_MODEL, BUS_DOORS, BUS_ROADS } from '../traffic-models.js';
 import { approachControl } from '../city-junctions.js';
 
 // The bus stops, and the people at them (see CityTraffic's serve). Each
-// shelter by a bus road is a stop for the bus going its way along the kerb.
+// shelter by a bus road is a stop for the bus going its way along the curb.
 // A few people wait at one, and now and then someone else walks up along
 // the pavement. When the bus calls they file on at its front door, and a few
 // get off at its middle one and walk off round the block as the residents
@@ -18,8 +18,8 @@ import { approachControl } from '../city-junctions.js';
 // everything else (knocked flying, shoved, red in a demolition run), drawn
 // as one instanced mesh near the player.
 
-// How far in from the kerb a shelter stands (see placeStreetFurniture), and
-// how far in from the kerb people walk (see CitydriverWorld.prepareLots).
+// How far in from the curb a shelter stands (see placeStreetFurniture), and
+// how far in from the curb people walk (see CitydriverWorld.prepareLots).
 // A stop needs the bus's tail STREET_CLEAR m into its street and its nose
 // LINE_CLEAR m short of the stop line, room to pull out before the junction.
 const SHELTER_IN = 1.7, WALK_IN = 1.5, STREET_CLEAR = 19, LINE_CLEAR = 12;
@@ -41,7 +41,7 @@ const yawAlong = (du, ds) => Math.atan2(-du, ds);
 // Where a rider is at `time`, along their legs, each starting where the last
 // ended: a `pause` (`hidden` while still in the bus), a straight walk `to` a
 // point, or a walk round a block's pavement (`loop`, see walkPose) for
-// `distance` metres. Into their x, s, heading (null standing) and pace.
+// `distance` meters. Into their x, s, heading (null standing) and pace.
 // Anyone who walks `to` the door with `board` is gone.
 function follow(rider, time) {
   for (;;) {
@@ -91,7 +91,7 @@ export class BusStops {
     this.mesh = new THREE.InstancedMesh(cityWalker, material, PEOPLE);
     this.mesh.name = 'citydriver-bus-riders'; this.mesh.castShadow = this.mesh.receiveShadow = true;
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    // (every slot dressed before the warning's copies share its colours and morphs)
+    // (every slot dressed before the warning's copies share its colors and morphs)
     const anyone = walkerAppearance(0);
     for (let i = 0; i < PEOPLE; i++) setWalkerAppearance(this.mesh, i, anyone);
     this.slots = new Array(PEOPLE).fill(null); this.drawn = { count: 0, minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
@@ -104,7 +104,7 @@ export class BusStops {
   // A shelter as a stop: the street and way along it the bus comes (the one
   // with the shelter on its right, since traffic keeps right), where the bus
   // stops (`along`, its middle, with the front door just past the shelter)
-  // and how far out (`lane`, by the kerb), and the kerb of the block or park
+  // and how far out (`lane`, by the curb), and the curb of the block or park
   // behind it (see walk). Null if it is not by a bus road, or too near
   // either end of its street.
   stopAt(piece, nav) {
@@ -128,7 +128,7 @@ export class BusStops {
     if (stop.loop === undefined) { stop.loop = this.loop(stop.ring); stop.phase = stop.loop ? nearestOnLoop(stop.loop, stop.x, stop.s) : 0; }
     return stop.loop;
   }
-  // The residents' walk just inside a kerb (as CitydriverWorld.prepareLots makes it)
+  // The residents' walk just inside a curb (as CitydriverWorld.prepareLots makes it)
   loop(ring) {
     if (!ring || ring.length < 3) return null;
     if (!this.loops.has(ring)) {

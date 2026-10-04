@@ -22,7 +22,7 @@ const carParkYard = block => PARKED_YARDS.has(block.style) && block.yard?.length
 let lotsByBlock = null;
 const drives = new Map();
 // The driveway into a block's car park: a strip across one of its street
-// lots, at the end of the frontage beside its neighbour, from the pavement
+// lots, at the end of the frontage beside its neighbor, from the pavement
 // to the yard. The narrowest lot that fronts one street only and backs onto
 // the yard gives up the strip; its building stands on what is left.
 // { lot, polygon (the strip in the lot), mouth (on the pavement's inner
@@ -45,7 +45,7 @@ export function yardDrive(index) {
     if (streets.length !== 1 || !kinds.includes('rear')) continue;
     const j = streets[0], a = lot[j], b = lot[(j + 1) % n], length = Math.hypot(b.x - a.x, b.y - a.y);
     if (length < DRIVE_WIDTH + 8 || (best && length >= best.length)) continue;
-    // The end of the frontage beside a neighbour
+    // The end of the frontage beside a neighbor
     const atStart = kinds[(j - 1 + n) % n] === 'side', atEnd = kinds[(j + 1) % n] === 'side';
     if (!atStart && !atEnd) continue;
     const tx = (b.x - a.x) / length, ty = (b.y - a.y) / length, nx = -ty, ny = tx;
@@ -57,8 +57,8 @@ export function yardDrive(index) {
   const rect = [e, { x: e.x + sx * DRIVE_WIDTH, y: e.y + sy * DRIVE_WIDTH }, { x: e.x + sx * DRIVE_WIDTH + nx * DRIVE_REACH, y: e.y + sy * DRIVE_WIDTH + ny * DRIVE_REACH }, { x: e.x + nx * DRIVE_REACH, y: e.y + ny * DRIVE_REACH }];
   const strip = intersection(solids([best.ring]), solids([rect])).sort((p, q) => calcPolygonArea(q.outer) - calcPolygonArea(p.outer))[0]?.outer;
   if (!strip || calcPolygonArea(strip) < DRIVE_WIDTH * 8) return null;
-  // The dropped kerb across the pavement in front of it, from the lot's edge
-  // to the kerb however wide the pavement is there
+  // The dropped curb across the pavement in front of it, from the lot's edge
+  // to the curb however wide the pavement is there
   const across = [e, { x: e.x + sx * DRIVE_WIDTH, y: e.y + sy * DRIVE_WIDTH }, { x: e.x + sx * DRIVE_WIDTH - nx * 12, y: e.y + sy * DRIVE_WIDTH - ny * 12 }, { x: e.x - nx * 12, y: e.y - ny * 12 }];
   const crossing = difference(intersection(solids([block.kerb]), solids([across])), solids([block.inner]))
     .sort((p, q) => calcPolygonArea(q.outer) - calcPolygonArea(p.outer))[0]?.outer ?? null;

@@ -59,7 +59,7 @@ test('a deck\'s railing follows its edge over the water, facing the water, unbro
       const out = { x: piece.x + piece.ty * 1.8, y: piece.y - piece.tx * 1.8 };
       if (wellOut(out)) assert.ok(!paved(out), `a railing with paving on its water side at ${at}`);
     }
-    // (every half metre of the line between the posts has a length of railing
+    // (every half meter of the line between the posts has a length of railing
   // along it, give or take a chord across a bevel)
     const along = rail.line;
     for (let i = 0; i < along.length - 1; i++) {

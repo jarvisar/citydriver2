@@ -7,7 +7,7 @@ import { intersection, region } from '../mapgen/booleans.js';
 // The raised medians down the middle of the boulevards and the ring's
 // parkway: one strip along each street between its junctions, its rounded
 // noses stopping short of the crosswalks so turning traffic has the junction
-// to itself. The renderer draws them, the furniture plants them and the tyres
+// to itself. The renderer draws them, the furniture plants them and the tires
 // ride up onto them from the same shapes.
 export const MEDIAN_KERB = .15;
 const NOSE = 1.6;  // Beyond the crosswalk

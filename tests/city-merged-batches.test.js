@@ -55,7 +55,7 @@ test('merged furniture reproduces every instance exactly as the instancing shade
               assert.ok(normal.fromBufferAttribute(normals, vertex).normalize().dot(expected) > .99999, `${key} vertex normal`);
               const r = (source.color ? source.color.getX(i) : 1) * tint.r, g = (source.color ? source.color.getY(i) : 1) * tint.g;
               const b = (source.color ? source.color.getZ(i) : 1) * tint.b;
-              assert.ok(Math.abs(color.getX(vertex) - r) < 1e-4 && Math.abs(color.getY(vertex) - g) < 1e-4 && Math.abs(color.getZ(vertex) - b) < 1e-4, `${key} vertex colour`);
+              assert.ok(Math.abs(color.getX(vertex) - r) < 1e-4 && Math.abs(color.getY(vertex) - g) < 1e-4 && Math.abs(color.getZ(vertex) - b) < 1e-4, `${key} vertex color`);
             }
           }
         }

@@ -1,6 +1,6 @@
 import { BufferAttribute } from 'three';
 
-// Index exact duplicates only. Normals, UV seams and vertex colours are part
+// Index exact duplicates only. Normals, UV seams and vertex colors are part
 // of the key, so hard edges, smooth residents and shadow bias stay unchanged.
 // Run once on shared static assets, never while streaming or rendering.
 export function compactGeometry(geometry) {

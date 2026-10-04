@@ -74,7 +74,7 @@ export function filletPolyline(points, maxRadius, { minTurn = .035, arcStep = AR
   return dedupe(out);
 }
 // A streamline that closes on itself joins its two integration fronts where
-// they met, which can be metres apart and out of line, leaving a hook: the
+// they met, which can be meters apart and out of line, leaving a hook: the
 // loop is cut back past the join and closed straight across, for the fillet
 // to round like any other bend
 export function closeLoop(points, trim = 12) {
@@ -134,7 +134,7 @@ function crossings(roads) {
   });
   const hits = roads.map(() => []);
   const along = (segment, point) => cumulative[segment.road][segment.i] + segment.from.distanceTo(point);
-  // A loop's first and last segments are neighbours too, across its closure
+  // A loop's first and last segments are neighbors too, across its closure
   const last = roads.map(road => isLoop(road.points) ? road.points.length - 2 : -1);
   for (const { point, segments: [a, b] } of findIntersections(segments)) {
     if (a.road === b.road && (Math.abs(a.i - b.i) < 2 || Math.abs(a.i - b.i) === last[a.road])) continue;
@@ -251,10 +251,10 @@ class SegmentGrid {
 
 // A streamline can follow the field alongside the road it set out from,
 // inside that road's own carriageway, or just beside it with no room for a
-// block between them: two carriageways kerb to kerb, or a strip of pavement
+// block between them: two carriageways curb to curb, or a strip of pavement
 // where the houses should be. Wherever the lesser of two roads runs within
 // their combined half widths of the other, nearly parallel to it, for more
-// than a few metres, or within `crowd.gap` metres of its kerb for more than
+// than a few meters, or within `crowd.gap` meters of its curb for more than
 // `crowd.run`, that stretch of it is cut out. The ends left are marked, so
 // the stretch is not carried straight back alongside the other road.
 const CROWD = { gap: 14, angle: .3, run: 30 };
@@ -301,7 +301,7 @@ function unhug(roads, { fixed, halfWidthOf, step = 2, minRun = 8, maxAngle = .45
   });
 }
 
-// A streamline that hugs a road can cross it twice a few metres apart,
+// A streamline that hugs a road can cross it twice a few meters apart,
 // leaving a sliver of street beside the road and two junctions on top of one
 // another. The lesser road loses the stretch between the crossings: it
 // meets the greater road at two plain junctions instead.
@@ -335,7 +335,7 @@ function unlens(roads, { fixed, overshoot, span = 40 } = {}) {
 }
 
 // A street that ends on another at a shallow angle runs inside the other's
-// carriageway for metres before it joins: no junction can be laid out
+// carriageway for meters before it joins: no junction can be laid out
 // there. Such an end is cut back to the street's previous junction; a street
 // with no other junction goes.
 function unshallow(roads, { fixed, overshoot, stub, minAngle = .45, end = 2 } = {}) {
@@ -372,8 +372,8 @@ function unshallow(roads, { fixed, overshoot, stub, minAngle = .45, end = 2 } = 
 }
 
 // MapGenerator joins a streamline to a road it comes near by swerving its
-// last few metres onto it, which leaves a kink tighter than any street
-// bends a few metres from the junction. Each such end is cut off before the
+// last few meters onto it, which leaves a kink tighter than any street
+// bends a few meters from the junction. Each such end is cut off before the
 // swerve: the dead end left is then carried straight on to the next street,
 // or cut back, like any other.
 function unswerve(roads, { fixed, reach = 35, window = 3, minRadius = 20 } = {}) {
@@ -406,7 +406,7 @@ function unswerve(roads, { fixed, reach = 35, window = 3, minRadius = 20 } = {})
 }
 
 // The ring and the waterside roads are clipped against each other's lines,
-// and where they meet at a sharp angle the few centimetres each is carried
+// and where they meet at a sharp angle the few centimeters each is carried
 // past the other can miss: two ends a hair apart that never touch, a gap no
 // car can cross. Ends of different roads of `kinds` within `reach` of each
 // other that do not already cross are moved to meet halfway, so the roads
@@ -449,13 +449,13 @@ export function weldEnds(roads, { reach = 2, carry = 15, kinds = new Set(['coast
 }
 
 // Streamlines wind round the tensor field's degenerate points (the middle of
-// downtown, where the radial field is centred) in loops too small for a
-// block: a ring of road a few metres across, with streets converging on it
+// downtown, where the radial field is centered) in loops too small for a
+// block: a ring of road a few meters across, with streets converging on it
 // and sometimes a main road straight through it. Each small, round loop is
-// made a circus: a round street at least `radius` metres across with a
+// made a circus: a round street at least `radius` meters across with a
 // garden in the middle, and every street that came inside it ends on it.
 // canPlace(p) says whether the circus may pass through p; fixed roads stay
-// `clearance` metres clear of it. Returns the roads and the circuses.
+// `clearance` meters clear of it. Returns the roads and the circuses.
 export function circuses(roads, { maxRadius = 55, radius = 40, roundness = .7, spacing = 80, clearance = 36, step = 6, kind = 'major',
   canPlace = () => true, fixed = new Set(['coast', 'riverbank', 'ring']) } = {}) {
   const found = [], fixedIndex = new RoadIndex(roads.filter(road => held(fixed, road)));
@@ -611,7 +611,7 @@ export function endJoints(roads, width = road => road.profile.halfWidth, { into 
       if (length > 1e-6) ends.push({ r, p, dx: (q.x - p.x) / length, dy: (q.y - p.y) / length, w: width(road) });
     }
   });
-  // Ends by metre cell, so each is only compared with those beside it
+  // Ends by meter cell, so each is only compared with those beside it
   const patches = [], cells = new Map(), cell = (x, y) => `${Math.floor(x)},${Math.floor(y)}`;
   ends.forEach((end, i) => { const key = cell(end.p.x, end.p.y); if (!cells.has(key)) cells.set(key, []); cells.get(key).push(i); });
   const pairs = [];
@@ -636,11 +636,11 @@ function hull(points) {
   return lower.slice(0, -1).concat(upper.slice(0, -1)).map(p => new Vector(p.x, p.y));
 }
 
-// Two streets that stop on the same road within a few metres of each other
-// make a knot of junctions no kerb can round. From the same side they are
+// Two streets that stop on the same road within a few meters of each other
+// make a knot of junctions no curb can round. From the same side they are
 // converging on one place: the lesser gives way, cut back to its last
 // junction clear of the knot. From opposite sides they are a crossroads
-// drawn a few metres out of true: the lesser's last stretch swings onto the
+// drawn a few meters out of true: the lesser's last stretch swings onto the
 // other's junction, so the two meet the road in one place.
 export function spreadJunctions(roads, { close = 14, clear = 22, swing = 30, maxSwing = .5, end = 2, overshoot = .6, fixed = new Set(['coast', 'riverbank', 'ring']) } = {}) {
   let list = roads.map(road => ({ ...road, points: road.points.map(p => p.clone()) }));
@@ -697,7 +697,7 @@ export function spreadJunctions(roads, { close = 14, clear = 22, swing = 30, max
       if (a.side === b.side) { if (!loser.previous || !edits.has(loser.previous.other)) edits.set(loser.r, { cut: loser }); }
       else swingOnto(loser, winner.hit.point, winner.r);
     }
-    // A street stopping a few metres short of where another crosses the same road meets it at the crossing
+    // A street stopping a few meters short of where another crosses the same road meets it at the crossing
     for (const tee of tees) {
       if (edits.has(tee.r)) continue;
       const crossing = hits[tee.host].find(h => !h.endToEnd && h.other !== tee.r && h.other !== tee.host && h.point.distanceTo(tee.hit.point) > 1 && h.point.distanceTo(tee.hit.point) < close
@@ -714,7 +714,7 @@ export function spreadJunctions(roads, { close = 14, clear = 22, swing = 30, max
       const points = atStart ? slicePolyline(road.points, Math.max(0, previous.d - overshoot), length) : slicePolyline(road.points, 0, Math.min(length, previous.d + overshoot));
       return points.length > 1 ? [{ ...road, points }] : [];
     });
-    // A street that stopped on a stretch cut away now runs a few metres past its last junction
+    // A street that stopped on a stretch cut away now runs a few meters past its last junction
     list = trimEnds(list, { overshoot, fixed });
   }
   return list;
@@ -724,7 +724,7 @@ export function spreadJunctions(roads, { close = 14, clear = 22, swing = 30, max
 // runs from a dead end back to its first junction is cut off at that junction,
 // through however many end-to-end roads it spans (a street split into park
 // path and street, say), and anything left in a small island of its own goes.
-// Overshoots shorter than `stub` stay: they are the few centimetres a road
+// Overshoots shorter than `stub` stay: they are the few centimeters a road
 // runs past the one it meets.
 export function pruneNetwork(roads, { stub = 18, overshoot = .6, fixed = new Set(['coast', 'riverbank', 'ring']), Graph } = {}) {
   let list = roads;
@@ -791,7 +791,7 @@ export function pruneNetwork(roads, { stub = 18, overshoot = .6, fixed = new Set
 
 // Two roads that meet end to end at an angle make a corner that no junction
 // rounds and no bend was filleted into. Where one leg of the corner runs only
-// a few metres (under `near`) from a junction, that leg is a dog-leg: it goes,
+// a few meters (under `near`) from a junction, that leg is a dog-leg: it goes,
 // and the other road is carried on to the junction instead. Elsewhere the
 // corner is rounded into a curve as wide as the legs allow, half on each road.
 // radiusOf(kind) is how round a road of that kind bends.
@@ -886,7 +886,7 @@ export function easeKinks(roads, { minRadius = 15, window = 3, clear = 2, fixed 
     list.forEach((road, r) => {
       if (held(fixed, road) || road.kind === 'path') return;
       const points = road.points, along = cumulative[r], total = along[points.length - 1];
-      // The point `d` along the road (a search of the distances, not a slice: this runs every metre)
+      // The point `d` along the road (a search of the distances, not a slice: this runs every meter)
       const at = distance => {
         const d = Math.max(1e-6, Math.min(total, distance));
         let lo = 0, hi = points.length - 1;

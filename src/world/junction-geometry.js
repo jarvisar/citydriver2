@@ -2,14 +2,14 @@ import { KERB_RADIUS } from './city.js';
 
 // The shape of every junction, derived once from the street graph and shared
 // by everything that has to agree about it: where each road leaves the
-// junction box (its kerb corners), where the crosswalk and the stop line are,
+// junction box (its curb corners), where the crosswalk and the stop line are,
 // where the sign or signal stands, and where turning traffic leaves one lane
 // and joins the next.
 //
-// An approach's corners are with its neighbours round the node. Its side line
-// meets a neighbour's side line where
+// An approach's corners are with its neighbors round the node. Its side line
+// meets a neighbor's side line where
 //   t = (w_other + w_self * cos θ) / sin θ
-// along it (θ the angle between the two roads), and the kerb round that
+// along it (θ the angle between the two roads), and the curb round that
 // corner is rounded, which carries the corner on by R / tan(θ / 2). The
 // approach is clear of the junction beyond the furthest of its two corners.
 export const CROSSWALK = 3.2;
@@ -19,7 +19,7 @@ export const CROSSWALK = 3.2;
 export const LINK = 24;
 const MAX_CLEAR = 34, LOOK = 6;
 
-// Unit direction of an edge leaving a node, averaged over its first few metres
+// Unit direction of an edge leaving a node, averaged over its first few meters
 function leaving(nav, edge, node) {
   const direction = edge.a === node.id ? 1 : -1, along = Math.min(LOOK, edge.length * .4);
   const p = nav.pose(edge, along, direction);
@@ -44,7 +44,7 @@ export function junctionGeometry(nav) {
       for (const other of [arms[(i + 1) % n], arms[(i - 1 + n) % n]]) {
         if (other === arm) continue;
         const cos = arm.tx * other.tx + arm.ty * other.ty, theta = Math.acos(Math.max(-1, Math.min(1, cos)));
-        // Nearly straight on, the neighbour is the same street carrying on
+        // Nearly straight on, the neighbor is the same street carrying on
         if (theta > Math.PI - .35 || theta < .2) continue;
         const corner = Math.max(0, (other.halfWidth + arm.halfWidth * cos) / Math.sin(theta));
         clear = Math.max(clear, corner + KERB_RADIUS / Math.tan(theta / 2));

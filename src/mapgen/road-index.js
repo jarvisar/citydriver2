@@ -1,5 +1,5 @@
 // A cell hash of road segments answering "which road is nearest here?", the
-// question the block setbacks, the car's tyres and the traffic all ask.
+// question the block setbacks, the car's tires and the traffic all ask.
 // (Cells are keyed by number, within a million cells of the origin, and hold
 // segment numbers; a query marks the segments it has seen with a stamp rather
 // than a set, one row of stamps for each query running inside another's
@@ -32,7 +32,7 @@ export class RoadIndex {
     const x0 = Math.floor((x - radius) / this.cellSize), x1 = Math.floor((x + radius) / this.cellSize);
     const y0 = Math.floor((y - radius) / this.cellSize), y1 = Math.floor((y + radius) / this.cellSize);
     const depth = this.#depth++, segments = this.segments, bounds = this.#bounds, seen = this.#seen[depth] ??= new Uint32Array(segments.length);
-    // (a micrometre beyond the radius, so no rounding in the distance can
+    // (a micrometer beyond the radius, so no rounding in the distance can
     // bring a segment passed over back within it)
     const reach = radius + 1e-6;
     let stamp = this.#stamps[depth] = (this.#stamps[depth] ?? 0) + 1;

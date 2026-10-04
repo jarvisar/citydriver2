@@ -3,7 +3,7 @@ import { dedupePolygon, offsetPolyline, signedArea } from '../mapgen/polygon-uti
 
 // target.set(value), with each CSS string or hex number parsed once: Color.set
 // parses a string afresh every call, and a city's faces and props ask for a
-// few thousand colours millions of times. (A string Color.set can't read
+// few thousand colors millions of times. (A string Color.set can't read
 // leaves the target as it was, as before.)
 const parsed = new Map();
 export function setColor(target, value) {
@@ -18,7 +18,7 @@ export function setColor(target, value) {
 }
 
 // Flat-shaded static geometry: every triangle carries its own face normal
-// and colour, so the whole ground, the roads, the water or a cell's building
+// and color, so the whole ground, the roads, the water or a cell's building
 // bodies are one draw each. Points are {x, y} on the map (x east, y north).
 // (Faces go straight into typed blocks at full precision, each twice the
 // last up to a limit, never copied as they fill and joined once when built.

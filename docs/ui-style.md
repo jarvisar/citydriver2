@@ -1,6 +1,6 @@
 # UI Styles
 
-The look is based on web apps and Chrome Experiments from around 2010 to 2014: dark gunmetal panels with a fine grain, bevelled buttons, glossy accents, sunk wells for readouts and condensed capitals for headings. Things like Bootstrap 2's buttons and striped progress bars, iOS 5's switches, OS X's dark HUD windows and Growl's notices.
+The look is based on web apps and Chrome Experiments from around 2010 to 2014: dark gunmetal panels with a fine grain, beveled buttons, glossy accents, sunk wells for readouts and condensed capitals for headings. Things like Bootstrap 2's buttons and striped progress bars, iOS 5's switches, OS X's dark HUD windows and Growl's notices.
 
 `src/city-theme.css` loads after the component styles. It sets colors, fonts, borders and hover/focus states. The component styles handle positioning, layout and visibility.
 

@@ -2,7 +2,7 @@ import Vector from './vector.js';
 import { segmentIntersection } from './polygon-util.js';
 
 // Node at every intersection and every vertex of the simplified road
-// polylines, with its neighbours along those polylines.
+// polylines, with its neighbors along those polylines.
 export class Node {
   constructor(value, id) { this.value = value; this.id = id; this.segments = new Set(); this.neighbors = new Set(); this.adj = []; }
   addSegment(segment) { this.segments.add(segment); }
@@ -130,7 +130,7 @@ export default class Graph {
     this.restoreAdjacency();
   }
   static edgeKey(a, b) { return a.id < b.id ? `${a.id}:${b.id}` : `${b.id}:${a.id}`; }
-  // Each node's neighbours as a list, for PolygonFinder
+  // Each node's neighbors as a list, for PolygonFinder
   restoreAdjacency() { for (const n of this.nodes) n.adj = Array.from(n.neighbors); }
   // Remove dead ends so polygon finding is not confused by them
   deleteDanglingNodes(n, index) {

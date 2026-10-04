@@ -27,7 +27,7 @@ test('the arrival rating follows the rider clock: over half green, over a quarte
     for (const rating of RATINGS) assert.equal(deliverySeconds(length, rating), Math.round(length / METERS_PER_SECOND_EARNED) + rating.seconds);
     assert.equal(deliverySeconds(length), deliverySeconds(length, RATINGS[2]), 'an unrated delivery earns the base time');
   }
-  // Time comes back mostly per fare: a quick hop earns more time per metre than a long ride
+  // Time comes back mostly per fare: a quick hop earns more time per meter than a long ride
   assert.ok(deliverySeconds(400, RATINGS[0]) / 400 > 1.3 * deliverySeconds(1600, RATINGS[0]) / 1600);
   // and every minute of the shift trims what fares add, down to a floor
   assert.equal(timeScale(0), 1);
@@ -36,7 +36,7 @@ test('the arrival rating follows the rider clock: over half green, over a quarte
   assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 9].map(streakSeconds), [0, 0, 1, 2, 3, 4, 5, 5], 'a Speedy streak adds up to 5 s');
 });
 
-test('ring colours run red to green with trip length and every offer wears its band', () => {
+test('ring colors run red to green with trip length and every offer wears its band', () => {
   assert.deepEqual(FARE_BANDS.map(band => band.id), ['hop', 'short', 'medium', 'long']);
   assert.equal(new Set(FARE_BANDS.map(band => band.color)).size, FARE_BANDS.length);
   assert.deepEqual([0, 549, 550, 799, 800, 1099, 1100, 5000].map(length => fareBand(length).id),
@@ -48,7 +48,7 @@ test('ring colours run red to green with trip length and every offer wears its b
     seen.add(offer.band);
     for (const stop of offer.stops) assert.equal(stop.limit, Math.ceil(legLimit(stop.length) * (MOODS[offer.mood]?.clock ?? 1)));
   }
-  assert.deepEqual(seen, new Set(FARE_BANDS.map(band => band.id)), 'every colour turns up in ordinary neighbourhoods');
+  assert.deepEqual(seen, new Set(FARE_BANDS.map(band => band.id)), 'every color turns up in ordinary neighborhoods');
   for (const band of FARE_BANDS) {
     const share = all.filter(offer => offer.band === band.id).length / all.length;
     assert.ok(share > .08 && share < .45, `${band.id} rings are neither rare nor everywhere: ${share.toFixed(2)}`);
@@ -74,7 +74,7 @@ test('a rider whose clock runs out jumps out, and ratings reset each shift', () 
   run.start(car); assert.deepEqual(run.ratings, { speedy: 0, normal: 0, slow: 0 });
 });
 
-test('licences double from class to class and always name the next goal', () => {
+test('licenses double from class to class and always name the next goal', () => {
   assert.deepEqual(TAXI_LICENSES.map(l => l.badge), ['–', 'E', 'D', 'C', 'B', 'A', 'S', '★']);
   for (let i = 2; i < TAXI_LICENSES.length; i++) assert.equal(TAXI_LICENSES[i].min, TAXI_LICENSES[i - 1].min * 2);
   assert.equal(taxiLicense(0).id, 'none'); assert.equal(taxiLicense(249).id, 'none');
@@ -84,7 +84,7 @@ test('licences double from class to class and always name the next goal', () => 
   assert.equal(taxiLicense(1234).rank, 3);
 });
 
-test('finishing a shift remembers the previous best for the licence comparison', () => {
+test('finishing a shift remembers the previous best for the license comparison', () => {
   const saved = new Map(), storage = { getItem: k => saved.get(k), setItem: (k, v) => saved.set(k, v) };
   const run = new TaxiRun(storage), car = player(); run.start(car);
   run.cash = 600; run.timeLeft = .01; run.update(.02, car);

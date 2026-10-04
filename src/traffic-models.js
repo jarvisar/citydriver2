@@ -16,18 +16,18 @@ export const SPORTS_MODEL = { name: 'sports', width: 1.94, length: 4.2, cabin: [
 
 export const TRAFFIC_COLORS = ['#d8c7a0', '#e9e5d9', '#577f96', '#829789', '#b34e43', '#d2a345', '#58636a', '#b7c4c9', '#796c8c', '#397e7b'];
 
-// Wheels sit in their arches, the tyre's face just proud of the body side.
+// Wheels sit in their arches, the tire's face just proud of the body side.
 export const WHEEL = { radius: .43, width: .25, hubRadius: .21, hubWidth: .26, y: .43, inset: .11 };
 
-// Each shape's side profile in metres, before a lowered shape's `drop`: the
+// Each shape's side profile in meters, before a lowered shape's `drop`: the
 // nose and tail faces as [bottom, top], the bonnet's front edge, the scuttle
 // under the windscreen, the boot or floor at the tail's top edge, the sills
 // and the crowns of the wheel arches. `shoulder` chamfers the body's top edges
 // [in, down], `corner` its plan corners [nose, tail], and `rake` leans the
 // glass [windscreen, rear screen]. Door posts stand at fractions along the
 // side glass, and `pillar` is the rear pillar's width. A pickup's cab drops to
-// its `bed`, walled up to `rail`; a van's glass ends `cab` metres back, where
-// its load box takes over. `bumper` is a colour (none for null) and `lamps`
+// its `bed`, walled up to `rail`; a van's glass ends `cab` meters back, where
+// its load box takes over. `bumper` is a color (none for null) and `lamps`
 // resizes the lamps [width, height].
 const BODIES = {
   hatchback: { nose: [.42, 1.1], bonnet: 1.17, scuttle: 1.3, deck: 1.28, tail: [.44, 1.25], sill: .34, arch: .93, shoulder: [.1, .12], corner: [.14, .12], rake: [.44, .46], posts: [.58], pillar: .2 },
@@ -96,7 +96,7 @@ function triangles(list) {
 // Loft the body through stations along its length. Each section is a hexagon:
 // a flat floor, upright sides and chamfered shoulders. The plan corners narrow
 // the end sections; the arches lift the floor over the wheels, and dark liners
-// inboard of the tyres close the arches from the side. (The bus brings its
+// inboard of the tires close the arches from the side. (The bus brings its
 // own axles, arches and wheels.)
 function loftBody(spec, profile) {
   const { width: w, length: l } = spec, { body, top, bottom, wheelZ, axles = [-wheelZ, wheelZ], arch = ARCH, wheel = WHEEL } = profile;
@@ -209,10 +209,10 @@ export function vehicleGeometry(spec, { separateWheels = false } = {}) {
       const x = side * (w / 2 - WHEEL.inset);
       if (separateWheels) { wheels.push({ x, y: WHEEL.y, z, front: z < 0 }); continue; }
       const tire = new THREE.CylinderGeometry(WHEEL.radius, WHEEL.radius, WHEEL.width, 10);
-      // A vertex at the bottom keeps the faceted, unanimated tyre on the road.
+      // A vertex at the bottom keeps the faceted, unanimated tire on the road.
       tire.rotateY(Math.PI / 2); tire.rotateZ(Math.PI / 2);
       add(tire, [x, WHEEL.y, z], 'details', TRIM);
-      // Only the hub's face shows past the tyre.
+      // Only the hub's face shows past the tire.
       const hub = new THREE.CircleGeometry(WHEEL.hubRadius, 8); hub.rotateY(side * Math.PI / 2);
       add(hub, [x + side * (WHEEL.width / 2 + .006), WHEEL.y, z], 'details', '#bfc4b9');
     }
@@ -283,7 +283,7 @@ export function vehicleGeometry(spec, { separateWheels = false } = {}) {
 // A city bus, which one of the traffic drives now and then (see CityTraffic's
 // serve) and the garage has too (see SPECIAL_SHAPES). It is kept out of
 // TRAFFIC_MODELS, which parked cars and their stand-ins draw from. Its doors
-// are on the kerb side (+x: the traffic keeps right), at BUS_DOORS metres
+// are on the curb side (+x: the traffic keeps right), at BUS_DOORS meters
 // forward of its middle: riders get on at the front and off at the middle.
 export const BUS_MODEL = { name: 'bus', width: 2.55, length: 11.6, mass: 8, accel: 1.4 };
 export const BUS_PAINT = '#4679a6';
@@ -322,7 +322,7 @@ export function busGeometry(spec = BUS_MODEL, { wheels = true } = {}) {
   add(shell, [0, 0, 0], 'paint');
   add(under, [0, 0, 0], 'details', UNDERSIDE);
   // Side windows in panes, the paint showing between them, and a cream band
-  // under them. The kerb side has a door at the front and one in the middle.
+  // under them. The curb side has a door at the front and one in the middle.
   const panes = (x, from, to, count) => {
     const step = (to - from) / count;
     for (let i = 0; i < count; i++) box([.02, 1.34, step - .12], [x, 1.95, from + step * (i + .5)], 'details', GLASS);
@@ -373,9 +373,9 @@ export function busGeometry(spec = BUS_MODEL, { wheels = true } = {}) {
 }
 
 // A car's body in one draw. Four draws a car were about a fifth of a headset's
-// frame, and the four materials only differed in colour and glow. Each vertex is
+// frame, and the four materials only differed in color and glow. Each vertex is
 // marked [paint, lamp] for bodyMaterial (lamp 1 is a headlight, 2 a taillight).
-// Trim keeps its vertex colours and each lamp gets its own colour.
+// Trim keeps its vertex colors and each lamp gets its own color.
 export function markedBody({ paint, details, headlights, taillights }, { head, tail }) {
   const marked = [[paint, 1, 0], [details, 0, 0], [headlights, 0, 1, head], [taillights, 0, 2, tail]].map(([geometry, painted, lamp, color]) => {
     const count = geometry.attributes.position.count;
@@ -415,8 +415,8 @@ export function lampGlow(color, intensity) {
   lamp.material.emissiveIntensity = intensity;
   return lamp;
 }
-// A wheel in one draw. Tyre and hub only differed in colour, so they become
-// vertex colours.
+// A wheel in one draw. Tire and hub only differed in color, so they become
+// vertex colors.
 export function wheelGeometry(tire, hub, tireColor, hubColor) {
   const parts = [[tire, tireColor], [hub, hubColor]].map(([geometry, color]) => {
     const part = geometry.clone(), tint = new THREE.Color(color), count = part.attributes.position.count;

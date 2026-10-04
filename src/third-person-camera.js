@@ -268,7 +268,7 @@ export class ThirdPersonCamera {
     // gently once the view clears, as most driving games' chase cameras do.
     const open = this.sight?.(this.pivot, this.camera.position) ?? 1;
     const line = this.camera.position.distanceTo(this.pivot), clear = open * line;
-    // Ease metres, not a fraction of a line that changes while zooming.
+    // Ease meters, not a fraction of a line that changes while zooming.
     // Free zoom already eases on its own; only an obstruction needs this lag.
     const before = this.reach === null ? clear : this.reach === 1 ? line : Math.min(this.reachDistance, line);
     const previousDistance = this.reach === null ? clear : this.reachDistance;

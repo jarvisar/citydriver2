@@ -42,7 +42,7 @@ export function postContact(car, post) {
   if (depth <= 0) return null;
   if (distance > 1e-6) { x /= distance; z /= distance; }
   else {
-    // The post's centre is already under the car: leave by the nearer side.
+    // The post's center is already under the car: leave by the nearer side.
     const side = halfWidth - Math.abs(across), end = halfLength - Math.abs(along);
     x = side < end ? Math.sign(across) || 1 : 0; z = side < end ? 0 : Math.sign(along) || 1;
     depth = post.reach + ROUND + Math.min(side, end);
@@ -202,7 +202,7 @@ const ROOF = 2.1, CAR_CLEAR = .35;
 // below the building's roof: 0 to 1, and 1 if it never does. Only solids with
 // a `top` (buildings) count, so the camera sees over walls and hedges and
 // through trees and railings; and with `cars` ({ ground, bodies }), for a
-// camera following someone on foot, the cars parked along the kerbs and
+// camera following someone on foot, the cars parked along the curbs and
 // `bodies` ({ x, z, heading, halfWidth, halfLength, y }: the traffic, and the
 // player's own car) as well. Points are in the scene, which lies `origin`
 // along z from the colliders.
@@ -259,7 +259,7 @@ function postEnd(post, x, z, dx, dz) {
 }
 // Where the line from (x, z) along (dx, dz) enters and leaves a convex outline
 // grown by `grow` all round, as fractions along it, or null if it misses. Its
-// corners are bevelled, so a sharp one grows no long spike.
+// corners are beveled, so a sharp one grows no long spike.
 function lineThrough(solid, x, z, dx, dz, grow) {
   const corners = solid.corners, edges = [];
   let enter = -Infinity, leave = Infinity;
@@ -353,7 +353,7 @@ export function shapeHeight(shape, p) {
   const f = t / shape.run;
   return shape.base + shape.rise * f * (1 + shape.curve * (f - 1));
 }
-// Which way and how steeply a shape climbs at p: the height's rise per metre
+// Which way and how steeply a shape climbs at p: the height's rise per meter
 // east (`x`) and south (`z`), written into `out`
 export function shapeSlope(shape, p, out = { x: 0, z: 0 }) {
   const ex = p.x - shape.x, ez = p.z - shape.z;
@@ -374,7 +374,7 @@ export function shapeSlope(shape, p, out = { x: 0, z: 0 }) {
 // What a car's wheels stand on: for each of `points` ({ x, z }, as the
 // colliders lie), the highest roof, ramp or mound top under it no higher than
 // its `limits`, written into `heights` (-Infinity where there is none) with the
-// solid in `solids`, and with `cars` a kerb-parked car's roof too (see
+// solid in `solids`, and with `cars` a curb-parked car's roof too (see
 // parkedRoof). One pass over the colliders for all of them.
 export function surfacesUnder(chunks, points, limits, heights, solids, cars = false) {
   let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
@@ -398,7 +398,7 @@ export function surfacesUnder(chunks, points, limits, heights, solids, cars = fa
     }
   }
 }
-// A kerb-parked car's roof over p ({ x, z }, inside its footprint): its
+// A curb-parked car's roof over p ({ x, z }, inside its footprint): its
 // height there along its length, as its model has it (see carProfile)
 export function parkedRoof(solid, p) {
   const info = solid.parked, along = (p.x - solid.x) * info.nose.u - (p.z - solid.z) * info.nose.s;

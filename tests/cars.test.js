@@ -59,7 +59,7 @@ test('every car builds a solid, steerable model', () => {
   }
 });
 
-// The chooser-only cars are the ones allowed to break the tourer's mould: the
+// The chooser-only cars are the ones allowed to break the tourer's mold: the
 // racers by being quicker, the specials by being lopsided.
 const RACERS = ['sports', 'exotic', 'formula'];
 const SPECIALS = ['buggy', 'monster', 'hotrod', 'rig', 'micro', 'bus'];
@@ -188,7 +188,7 @@ test('the specials are their own shapes, on their own wheels', () => {
   const height = id => bounds(id).max.y;
   assert.ok(height('monster') > height('van') * 1.15 && height('rig') > height('monster'));
   assert.ok(height('micro') < height('hatchback') && height('hotrod') < height('sedan'));
-  // Tall tyres turn slower than small ones at the same road speed.
+  // Tall tires turn slower than small ones at the same road speed.
   const car = new DrivingController(straightRoute, {}, 'hotrod');
   for (let i = 0; i < 30; i++) car.update(1 / 60, { forward: true });
   const [front, rear] = [car.wheels.find(wheel => wheel.front), car.wheels.find(wheel => !wheel.front)];
@@ -373,14 +373,14 @@ test('every garage portrait draws only well-formed shapes', () => {
   }
 });
 
-test('one colour dresses the whole garage and follows the car swap', () => {
+test('one color dresses the whole garage and follows the car swap', () => {
   const blue = '#2f4a6d', wears = (car, color) => palette(car).includes(color.slice(1));
   const car = new DrivingController(straightRoute, {}, 'sports', blue);
-  assert.ok(wears(car, blue), 'the chosen colour should reach the model');
-  // It is the garage's colour, not the car's: every car picked up wears it.
+  assert.ok(wears(car, blue), 'the chosen color should reach the model');
+  // It is the garage's color, not the car's: every car picked up wears it.
   for (const id of CAR_IDS) {
     car.setCar(id, { paint: blue });
-    assert.ok(wears(car, blue), `${id} ignored the garage colour`);
+    assert.ok(wears(car, blue), `${id} ignored the garage color`);
     assert.equal(car.paintColor, blue);
   }
   // And it stays on through a route change, kit and all.
@@ -391,9 +391,9 @@ test('one colour dresses the whole garage and follows the car swap', () => {
   for (const id of CAR_IDS) {
     car.setCar(id); car.setPaint(null);
     assert.equal(car.paintColor, null);
-    assert.ok(wears(car, CARS[id].paint), `${id} did not get its own colour back`);
+    assert.ok(wears(car, CARS[id].paint), `${id} did not get its own color back`);
   }
-  // The default car goes back to dressing for the scenery, not to one colour.
+  // The default car goes back to dressing for the scenery, not to one color.
   car.setCar('auto');
   const scenic = new Set();
   for (const journey of Object.keys(JOURNEYS)) { car.setAppearance(journey); scenic.add(palette(car)); }
@@ -402,15 +402,15 @@ test('one colour dresses the whole garage and follows the car swap', () => {
   assert.ok(wears(car, ROUTE_PAINT.desert));
 });
 
-test('the paint counter offers usable colours, and one swatch that is not one', () => {
+test('the paint counter offers usable colors, and one swatch that is not one', () => {
   assert.ok(PAINTS.length >= 8);
   for (const { name, color } of PAINTS) {
     assert.ok(name && isPaint(color), `${name} is not a usable swatch`);
     assert.equal(paintName(color), name);
   }
-  assert.equal(new Set(PAINTS.map(paint => paint.color)).size, PAINTS.length, 'no two swatches may share a colour');
-  assert.equal(paintName('#010203'), null, 'a mixed colour has no catalogue name');
-  // Default clears the garage rather than naming a colour, so it must never
+  assert.equal(new Set(PAINTS.map(paint => paint.color)).size, PAINTS.length, 'no two swatches may share a color');
+  assert.equal(paintName('#010203'), null, 'a mixed color has no catalog name');
+  // Default clears the garage rather than naming a color, so it must never
   // read as one or collide with a swatch.
   assert.equal(isPaint(DEFAULT_PAINT), false);
   assert.ok(!PAINTS.some(paint => paint.color === DEFAULT_PAINT));

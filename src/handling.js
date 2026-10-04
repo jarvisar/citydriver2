@@ -4,7 +4,7 @@
 // the tires give a little at their limit and a lot as a drift lets go.
 // No suspension solver and no per-wheel tire model. Drifting is in drift.js.
 
-// What the player asks for. A stick needs fine control either side of centre;
+// What the player asks for. A stick needs fine control either side of center;
 // a key is always full lock, so the curve is applied to the request rather
 // than to the smoothed angle below -- a keypress should not spend the first
 // frames of its response climbing out of a dead zone it never entered.
@@ -14,7 +14,7 @@ export const steerCurve = input => input * (.62 + .38 * input * input);
 // and quicker still the slower the car is going, so a parking correction lands
 // at once while a motorway twitch takes a beat and the car stays settled at
 // speed. Release and countersteer are quicker again, and a reversal starts
-// from centre instead of spending frames unwinding the lock being abandoned.
+// from center instead of spending frames unwinding the lock being abandoned.
 export function steeringResponse(current, target, dt, stats, speed = 0) {
   if (dt <= 0) return current;
   if (current * target < 0) current = 0;

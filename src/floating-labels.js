@@ -6,7 +6,7 @@ import * as THREE from 'three';
 // They rise over the player's car and go along with it: left where they
 // popped, they were behind the car before they could be read. Through the
 // driver's eyes (the camera within FIRST_PERSON of the car) over the roof is
-// out of view, so they rise AHEAD metres in front instead.
+// out of view, so they rise AHEAD meters in front instead.
 const LABELS = 12, LABEL_LIFE = 1.8, LABEL_RISE = 2, LABEL_HEIGHT = 2.4, FIRST_PERSON = 3, AHEAD = 7;
 const PIXEL_HEIGHT = 88, WORLD_HEIGHT = 1;
 const eye = new THREE.Vector3(), base = new THREE.Vector3(), front = new THREE.Vector3(), up = new THREE.Vector3(), depth = new THREE.Vector3(), screen = new THREE.Vector3();

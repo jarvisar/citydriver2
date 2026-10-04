@@ -59,7 +59,7 @@ export const PIECE_NAMES = {
   'news-boxes': 'News stand', 'bike-rack': 'Bike rack', 'post-box': 'Post box', cabinet: 'Utility box', hydrant: 'Fire hydrant',
 };
 // Cars by model: what it costs to write one off. A parked car pays
-// PARKED_SHARE of that: they stand in rows, and a truck ploughing a row of
+// PARKED_SHARE of that: they stand in rows, and a truck plowing a row of
 // them earned most of every big run's score (1.3M of 1.6M in one bot run).
 export const CAR_PRICES = { hatchback: 14000, sedan: 19000, taxi: 19000, wagon: 21000, pickup: 26000, van: 29000, demolition: 38000, bus: 45000 };
 export const PARKED_SHARE = .5;
@@ -106,7 +106,7 @@ export function runContracts(runs, rank = 0) {
   return contracts.sort((a, b) => order(a) - order(b));
 }
 
-// End-of-run ratings, after the taxi's licences: each asks for about twice
+// End-of-run ratings, after the taxi's licenses: each asks for about twice
 // the one before. A first go lands around C; a run that keeps its chains
 // going and its clock topped up reaches the top. (They were half these
 // before contracts and the last chain made runs longer, and before a

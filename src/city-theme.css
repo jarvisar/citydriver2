@@ -1,5 +1,5 @@
 /* Citydriver's look, after the web apps and Chrome Experiments of about
-   2010-2014: gunmetal panels with a fine grain, bevelled buttons lit along
+   2010-2014: gunmetal panels with a fine grain, beveled buttons lit along
    their top edge, glossy accents, inset wells for readouts, and condensed
    capitals (Oswald) for headings, numbers and the big buttons. Layout stays
    in the component styles. The accent marks the action or selection: taxi
@@ -32,7 +32,7 @@
   --city-emboss: 0 1px 0 #ffffff80;
   --city-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23g)' opacity='.1'/%3E%3C/svg%3E");
 }
-/* Each mode's accent: its flat colour, a lighter hover, a soft tint for
+/* Each mode's accent: its flat color, a lighter hover, a soft tint for
    light text on a panel, and the top, bottom and edge of its gloss */
 body {
   --city-accent: #ffd238; --city-accent-hover: #ffe177; --city-accent-soft: #fff1ad;
@@ -238,7 +238,7 @@ body[data-controller=true] #app #city-map-open::before {
 #app .notebook-panel { color: var(--city-text); }
 #app :is(.graphics-toggle, .audio-mixer-toggle)[aria-expanded=true] { border-radius: var(--city-control-radius) var(--city-control-radius) 0 0; }
 #app :is(.graphics-settings, .audio-mixer) { border-top: 0; border-radius: 0 0 var(--city-control-radius) var(--city-control-radius); }
-/* A pop-up menu, after the desktop's own: a bevelled button with arrows */
+/* A pop-up menu, after the desktop's own: a beveled button with arrows */
 #app .weather-setting select {
   appearance: none; padding: 6px 30px 6px 10px; color: var(--city-text); text-shadow: var(--city-engrave);
   border: 1px solid var(--city-edge); border-radius: 4px; box-shadow: var(--city-bevel);

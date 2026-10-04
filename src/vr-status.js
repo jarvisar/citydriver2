@@ -25,10 +25,10 @@ const useAccent = mode => {
   Object.assign(UI, { accent: flat, accentHover: hover, accentTop: top, accentBottom: bottom, accentEdge: edge, accentSoft: soft });
 };
 useAccent('taxi');
-// Fare ratings and goals, as the taxi HUD colours them (taxi.css), and a demolition run's news
+// Fare ratings and goals, as the taxi HUD colors them (taxi.css), and a demolition run's news
 export const TONES = { speedy: '#7ce787', normal: '#ffd238', slow: '#ff8a7a', goal: '#c3f4bb', chain: '#ff9433', banked: '#ffd6ad', bonus: '#8ff0b0' };
-// Where the panels hang: metres from the eyes, degrees below eye level and
-// width in metres. Both are drawn at about 27 canvas pixels a degree, a
+// Where the panels hang: meters from the eyes, degrees below eye level and
+// width in meters. Both are drawn at about 27 canvas pixels a degree, a
 // Quest 3's own sharpness. A menu opens in front of wherever the player is
 // looking, 5 degrees low as Android XR places its panels, well inside the
 // 0.8-3 m Meta gives for pointing. The HUD sits under the car, which a chase
@@ -130,7 +130,7 @@ class Panel {
     if (this.top) this.mesh.position.copy(this.base).addScaledVector(this.up, -height * this.scale / 2);
     this.texture.needsUpdate = true; this.mesh.visible = true;
   }
-  // Hang it `distance` metres out and `drop` degrees low, tilted to face
+  // Hang it `distance` meters out and `drop` degrees low, tilted to face
   // the eyes: by its middle, or by its top edge so a taller one grows down.
   hang({ distance, drop, top = false }) {
     const angle = THREE.MathUtils.degToRad(drop);
@@ -148,7 +148,7 @@ class Panel {
 //
 // A menu model is `{ id, title, subtitle, hint, columns, flow, image, items }`.
 // Each item has a `label` and `activate`, and may have `value`, `toggle`
-// (on/off), `swatch` (a colour), `current`, `primary`, `disabled`, `header`
+// (on/off), `swatch` (a color), `current`, `primary`, `disabled`, `header`
 // (the action beside the title, as Resume is on the pause screen), `footer`,
 // `column` (0 or 1) and `group` (a heading over its rows). `flow` pours a long
 // list into two columns of pages; `mark` is an image beside the title.
@@ -280,7 +280,7 @@ export class VRStatus {
     this.entries.forEach((item, index) => (item.header ? header : item.footer ? footer : body).push(index));
     const two = model.flow || model.columns === 2 || model.image;
     const width = two ? MENU.pixels : NARROW, inner = width - PAD * 2;
-    // A single column of buttons centres them, as the page's title screen does.
+    // A single column of buttons centers them, as the page's title screen does.
     this.narrow = !two;
     const column = two && !model.image ? (inner - COLUMN_GAP) / 2 : inner;
     this.regions = [];
@@ -392,7 +392,7 @@ export class VRStatus {
       ctx.strokeStyle = '#00000080'; ctx.lineWidth = 1.5; ctx.stroke();
       right = sx - 16;
     } else if (item.current || item.value) {
-      // (a colour is ticked, as the page's swatches are ringed)
+      // (a color is ticked, as the page's swatches are ringed)
       const tick = item.current && item.swatch;
       ctx.font = font(tick ? 32 : item.current ? 22 : 26, item.current ? 750 : 400); ctx.textAlign = 'right';
       ctx.fillStyle = item.current ? filled ? UI.onAccent : UI.accent : filled ? UI.onAccent : UI.muted;
@@ -449,7 +449,7 @@ export class VRStatus {
       glass(x, w);
       let right = x + w - 24;
       // The fare's clock and the distance left keep their places through a
-      // toast. The clock is a glossy badge in its rating's colour.
+      // toast. The clock is a glossy badge in its rating's color.
       const pill = (text, color, badge) => {
         ctx.font = display(26); const tw = ctx.measureText(text).width + 28;
         box(ctx, right - tw, 16, tw, 36, 18, badge ? color : UI.recessed, badge ? '#00000080' : UI.edge);

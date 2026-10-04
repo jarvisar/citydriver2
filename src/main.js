@@ -99,7 +99,7 @@ function pickCar(id, fleet) {
   freeCarId = id;
   try { localStorage.setItem(carStorageKey, id); } catch { /* Still drive it for this visit. */ }
 }
-// One colour dresses the whole garage and follows the player from car to car.
+// One color dresses the whole garage and follows the player from car to car.
 // It is saved with the fleet (it costs money: see TaxiFleet.setPaint), and
 // Default hands every car its own finish back.
 let paint = null;
@@ -116,7 +116,7 @@ const toast = (message, tone = '') => {
   echoToast?.(message, tone);
   const element = $('#toast');
   placeToast();
-  // Taxi arrivals take their rating's colour: Speedy green, Normal yellow, Slow red.
+  // Taxi arrivals take their rating's color: Speedy green, Normal yellow, Slow red.
   element.textContent = message; element.dataset.tone = tone; element.classList.add('show'); clearTimeout(toastTimer); toastShown = performance.now();
   toastTimer = setTimeout(() => element.classList.remove('show'), 2200);
 };
@@ -287,7 +287,7 @@ async function boot() {
     // truck's doing, directly or through what it sent flying; ordinary
     // traffic knocking someone over is not.
     const demolition = new DemolitionRun(taxiStorage), demolitionView = new DemolitionView(scene, taxiStorage);
-    // A drift's smoke, sparks and tyre marks, and the flames of a turbo or the boost (see drift.js)
+    // A drift's smoke, sparks and tire marks, and the flames of a turbo or the boost (see drift.js)
     const driftEffects = new DriftEffects(scene);
     // Whether free drive's stunts count: not under autodrive, which would
     // earn for nobody
@@ -670,7 +670,7 @@ async function boot() {
           const meters = values.map(({ label, level }) =>
             `<span class="car-meter"><span>${label}</span><span class="car-meter-track"><span style="width:${level}%"></span></span></span>`).join('');
           // The portrait is drawn in whatever the garage is wearing, so the grid
-          // doubles as the preview: one colour repaints the whole fleet at once.
+          // doubles as the preview: one color repaints the whole fleet at once.
           return `<button type="button" class="chooser-card car-card" data-car="${id}" aria-label="${label}" aria-current="false" style="--car-paint:${cardPaint(id)}">`
             + '<span class="car-price" hidden></span>' + carArt(id)
             + `<span class="chooser-card-copy"><span class="chooser-card-title">${label}</span>`
@@ -777,14 +777,14 @@ async function boot() {
       }
       updatePaintUi();
     }
-    // (the custom colour is shown while it is picked, and paid for once it is let go)
+    // (the custom color is shown while it is picked, and paid for once it is let go)
     paintInput.addEventListener('input', () => applyPaint(paintInput.value, { preview: true }));
     paintInput.addEventListener('change', () => applyPaint(paintInput.value));
-    // With no garage colour set, every car shows the finish it arrived in. The
+    // With no garage color set, every car shows the finish it arrived in. The
     // default car has none of its own, so it shows whatever the road it is on
     // would give it.
     const ownPaint = id => (carEntry(id).plain ? ROUTE_PAINT[journey] ?? ROUTE_PAINT.coast : carEntry(id).paint);
-    // (the rainbow cycles the cards' paint in CSS, from each car's own colour.
+    // (the rainbow cycles the cards' paint in CSS, from each car's own color.
     // In a shift the cabs wear their livery, as the shift's cab does)
     const cardPaint = id => inShift() && carEntry(id).taxi ? taxi.fleet.liveryColor ?? ownPaint(id) : paint && paint !== RAINBOW_PAINT ? paint : ownPaint(id);
     const paintCards = () => {
@@ -806,16 +806,16 @@ async function boot() {
       paintInput.value = own; paintInput.disabled = taxi.fleet.balance < PAINT_PRICE && !custom;
       showPaintName();
     }
-    // The colour lands on the car where it stands and on every card at once.
+    // The color lands on the car where it stands and on every card at once.
     // Default clears it, and the fleet goes back to its own finishes. A new
-    // colour is paid for as it is chosen (`preview`: shown but not paid for,
+    // color is paid for as it is chosen (`preview`: shown but not paid for,
     // and put back if the garage closes on it).
     function applyPaint(value, { preview = false } = {}) {
       const color = value === DEFAULT_PAINT ? null : value === RAINBOW_PAINT ? RAINBOW_PAINT : readPaint(value);
       if (value !== DEFAULT_PAINT && !color) return;
       if (!preview && !taxi.fleet.setPaint(color)) {
         showPaint(taxi.fleet.paint);
-        $('#paint-current').textContent = `A new colour is ${money(PAINT_PRICE)}`;
+        $('#paint-current').textContent = `A new color is ${money(PAINT_PRICE)}`;
         return;
       }
       showPaint(color);
@@ -1161,7 +1161,7 @@ async function boot() {
       if (chooser === carDialog && garageOffer) closeOffer(); else chooser.close();
     }
     carDialog.addEventListener('cancel', event => { if (garageOffer) { event.preventDefault(); closeOffer(); } });
-    // (and a custom colour picked but never let go is put back)
+    // (and a custom color picked but never let go is put back)
     carDialog.addEventListener('close', () => { garageOffer = null; if (paint !== taxi.fleet.paint) showPaint(taxi.fleet.paint); });
     $('#offer-back').addEventListener('click', closeOffer);
     for (const [button, item] of [['#offer-buy', 'offer-buy'], ['#offer-test', 'offer-test'], ['#offer-goal', 'offer-goal']])
@@ -1323,7 +1323,7 @@ async function boot() {
         vrStatus.attach(vr.session); vrHintTime = 0;
         rendering.enterVR(); rendering.update(vehicle.car, 0, world.origin); updateViewUi();
         rendering.vrCamera.recenter(); graphics.suspend();
-        // Holding the headset's own button recentres its space: the game's seat and panels follow.
+        // Holding the headset's own button recenters its space: the game's seat and panels follow.
         renderer.xr.getReferenceSpace()?.addEventListener?.('reset', () => rendering.vrCamera.recenter());
         // The headset opens on a menu with the car standing still: the title,
         // or the pause menu Enter VR was chosen from. Nothing moves, and no
@@ -1552,7 +1552,7 @@ async function boot() {
     // few seconds on driving into a district, and at the start of a drive.
     // A new name has to hold for a moment first, and one shown in the last
     // half minute isn't shown again: along the water the name flicks between
-    // Harbour or Riverfront and the district behind it.
+    // Harbor or Riverfront and the district behind it.
     const district = { current: null, next: null, since: 0, until: -Infinity, shown: new Map() };
     const cityHud = $('.city-hud');
     function announceDistrict(place) {
@@ -1964,7 +1964,7 @@ async function boot() {
     await loadingStage('skyline');
     world.update(vehicle.s, vehicle.u);
     applyWeather();
-    $('#paint-note').textContent = `Paint applies to all cars. A new colour is ${money(PAINT_PRICE)}, and each car's own colour is free.`;
+    $('#paint-note').textContent = `Paint applies to all cars. A new color is ${money(PAINT_PRICE)}, and each car's own color is free.`;
     buildCarCards(); paintCards(); buildPaintSwatches(); updateCarUi();
     vehicle.render(0, world.origin); traffic.render(1, world.origin); rendering.update(vehicle.car, 1, world.origin); updateHud(); updateJourneyUi(); updateViewUi(); updateGraphicsUi();
     nightLighting.update(world, vehicle, traffic, weather.state.lightLevel);

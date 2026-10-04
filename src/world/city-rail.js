@@ -1,7 +1,7 @@
 import { Parts } from './city-assets.js';
 
 // Rolling stock for a tram depot's yard and a station's platforms (see
-// landmark-grounds.js): boxes baked with their colours into the props batch,
+// landmark-grounds.js): boxes baked with their colors into the props batch,
 // as the squares' stalls are, made once per paint. Each runs along local z,
 // its wheels on rails GAUGE apart whose tops are local y 0.
 export const GAUGE = 1.435;

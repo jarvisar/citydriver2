@@ -1,4 +1,4 @@
-// End-of-shift taxi licences, after Crazy Taxi's results screen. Each class
+// End-of-shift taxi licenses, after Crazy Taxi's results screen. Each class
 // asks for twice the cash of the one before, which tracks how earnings grow
 // with skill: a first shift lands around Class E, a strong one in Class A,
 // and only a shift that keeps its clock alive for many minutes reaches the top.

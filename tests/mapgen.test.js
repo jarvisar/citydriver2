@@ -31,14 +31,14 @@ test('a generated city has roads of every class, blocks, lots, parks and water i
     assert.ok(ROAD_PROFILES[road.kind], road.kind);
     for (const p of road.points) assert.ok(Math.abs(p.x) <= 800 + 40 && Math.abs(p.y) <= 600 + 40, `road point outside the domain ${p.x},${p.y}`);
   }
-  // Every lot lies inside its block and away from the road centrelines
+  // Every lot lies inside its block and away from the road centerlines
   for (const lot of city.lots) {
     const centre = lot.reduce((sum, p) => sum.add(p), new Vector(0, 0)).divideScalar(lot.length);
     assert.ok(isSimple(lot));
     assert.ok(calcPolygonArea(lot) >= 60, `lot area ${calcPolygonArea(lot)}`);
     assert.ok(!insidePolygon(centre, city.sea) && !insidePolygon(centre, city.river), 'lot in the water');
     const nearest = city.roadIndex.nearest(centre.x, centre.y, 200);
-    assert.ok(!nearest || nearest.distance >= nearest.road.profile.halfWidth, 'lot centre on a road');
+    assert.ok(!nearest || nearest.distance >= nearest.road.profile.halfWidth, 'lot center on a road');
   }
   assert.ok(city.nav.length > 100);
   assert.ok(city.timings.total < 20000);

@@ -7,7 +7,7 @@ import * as THREE from 'three';
 // of one fixed topology, so any combination is one instanced draw.
 
 // Coats and their trim are art-directed pairs; everything else is chosen
-// independently. Linear colours, mapped in the vertex shader.
+// independently. Linear colors, mapped in the vertex shader.
 export const WALKER_LOOKS = [
   { name: 'Harbor', coat: '#376f78', trim: '#e9c890' },
   { name: 'Marigold', coat: '#c99438', trim: '#f2dfb8' },
@@ -60,8 +60,8 @@ const SLOTS = [WALKER_OUTFITS, WALKER_STYLES, WALKER_FACES, WALKER_GEAR];
 const SLOT_BASE = SLOTS.map((_, i) => SLOTS.slice(0, i).reduce((sum, slot) => sum + slot.length, 0));
 export const WALKER_TARGETS = SLOT_BASE[3] + WALKER_GEAR.length;
 
-// What colours a vertex: one of these palettes (or a fixed colour), times a
-// shade. The morphed "colour" attribute carries [channel, shade, 0, 1].
+// What colors a vertex: one of these palettes (or a fixed color), times a
+// shade. The morphed "color" attribute carries [channel, shade, 0, 1].
 const CH = { coat: 0, trim: 1, skin: 2, hair: 3, legs: 4, accent: 5, ink: 6, lens: 7, shirt: 8, straw: 9 };
 export const WALKER_CHANNELS = CH;
 
@@ -122,7 +122,7 @@ function coatProfile(style) {
   if (TROUSERS.includes(style)) Object.assign(rows, { 0: [.195, .3], 1: [.21, .52], 2: [.262, .53], 3: [.268, .62] });
   if ([1, 5, 7].includes(style)) Object.assign(rows, { 3: [.272, .7], 4: [.28, .84] });
   // The plain pullover has a close ribbed hem, not the team tops' broad
-  // chest stripe. Reuse their colour band lower down on a softer body.
+  // chest stripe. Reuse their color band lower down on a softer body.
   if (style === 5) Object.assign(rows, { 2: [.27, .53], 3: [.274, .55], 4: [.29, .59], 5: [.3, .95] });
   // A boxy jacket, as broad at the hem as the shoulders; a padded vest
   if (style === 9) Object.assign(rows, { 2: [.298, .53], 3: [.3, .62], 4: [.3, .8], 5: [.3, .95] });
@@ -535,7 +535,7 @@ function faceSlot(face) {
   // A four-sided nose, broader or longer on some faces
   const nose = [[.036, .031, .036], [.034, .034, .038], [.043, .034, .038], [.031, .031, .036], [.036, .036, .041]][face];
   sphere(4, 2, nose, onFace(0, -.1, -.012), [CH.skin, .97], piece);
-  // Facial hair: a moustache under the nose. (No beards: a shell along the
+  // Facial hair: a mustache under the nose. (No beards: a shell along the
   // jaw looked ugly, the user found, and a goatee read as an open mouth.)
   const whiskers = new THREE.SphereGeometry(1, 8, 5);
   if (face === 2) {
@@ -642,7 +642,7 @@ function gearSlot(gear) {
 // Every slot's variants share their topology; the base geometry is the first
 // variant of each. The targets hold each variant's difference from it, zero
 // outside its own slot, so the stock morph path (the AO prepass, with one
-// weight per slot) builds exactly the combination the colour pass does.
+// weight per slot) builds exactly the combination the color pass does.
 function walkerGeometry() {
   const slots = [outfitSlot, hairSlot, faceSlot, gearSlot].map((build, s) => SLOTS[s].map((_, v) => build(v)));
   for (const [s, variants] of slots.entries()) for (const [v, piece] of variants.entries()) {
@@ -734,7 +734,7 @@ export function walkerShape({ outfit = 0, style = 0, face = 0, gear = 0 } = {}) 
 // What a person knocked flying lies on (see LooseProps): rings round the peg
 // and the head, each point as far out as the body goes that way, plus the
 // crown and the middle of the hem. Sampled from the mesh, 7 points held the
-// whole person, and they sank a third of a metre into the road between them. Each ring reaches as far as
+// whole person, and they sank a third of a meter into the road between them. Each ring reaches as far as
 // four in five variants of the coat, hair and face do, so a cap's peak or a
 // ponytail stays out of the road but a sun hat's brim or a puffer's bulk does
 // not lift everyone else off it. Bags are left out. The margin covers the
@@ -789,10 +789,10 @@ const palette = colors => colors.map(color => new THREE.Color(color));
 const coatPalette = palette(WALKER_LOOKS.map(look => look.coat)), trimPalette = palette(WALKER_LOOKS.map(look => look.trim));
 const skinPalette = palette(WALKER_SKIN), hairPalette = palette(WALKER_HAIR);
 const legsPalette = palette(WALKER_LEGS), accentPalette = palette(WALKER_ACCENTS);
-// Fixed colours: ink (eyes, frames), dark lenses, shirt white, straw
+// Fixed colors: ink (eyes, frames), dark lenses, shirt white, straw
 const fixed = palette(['#302c32', '#26282c', '#eceae4', '#d7bf86']);
 
-// Each instance's colour holds its choices as whole numbers (exact in a
+// Each instance's color holds its choices as whole numbers (exact in a
 // float): red the shapes and coat, green the other palettes. Blue is the
 // head's turn (see setWalkerTurn).
 const PACK = {
@@ -993,7 +993,7 @@ export function createWalkerAlert() {
       varying float vRim;
       varying float vFade;
       // (light enough to stand out by brightness alone, whatever the
-      // player's colour vision: dark red on leaves is one shade to many)
+      // player's color vision: dark red on leaves is one shade to many)
       void main() {
         float edge = smoothstep(.3, .85, vRim);
         gl_FragColor = vec4(mix(vec3(1.0, .36, .28), vec3(1.0, .93, .9), edge), (.75 + .25 * edge) * vFade);
@@ -1012,7 +1012,7 @@ export function addWalkerAlert(mesh, { mask, ghost }) {
     const copy = new THREE.InstancedMesh(mesh.geometry, material, mesh.count);
     copy.name = `${mesh.name}-${material.name}`; copy.renderOrder = order;
     // (an instanced mesh with morphs needs its morph texture, though the
-    // shader picks the shape from the instance colour)
+    // shader picks the shape from the instance color)
     copy.instanceMatrix = mesh.instanceMatrix; copy.instanceColor = mesh.instanceColor; copy.morphTexture = mesh.morphTexture;
     copy.boundingSphere = mesh.boundingSphere; copy.userData.ambientOcclusion = false;
     mesh.add(copy);
@@ -1037,7 +1037,7 @@ function pick(key, pairs) {
   return pairs[0][0];
 }
 // Hair within a shade of the face (blond on tan, brown on brown) loses the
-// hairline, brows and moustache in it; such a pair takes the next darker hair.
+// hairline, brows and mustache in it; such a pair takes the next darker hair.
 const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
 const distance = (a, b) => Math.hypot(...rgb(a).map((c, i) => c - rgb(b)[i]));
 const luma = hex => { const [r, g, b] = rgb(hex); return .3 * r + .59 * g + .11 * b; };
@@ -1086,7 +1086,7 @@ export function walkerAppearance(seed, district = null) {
   // Trousers a clear step lighter or darker than the top over them
   let legs = hash(seed ^ 0x2d9) % WALKER_LEGS.length;
   for (let tries = 0; tries < WALKER_LEGS.length && Math.abs(luma(WALKER_LEGS[legs]) - luma(WALKER_LOOKS[look].coat)) < 28; tries++) legs = (legs + 1) % WALKER_LEGS.length;
-  // One accent a person: never the coat's own colour
+  // One accent a person: never the coat's own color
   let accent = hash(seed ^ 0x6e11) % WALKER_ACCENTS.length;
   if (distance(WALKER_ACCENTS[accent], WALKER_LOOKS[look].coat) < 60) accent = (accent + 3) % WALKER_ACCENTS.length;
   // Ties and headscarves in the deeper accents
@@ -1140,7 +1140,7 @@ const selection = { morphTargetInfluences: new Array(WALKER_TARGETS).fill(0) };
 const packed = (appearance, names) => names.reduce((sum, name) => sum + ((appearance[name] ?? 0) << PACK[name][0]), 0);
 export function setWalkerAppearance(mesh, index, appearance) {
   const full = { outfit: 0, face: 0, gear: 0, legs: appearance.look % 3, accent: 0, ...appearance };
-  // Two whole numbers in the per-instance colour; the one-hot weights (one a
+  // Two whole numbers in the per-instance color; the one-hot weights (one a
   // slot) for the renderer's own AO prepass. Both are uploaded
   // only when a resident is made.
   mesh.setColorAt(index, new THREE.Color().setRGB(
@@ -1153,7 +1153,7 @@ export function setWalkerAppearance(mesh, index, appearance) {
 }
 
 // Turn a resident's head from their body, radians about the upright (the
-// same sense as their yaw). Only the colour pass, shadow and warning see it;
+// same sense as their yaw). Only the color pass, shadow and warning see it;
 // the caller flags `instanceColor.needsUpdate` once for the whole mesh.
 export function setWalkerTurn(mesh, index, angle) {
   mesh.instanceColor.array[index * 3 + 2] = angle;

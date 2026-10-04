@@ -55,7 +55,7 @@ try {
         button.setAttribute('aria-label', 'Wrong'); button.setAttribute('aria-current', 'true'); button.disabled = true;
       }
       check(game.currentMenuModel().items.some(item => item.id === 'sports' && item.label === 'GT'), 'garage labels come from car data');
-      // (a colour costs money: give the save one coat's worth)
+      // (a color costs money: give the save one coat's worth)
       const unpainted = game.taxi.fleet.balance; game.taxi.fleet.credit(100);
       game.currentMenuModel().items.filter(item => item.group === 'Paint')[1].activate();
       check(game.paint === paints[1].id && game.taxi.fleet.balance === unpainted, 'paint command applies without a click, and is paid for');

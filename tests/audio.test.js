@@ -281,7 +281,7 @@ test('a driver the player hits honks once, and one held up honks after a few sec
   audio.horn(car, player, {}, 13); assert.equal(events.length, 3, 'not again at once');
 });
 
-test('the soundscape knows the parks, the harbour and downtown', () => {
+test('the soundscape knows the parks, the harbor and downtown', () => {
   const downtown = citySoundscape(CITY.downtown.s, CITY.downtown.u);
   assert.ok(downtown.urban > .5);
   // The greenest park middle there is

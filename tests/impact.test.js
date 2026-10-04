@@ -32,7 +32,7 @@ test('a blow lands where the cars overlap and conserves momentum and spin', () =
   blow = collisionImpulse(car, offset, trafficContact(car, offset), point);
   assert.ok(blow.a.spin > 0 && blow.b.spin > 0);
   assert.ok(blow.a.z > 0 && blow.a.z < 6, 'an offset hit moves the pair less than a square one');
-  // A heavy car into the side of a light one, off-centre.
+  // A heavy car into the side of a light one, off-center.
   const van = { x: -3.2, z: .4, heading: Math.PI / 2, halfWidth: 1.05, halfLength: 2.4, vx: 15, vz: 0 }, hatch = { ...car, halfWidth: .9, halfLength: 1.7, vz: -16 };
   const normal = trafficContact(van, hatch);
   point = contactPoint(van, hatch);

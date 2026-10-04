@@ -26,7 +26,7 @@ test('perspective joystick follows all screen directions through the city and af
   for (const route of [citydriverRoute]) {
     for (const aspect of [390 / 844, 844 / 390]) for (const s of [24, 148, 420, 20025]) {
       for (const [x, y] of directions) {
-        // In a lane near there, clear of kerbs and quays
+        // In a lane near there, clear of curbs and quays
         const lane = nearestLanePose(s, 0), car = new DrivingController(route, { s: lane.s, u: lane.u });
         const origin = Math.floor(s / 1024) * 1024;
         car.render(0, origin);

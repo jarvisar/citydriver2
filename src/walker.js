@@ -38,7 +38,7 @@ export const WALKER_SPEC = { name: 'walker', width: .64, length: .64, radius: .3
 //                   a gentle push walks
 //   GRIP, AIR       how fast they change speed on their feet and in the air (m/s²)
 //   TURN            how quickly they turn to face the way they go
-//   STEP            the highest kerb they step up or down without a jump. A
+//   STEP            the highest curb they step up or down without a jump. A
 //                   drop further than that they fall down
 //   KNOCK           a car coming at them faster than this (m/s) knocks them over
 //   LIE, GET_UP     seconds lying still once they come to rest, and getting up
@@ -49,7 +49,7 @@ const STEP = .45, KNOCK = 4, LIE = 1.1, GET_UP = .7;
 const AIRBORNE = 2.5;
 // Jumping as platformers do it (m/s, m/s², s): off the ground at JUMP, slowed
 // by RISE while the button is held on the way up and by LET_GO once it is let
-// go, so a tap hops about half a metre and a held press jumps about a metre,
+// go, so a tap hops about half a meter and a held press jumps about a meter,
 // and falling faster than they rose, at FALL. A second press in the air
 // flips them over and on up at FLIP, once a jump. A press up to BUFFER
 // before they land jumps as they land, and one up to COYOTE after they step
@@ -140,7 +140,7 @@ export function createWalkerModel(appearance = PLAYER_LOOK) {
 // The parachute out of their pack (see Walker's `chute`): a round canopy of
 // eight gores in free drive's teal and cream and its lines down to the pack,
 // one mesh, built about the pack so it opens out of it and sways from it.
-// Its material is the vehicles' vertex-coloured trim's, so it needs no
+// Its material is the vehicles' vertex-colored trim's, so it needs no
 // program of its own, and the canopy is two skins, facing out and in, to be
 // seen from below as well.
 const CANOPY = { radius: 2.3, rise: 1.1, up: 3.1, pack: new THREE.Vector3(0, 1.28, .14) };
@@ -328,7 +328,7 @@ export class Walker {
         this.vx = (v.u - fromU) / (dt || 1); this.vz = -(v.s - fromS) / (dt || 1);
       }
     }
-    // Up a kerb or down it in their stride, and off anything higher they
+    // Up a curb or down it in their stride, and off anything higher they
     // fall. Rising with the button held they are slowed least, falling most.
     // Under a parachute they come down at its own pace.
     const ground = this.floorAt(v.s, v.u), wasGrounded = this.grounded;
@@ -456,7 +456,7 @@ export class Walker {
     v.props?.sounds.push({ kind: 'flutter', strength: 9, x: p.x, z: p.z });
   }
   // Down in the water off a parachute: a splash, and they are back at the
-  // kerb, as the harbour gives back anyone knocked into it (see lie)
+  // curb, as the harbor gives back anyone knocked into it (see lie)
   ashore() {
     const v = this.vehicle, p = v.groundedPosition;
     v.props?.bits?.burst('splash', p.x, this.y, p.z);
@@ -478,7 +478,7 @@ export class Walker {
     props.bits.burst(props.underfoot ?? 'dust', p.x, this.y + .04, p.z, vx, vz, count, spread, .34);
   }
   // Knocked over, they go where their body goes, and once it has lain still a
-  // moment they get up where it lies (the harbour gives them back at the kerb)
+  // moment they get up where it lies (the harbor gives them back at the curb)
   lie() {
     const v = this.vehicle, body = this.down.body;
     if (body.removed || body.sunk) {

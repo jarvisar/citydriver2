@@ -195,7 +195,7 @@ export function installPlayerFog(renderer, { revision = THREE.REVISION, warn = c
     return owner;
   } catch (error) {
     if (!(error instanceof RenderingCompatibilityError)) throw error;
-    warnOnce('Player-centred fog', error, warn);
+    warnOnce('Player-centered fog', error, warn);
     return null;
   }
 }

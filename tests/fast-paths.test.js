@@ -118,7 +118,7 @@ test('a surface kept in blocks builds and tiles the same faces as one kept face 
   });
 });
 
-test('setColor sets what Color.set would, and leaves the colour be for a string it can\'t read', () => {
+test('setColor sets what Color.set would, and leaves the color be for a string it can\'t read', () => {
   for (const value of ['#abc', '#a1b2c3', 'red', 'rgb(10, 20, 30)', 'hsl(120, 50%, 40%)', 0x336699, new THREE.Color(.1, .2, .3)]) {
     for (let twice = 0; twice < 2; twice++) assert.deepEqual(setColor(new THREE.Color(), value).toArray(), new THREE.Color().set(value).toArray(), String(value));
   }
@@ -180,7 +180,7 @@ test('a wall looks out over its lot the same as by the booleans alone', () => {
   for (const lots of [...byBlock.values()].slice(0, 40)) {
     for (const lot of lots) {
       const neighbours = lots.filter(other => other !== lot);
-      // (the lot itself, its edges against its neighbours, and a footprint stepped in from it)
+      // (the lot itself, its edges against its neighbors, and a footprint stepped in from it)
       for (const ring of [lot, offsetPolygon(lot, -1.5)].filter(ring => ring.length >= 3)) {
         for (let i = 0; i < ring.length; i++) { const has = wallHasOutlook(ring, i, neighbours); assert.equal(has, plain(ring, i, neighbours)); walls++; open += has; }
       }

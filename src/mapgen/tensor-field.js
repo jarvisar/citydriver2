@@ -7,7 +7,7 @@ const smoothstep = t => { const c = Math.max(0, Math.min(1, t)); return c * c * 
 
 // Combines basis fields. Rotational noise is added inside parks, over the
 // whole domain while the coastline and river are being integrated, and over
-// any neighbourhood given its own; near the ring road the streets turn to
+// any neighborhood given its own; near the ring road the streets turn to
 // meet it square.
 export default class TensorField {
   constructor(noiseParams, random = Math.random) {
@@ -16,7 +16,7 @@ export default class TensorField {
     this.basisFields = [];
     this.parks = []; this.sea = []; this.river = [];
     this.ignoreRiver = false;
-    // Rotational noise over some neighbourhoods rather than the whole
+    // Rotational noise over some neighborhoods rather than the whole
     // domain: each { angle, size, share } turns the streets as much as
     // share(point), from 0 to 1, says the point is in them
     this.districtNoise = [];
@@ -48,7 +48,7 @@ export default class TensorField {
     if (this.noiseParams.globalNoise) {
       tensorAcc.rotate(this.getRotationalNoise(point, this.noiseParams.noiseSizeGlobal, this.noiseParams.noiseAngleGlobal));
     }
-    // A neighbourhood's own noise, as much as the point is in it
+    // A neighborhood's own noise, as much as the point is in it
     for (const { angle, size, share: shareAt } of this.districtNoise) {
       const share = shareAt(point);
       if (share > .01) tensorAcc.rotate(this.getRotationalNoise(point, size, angle) * share);
@@ -60,9 +60,9 @@ export default class TensorField {
   get radialIndex() { return this.basisFields.findIndex(field => field.FIELD_TYPE === FIELD_TYPE.Radial); }
   // Streets near a fixed line (the ring road round the city's edge) turn to
   // run along it or meet it square, more the nearer they are, out to `reach`
-  // metres from it (MapGenerator's advice for a waterfront: keep the field
+  // meters from it (MapGenerator's advice for a waterfront: keep the field
   // parallel to the water there). The line's distance and direction are kept
-  // on a grid of `cell` metres.
+  // on a grid of `cell` meters.
   alignWith(line, reach, cell = 24) {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const p of line) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }

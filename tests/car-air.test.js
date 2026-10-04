@@ -15,7 +15,7 @@ const road = (height = () => GROUND, water = () => false) => ({
   grid: true, laneAssist: false, frame: () => ({ angle: 0, scale: 1 }), position: (s, u, y = height(s, u)) => ({ x: u, y, z: -s }),
   height, water, bounds: () => [-1e9, 1e9], looseness: () => 0,
 });
-// A ramp in the road, its foot `at` metres north, climbing `rise` over `run`
+// A ramp in the road, its foot `at` meters north, climbing `rise` over `run`
 // and a level top `flat` long, facing north
 function ramp({ at = 40, rise = 1.4, run = 7, curve = .5, flat = 1.5, width = 3, base = GROUND } = {}) {
   const length = run + flat, z0 = -at, z1 = -(at + length);
@@ -84,19 +84,19 @@ test('the faster the run at a ramp, the further the jump', () => {
   assert.ok(slow < fast && fast < faster, `${slow.toFixed(1)} < ${fast.toFixed(1)} < ${faster.toFixed(1)} m`);
 });
 
-test('kerbs up and down never lift a car off its tyres', () => {
+test('curbs up and down never lift a car off its tires', () => {
   // A pavement 12 cm up, 20 m long, and back down
   const c = car(road(s => s > 30 && s < 50 ? GROUND + .12 : GROUND));
   try {
     const seen = drive(c, 3, 30);
     assert.ok(!seen.aloft && !seen.events.some(e => e.kind === 'jump'), 'no jump');
-    // (astride a kerb it rests on the plane through its wheels)
+    // (astride a curb it rests on the plane through its wheels)
     assert.ok(seen.lowest > -.08, `never into the ground (${seen.lowest.toFixed(3)})`);
-    assert.ok(c.audioTelemetry.bumpSerial >= 2, 'each kerb thumps');
+    assert.ok(c.audioTelemetry.bumpSerial >= 2, 'each curb thumps');
   } finally { c.disposeModel(); }
 });
 
-test('a hump taken fast leaves the ground, and taken slowly keeps its tyres on it', () => {
+test('a hump taken fast leaves the ground, and taken slowly keeps its tires on it', () => {
   const air = speed => { const c = car(road(), chunks(mound({ rx: 9, height: 2 }))); try { return drive(c, 4, speed); } finally { c.disposeModel(); } };
   assert.ok(!air(8).aloft, 'slowly, it goes over');
   const fast = air(24);
@@ -126,7 +126,7 @@ test('steering leans the nose in the air; with drift held it spins, and let go i
     const seen = drive(out, 4, 34, car => car.aloft ? { right: 1, handbrake: true } : {});
     const jump = seen.events.find(e => e.kind === 'jump');
     assert.ok(jump, 'a jump');
-    if (jump.landing === 'spun') assert.ok(Math.abs(out.knock.spin) > 0 || Math.hypot(out.knock.x, out.knock.z) > 0 || out.speed < 30, 'the tyres take the slide');
+    if (jump.landing === 'spun') assert.ok(Math.abs(out.knock.spin) > 0 || Math.hypot(out.knock.x, out.knock.z) > 0 || out.speed < 30, 'the tires take the slide');
   } finally { out.disposeModel(); }
 });
 
@@ -151,7 +151,7 @@ test('in the air a car clears what it is over: a parked car, a railing, a wall, 
     const parked = { parked: { height: 1.7 } }, railing = { base: GROUND, height: 1.15 }, wall = {}, building = { top: GROUND + 9, corners: [], x: 0, z: 0 };
     assert.ok(![parked, railing, wall].some(solid => c.passes(solid)), 'on the road it meets them all');
     c.y = GROUND + 3; c.aloft = true;
-    assert.ok(c.passes(parked) && c.passes(railing) && c.passes(wall), 'three metres up it clears them');
+    assert.ok(c.passes(parked) && c.passes(railing) && c.passes(wall), 'three meters up it clears them');
     assert.ok(!c.passes(building, { point: { x: 0, z: 0 } }), 'but not a building');
   } finally { c.disposeModel(); }
 });
@@ -177,7 +177,7 @@ test('traffic neither meets a car jumping over its roof nor one under a bridge i
   } finally { traffic.dispose(); player.disposeModel(); }
 });
 
-// A kerb-parked car 40 m up the road, facing north: bonnet and boot low, the roof high
+// A curb-parked car 40 m up the road, facing north: bonnet and boot low, the roof high
 function parkedCar(at = 40) {
   const heights = new Float32Array(18).map((_, k) => k < 4 ? .8 : k < 7 ? .95 : k < 12 ? 1.45 : k < 14 ? 1.1 : .85);
   const corners = [{ x: -.9, z: -at + 2.2 }, { x: .9, z: -at + 2.2 }, { x: .9, z: -at - 2.2 }, { x: -.9, z: -at - 2.2 }];
@@ -246,11 +246,11 @@ test('short of the far bank a car splashes into the water, sinks, and asks to be
   } finally { c.disposeModel(); }
 });
 
-test('in the air the engine revs free and the tyres go quiet', () => {
+test('in the air the engine revs free and the tires go quiet', () => {
   const model = new DriveSoundModel(); model.setProfile(engineFor('taxi'), 40);
   let ground; for (let i = 0; i < 60; i++) ground = model.update({ speed: 25, throttle: 1 }, 1 / 60);
   let air; for (let i = 0; i < 60; i++) air = model.update({ speed: 25, throttle: 1, aloft: 1 }, 1 / 60);
-  assert.ok(air.roadLevel === 0 && ground.roadLevel > 0, 'no tyre noise in the air');
+  assert.ok(air.roadLevel === 0 && ground.roadLevel > 0, 'no tire noise in the air');
   assert.ok(air.rpm > ground.rpm, 'the revs rise with the wheels free');
 });
 

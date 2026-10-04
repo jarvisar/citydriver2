@@ -23,13 +23,13 @@ export const ROUTE_PAINT = { coast: '#d96143', desert: '#78977b', snow: '#9fc4d5
 // the Formula racer is quicker again, and each of
 // the specials trades one thing away to be the best in the garage at another.
 //
-//   topSpeed            metres per second, the speed ceiling (drag may limit it first)
+//   topSpeed            meters per second, the speed ceiling (drag may limit it first)
 //   offRoad             the same off the tarmac: two thirds or so of topSpeed,
 //                       and the car eases down to it rather than snapping
-//   acceleration        metres per second squared under full throttle
-//   braking             metres per second squared on the brakes
+//   acceleration        meters per second squared under full throttle
+//   braking             meters per second squared on the brakes
 //   grip                cornering capacity and tire recovery relative to the wagon
-//   turnRadius          optional low-speed full-lock radius in metres
+//   turnRadius          optional low-speed full-lock radius in meters
 //
 // A car weighs what its footprint covers (see impact.js) unless it gives its
 // own `mass` in tonnes, which decides how a collision with traffic is shared.
@@ -105,12 +105,12 @@ export const CARS = {
     name: 'Exotic', kind: 'built', paint: '#407394', shape: EXOTIC_MODEL,
     stats: { topSpeed: 37.5, acceleration: 15, braking: 23, grip: 1.22, offRoad: 20.1 },
   },
-  // Light, short and on knobbly tyres: it barely notices the tarmac ending.
+  // Light, short and on knobbly tires: it barely notices the tarmac ending.
   buggy: {
     name: 'Buggy', mass: .7, kind: 'special', paint: '#e2a23b', shape: SPECIAL_SHAPES.buggy,
     stats: { topSpeed: 25.5, acceleration: 14.5, braking: 19, grip: 1.12, offRoad: 23.5 },
   },
-  // Goes anywhere at the same unhurried pace, and leans on its tyres to stop or turn.
+  // Goes anywhere at the same unhurried pace, and leans on its tires to stop or turn.
   monster: {
     name: 'Monster Truck', mass: 4.5, kind: 'special', paint: '#3f7fb5', shape: SPECIAL_SHAPES.monster,
     stats: { topSpeed: 23.5, acceleration: 10.4, braking: 16.5, grip: .8, offRoad: 21.5 },
@@ -148,7 +148,7 @@ export const CARS = {
     name: 'Helicopter', mass: 4, kind: 'helicopter', flies: true, paint: '#c9362f', shape: HELICOPTER_SHAPE,
     stats: { topSpeed: 40, acceleration: 13, braking: 16, grip: 1.2, offRoad: 40 },
   },
-  // A light plane on big soft tyres (see plane.js): it needs a run at it to
+  // A light plane on big soft tires (see plane.js): it needs a run at it to
   // take off, and after that it is the quickest thing in the garage. It is
   // weighed in heavier than it is, as the helicopter is, so a tree it flies
   // through only costs it a bite of its speed.
@@ -224,7 +224,7 @@ export function carStats(id) {
     turnRadius = (3.55 + .26 * entry.shape.length) / Math.sqrt(grip) } = entry.stats;
   return {
     topSpeed, acceleration, braking, grip, offRoad,
-    // Full-lock radius in metres at city-corner speeds. Keep the heavy cars
+    // Full-lock radius in meters at city-corner speeds. Keep the heavy cars
     // less nimble, but give every car enough lock for a small intersection.
     turnRadius,
     // Arcade lateral acceleration budget, tuned for the city's 13 m side

@@ -3,8 +3,8 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { vehicleGeometry, TRAFFIC_MODELS, WHEEL } from '../traffic-models.js';
 import { compactGeometry } from './compact-geometry.js';
 
-// Small merged, flat-shaded street furniture with its colours baked into
-// vertex colours, so one instanced mesh per kind draws a whole chunk's worth.
+// Small merged, flat-shaded street furniture with its colors baked into
+// vertex colors, so one instanced mesh per kind draws a whole chunk's worth.
 export class Parts {
   constructor() { this.parts = []; }
   add(source, position, color, rotation = [0, 0, 0]) {
@@ -74,7 +74,7 @@ function trafficSignal() {
   return p.finish();
 }
 // A signal head on its own, to hang from a mast arm: three lamps in hoods on
-// a backplate, centred on the middle lamp, lamps at SIGNAL_LENSES above it
+// a backplate, centered on the middle lamp, lamps at SIGNAL_LENSES above it
 export const SIGNAL_LENSES = [.32, 0, -.32];
 function signalHead() {
   const p = new Parts();
@@ -143,10 +143,10 @@ function bench() {
   for (const y of [.73, .94]) p.box([.27 + (y - .73) * .12, y, 0], [.06, .17, 1.9], timber, [0, 0, -.12]);
   return p.finish();
 }
-// Boats in the harbour and along the river, each lying along local z with
+// Boats in the harbor and along the river, each lying along local z with
 // its bow toward -z and its waterline at y = 0. A hull has a narrow keel,
 // a boot-top just above the water and a gunwale that rises toward the bow;
-// its topsides (`paint`) take each boat's own colour, like a parked car's
+// its topsides (`paint`) take each boat's own color, like a parked car's
 // shell, and the rest is baked into `detail`.
 const BOAT_PLAN = [[-.8, 1], [.8, 1], [1, .5], [1, 0], [.92, -.4], [.62, -.75], [0, -1], [-.62, -.75], [-.92, -.4], [-1, 0], [-1, .5]];
 function boatHull(length, beam, freeboard, draft, colours) {
@@ -218,7 +218,7 @@ export const boatModels = {
     for (const x of [-.95, .95]) p.box([x, deck + .38, 3.3], [.06, .5, 1.6], '#c9c7c0');
   }),
   // A workboat: a wheelhouse with a mast on its roof, a winch forward and
-  // old tyres hung along its sides
+  // old tires hung along its sides
   work: boat(7.6, 2.7, .95, .45, { bottom: '#3b2a26', strake: '#2b2f31', deck: '#7d786d' }, (p, deck) => {
     p.box([0, deck + .8, 1.05], [1.75, 1.6, 2], '#eeeae0');
     p.box([0, deck + 1.15, 1.05], [1.77, .45, 2.02], '#3a5058');
@@ -243,7 +243,7 @@ function busShelter() {
   for (const z of [-1.7, 1.7]) p.box([.6, 1.25, z], [.1, 2.5, .1], iron);
   p.box([0, 2.55, 0], [1.6, .12, 4], darkIron);
   // Quiet frosted panels in a frame, with air below and above the screen.
-  // Opaque baked colours keep this in the single furniture batch.
+  // Opaque baked colors keep this in the single furniture batch.
   for (const z of [-.84, .84]) p.box([.62, 1.48, z], [.04, 1.7, 1.62], '#9dafad');
   for (const y of [.61, 2.35]) p.box([.62, y, 0], [.09, .07, 3.4], iron);
   p.box([.62, 1.48, 0], [.09, 1.7, .06], iron);
@@ -265,7 +265,7 @@ function busShelter() {
   }
   return p.finish();
 }
-// A four-metre run of quay railing, laid along z.
+// A four-meter run of quay railing, laid along z.
 function railing() {
   const p = new Parts();
   p.box([0, 1.02, 0], [.07, .09, 4], iron);
@@ -311,14 +311,14 @@ function kiosk() {
   return p.finish();
 }
 
-// Kerbside fittings. Each stands on the lamps' line at the kerb (the
+// Curbside fittings. Each stands on the lamps' line at the curb (the
 // residents walk further in), local -x toward the road.
 // Turned fittings keep their collars and shoulders in one closed shell.
 function turned(p, profile, colour, sides = 8) {
   const vertices = [], point = ([r, y], k) => { const angle = (k + .5) * Math.PI * 2 / sides; return [Math.sin(angle) * r, y, Math.cos(angle) * r]; };
   for (let j = 1; j < profile.length; j++) for (let k = 0; k < sides; k++) {
     const a = point(profile[j - 1], k), b = point(profile[j - 1], k + 1), c = point(profile[j], k + 1), d = point(profile[j], k);
-    // A cap's centre needs one triangle, not a collapsed second one.
+    // A cap's center needs one triangle, not a collapsed second one.
     if (profile[j - 1][0]) vertices.push(...a, ...b, ...d);
     if (profile[j][0]) vertices.push(...b, ...c, ...d);
   }
@@ -388,7 +388,7 @@ function cabinet() {
   for (const y of [.35, .95]) p.box([-.243, y, .34], [.026, .1, .035], galvanised);
   return p.finish();
 }
-// Newspaper boxes in a row of three colours, their windows to the road
+// Newspaper boxes in a row of three colors, their windows to the road
 function newsBoxes() {
   const p = new Parts(), paper = '#e4dcc7', ink = '#65716d';
   p.box([0, .04, 0], [.34, .08, 1.56], darkIron);
@@ -411,12 +411,12 @@ function newsBoxes() {
   });
   return p.finish();
 }
-// Steel hoops to lock a bike to, along the kerb
+// Steel hoops to lock a bike to, along the curb
 function bikeRack() {
   const p = new Parts();
   for (const z of [-.6, .6]) {
     const path = [[-.34, 0], [-.34, .7], [-.29, .81], [-.2, .84], [.2, .84], [.29, .81], [.34, .7], [.34, 0]];
-    // Mitred rings make one bent tube, with no separate caps at the elbows.
+    // Mitered rings make one bent tube, with no separate caps at the elbows.
     const vertices = [], rings = path.map(([x, y], i) => {
       const a = path[Math.max(0, i - 1)], b = path[Math.min(path.length - 1, i + 1)];
       const length = Math.hypot(b[0] - a[0], b[1] - a[1]), nx = -(b[1] - a[1]) / length, ny = (b[0] - a[0]) / length;
@@ -494,7 +494,7 @@ function foliageLobe(radius, phase) {
 }
 
 // Pruned street trees: a broad crown and a narrower upright one, both fitted
-// between the shopfronts and the kerb. The silhouette is shared at every LOD.
+// between the shopfronts and the curb. The silhouette is shared at every LOD.
 function streetTree(variant) {
   const trunk = new Parts(), crown = new Parts();
   trunk.beam([0, -.04, 0], [.025, .66, 0], .048, '#ffffff', 5);
@@ -547,7 +547,7 @@ export const cityTrees = [streetTree(0), streetTree(1), conifer()];
 // (the conifer's index in cityTrees)
 export const CONIFER = 2;
 // A street tree as one piece to knock loose: its trunk and crown in one
-// model, their colours baked in (bark, and the crown's `green`), made when
+// model, their colors baked in (bark, and the crown's `green`), made when
 // first needed
 const looseTrees = new Map();
 export function looseTree(index, green) {
@@ -593,19 +593,19 @@ export const twinLamp = mergeGeometries([cityAssets.lamp.clone(), cityAssets.lam
 twinLamp.computeBoundingSphere();
 
 // Parked cars reuse the traffic fleet's bodies: the paint shell carries a
-// per-instance colour and everything else keeps its own baked colours.
+// per-instance color and everything else keeps its own baked colors.
 function tint(g, color) {
   const c = new THREE.Color(color), colors = new Float32Array(g.attributes.position.count * 3);
   for (let i = 0; i < colors.length; i += 3) { colors[i] = c.r; colors[i + 1] = c.g; colors[i + 2] = c.b; }
   g.setAttribute('color', new THREE.BufferAttribute(colors, 3)); return g;
 }
-// Ten-sided tyres match moving traffic; flat hub faces read at kerb distance
+// Ten-sided tires match moving traffic; flat hub faces read at curb distance
 // without adding cylinders or a new batch for hundreds of parked cars.
 function parkedCar(spec) {
   const { paint, details, headlights, taillights, wheels } = vehicleGeometry(spec, { separateWheels: true });
   const tyres = wheels.flatMap(({ x, y, z }) => {
     const tyre = new THREE.CylinderGeometry(WHEEL.radius, WHEEL.radius, WHEEL.width, 10);
-    // Put a vertex at road level so a tyre's flat does not leave a visible gap.
+    // Put a vertex at road level so a tire's flat does not leave a visible gap.
     tyre.rotateY(Math.PI / 2); tyre.rotateZ(Math.PI / 2); tyre.translate(x, y, z); tyre.deleteAttribute('uv');
     const hub = new THREE.CircleGeometry(WHEEL.hubRadius, 8);
     hub.rotateY(Math.sign(x) * Math.PI / 2); hub.translate(x + Math.sign(x) * (WHEEL.width / 2 + .006), y, z); hub.deleteAttribute('uv');

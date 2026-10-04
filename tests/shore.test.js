@@ -10,7 +10,7 @@ import { insidePolygon, distanceToPolyline, interiorPoint, segmentIntersection, 
 const inPiece = (p, piece) => insidePolygon(p, piece.outer) && !piece.holes.some(hole => insidePolygon(p, hole));
 const nearEdge = (p, pieces, distance) => pieces.some(piece => [piece.outer, ...piece.holes].some(ring => distanceToPolyline(p, [...ring, ring[0]]) < distance));
 
-test('land, sea and river cover the whole world exactly once, and the tyres see the same water', () => {
+test('land, sea and river cover the whole world exactly once, and the tires see the same water', () => {
   let land = 0;
   for (let x = CITY.minX + 11; x < CITY.maxX; x += 37) for (let y = CITY.minY + 11; y < CITY.maxY; y += 37) {
     const p = { x, y };
@@ -35,9 +35,9 @@ test('the sea never takes much of the city: its blocks cover most of the domain'
   assert.ok(blocks >= domain * .65, `blocks cover ${(100 * blocks / domain).toFixed(0)}% of the domain`);
 });
 
-test('the city stands on land: lots and kerbs never in the water, roads only over it on bridges across the river', () => {
+test('the city stands on land: lots and curbs never in the water, roads only over it on bridges across the river', () => {
   for (const lot of CITY.lots) for (const p of lot) assert.ok(!waterAt(p.y, p.x), `lot corner in the water at ${p.x.toFixed(0)},${p.y.toFixed(0)}`);
-  for (const block of CITY.blocks) for (const p of block.kerb) assert.ok(!waterAt(p.y, p.x) || nearEdge(p, CITY.land, 3), 'kerb in the water');
+  for (const block of CITY.blocks) for (const p of block.kerb) assert.ok(!waterAt(p.y, p.x) || nearEdge(p, CITY.land, 3), 'curb in the water');
   for (const road of CITY.roads) for (let i = 1; i < road.points.length; i++) {
     const a = road.points[i - 1], b = road.points[i];
     for (let t = 0; t <= 1; t += .25) {
@@ -81,7 +81,7 @@ test('the island ends at the promenade outside the ring road', () => {
   }
 });
 
-test('a river that loops and runs out past the harbour still leaves land and water tiling the world', () => {
+test('a river that loops and runs out past the harbor still leaves land and water tiling the world', () => {
   const island = [];
   for (let k = 0; k < 200; k++) { const a = k / 200 * Math.PI * 2; island.push(new Vector(Math.cos(a) * 1000, Math.sin(a) * 800)); }
   // A river doubling back on itself, and a coast across the south
@@ -114,7 +114,7 @@ test('a coast round an inlet, leaving by the shore it came in by, takes no strip
 test('the sea is on the side of the coast that cuts off less of the city, however little that is', () => {
   // (seeds 248, 1959669599, 2382780353 and 117: a point 30 m off the coast
   // fell outside the domain, the sea was taken to be on the other side, and
-  // the harbour took the whole island, every road a bridge)
+  // the harbor took the whole island, every road a bridge)
   const origin = new Vector(-1440, -1080), size = new Vector(2880, 2160), line = points => points.map(([x, y]) => new Vector(x, y));
   const corner = line([[-1462, 1064], [-1320, 1076], [-1190, 1087]]);
   assert.equal(seaSideOf(corner, origin, size), 1, 'a corner clipped');
@@ -124,7 +124,7 @@ test('the sea is on the side of the coast that cuts off less of the city, howeve
   assert.equal(seaSideOf(line([[-1460, -300], [0, -500], [1460, -300]]), origin, size), -1, 'across the south');
 });
 
-test('where two roads meet at an angle on the shore a metre apart, the promenade round the outside of the bend stays land', () => {
+test('where two roads meet at an angle on the shore a meter apart, the promenade round the outside of the bend stays land', () => {
   // (seeds 39, 253, 263 and others: the ring road ended 1.2 m from where the
   // coast road began, their square ends left the outside of the bend to no
   // road, and the sea took a notch out of the promenade there)

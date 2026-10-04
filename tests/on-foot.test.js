@@ -20,7 +20,7 @@ import { DriveSoundModel } from '../src/audio/model.js';
 import { engineFor } from '../src/audio/profiles.js';
 import { citydriverRoute, journeyStart, onRoadAt, roadAt, ROAD_LEVEL } from '../src/world/city-route.js';
 
-// Flat ground at 24 m, a kerb 12 cm up east of u = 20, and north of s = 200 water, 6 m lower
+// Flat ground at 24 m, a curb 12 cm up east of u = 20, and north of s = 200 water, 6 m lower
 const GROUND = 24, KERB = 20;
 const flat = {
   grid: true,
@@ -32,7 +32,7 @@ const flat = {
   nearestLane: (s, u, heading) => ({ s: Math.min(s, 190), u: 0, heading }),
 };
 const step = 1 / 120;
-// A traffic car on its rails `back` metres behind (s, u), in the lane going the way `heading` points
+// A traffic car on its rails `back` meters behind (s, u), in the lane going the way `heading` points
 function behind(traffic, car, s, u, heading, back, speed) {
   const hit = traffic.nav.nearest(s, u), edge = hit.edge, direction = Math.sin(heading) * hit.tx + Math.cos(heading) * hit.ty >= 0 ? 1 : -1;
   const along = (direction > 0 ? hit.along : edge.length - hit.along) - back;
@@ -296,10 +296,10 @@ test('on foot they jog, walk at a gentle push, sprint, turn to face the way they
     // Through their own eyes they face where the view looks, and back is a step back
     walk(vehicle, 1, { walk: { x: 0, z: 1 }, face: false, aim: .5 });
     assert.ok(Math.abs(vehicle.heading - .5) < 1e-9 && vehicle.speed > 4, 'backed up, facing where they look');
-    // Up and down a kerb in their stride, but never into the water
+    // Up and down a curb in their stride, but never into the water
     vehicle.s = 0; vehicle.u = 18; vehicle.update(0, {});
     walk(vehicle, 1, { walk: { x: 1, z: 0 } });
-    assert.ok(vehicle.u > KERB && Math.abs(vehicle.groundedPosition.y - GROUND - .12) < 1e-9, 'stepped up the kerb');
+    assert.ok(vehicle.u > KERB && Math.abs(vehicle.groundedPosition.y - GROUND - .12) < 1e-9, 'stepped up the curb');
     vehicle.s = 198; vehicle.u = 0; vehicle.update(0, {});
     walk(vehicle, 2, { walk: { x: .3, z: -1 } });
     assert.ok(vehicle.s <= 200 && vehicle.u > 1, 'stopped at the water, and went along its edge');
@@ -307,7 +307,7 @@ test('on foot they jog, walk at a gentle push, sprint, turn to face the way they
 });
 
 test('a press just before landing jumps as they land, one just after stepping off an edge still jumps, and a second in the air flips them higher', () => {
-  // A ledge a metre high: east of u = 5 the ground is a metre lower
+  // A ledge a meter high: east of u = 5 the ground is a meter lower
   const ledge = { ...flat, height: (s, u) => u > 5 ? GROUND - 1 : GROUND };
   const vehicle = new DrivingController(ledge, { s: 0, u: 0, heading: 0 }, 'sedan');
   vehicle.freeDriving = true; vehicle.stepOut();
@@ -523,7 +523,7 @@ test('with a car right beside them between them and the camera, the camera rises
   camera.resize(1.6);
   figure.userData = { leash: true, chaseScale: .36, chaseLift: .75, velocity: { x: 0, z: 0 } };
   figure.position.set(0, 24, 0);
-  // A car's roof, 2.1 m up, from half a metre behind them to three metres
+  // A car's roof, 2.1 m up, from half a meter behind them to three meters
   // behind: a line low through it is closed as soon as it gets there
   camera.sight = (from, to) => {
     for (let k = 0; k <= 1; k += .01) {
@@ -712,7 +712,7 @@ test('a borrowed traffic car is driven as it was going, and given back drives on
   } finally { feet.clear(); traffic.dispose(); vehicle.disposeModel(); }
 });
 
-test('they go to a car a few metres off by themselves and hop in, the one they face first, a traffic car waiting for them; the stick takes over', () => {
+test('they go to a car a few meters off by themselves and hop in, the one they face first, a traffic car waiting for them; the stick takes over', () => {
   const scene = new THREE.Scene(), start = journeyStart(), vehicle = new DrivingController(citydriverRoute, start, 'coast');
   scene.add(vehicle.car); vehicle.freeDriving = true;
   const traffic = new CityTraffic(scene, vehicle.route, vehicle.s, 'city', vehicle.u), feet = new OnFoot(vehicle, traffic);
@@ -725,7 +725,7 @@ test('they go to a car a few metres off by themselves and hop in, the one they f
     assert.ok(vehicle.figure.scale.x < .7, `still in the seat, ${vehicle.figure.scale.x.toFixed(2)}`);
     walk(vehicle, .5, { walk: { x: 0, z: 0 } }); vehicle.render(0);
     assert.ok(!vehicle.walker.alight && Math.abs(vehicle.figure.scale.x - 1) < 1e-6, 'and down');
-    // Six metres off to its left, facing it: their car is picked, and they go to it and get in
+    // Six meters off to its left, facing it: their car is picked, and they go to it and get in
     vehicle.s = own.s + Math.sin(h) * 6; vehicle.u = own.u - Math.cos(h) * 6; vehicle.heading = h + Math.PI / 2; vehicle.update(0, {});
     const offer = feet.offer();
     assert.ok(offer.own && offer.gap > 4, `their own car, ${offer.gap.toFixed(1)} m off`);
@@ -746,7 +746,7 @@ test('they go to a car a few metres off by themselves and hop in, the one they f
     const suits = c => c.edge && !c.loose && c.speed > 4 && c.speed < 15 && c.edge.length - c.along > 40 && Math.hypot(c.s - vehicle.s, c.u - vehicle.u) < 90;
     let car;
     for (let i = 1; i <= 120 * 30 && !car; i++) { traffic.update(step, vehicle); if (i >= 240 && i % 30 === 0) car = traffic.vehicles.find(suits); }
-    // (standing a few metres ahead of it and to its left, looking back at it)
+    // (standing a few meters ahead of it and to its left, looking back at it)
     const ahead = 9, left = 3.2, h2 = car.heading;
     vehicle.s = car.s + Math.cos(h2) * ahead + Math.sin(h2) * left; vehicle.u = car.u + Math.sin(h2) * ahead - Math.cos(h2) * left;
     vehicle.heading = Math.atan2(car.u - vehicle.u, car.s - vehicle.s); vehicle.walker.takeOver(); vehicle.update(0, {});
@@ -856,7 +856,7 @@ test('in a headset Y gets in and out in free drive, and is still the way back in
   assert.ok(input.state.moveX > .3 && input.state.moveY === 1 && input.state.lookX === -1 && input.state.jump);
 });
 
-test('on foot the engine, the tyres and the wind are silent', () => {
+test('on foot the engine, the tires and the wind are silent', () => {
   const model = new DriveSoundModel();
   model.setProfile(engineFor('walker'), 7.4);
   const state = model.update({ speed: 7, throttle: 1, offRoad: 1 }, 1 / 30);
@@ -873,13 +873,13 @@ function parkedAt(s, u, heading, model = 'sedan') {
   } };
 }
 
-test('a car parked along the kerb can be borrowed while there is traffic, and left where they get out goes back to its bay once they are away', () => {
+test('a car parked along the curb can be borrowed while there is traffic, and left where they get out goes back to its bay once they are away', () => {
   const scene = new THREE.Scene(), start = journeyStart(), vehicle = new DrivingController(citydriverRoute, start, 'coast');
   scene.add(vehicle.car); vehicle.freeDriving = true;
   const traffic = new CityTraffic(scene, vehicle.route, vehicle.s, 'city', vehicle.u), feet = new OnFoot(vehicle, traffic);
   try {
     feet.use();
-    // A bay five metres to the right of their car, the car in it facing the same way
+    // A bay five meters to the right of their car, the car in it facing the same way
     const h = vehicle.heading, car = feet.parked, bay = parkedAt(car.s - Math.sin(h) * 5, car.u + Math.cos(h) * 5, h), home = traffic.bayPose(bay);
     vehicle.scenery = chunkOf(bay);
     vehicle.s = home.s + Math.sin(h) * 1.6; vehicle.u = home.u - Math.cos(h) * 1.6; vehicle.update(0, {});
@@ -1101,7 +1101,7 @@ test('high up, a second press jumps out, a tap of jump opens the parachute, and 
   } finally { feet.clear(); vehicle.disposeModel(); }
 });
 
-test('come down in the water, they are fished out at the kerb, and pitched roofs are stood on along their slope', () => {
+test('come down in the water, they are fished out at the curb, and pitched roofs are stood on along their slope', () => {
   const { vehicle, feet } = flying('taxi', { s: 150, u: 0, heading: 0 });
   try {
     feet.use();

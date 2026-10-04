@@ -38,7 +38,7 @@ function longestAxis(ring) {
 
 // Walks in from the corners (where the edge turns by more than 50 degrees)
 // and, in a big square, the middle of every long side, to a circle `radius`
-// round the centre; and the circle itself.
+// round the center; and the circle itself.
 function squareWalks(ring, centre, radius, long) {
   const n = ring.length, starts = [];
   for (let i = 0; i < n; i++) {
@@ -189,7 +189,7 @@ export function squareLayout(park, design, index) {
   const inner = radius - SQUARE_WALK;
   if (design === 'plaza') {
     // A cafe's tables on the paving, on the side away from the busiest walk,
-    // their parasols 3.9 m apart and a metre clear of the fountain's rim
+    // their parasols 3.9 m apart and a meter clear of the fountain's rim
     const cafes = !circus && inner >= 6.3, basin = Math.min(inner * .55, 7, cafes ? inner - 4.9 : Infinity);
     features.push({ kind: 'fountain', x: centre.x, y: centre.y, size: basin / 3.4, r: basin + .6 });
     if (cafes) {
@@ -207,7 +207,7 @@ export function squareLayout(park, design, index) {
       features.push({ kind: 'planter', x: p.x, y: p.y, r: 1.4 });
     }
   } else if (design === 'art') {
-    // The centrepiece stands in a round pool; smaller works line the walks
+    // The centerpiece stands in a round pool; smaller works line the walks
     features.push({ kind: 'sculpture', x: centre.x, y: centre.y, yaw: axis, form: Math.floor(random(2) * 4), size: 1, pool: Math.min(inner - .4, 5.4), r: Math.min(inner, 6) });
     let form = Math.floor(random(3) * 4);
     for (const walk of walks.filter(walk => walk.length === 2)) {

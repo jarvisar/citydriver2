@@ -20,7 +20,7 @@ const STONE = '#e3d7bd', TRIM = '#efe4c9', COPPER = '#62958b';
 const spire = new THREE.ConeGeometry(1, 1, 4);
 const gable = new THREE.CircleGeometry(1, 14, 0, Math.PI);
 
-// Templates baked with their colours, made once per colour
+// Templates baked with their colors, made once per color
 const cache = new Map();
 const template = (key, build) => { if (!cache.has(key)) cache.set(key, build()); return cache.get(key); };
 
@@ -113,7 +113,7 @@ function cafe(colour) {
   return { whole, table, chair, seats };
 }
 
-// A low flowering clump: green flanks and a softly domed patch of colour.
+// A low flowering clump: green flanks and a softly domed patch of color.
 // Eighteen faces, with no individual petals or stems.
 function flowers(colour) {
   const positions = [], colours = [], normal = new THREE.Color(colour), pale = normal.clone().lerp(new THREE.Color('#f1e6cc'), .18);
@@ -257,7 +257,7 @@ export function buildMonument(c, piece, x, s) {
     return true;
   }
   if (piece.kind === 'bed') {
-    // A raised bed with staggered clumps, green at the sides and colour above.
+    // A raised bed with staggered clumps, green at the sides and color above.
     c.box(x, G + .2, s, piece.w, .4, piece.d, '#cfc5ad', 'solid', yaw);
     c.box(x, G + .43, s, piece.w - .35, .1, piece.d - .35, '#5b4a3a', 'solid', yaw);
     for (let along = -piece.w / 2 + .7; along < piece.w / 2 - .5; along += .9) for (const side of [-1, 1]) {

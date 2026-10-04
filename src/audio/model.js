@@ -39,7 +39,7 @@ export class DriveSoundModel {
     const brake = clamp(finite(telemetry.brake), 0, 1);
     const boost = telemetry.boost ? 1 : 0;
     // In the air the wheels spin free: the engine revs with the pedal, the
-    // gearbox holds its gear and the tyres go quiet (see CarAir)
+    // gearbox holds its gear and the tires go quiet (see CarAir)
     const aloft = telemetry.aloft ? 1 : 0;
     // The gearbox reads a settled pedal: a stab kicks down a moment later
     this.drive = damp(this.drive, Math.max(throttle, boost), dt, .25);
@@ -78,7 +78,7 @@ export class DriveSoundModel {
       reverseFrequency: 260 + speed * 65,
     };
   }
-  // On foot: no engine, no tyres, no wind to speak of (the footsteps are
+  // On foot: no engine, no tires, no wind to speak of (the footsteps are
   // events: see DriveAudio.effects)
   quiet() {
     this.rpm = this.profile.idle; this.load = 0;
@@ -89,7 +89,7 @@ export class DriveSoundModel {
   }
   // The helicopter: the turbine's revs follow the rotor spooling up
   // (`telemetry.rotor`, 0 to 1), not the speed, and the blades beat at
-  // `chop` times a second through the rough layer. No tyres on the road.
+  // `chop` times a second through the rough layer. No tires on the road.
   rotor(telemetry, dt) {
     const { idle, redline, rotor } = this.profile, spool = clamp(finite(telemetry.rotor), 0, 1);
     this.rpm = damp(this.rpm, idle + (redline - idle) * spool, dt, .2);
@@ -121,7 +121,7 @@ export function trafficSound(player, car, listenerHeading = player.heading) {
   };
 }
 // What one traffic car sounds like from where it is heard: its engine,
-// quieter idling than pulling away and deeper for a van; its tyres, which
+// quieter idling than pulling away and deeper for a van; its tires, which
 // only a moving car has; and the air taking the edge off a distant one.
 const HEAVY = { van: 1, pickup: .6, bus: 1.5 };
 export function trafficVoice(car, sound) {

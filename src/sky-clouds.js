@@ -7,7 +7,7 @@ import * as THREE from 'three';
 // which keeps its true size and shape on screen: small and squashed toward
 // the horizon, broad overhead, and passing slowly as the car drives. They
 // are drawn first and without depth, so everything else draws over them,
-// and fade into the sky's own colour in the distance. One instanced draw,
+// and fade into the sky's own color in the distance. One instanced draw,
 // with no shadows and no AO prepass. The stars (below) share their group.
 const NEAR = 60, ALTITUDE = 750, SPAN = 12000, COUNT = 60;
 
@@ -78,7 +78,7 @@ export class SkyClouds {
     this.clouds = layout();
     const count = this.clouds.reduce((sum, cloud) => sum + cloud.puffs.length, 0);
     this.material = new THREE.MeshLambertMaterial({ color: '#ffffff', flatShading: true, fog: false, depthWrite: false });
-    // Fade to the sky's colour with distance, after tone mapping, as the
+    // Fade to the sky's color with distance, after tone mapping, as the
     // background is cleared to it
     this.haze = { value: new THREE.Color() };
     this.material.onBeforeCompile = shader => {

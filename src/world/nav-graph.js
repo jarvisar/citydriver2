@@ -7,7 +7,7 @@ import { RoadIndex } from '../mapgen/road-index.js';
 const STUB = 14;  // Dead ends shorter than this are the overshoot past a T-junction
 const SHORT_PIECE = 20;  // A piece of street shorter than this goes with the street it carries on as
 const JOIN = 5;   // Junctions closer than this along a street are one junction
-const TANGENT = 1.5;  // Half the stretch of centre line a heading is taken across
+const TANGENT = 1.5;  // Half the stretch of center line a heading is taken across
 
 // The point `distance` along a polyline with cumulative lengths
 function pointAlong(points, cumulative, distance) {
@@ -84,9 +84,9 @@ export class NavGraph {
   }
   // Two streets of a kind meeting end to end with nothing else there are one
   // street: split, the piece nearer a junction could leave a car no room to
-  // turn. So is a street carried a few metres past a junction before it
+  // turn. So is a street carried a few meters past a junction before it
   // hands over to another no wider (the ring road into the coast road, say):
-  // the few metres go with the street beyond.
+  // the few meters go with the street beyond.
   mergeThrough() {
     for (const node of this.nodes) {
       if (node.edges.length !== 2) continue;
@@ -109,7 +109,7 @@ export class NavGraph {
     this.edges = this.edges.filter(edge => !edge.pruned);
     this.edges.forEach((edge, id) => { edge.id = id; });
   }
-  // Two roads crossing a third a couple of metres apart make two junctions
+  // Two roads crossing a third a couple of meters apart make two junctions
   // joined by a sliver of street no car could turn through: they are one
   // junction, at the middle of the sliver.
   joinCloseJunctions() {
@@ -146,7 +146,7 @@ export class NavGraph {
     while (i < hi) { const mid = (i + hi + 1) >> 1; if (cumulative[mid] <= clamped) i = mid; else hi = mid - 1; }
     const a = points[i], b = points[i + 1], span = cumulative[i + 1] - cumulative[i] || 1;
     const t = Math.max(0, Math.min(1, (clamped - cumulative[i]) / span));
-    // The heading is the chord across a few metres of the centre line, so the
+    // The heading is the chord across a few meters of the center line, so the
     // heading and the lane beside it turn smoothly through every vertex
     // however short the segments round it
     const behind = pointAlong(points, cumulative, Math.max(0, clamped - TANGENT)), ahead = pointAlong(points, cumulative, Math.min(edge.length, clamped + TANGENT));

@@ -308,7 +308,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
         renderer.setRenderTarget(null);
         renderer.setViewport(0, 0, 1, 1); renderer.setScissor(0, 0, 1, 1); renderer.setScissorTest(true);
         // Allocate real shadow maps before the stand-ins sample them. A null
-        // map binds a colour fallback, which is invalid for a shadow sampler.
+        // map binds a color fallback, which is invalid for a shadow sampler.
         renderer.shadowMap.needsUpdate = true; renderer.render(scene, lens);
         renderer.shadowMap.autoUpdate = renderer.shadowMap.needsUpdate = false;
         scene.traverseVisible(object => {

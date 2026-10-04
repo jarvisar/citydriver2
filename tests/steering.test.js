@@ -37,7 +37,7 @@ test('every car makes a compact quarter turn at city speeds in both driving mode
         assert.ok(car.heading * direction >= Math.PI / 2, `${label}: did not complete the turn`);
         const limit = speed <= 6 ? 7 : 10;
         assert.ok(car.s < limit && Math.abs(car.u) < limit,
-          `${label}: turn needs ${car.s.toFixed(2)} by ${Math.abs(car.u).toFixed(2)} metres`);
+          `${label}: turn needs ${car.s.toFixed(2)} by ${Math.abs(car.u).toFixed(2)} meters`);
       }
     } finally { car.disposeModel(); }
   }

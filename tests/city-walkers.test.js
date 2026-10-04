@@ -112,7 +112,7 @@ test('hair covers the back of the head down to the nape', () => {
 });
 
 // Sparse hair facets used to cut through the wider head facets between
-// their rings, leaving isolated skin-coloured holes behind the temples.
+// their rings, leaving isolated skin-colored holes behind the temples.
 // These points sit inside the hair, clear of its edge and the visible ears.
 test('hair shells cover the head between their rings at the temples', () => {
   for (const [style, direction] of [
@@ -126,8 +126,8 @@ test('hair shells cover the head between their rings at the temples', () => {
   }
 });
 
-// Hair a shade from the face hides the hairline, brows and moustache in it
-test('no resident has hair the colour of their face', () => {
+// Hair a shade from the face hides the hairline, brows and mustache in it
+test('no resident has hair the color of their face', () => {
   const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
   for (let seed = 0; seed < 5000; seed++) {
     const { skin, hair } = walkerAppearance(seed * 131);
@@ -196,7 +196,7 @@ test('residents glance round at what passes, on a spring', () => {
   assert.ok(next > 0 && next < .5, `${next}`);
 });
 
-test('a head turn rides in the instance colour, beside the choices', () => {
+test('a head turn rides in the instance color, beside the choices', () => {
   const mesh = new THREE.InstancedMesh(cityWalker, createWalkerMaterial(), 2);
   setWalkerAppearance(mesh, 1, { look: 5, skin: 3, hair: 2, style: 11, outfit: 12, face: 4, gear: 2, legs: 4, accent: 7 });
   const [r, g] = [mesh.instanceColor.array[3], mesh.instanceColor.array[4]];

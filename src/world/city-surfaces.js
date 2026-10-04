@@ -81,7 +81,7 @@ export function addSurfacePolygon(c, points, y, height, color, kind = 'solid') {
         anchor: { u: c.east, s: c.start }, frame: { u: a.u, s: a.s, eu: b.u - a.u, es: b.s - a.s, nu: d.u - a.u, ns: d.s - a.s } });
     }
   }
-  // A thin slab is only its top, and it stands a few centimetres proud of
+  // A thin slab is only its top, and it stands a few centimeters proud of
   // the lot's ground and the pavement (a garden path, a lawn bed, paving):
   // its edge is faced once the chunk's slabs are all laid (see faceSlabEdges)
   if (flat && kind === 'solid' && !c.distant) {
@@ -116,7 +116,7 @@ export function faceSlabEdges(c) {
       const off = p => cross(p[0] - a[0], p[1] - a[1], ex, es) / length;
       for (const { ring: other } of covers) for (let j = 0; j < other.length; j++) {
         const c0 = other[j], c1 = other[(j + 1) % other.length], o0 = off(c0), o1 = off(c1);
-        // (an outline's corner on the edge, within the millimetre its outline counts for, or a crossing)
+        // (an outline's corner on the edge, within the millimeter its outline counts for, or a crossing)
         for (const [p, o] of [[c0, o0], [c1, o1]]) if (Math.abs(o) < 1e-3) cuts.push(along(p));
         if ((o0 > 1e-3 && o1 < -1e-3) || (o0 < -1e-3 && o1 > 1e-3)) {
           const f = o0 / (o0 - o1);
@@ -135,7 +135,7 @@ export function faceSlabEdges(c) {
     }
   }
 }
-// Where a point lies against a ring: 'on' its outline (within a millimetre), 'in' it, or outside (null)
+// Where a point lies against a ring: 'on' its outline (within a millimeter), 'in' it, or outside (null)
 function placeOf(ring, x, s) {
   let inside = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {

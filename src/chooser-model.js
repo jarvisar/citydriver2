@@ -50,7 +50,7 @@ export function garageModel({ carId, paint, ownPaint, fleet, offer = null, caree
   return { balance: fleetMoney(fleet.balance), owned, total: shop.length, saving: savingFor(fleet), shift, unsaved,
     summary: `${fleetMoney(fleet.balance)} · ${owned} of ${shop.length} owned${unsaved ? ` · ${UNSAVED}` : ''}`, paintPrice: fleetMoney(PAINT_PRICE),
     cars, gear, ...liveryModel(fleet, career, actions),
-    // (each car's own colour is free, the rest cost PAINT_PRICE, and the rainbow is the Konami code's)
+    // (each car's own color is free, the rest cost PAINT_PRICE, and the rainbow is the Konami code's)
     paints: shift ? [] : [{ name: DEFAULT_PAINT_NAME, color: DEFAULT_PAINT }, ...PAINTS, ...fleet.konami ? [{ name: RAINBOW_NAME, color: RAINBOW_PAINT }] : []].map(({ name, color }) => {
       const current = color === DEFAULT_PAINT ? !paint : color === paint;
       return { id: color, label: name, swatch: color === DEFAULT_PAINT ? ownPaint(carId) : color === RAINBOW_PAINT ? RAINBOW_SWATCH : color, current,

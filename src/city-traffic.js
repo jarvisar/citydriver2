@@ -25,18 +25,18 @@ const LYING_CLEAR = .3, EDGE_AFTER = 3, EDGE = 1.5, EDGE_MOST = .5;
 const LET_IN = 2.5;
 // A blow along a car's lane is only speed. One that knocks it across its lane
 // or sets it turning faster than this (m/s, rad/s), or would drive it
-// backwards, knocks it loose: off its rails, skidding on its own tyres (see
+// backwards, knocks it loose: off its rails, skidding on its own tires (see
 // skid in impact.js) until it comes to rest. Then its driver steers back to
 // the lane along a curve, as Midtown Madness's traffic did. One knocked off
 // its way back STRANDED times, or that cannot find its lane, waits WAIT
 // seconds before trying again, and is put straight back on it once the
-// player is OUT_OF_SIGHT metres away.
+// player is OUT_OF_SIGHT meters away.
 const LOOSE = 2.5, LOOSE_SPIN = .6, STRANDED = 3, WAIT = 4, OUT_OF_SIGHT = 120;
 // A shaken driver lifts off and rolls to a stop before driving on, for this
 // many seconds per m/s the blow changed the car's speed, and at most MOST.
 const DAZE = .1, DAZE_MOST = 1.6;
 // A car come down on (see stomp) is crushed as by a blow this many times as
-// hard as the landing, and dips by STOMP_ROCK a metre off its middle
+// hard as the landing, and dips by STOMP_ROCK a meter off its middle
 const STOMP = 1.6, STOMP_ROCK = .12;
 // Stand-ins for parked cars knocked loose, of each model: made at the start,
 // and at most (more are made as a rampage needs them); and how far off the
@@ -46,7 +46,7 @@ const PARKED_POOL = 4, PARKED_MOST = 16, PARKED_RETURN = 150;
 // push would drive it into it (see pinned)
 const PIN = .1;
 // Changing lanes. A car moves across by steering, so only as it moves on:
-// at most SWERVE metres across per metre on (less at speed, so it takes a
+// at most SWERVE meters across per meter on (less at speed, so it takes a
 // couple of seconds whatever its speed), easing in and out of it. Drivers
 // think about their lane every THINK seconds and change at most every
 // SETTLE; one that must get over for its turn and cannot slows to wait at
@@ -63,7 +63,7 @@ const WARM_SLICE = .1, WARM_MOST = 64;
 // reach it rests out of sight for REST to REST + REST_SPREAD s before turning
 // up again, so it comes by now and then rather than all the time (a bus that
 // never came within NEAR m of the player rests only a fifth of the spread).
-// It slows at BUS_DECEL (m/s²) for a stop, pulls in by the kerb from PULL_IN m
+// It slows at BUS_DECEL (m/s²) for a stop, pulls in by the curb from PULL_IN m
 // short of it, and pulls out at OUT_SPEED at most.
 const REST = 25, REST_SPREAD = 50, NEAR = 150, BUS_DECEL = 1.6, PULL_IN = 45, OUT_SPEED = 6;
 const wrap = angle => Math.atan2(Math.sin(angle), Math.cos(angle));
@@ -87,7 +87,7 @@ const within = (dx, dy, clear) => {
   const d2 = dx * dx + dy * dy, c2 = clear * clear;
   return d2 < c2 * (1 - 1e-9) || (!(d2 > c2 * (1 + 1e-9)) && Math.hypot(dx, dy) < clear);
 };
-// Whether any of the first n / 2 disc centres comes within `clear` (and a
+// Whether any of the first n / 2 disc centers comes within `clear` (and a
 // hair) of the box round the path ahead (BOX). If none does, none can be
 // within `clear` of any point on the path.
 const nearBox = (discs, n, clear) => {
@@ -125,7 +125,7 @@ const JOB_MODELS = {
   demolition: { spec: { name: 'demolition', width: CARS.demolition.shape.width, length: CARS.demolition.shape.length, mass: CARS.demolition.mass, accel: 1.6 },
     paint: CARS.demolition.paint, parts: () => specialGeometry(CARS.demolition.shape) },
 };
-// The lanes each way, as offsets right of the centre line: the kerb lane every
+// The lanes each way, as offsets right of the center line: the curb lane every
 // turn starts and ends in (the profile's), and on a boulevard or the parkway
 // the lane beside the median as well
 const laneCache = new Map();
@@ -134,16 +134,16 @@ export function lanesOf(profile) {
   return laneCache.get(profile);
 }
 // How sharply a car at `speed` may steer across: the most it moves across per
-// metre on, and how much that may change per metre
+// meter on, and how much that may change per meter
 function swerve(speed, out = [0, 0]) {
   const v = Math.max(1, speed);
   out[0] = Math.min(SWERVE, 1.8 / v); out[1] = Math.min(.15, .6 / v);
   return out;
 }
-// A metre-by-metre step of a lane change (`state`: lane and slope), toward
-// lane `to` over `dm` metres on: steering in as far as it may, and out again
+// A meter-by-meter step of a lane change (`state`: lane and slope), toward
+// lane `to` over `dm` meters on: steering in as far as it may, and out again
 // in time to arrive square to the lane. (The slope it can still take out in
-// steps of `ease` metre by metre, not the smooth curve's: that one arrived
+// steps of `ease` meter by meter, not the smooth curve's: that one arrived
 // still turned a few degrees, and the car snapped straight.)
 function sway(state, to, dm, [most, ease]) {
   const gap = to - state.lane;
@@ -155,12 +155,12 @@ function sway(state, to, dm, [most, ease]) {
   if (gap && (to - state.lane) * gap <= 0) { state.lane = to; state.slope = 0; }
 }
 // How far on a car pulling out round something steers to move `shift`
-// metres across (see sway)
+// meters across (see sway)
 function runUp(shift) {
   const [most, ease] = swerve(AROUND_SPEED), across = Math.abs(shift);
   return across <= most * most / ease ? 2 * Math.sqrt(across / ease) : across / most + most / ease;
 }
-// A pose moved `shift` metres to its right
+// A pose moved `shift` meters to its right
 function aside(pose, shift) {
   if (!shift) return pose;
   return { s: pose.s - Math.sin(pose.heading) * shift, u: pose.u + Math.cos(pose.heading) * shift, heading: pose.heading };
@@ -172,7 +172,7 @@ function aside(pose, shift) {
 // junction before crossing it (see city-junctions.js), brakes for whatever is
 // on its path ahead, the player included, and recycles beyond the local view.
 // A car's `along` runs on past the start of its turn, through the curve,
-// until it joins the next edge. Its `lane` is its offset right of the centre
+// until it joins the next edge. Its `lane` is its offset right of the center
 // line, which it steers toward `laneTo`: on a boulevard it passes slower cars
 // and keeps right when it can, and anywhere it drives round a car or anything
 // else left standing in its way (see think). The last of the fleet is a bus
@@ -293,7 +293,7 @@ export class CityTraffic {
       // and never part-way round it
       if (car.along > car.turn.start - 2) car.along = Math.max(0, car.turn.start - 2);
       // (on a boulevard, some start by the median, if they need not leave it
-      // soon; never the bus, which keeps to the kerb lane for its stops)
+      // soon; never the bus, which keeps to the curb lane for its stops)
       const lanes = lanesOf(edge.profile);
       if (!car.service && lanes.length > 1 && r(40) < .35 && (this.carriesOn(car) || this.lineAt(car) - car.along > 120)) {
         this.settle(car, lanes[1]);
@@ -462,7 +462,7 @@ export class CityTraffic {
     }
     if (!near || near.distance > 40) { car.stranded = WAIT; return; }
     // (back to whichever of its street's lanes it is nearer, on a boulevard,
-    // unless it must be in the kerb lane for its turn)
+    // unless it must be in the curb lane for its turn)
     const lanes = lanesOf(car.edge.profile);
     if (lanes.length > 1) {
       const p = near.p, across = car.lane + (car.u - p.u) * Math.cos(p.heading) - (car.s - p.s) * Math.sin(p.heading);
@@ -644,7 +644,7 @@ export class CityTraffic {
   // The player against a car. They share the blow by weight and, once the car
   // is free to move, are parted by weight too: a heavy car shoves a light one.
   // A helicopter up above the traffic (`airborne`) is not in its way at all,
-  // nor a car jumping clear over its roof (or sunk in the harbour under a
+  // nor a car jumping clear over its roof (or sunk in the harbor under a
   // bridge it is crossing), and someone on foot (`walker`) moves no car: they
   // are only put back outside it, and take the car's blow (see
   // Walker.resolveTrafficCollision). A loose car pinned against the scenery
@@ -670,7 +670,7 @@ export class CityTraffic {
   // of `points` ({ x, z }) over a car in the traffic, a stand-in or the
   // player's own parked car gets its height there, along the car's length as
   // its profile has it, where that is over what it has and under its limit.
-  // `solids` gets the car's roof (see roofOf). Kerb-parked cars still in
+  // `solids` gets the car's roof (see roofOf). Curb-parked cars still in
   // their bays are their colliders' (see parkedRoof in collision.js).
   roofsUnder(points, limits, heights, solids) {
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
@@ -695,7 +695,7 @@ export class CityTraffic {
     return this.roofs.get(car);
   }
   // A car come down on from above (see CarAir.land), `on` its roof (see
-  // roofOf) or a kerb-parked car's collider, which is woken to take it. Its
+  // roofOf) or a curb-parked car's collider, which is woken to take it. Its
   // body dips under the blow at the end or side it was hit, its driver stops
   // dazed, and it is crushed: a blow STOMP times as hard as the landing.
   stomp(on, impact, at) {
@@ -788,9 +788,9 @@ export class CityTraffic {
     // The next turn is known on joining a street, so there is all of it to slow down in
     this.choose(car);
   }
-  // Where a car will be `d` metres on from where it is: along its lane,
+  // Where a car will be `d` meters on from where it is: along its lane,
   // round its turn and into the street beyond (null past the end of that),
-  // or with `lane`, along another. Out of the kerb lane, the turn and the
+  // or with `lane`, along another. Out of the curb lane, the turn and the
   // street beyond are the same distance across.
   ahead(car, d, lane = car.lane) {
     const x = car.along + d, turn = car.turn, shift = lane - car.edge.profile.lane;
@@ -864,7 +864,7 @@ export class CityTraffic {
     return Boolean((loose && resting) || other.recover?.about);
   }
   // Traffic coming along a car's lane toward where it will join it, `join`
-  // metres on (see rejoin)
+  // meters on (see rejoin)
   approaching(car, join) {
     const at = car.along + join;
     return this.vehicles.some(other => other !== car && other.edge === car.edge && other.direction === car.direction && !other.loose && !other.recover
@@ -987,7 +987,7 @@ export class CityTraffic {
   }
   // Which lane a driver wants, a few times a second. Round something left
   // standing in its way, once it has waited behind it a moment, and back once
-  // past it. On a boulevard: over to the kerb lane in good time for a turn
+  // past it. On a boulevard: over to the curb lane in good time for a turn
   // (waiting at the merge point to be let in if it must); otherwise whichever
   // lane is going faster, keeping right when neither is, but never near the
   // line. It moves only into a gap it can take.
@@ -1037,11 +1037,11 @@ export class CityTraffic {
       return;
     }
     // (and never once it has the junction, or near enough to be asking for it,
-    // nor the bus, which keeps to the kerb lane for its stops)
+    // nor the bus, which keeps to the curb lane for its stops)
     if (left < 25 || car.claim || (car.laneTime ?? SETTLE) < SETTLE || to !== car.lane || car.service) return;
     // How fast each lane is going: as fast as the slowest car a little way
     // ahead in it, allowing for those further off; the driver's own lane and
-    // (for most drivers) the kerb lane are worth a little more
+    // (for most drivers) the curb lane are worth a little more
     const keep = this.random(car, 41) < .75 ? 1.2 : 0;
     let best = to, bestScore = -Infinity;
     for (const lane of lanes) {
@@ -1134,7 +1134,7 @@ export class CityTraffic {
   }
   // The bus calls at the next stop along its way (see BusStops) if someone
   // is waiting there or wants to get off, and it can stop in time from the
-  // kerb lane. It slows for it, pulls in by the kerb once on its street,
+  // curb lane. It slows for it, pulls in by the curb once on its street,
   // waits while they get on and off, and pulls out when there is a gap in
   // its lane. Held up on the way in by something standing there (the
   // player's car, say), it gives up and drives on. The most it may go for all that.
@@ -1311,7 +1311,7 @@ export class CityTraffic {
   // driven needed them all in one step: a turn path is about .2 ms on a
   // desktop, several times that on a phone. This works out what each car will
   // need at its next street ahead of time, a little each step (generators, a
-  // candidate curve or a few metres of one at a time). Each is kept by what it
+  // candidate curve or a few meters of one at a time). Each is kept by what it
   // depends on alone, so doing it early changes nothing but when the time is
   // spent, and the clock only decides how much gets done in a step. Streets a
   // car may spawn on are not warmed: doing every street round the player made

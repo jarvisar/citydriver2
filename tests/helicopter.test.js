@@ -327,7 +327,7 @@ test('controllers and headsets climb and descend without touching the car contro
   assert.ok(alone.state.right > .8 && alone.state.climb === 0);
 });
 
-test('its sound is a turbine spooling with the rotor under the blades beat, with no gears or tyres', () => {
+test('its sound is a turbine spooling with the rotor under the blades beat, with no gears or tires', () => {
   const profile = engineFor('helicopter'), model = new DriveSoundModel();
   model.setProfile(profile, 36);
   assert.ok(profile.rotor > 10);

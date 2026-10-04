@@ -13,7 +13,7 @@ const STEEL = { deck: '#4f5559', rib: '#62696d', edge: '#d9a62c', side: '#c9982a
 // River jump: a bridge deck poured as far as it got, on two columns in the
 // river, rebar standing out of its broken end
 const CONCRETE = { deck: '#6f7375', lane: '#d7d3c4', edge: '#bcb8ac', side: '#b2ad9f', under: '#8e8a7f', column: '#a9a497', steel: '#5b4c3f', rebar: '#8c5d3c', stripe: '#1f2224', hazard: '#e3b02c' };
-// (drawn a centimetre over the surface driven on, off the ground's plane at the foot)
+// (drawn a centimeter over the surface driven on, off the ground's plane at the foot)
 const LIFT = .01;
 
 export function buildJump(c, site, part = null) {
@@ -23,7 +23,7 @@ export function buildJump(c, site, part = null) {
   else ramp(c, site);
 }
 
-// A frame along the ramp: `t` metres up it from its foot, `a` across (right
+// A frame along the ramp: `t` meters up it from its foot, `a` across (right
 // positive), in the cell's own map coordinates, and the deck's height there
 function frame(c, site) {
   const ju = Math.sin(site.heading), js = Math.cos(site.heading), ru = js, rs = -ju;
@@ -186,7 +186,7 @@ function farEnd(c, site) {
 }
 
 // A mound: turf rising gently from the lawn to a rounded top, with a pair of
-// worn tyre tracks over it the short way, where it is steepest, so it reads
+// worn tire tracks over it the short way, where it is steepest, so it reads
 // as something to jump. Faceted in strips along its long axis (the tracks
 // are strips of their own), each spanning the mound from edge to edge.
 const TURF = { lawn: COLOURS.lawn, worn: '#869c62', rut: '#7f6c50' };

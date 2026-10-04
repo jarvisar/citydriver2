@@ -15,7 +15,7 @@ import { simplify } from './simplify.js';
 // block into halves as even as it can.
 //
 // roads: the finished network. faces(roads): the blocks it makes, as
-// polygons between the centre lines. directions(p): the field's two
+// polygons between the center lines. directions(p): the field's two
 // directions at p (major, minor; zero vectors where it has none).
 // canPlace(p): whether a street may pass through p. Returns the roads with
 // the new streets (kind `kind`, marked `infill`).
@@ -68,7 +68,7 @@ export function infillStreets(roads, { faces, directions, canPlace = () => true,
       added.push({ kind, points, infill: true });
       indices[1] = new RoadIndex(added);
       // Split by the street as built, not as traced: simplified and rounded it
-      // can lie a metre off, and a street ending on the traced line would
+      // can lie a meter off, and a street ending on the traced line would
       // stop short of it
       const built = splitPolygonByPolyline(polygon, points);
       if (level + 1 < most) for (const half of built.length === 2 ? built : best.halves) split(half, level + 1);
@@ -141,7 +141,7 @@ function crossing(a, b, polygon) {
 
 // How a new street (line, running to its end) meets the road it ends on:
 // the line as it is if it meets it no more askew than minAngle with no other
-// road's centre line within `clear` of its end (a junction it would crowd);
+// road's center line within `clear` of its end (a junction it would crowd);
 // its last stretch swung onto a junction within `snap` where one other
 // street meets the road from the far side, so the two make a crossroads; or
 // null.
@@ -168,7 +168,7 @@ function endOn(line, indices, polygon, { clear, minAngle, snap, swing = 30 }) {
     if (on && on.road === host.road && on.distance < 1 && p.distanceTo(end) < snap && (!junction || p.distanceTo(end) < junction.distanceTo(end))) junction = p;
   }
   if (!junction || road.points.some(p => p.distanceTo(junction) < clear && p.distanceTo(junction) > 1.5 && insidePolygon(p, polygon))) return null;
-  // The last stretch bent onto it, fading in over `swing` metres
+  // The last stretch bent onto it, fading in over `swing` meters
   const shift = junction.clone().sub(end), out = line.map(p => p.clone());
   let travelled = 0;
   for (let i = out.length - 1; i > 0 && travelled < swing; i--) {

@@ -51,7 +51,7 @@ function merge(parts) {
   out.computeVertexNormals();
   return out;
 }
-// Rings of [z, y, half width, half height, colour] from the tail to the neck
+// Rings of [z, y, half width, half height, color] from the tail to the neck
 const RINGS = [[.17, .085, .034, .007, '#5f6672'], [.11, .09, .05, .032, '#98a1ae'], [.03, .094, .064, .058, '#a3acb8'], [-.05, .104, .06, .06, '#84a196'], [-.095, .128, .038, .04, '#8e84a8']];
 function bodyGeometry() {
   const parts = [], sides = 6;
@@ -81,7 +81,7 @@ function bodyGeometry() {
 // The right wing, spread along +x from the hinge, both faces
 function wingGeometry(side) {
   const hinge = [0, 0, -.035], feathers = [[.09, 0, -.05], [.2, 0, -.02], [.23, 0, .03], [.16, 0, .09], [0, 0, .075]];
-  // (pale, with a dark bar across the wing and greyer tips)
+  // (pale, with a dark bar across the wing and grayer tips)
   const colours = ['#b3bbc6', '#a7b0bc', '#4c525c', '#7d8591'], parts = [];
   for (let i = 0; i + 1 < feathers.length; i++) {
     const a = feathers[i], b = feathers[i + 1], flip = p => [p[0] * side, p[1], p[2]];
@@ -117,7 +117,7 @@ export class Pigeons {
     // Told of each flock put up: `(x, z, birds)`, for its wings' flutter (see DriveAudio)
     this.onFlight = null;
   }
-  // (their program, compiled with the city: instanced, coloured, as they are drawn)
+  // (their program, compiled with the city: instanced, colored, as they are drawn)
   warmupObjects() {
     const stand = new THREE.InstancedMesh(this.bodies.geometry, this.bodies.material, 1);
     stand.setColorAt(0, new THREE.Color('#ffffff'));

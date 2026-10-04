@@ -140,7 +140,7 @@ for (const seed of [4817, 42, 2024]) test(`generated city ${seed}: a closed netw
   const graph = new Graph(city.roads.map(road => road.points), 4, false), seen = new Set([graph.nodes[0]]), queue = [graph.nodes[0]];
   while (queue.length) for (const next of queue.pop().neighbors) if (!seen.has(next)) { seen.add(next); queue.push(next); }
   assert.equal(seen.size, graph.nodes.length, 'every road is reachable');
-  // Dead ends are only the few centimetres a road runs past the one it meets
+  // Dead ends are only the few centimeters a road runs past the one it meets
   for (const node of graph.nodes.filter(n => n.neighbors.size === 1)) {
     const [next] = node.neighbors;
     assert.ok(node.value.distanceTo(next.value) < 1, `dead end at ${node.value.x.toFixed(0)},${node.value.y.toFixed(0)}`);
@@ -156,5 +156,5 @@ for (const seed of [4817, 42, 2024]) test(`generated city ${seed}: a closed netw
   });
   // A block's lots never add up to more than the block
   for (const [block, area] of byBlock) assert.ok(area <= calcPolygonArea(city.blocks[block].inner) * 1.005 + 1, `lots overlap in block ${block}`);
-  for (const block of city.blocks) if (block.sidewalk.length) assert.ok(block.sidewalk.every(p => clear(p) > -.8), 'a kerb never reaches onto a carriageway');
+  for (const block of city.blocks) if (block.sidewalk.length) assert.ok(block.sidewalk.every(p => clear(p) > -.8), 'a curb never reaches onto a carriageway');
 });

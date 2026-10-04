@@ -18,7 +18,7 @@ import { TaxiRun, TIPS } from '../src/taxi-run.js';
 import { DemolitionRun, chainSeconds } from '../src/demolition-run.js';
 
 const { sites } = cityJumps();
-// A point `t` metres along a jump from its foot, as map points
+// A point `t` meters along a jump from its foot, as map points
 const along = (site, t) => ({ x: site.u + Math.sin(site.heading) * t, y: site.s + Math.cos(site.heading) * t });
 let world = null;
 const built = () => world ??= new CitydriverWorld(new THREE.Scene());

@@ -23,7 +23,7 @@ import { insidePolygon, distanceToPolyline, polygonBounds, calcPolygonArea } fro
 // A loading ramp: its width, the slope's run and rise, how much steeper it
 // gets toward its lip, and the level top beyond it
 const LOADING = { width: 3.2, run: 6.5, rise: 1.3, curve: .35, flat: 1.6 };
-// How much straight kerb it wants behind it (a run at it) and ahead (to come
+// How much straight curb it wants behind it (a run at it) and ahead (to come
 // down on), how far from either end of its street, and from the next one
 const RUN_IN = 34, LAND = 30, END = 26, SPACING = 240, LOADING_MOST = 5;
 // The river jump: its width, how far it reaches out over the water, its rise
@@ -31,7 +31,7 @@ const RUN_IN = 34, LAND = 30, END = 26, SPACING = 240, LOADING_MOST = 5;
 // to the far bank it will ask a car to clear
 const RIVER = { width: 5.4, over: 22, rise: 4.2, curve: 1 }, RIVER_GAP = [36, 74], RUN_UP = 90;
 // Mounds: a park's open lawn gets one for every MOUND_AREA m² of it, at most
-// MOUND_MOST, MOUND_APART metres apart
+// MOUND_MOST, MOUND_APART meters apart
 const MOUND_AREA = 5500, MOUND_MOST = 4, MOUND_APART = 34;
 
 let planned = null;
@@ -101,7 +101,7 @@ function loadingRamps(nav) {
     if (!profile.parking || edge.kind === 'path' || edge.length < 2 * END + RUN_IN + length + LAND) continue;
     const middle = nav.pose(edge, edge.length / 2, 1, 0);
     if (cityStyleDistrict(middle.s, middle.u) !== 'Warehouse district') continue;
-    // (in the bay, its outer edge at the kerb)
+    // (in the bay, its outer edge at the curb)
     const across = profile.halfWidth - LOADING.width / 2;
     // Its foot `a` along the edge, the traffic on its side (`side`) going the
     // way the edge runs or against it: a run at it behind, room to land ahead
@@ -157,7 +157,7 @@ function riverJump(nav) {
       // It has to meet the river square on (the bank road's way, where they meet)
       const across = nav.pose(along, along.a === node.id ? 1 : along.length - 1, 1, 0), square = Math.abs(ju * across.ty - js * across.tx);
       if (square < Math.cos(.45)) continue;
-      // The foot at the far kerb of the bank road, in line with the lane
+      // The foot at the far curb of the bank road, in line with the lane
       // coming up to it (a boulevard's median is down the middle), then the water
       const half = along.profile.halfWidth, lane = edge.profile.lane;
       const footU = node.x + ju * (half + .3) + js * lane, footS = node.y + js * (half + .3) - ju * lane;
@@ -211,7 +211,7 @@ function riverJump(nav) {
   }];
 }
 // Where the line from (u, s) along (ju, js) first crosses a quay wall, from
-// `from` to `to` metres along it: how far, and the wall's way there
+// `from` to `to` meters along it: how far, and the wall's way there
 function quayCrossing(u, s, ju, js, from, to) {
   const ax = u + ju * from, ay = s + js * from, bx = u + ju * to, by = s + js * to;
   const minX = Math.min(ax, bx), maxX = Math.max(ax, bx), minY = Math.min(ay, by), maxY = Math.max(ay, by);
@@ -234,7 +234,7 @@ function quayCrossing(u, s, ju, js, from, to) {
 const ABUTMENT = { out: 1.8, depth: 1.1 };
 function farEnd(u, s, ju, js, wall) {
   const ru = js, rs = -ju, half = RIVER.width / 2 + .5;
-  // (how far along the jump the wall is, a metre to the side: the cross
+  // (how far along the jump the wall is, a meter to the side: the cross
   // product of the ways, which is 1 square on)
   const square = ju * wall.ws - js * wall.wu;
   if (Math.abs(square) < Math.cos(.6)) return null;

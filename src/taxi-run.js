@@ -34,7 +34,7 @@ const CUSTOMER_RANGE = B * 3;
 // destinations are laid out independently, so without this about one drop-off
 // in four would end beside, or inside, a fresh ring.
 export const DROP_OFF_CLEARANCE = 60;
-// As in Crazy Taxi, a waiting fare's colour says how far the whole job goes:
+// As in Crazy Taxi, a waiting fare's color says how far the whole job goes:
 // red is a hop around the corner, green a long haul that pays the most.
 export const FARE_BANDS = [
   { id: 'hop', label: 'Quick hop', color: '#ff5a4a', below: 550 },
@@ -44,7 +44,7 @@ export const FARE_BANDS = [
 ];
 export const fareBand = length => FARE_BANDS.find(band => length < band.below);
 // Crazy Taxi's arrival ratings. Every rider has their own clock, and its
-// colour on arrival sets the bonus: green is Speedy, yellow Normal, red Slow.
+// color on arrival sets the bonus: green is Speedy, yellow Normal, red Slow.
 // A rider who steps out before the end of a group's route adds only
 // `riderSeconds`: the group's travel time is paid at the last stop.
 export const RATINGS = [
@@ -71,7 +71,7 @@ export const STREAK_MAX_SECONDS = 5;
 export const streakSeconds = streak => Math.min(STREAK_MAX_SECONDS, Math.max(0, streak - 1));
 // Time rewards shrink by TIME_FADE a minute, down to TIME_FLOOR, so every
 // shift ends. It goes by time, not fares delivered, so short fares are not
-// penalised.
+// penalized.
 export const TIME_FADE = .045;
 export const TIME_FLOOR = .4;
 export const timeScale = elapsed => Math.max(TIME_FLOOR, 1 - elapsed / 60 * TIME_FADE);
@@ -164,7 +164,7 @@ const FIRST_LEG_MAX = [0, 1100, 800, 650, 500];
 export const GROUP_FARE_SHARE = .2;
 // A party's stops should read as a route through the city, not a line down
 // one street. Each hop ranks the nearby places by distance plus these
-// penalties, in metres: a stop around a corner beats one straight ahead on
+// penalties, in meters: a stop around a corner beats one straight ahead on
 // the street the cab is already on, and a new kind of place beats a second
 // museum or a second market. Nearest-first would choose the straight run
 // about one group in five.
@@ -247,8 +247,8 @@ const placeStop = place => {
   return { ...stop };
 };
 
-// Pickup sites are seeded along every street, one every hundred metres or
-// so, so overlapping neighbourhoods agree on where passengers wait. A
+// Pickup sites are seeded along every street, one every hundred meters or
+// so, so overlapping neighborhoods agree on where passengers wait. A
 // street's sites are worked out the first time it comes in range.
 const streetStops = new WeakMap();
 function stopsAlong(nav, edge) {
@@ -263,7 +263,7 @@ function stopsAlong(nav, edge) {
     const pose = nav.pose(edge, direction > 0 ? along : edge.length - along, direction, edge.profile.lane);
     const stop = { ...pose, index: edge.id, side: 1, profile: edge.profile, id: `edge:${edge.id}:${i}`,
       fareSeed: Math.floor(randomAt(edge.id, i * 3 + 19610, CITY.seed) * 0xffffffff) };
-    // Not on a bridge: the ring needs a kerb for the riders to wait on
+    // Not on a bridge: the ring needs a curb for the riders to wait on
     if (waterAt(stop.s + Math.cos(stop.heading + Math.PI / 2) * 12, stop.u + Math.sin(stop.heading + Math.PI / 2) * 12)) continue;
     stops.push(stop);
   }
@@ -317,7 +317,7 @@ function partyFor(stop) {
     if (!route) {
       // Nothing in range: of the few nearest places, the one whose ride comes
       // nearest the usual lengths. (It was always the city's first place, the
-      // park, which from the harbour on seed 1 was 3 km and ~$950.)
+      // park, which from the harbor on seed 1 was 3 km and ~$950.)
       const near = cityPlaces().slice().sort((a, b) => distance(stop, a) - distance(stop, b)).slice(0, 6);
       let miss = Infinity;
       for (const place of near) {
@@ -477,7 +477,7 @@ export class TaxiRun {
     this.checkGoals();
     return tip;
   }
-  // A drift's sparks changing colour (see Drift) with a fare aboard tips,
+  // A drift's sparks changing color (see Drift) with a fare aboard tips,
   // more at each stage, unless the drift has touched anything since it began
   drifted(event, player) {
     if (this.status !== 'driving' || !this.fare || this.crashCooldown > 0 || this.elapsed - this.scrapedAt < event.time) return;

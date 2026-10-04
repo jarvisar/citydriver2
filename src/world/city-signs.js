@@ -37,7 +37,7 @@ export function discoverySignFor(type, variant = 0) {
 
 // The atlas gives every face a rectangle at its own proportions, laid in rows,
 // tallest first. The sheet's designs go in at .42 of their size (a small
-// sticker at up to its own), about the texels a metre a fascia needs from
+// sticker at up to its own), about the texels a meter a fascia needs from
 // across the street, and the drawn boards 120 px tall. Each keeps a gutter of
 // its own edge pixels so that mipmaps do not bleed one face into the next.
 const ATLAS_WIDTH = 4096, GUTTER = 4, SHEET_SCALE = .42, SMALL = 20000, DRAWN_HEIGHT = 120;
@@ -57,7 +57,7 @@ function layAtlas(signs) {
   return Math.ceil((y + row) / 16) * 16;
 }
 export const SIGN_ATLAS = { width: ATLAS_WIDTH, height: layAtlas(SIGN_CATALOG), gutter: GUTTER };
-// A sign's instances carry its rectangle in their colour, for the shader: the
+// A sign's instances carry its rectangle in their color, for the shader: the
 // left edge, the bottom edge counted up (the texture is flipped), and the
 // width and height packed into one (exact in a float up to 4096 x 4096)
 for (const sign of SIGN_CATALOG) {
@@ -207,9 +207,9 @@ function drawAtlas() {
 // oval board behind an oval sign) rather than showing a box's corners.
 // Both are lit as painted panels are, in the sun and the shade of what
 // stands round them; after dark the faces light up (`glow`, see
-// CitydriverWorld.setWindowGlow), their own colours added as light.
-// A face lies a few centimetres in front of its board, and the board in
-// front of the wall: past a couple of hundred metres that is less than a
+// CitydriverWorld.setWindowGlow), their own colors added as light.
+// A face lies a few centimeters in front of its board, and the board in
+// front of the wall: past a couple of hundred meters that is less than a
 // step of the depth buffer, so each is also drawn a few steps nearer than
 // it stands (the face more than its board), or they fight far off.
 export function createSignMaterials() {
@@ -237,7 +237,7 @@ export function createSignMaterial({ map: shared = undefined, edge = null } = {}
   material.onBeforeCompile = shader => {
     // Reuse instanceColor as the face's atlas rectangle (see tint); no
     // per-sign uniforms, geometries or per-frame uploads. Keep the atlas
-    // colours independent of it.
+    // colors independent of it.
     shader.vertexShader = shader.vertexShader.replace('#include <color_vertex>', `
         #ifdef USE_INSTANCING_COLOR
           vColor = vec4(1.0);
@@ -250,7 +250,7 @@ export function createSignMaterial({ map: shared = undefined, edge = null } = {}
           vMapUv = (instanceColor.rg + 0.5 + uv * vec2(faceWidth - 1.0, faceHeight - 1.0)) / vec2(${width}.0, ${height}.0);
         #endif
       `);
-    // A board keeps only its sign's silhouette, in its own flat colour
+    // A board keeps only its sign's silhouette, in its own flat color
     if (ink) shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `
         #include <map_fragment>
         diffuseColor.rgb = vec3(${ink.r.toFixed(4)}, ${ink.g.toFixed(4)}, ${ink.b.toFixed(4)});

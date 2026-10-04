@@ -4,7 +4,7 @@ import { bodyMaterial, bodyProfile, heightAt, lampGlow, markedBody, vehicleGeome
 import { stableShadowDepth } from './world/shadow-depth.js';
 import { exoticGeometry } from './exotic-model.js';
 
-// A taxi's chequers run along its doors in two rows of squares, clear of the
+// A taxi's checkers run along its doors in two rows of squares, clear of the
 // wheel arches and under the shoulder (heights before the shape's drop).
 export function taxiChequers(shape) {
   const { body, bottom, top } = bodyProfile(shape);
@@ -15,8 +15,8 @@ export function taxiChequers(shape) {
   return { size, low, count, start: -count * size / 2 };
 }
 
-// A cab's roof sign on a slim black foot, centred on the roof, and the
-// chequers, thin plates so the paint shows between them. The garage's cabs
+// A cab's roof sign on a slim black foot, centered on the roof, and the
+// checkers, thin plates so the paint shows between them. The garage's cabs
 // and the traffic's share them.
 const SIGN = [.9, .3, .34];
 function cabTrim(shape, roof) {
@@ -54,7 +54,7 @@ function signLetters(roof, signY) {
 }
 
 // A cab in the traffic, in one draw (see createTrafficModels): the sedan with
-// the sign and chequers, the sign lit as a headlamp so it glows after dark.
+// the sign and checkers, the sign lit as a headlamp so it glows after dark.
 export function cabGeometry(shape) {
   const parts = vehicleGeometry(shape), { sign, signY, chequers } = cabTrim(shape, parts.roof);
   const tint = (geometry, color) => {

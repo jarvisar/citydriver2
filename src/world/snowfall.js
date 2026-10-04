@@ -5,7 +5,7 @@ const WIDTH = 240, HEIGHT = 160, DEPTH = 280, COUNT = 1800, NEAR_COUNT = 600;
 const wrap = (value, extent) => value - Math.floor(value / extent) * extent - extent / 2;
 
 // One reusable point cloud, like rain: no textures, shadows or extra passes.
-// World-space wrapping keeps flakes from travelling sideways with the car.
+// World-space wrapping keeps flakes from traveling sideways with the car.
 export class Snowfall {
   constructor() {
     this.seeds = new Float32Array(COUNT * 4);

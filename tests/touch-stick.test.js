@@ -85,7 +85,7 @@ test('touch keeps the car grounded throughout an unbounded city', () => {
     // (this route keeps no car back from a quay, as free driving does: on
     // some cities the drive ends at the water, off the edge)
     if (car.carAir.ground.some(h => h < car.route.height(car.s, car.u) - 2)) break;
-    // (kerbs come and go under the wheels, within the suspension's reach)
+    // (curbs come and go under the wheels, within the suspension's reach)
     assert.ok(!car.aloft && Math.abs(car.car.position.y - car.route.height(car.s, car.u)) < .3);
   }
 });

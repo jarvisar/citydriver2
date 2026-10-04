@@ -6,13 +6,13 @@ import { surfaceAt } from './city-route.js';
 // offset to the right of travel; a turn leaves it on a circular arc tangent to
 // both lanes' lines and joins the next lane where the arc ends. The arc is as
 // wide as the junction allows: its apex stays a car's half-width clear of the
-// rounded kerb on the inside of the turn, and it starts no further back than
+// rounded curb on the inside of the turn, and it starts no further back than
 // the second half of the street it leaves and ends in the first half of the
 // street it joins, so a car never turns tighter or wider than the corner it
 // is going round. Traffic and the autodrive share these curves.
 
 const LATERAL = 2.8;  // Comfortable sideways acceleration through a turn, m/s²
-const CLEARANCE = 1.4;  // Half a car and a little room from the kerb
+const CLEARANCE = 1.4;  // Half a car and a little room from the curb
 const SNUG = 3;  // Tightest a car can turn
 
 // Where a lane leaves a junction; where two streets simply meet (or a street
@@ -113,7 +113,7 @@ const bezier = (a, b, handleA, handleB) => [{ x: a.u, y: a.s }, { x: a.u + a.tx 
 // (a point along a curve being checked, reused)
 const HERE = { s: 0, u: 0, heading: 0, tx: 0, ty: 0 };
 
-// The curve from the end of `edge` (travelled in `direction`) onto `next`
+// The curve from the end of `edge` (traveled in `direction`) onto `next`
 // ({ edge, direction, via? }). start: how far along edge the curve begins; end:
 // how far along next.edge it finishes; length; radius; speed: the most a car
 // should carry through it; pose(d) at distance d along the curve, like
@@ -130,7 +130,7 @@ export function turnPath(nav, edge, direction, next) {
 // Whether turnPath has worked this curve out already (see CityTraffic.warm)
 export const hasTurnPath = (nav, edge, direction, next) => Boolean(nav.turnPaths?.has(turnKey(edge, direction, next)));
 // turnPath a little at a time, for working it out ahead: each next() does one
-// candidate curve or a few metres of checking one, and the last keeps the
+// candidate curve or a few meters of checking one, and the last keeps the
 // curve as turnPath would (unless turnPath got there first)
 export function* turnPathSteps(nav, edge, direction, next) {
   const cache = nav.turnPaths ??= new Map(), key = turnKey(edge, direction, next);
@@ -184,8 +184,8 @@ function* turning(nav, edge, direction, next) {
     row.set(end, entry = { drawn, a, b, tried: false });
     return entry;
   };
-  // How many metres of the car leave the carriageway: its centre, or its
-  // inside flank, half a car toward the corner, which is what meets the kerb.
+  // How many meters of the car leave the carriageway: its center, or its
+  // inside flank, half a car toward the corner, which is what meets the curb.
   // Counting stops once the curve is well past losing (more than `enough`).
   const offRoad = function* (path, enough = Infinity) {
     const first = path.place(0, leaves, true), last = path.place(path.length, joins, true), side = Math.sign(first.tx * last.ty - first.ty * last.tx) || 1;
@@ -199,10 +199,10 @@ function* turning(nav, edge, direction, next) {
   };
   // At a car's turning circle or wider, on the carriageway all the way round,
   // the widest; failing that, the one that leaves it least. A turning circle
-  // that brushes a kerb still beats a pirouette that does not. Leaving the
+  // that brushes a curb still beats a pirouette that does not. Leaving the
   // road only lowers a score, so a curve that could not beat the best so far
   // even on the road all the way round is never walked, and one is walked only
-  // until it has lost by a clear metre: the same curve wins either way. Each
+  // until it has lost by a clear meter: the same curve wins either way. Each
   // candidate is scored as it comes, in the same order as ever. Its radius is
   // at most the radius round its middle, so one that could not win even at
   // that is dropped before its radius is found.
@@ -222,8 +222,8 @@ function* turning(nav, edge, direction, next) {
   if (meet) {
     const { da, db, cross, angle } = meet, half = Math.tan(angle / 2), bulge = 1 / Math.cos(angle / 2) - 1;
     const kx = a0.u + a0.tx * da, ky = a0.s + a0.ty * da;
-    // The inside kerb: each road's edge on the side the car turns toward,
-    // meeting at a corner the kerb rounds off. The arc's apex keeps clear of it.
+    // The inside curb: each road's edge on the side the car turns toward,
+    // meeting at a corner the curb rounds off. The arc's apex keeps clear of it.
     const left = cross > 0, gA = edge.profile.halfWidth + (left ? laneA : -laneA), gB = next.edge.profile.halfWidth + (left ? laneB : -laneB);
     const na = left ? { x: -a0.ty, y: a0.tx } : { x: a0.ty, y: -a0.tx }, nb = left ? { x: -b0.ty, y: b0.tx } : { x: b0.ty, y: -b0.tx };
     const pa = { x: a0.u + na.x * gA, y: a0.s + na.y * gA }, pb = { x: b0.u + nb.x * gB, y: b0.s + nb.y * gB };
@@ -258,7 +258,7 @@ function* turning(nav, edge, direction, next) {
 
 // Across a junction complex, from the street arriving at it to the one leaving
 // beyond its link: an S-bend or a turn, laid over the link. If the sweep would
-// run over a kerb the car takes the link after all, one turn at a time.
+// run over a curb the car takes the link after all, one turn at a time.
 function crossing(nav, edge, direction, next) {
   const first = nav.endNode(edge, direction), far = nav.nodes[next.direction > 0 ? next.edge.a : next.edge.b];
   const start = Math.max(edge.length * .55, edge.length - clearAt(nav, edge, first.id, next.via) - .5);
@@ -272,23 +272,23 @@ function crossing(nav, edge, direction, next) {
   return path;
 }
 
-// The speed a driver `distance` metres short of a turn may carry, braking at
+// The speed a driver `distance` meters short of a turn may carry, braking at
 // `decel`, so it enters the turn at the turn's own speed
 export function approachSpeed(path, distance, decel = 3.2) {
   return Math.sqrt(path.speed * path.speed + 2 * decel * Math.max(0, distance));
 }
 
 // The street's own bends ask the same of a car as a turn does. For each edge,
-// how sharply it bends every BEND_STEP metres (across BEND_WINDOW either
+// how sharply it bends every BEND_STEP meters (across BEND_WINDOW either
 // side), and from that the speed its bends allow for a car in a lane `lane`
-// beside the centre line (on the inside of a bend the car's path is tighter
+// beside the center line (on the inside of a bend the car's path is tighter
 // than the street's).
 const BEND_STEP = 1, BEND_WINDOW = 1;
 const bends = new WeakMap(), bendHeading = { s: 0, u: 0, heading: 0, tx: 0, ty: 0, segment: 0 };
 // (a generator, so the traffic can work it out ahead a little at a time)
 function* bendSteps(nav, edge) {
   const count = Math.floor(edge.length / BEND_STEP) + 1, curvature = new Float64Array(count), headings = new Float64Array(count + 1);
-  // (headings at each whole metre, found once for the windows either side.
+  // (headings at each whole meter, found once for the windows either side.
   // This relies on BEND_STEP and BEND_WINDOW both being 1 m, so heading j is
   // the one at min(length, j).)
   for (let j = 0; j <= count; j++) {
@@ -318,7 +318,7 @@ function bendAt(curvature, lane) {
   return Math.fround(inside > 1e-4 ? Math.max(1.8, Math.sqrt(LATERAL / inside)) : Infinity);
 }
 // The speeds along an edge for a lane the traffic keeps to, worked out once:
-// the kerb lane, and the one by a boulevard's median
+// the curb lane, and the one by a boulevard's median
 function bendProfile(nav, edge, lane) {
   const bent = bendsOf(nav, edge);
   let speeds = bent.lanes.get(lane);
@@ -331,7 +331,7 @@ function bendProfile(nav, edge, lane) {
 }
 const keptLane = (profile, lane) => lane === profile.lane || (profile.divider && lane === (profile.median + profile.divider) / 2);
 // How fast a car `along` an edge (measured from where its travel started) may
-// go now, to take every bend in the next `look` metres at its own speed. In
+// go now, to take every bend in the next `look` meters at its own speed. In
 // any other lane (a car part way across, or pulling out round something) each
 // speed is worked out as it is needed. Keeping a profile for every lane a car
 // passed through left edges holding hundreds.
@@ -369,7 +369,7 @@ export function isLink(nav, edge) {
 // The way on from the end of an edge. usable(choice) filters the choices;
 // pick(options) chooses among them (ranked straightest first). A dead end
 // turns the car round; a link is crossed to the street beyond it when the
-// sweep across fits between the kerbs.
+// sweep across fits between the curbs.
 export function wayOn(nav, edge, direction, pick, usable = () => true) {
   const all = nav.choices(edge, direction), usableChoices = all.filter(choice => Math.abs(choice.turn) < HAIRPIN && usable(choice));
   const options = usableChoices.length ? usableChoices : all;

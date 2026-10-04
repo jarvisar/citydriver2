@@ -90,13 +90,13 @@ test('the garage sells every car but the starting cab, cheapest in the traffic a
   assert.equal(fleet.testDriveCost('jetpack'), null, 'nothing to try once it is yours');
 });
 
-test('paint costs a little, a car\'s own colour is free, and each Konami entry adds money and unlocks the rainbow', () => {
+test('paint costs a little, a car\'s own color is free, and each Konami entry adds money and unlocks the rainbow', () => {
   const disk = storage(), fleet = new TaxiFleet(disk);
   assert.equal(fleet.setPaint('#123456'), false, 'not without the money');
   fleet.credit(PAINT_PRICE * 2);
   assert.equal(fleet.paintCost('#123456'), PAINT_PRICE); assert.equal(fleet.setPaint('#123456'), true); assert.equal(fleet.balance, PAINT_PRICE);
-  assert.equal(fleet.setPaint('#123456'), true); assert.equal(fleet.balance, PAINT_PRICE, 'the colour it wears costs nothing again');
-  assert.equal(fleet.setPaint(null), true); assert.equal(fleet.balance, PAINT_PRICE, 'each car\'s own colour is free');
+  assert.equal(fleet.setPaint('#123456'), true); assert.equal(fleet.balance, PAINT_PRICE, 'the color it wears costs nothing again');
+  assert.equal(fleet.setPaint(null), true); assert.equal(fleet.balance, PAINT_PRICE, 'each car\'s own color is free');
   assert.equal(fleet.setPaint(RAINBOW_PAINT), false, 'the rainbow waits for the code'); assert.equal(fleet.setPaint('nope'), false);
   assert.equal(fleet.enterKonami(), KONAMI_PAY); assert.equal(fleet.balance, PAINT_PRICE + KONAMI_PAY);
   assert.equal(fleet.enterKonami(), KONAMI_PAY); assert.equal(fleet.balance, PAINT_PRICE + KONAMI_PAY * 2);

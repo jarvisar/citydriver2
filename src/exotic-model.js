@@ -55,7 +55,7 @@ export function exoticGeometry(wheel) {
   const tint = new THREE.Color(), normal = new THREE.Vector3(), edge = new THREE.Vector3(), origin = new THREE.Vector3(), outward = new THREE.Vector3();
   function face(points, out, category = 'paint', color = PAINT) {
     const target = parts[category]; tint.set(color);
-    // The nose/tail change direction at the centreline. Split crossing faces
+    // The nose/tail change direction at the centerline. Split crossing faces
     // there so the bumper and recesses follow the same bend as the shell.
     const split = points.some(p => p[0] < 0) && points.some(p => p[0] > 0);
     for (const section of split ? [clip(points, 0, 0, false), clip(points, 0, 0, true)] : [points]) {
@@ -80,7 +80,7 @@ export function exoticGeometry(wheel) {
       face(ids.map(i => corners[i]), out, category, color);
   }
   // These panels share the shell's sections, including its shoulder. Trim
-  // sits millimetres off that surface, rather than bridging across the curves.
+  // sits millimeters off that surface, rather than bridging across the curves.
   function sidePanel(points, side, color, category = 'details', lift = .004) {
     for (let j = 0; j + 1 < EXOTIC_BODY.length; j++) for (const [bottom, top] of [[0, BELT[0]], [BELT[0], BELT[1]], [BELT[1], 2]]) {
       const band = clip(clip(clip(clip(points, EXOTIC_BODY[j][0], 0, true), EXOTIC_BODY[j + 1][0], 0, false), bottom, 1, true), top, 1, false);
@@ -140,7 +140,7 @@ export function exoticGeometry(wheel) {
     capBand(roof[i], roof[i + 1], k, blue ? 'paint' : 'details', blue ? PAINT : glass ? GLASS : EXOTIC_DARK);
   }
   // A rear window down between the flying buttresses, with a painted header
-  // and a rear ledge. Leaving the centre of the loft open gives it real depth.
+  // and a rear ledge. Leaving the center of the loft open gives it real depth.
   const wellRim = [roof[4][1], roof[4][3], roof[5][3], roof[6][3], roof[6][1], roof[5][1]];
   const wellFloor = [[.47, 1.2, 1.01], [-.47, 1.2, 1.01], [-.545, 1.105, 1.34], [-.595, 1.045, 1.72], [.595, 1.045, 1.72], [.545, 1.105, 1.34]];
   for (let i = 0; i < wellRim.length; i++) {

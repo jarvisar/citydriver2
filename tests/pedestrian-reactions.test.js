@@ -109,7 +109,7 @@ test('a pair knocked apart waits, hurries and meets up, then walks on side by si
     // `a` is knocked over; `b` slows to a stop at once, and waits while `a` is down
     a.away = true; stopWalkers(a, b, 4);
     assert.ok(standing(b, 20));
-    // (rejoining their walk `gap` metres on from where the other waits, arriving at `arrival` m/s)
+    // (rejoining their walk `gap` meters on from where the other waits, arriving at `arrival` m/s)
     setStride(a, 6, 0, Infinity, walkedAt(b, 6) + gap, 0);
     a.away = false; regroupWalkers(a, b, 10, arrival);
     close(paceAt(a, 10), arrival);
@@ -371,7 +371,7 @@ test('loose furniture flung at someone knocks them over, and so does someone alr
   const start = journeyStart(), road = roadAt(start.s, start.u, 40), heading = Math.atan2(road.tx, road.ty);
   const x = road.x + road.tx * 20, z = -(road.y + road.ty * 20), across = { x: Math.cos(heading), z: Math.sin(heading) };
   const at = (dx, dz) => new THREE.Matrix4().makeTranslation(x + dx, ROAD_LEVEL, z + dz);
-  // A bin thrown at a standing person from 6 m off, `height` metres up, at 10 m/s
+  // A bin thrown at a standing person from 6 m off, `height` meters up, at 10 m/s
   const knocks = [];
   const throwAt = (height, speed = 10, person = {}) => {
     const props = new LooseProps(new THREE.Scene(), new THREE.MeshBasicMaterial()), contacts = new PedestrianContacts();

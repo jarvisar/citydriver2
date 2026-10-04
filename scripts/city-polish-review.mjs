@@ -107,7 +107,7 @@ try {
         result.push({ name: 'driveway', ...p, heading: Math.atan2(m.x - p.u, m.y - p.s), view: 3 });
         break;
       }
-      // Four different venues per seed cover the full catalogue in the default tour.
+      // Four different venues per seed cover the full catalog in the default tour.
       const venues = Object.keys(CITY_PLACES).filter(type => !['park', 'plaza'].includes(type));
       for (let i = 0; i < 4; i++) {
         const type = venues[(seedIndex * 4 + i) % venues.length], place = cityPlaces().find(p => p.type === type);

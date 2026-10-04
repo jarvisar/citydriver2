@@ -1,12 +1,12 @@
 import * as THREE from 'three';
 
 // Shop windows and office lobbies light up after dark. Their panes are drawn
-// with every other window's glass, and a pane whose instance colour has its
+// with every other window's glass, and a pane whose instance color has its
 // red raised by one (see nightLit) is lit: the shader takes the one off for
-// its daylight colour and adds a glow as the lit rooms come on (see
+// its daylight color and adds a glow as the lit rooms come on (see
 // setWindowGlow). Green raised too makes it a cool white shop light, blue a
 // dimmer one. That needs no material or draw of its own, which works because
-// the glass batches are never merged, so their colours stay floats (see
+// the glass batches are never merged, so their colors stay floats (see
 // mergeable in citydriver-world.js). So no glass may be pure white in any
 // channel: 1 and over is the mark.
 const WARM = new THREE.Color('#ffc274'), COOL = new THREE.Color('#d8e5f4');
@@ -36,7 +36,7 @@ export function createGlassMaterial() {
   return material;
 }
 
-// A pane's colour by day, as a hex string, whether or not it is marked
+// A pane's color by day, as a hex string, whether or not it is marked
 export function daylight(colour) {
   if (typeof colour === 'string') return colour;
   const c = new THREE.Color(colour);
@@ -44,7 +44,7 @@ export function daylight(colour) {
   return `#${c.getHexString()}`;
 }
 
-// A pane's colour, marked to glow at night: `light` 0 warm, 1 cool white, 2 dim warm
+// A pane's color, marked to glow at night: `light` 0 warm, 1 cool white, 2 dim warm
 const marked = new Map();
 export function nightLit(colour, light = 0) {
   const key = `${colour} ${light}`;

@@ -7,13 +7,13 @@ import { journeyStart, ROAD_LEVEL, PAVEMENT_LEVEL } from '../src/world/city-rout
 
 // The meshes as drawn, round the journey's start: the static streets and the
 // detailed chunks, every triangle in world space with the look it is drawn in
-// (material and colour). The people and the trees, which sway, are left out.
+// (material and color). The people and the trees, which sway, are left out.
 const SKIP = new Set(['residents', 'leaves', 'bark']);
 function meshes() {
   // (round the start, and round the end of a bridge with footways, where the
   // waterfront's promenades, copings and footways all meet the roads; and the
   // cells of the civic and garden quarters with the most lots, their front
-  // gardens walled and hedged, and of a park, its walks meeting its kerb)
+  // gardens walled and hedged, and of a park, its walks meeting its curb)
   const scene = new THREE.Scene(), world = new CitydriverWorld(scene), start = journeyStart(), chunks = [];
   const bridge = CITY.bridges.find(b => b.footways.length)?.points[0], centres = [cityCell(start.s, start.u), ...(bridge ? [cityCell(bridge.y, bridge.x)] : [])];
   const busiest = district => [...world.lotsByChunk].map(([key, lots]) => [key, lots.filter(lot => cityStyleDistrict(lot.centre.y, lot.centre.x) === district).length])
@@ -104,7 +104,7 @@ test('no two surfaces of different looks share a plane, so nothing z-fights', ()
   assert.deepEqual([...fights], [], 'coplanar faces of different looks (where)');
 });
 
-test('a kerb, a coping or a wall never stands up on its own in the road', () => {
+test('a curb, a coping or a wall never stands up on its own in the road', () => {
   const fins = [];
   for (const t of walls) {
     const ys = t.points.map(p => p[1]), top = Math.max(...ys), edge = t.points.filter(p => Math.abs(p[1] - top) < 1e-4);
@@ -112,7 +112,7 @@ test('a kerb, a coping or a wall never stands up on its own in the road', () => 
     const [a, b] = edge, length = Math.hypot(b[0] - a[0], b[2] - a[2]), n = normal(t);
     for (let d = .5; d < length; d += 1) {
       const x = a[0] + (b[0] - a[0]) * d / length, z = a[2] + (b[2] - a[2]) * d / length;
-      // (only where the ground either side was built: a street's kerb runs on
+      // (only where the ground either side was built: a street's curb runs on
       // past the chunks looked at, and beside it there a block's paving isn't)
       if (!chunks.some(c => x >= c.east + .1 && x < c.east + CITY_CELL - .1 && -z >= c.start + .1 && -z < c.start + CITY_CELL - .1)) continue;
       const front = surfacesAt(x + n.x * .06, z + n.z * .06)[0], back = surfacesAt(x - n.x * .06, z - n.z * .06)[0];
@@ -142,7 +142,7 @@ function faceAcross(px, pz, qx, qz, y) {
 const ground = (x, z) => surfacesAt(x, z).filter(s => FIXED.test(s.look));
 const inside = (x, z, margin = .5) => chunks.some(c => x >= c.east + margin && x < c.east + CITY_CELL - margin && -z >= c.start + margin && -z < c.start + CITY_CELL - margin);
 // The edges of the flat faces a filter picks that no other face at their
-// level shares, each with the way out from its face, every half metre
+// level shares, each with the way out from its face, every half meter
 function outlines(filter) {
   const edges = new Map(), q = v => Math.round(v * 500);
   for (const t of flat) {
@@ -170,7 +170,7 @@ function outlines(filter) {
 
 test('paving, lawns and walks raised on the ground have faces down their edges', () => {
   // (a thin slab is only its top: without a face down its edge it reads as a
-  // sheet hovering over a slit; a step of a centimetre or two is left be)
+  // sheet hovering over a slit; a step of a centimeter or two is left be)
   const open = [];
   for (const { x, z, nx, nz, y, t } of outlines(t => FIXED.test(t.look) && t.points[0][1] > PAVEMENT_LEVEL + .029 && t.points[0][1] < PAVEMENT_LEVEL + .151)) {
     const out = ground(x + nx * .012, z + nz * .012), below = out.find(s => s.y < y - .004);

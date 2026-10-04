@@ -8,8 +8,8 @@ import { bodyMaterial, lampGlow, markedBody, busGeometry, BUS_MODEL, BUS_AXLES, 
 // are chooser-only, so the roads keep their ordinary-looking traffic.
 //
 // Each shape carries its own wheels, because none of them wears the road cars'
-// set: `x` is the wheel's centre from the middle of the car, and the collision
-// width is measured to the outside of the widest tyre. `eye` is where the
+// set: `x` is the wheel's center from the middle of the car, and the collision
+// width is measured to the outside of the widest tire. `eye` is where the
 // first-person camera sits, and `chaseLift` raises the chase camera over a tall roof.
 export const SPECIAL_SHAPES = {
   buggy: {
@@ -48,7 +48,7 @@ const SHOCK = '#d9a441', AMBER = '#e0a23a', CANVAS = '#e9e2cb', LEATHER = '#8a5a
 
 // The same faceted kit the road cars and the racer are cut from: boxes, a box
 // with one end pulled in, sloped glass, and the odd tube. Paint takes the
-// garage colour; everything in `details` carries its own.
+// garage color; everything in `details` carries its own.
 function partsKit() {
   const parts = { paint: [], details: [], headlights: [], taillights: [] };
   function add(geometry, location, category = 'paint', color) {
@@ -115,7 +115,7 @@ const BUILDERS = {
       box([.07, .9, .07], [side * .56, 1.33, -.78], 'details', DARK, .272);
       box([.07, .07, 1.41], [side * .56, 1.76, .01], 'details', DARK);
       // The engine frame: rails back from the tub, and stays from the hoop
-      // down to where they meet the bumper, clear of the engine and the tyres.
+      // down to where they meet the bumper, clear of the engine and the tires.
       box([.06, .06, .55], [side * .43, .74, 1.445], 'details', DARK);
       box([.07, 1.435, .07], [side * .5, 1.2525, 1.1875], 'details', DARK, -Math.PI / 4);
       // Wishbones out to the wheels, round lamps on the cowl, lamps on the hoop.
@@ -141,7 +141,7 @@ const BUILDERS = {
     tube(.13, .26, [0, 1.29, 1.38], 'y', CHROME);
   },
 
-  // A pickup body lifted clear of four tyres that come up to its door handles.
+  // A pickup body lifted clear of four tires that come up to its door handles.
   monster({ box, glass }) {
     box([.9, .24, 4.1], [0, 1.1, 0], 'details', DARK);
     for (const z of [-1.55, 1.55]) {
@@ -150,7 +150,7 @@ const BUILDERS = {
       // Long-travel shocks in a V from each axle up under the fenders.
       for (const side of [-1, 1]) for (const lean of [-1, 1]) box([.09, 1, .09], [side * .56, 1.3, z + lean * .2], 'details', SHOCK, lean * .42);
     }
-    // The body clears the tyres: a fender line over them, the cab's sills
+    // The body clears the tires: a fender line over them, the cab's sills
     // down between them, and a bed sunk into the back.
     box([2.05, .38, 2.8], [0, 1.92, -.85]);
     box([2.05, .22, 1.7], [0, 1.84, 1.4]);
@@ -192,7 +192,7 @@ const BUILDERS = {
     const bonnet = z => .37 + .13 * (z + 1.79) / 1.62;
     for (const side of [-1, 1]) {
       box([.12, .15, 3.9], [side * .4, .525, 0], 'details', DARK);
-      // Four headers sweeping down into a side pipe that stops short of both tyres.
+      // Four headers sweeping down into a side pipe that stops short of both tires.
       for (let i = 0; i < 4; i++) {
         const z = -1.25 + i * .2;
         strut(kit, [side * (bonnet(z) - .03), .86, z], [side * .72, .64, z + .14], .042, CHROME);
@@ -359,7 +359,7 @@ export function specialGeometry(shape) {
   const kit = partsKit();
   BUILDERS[shape.name](kit);
   for (const { radius, width, x, z } of Object.values(shape.wheels)) for (const side of [-1, 1]) {
-    // (a vertex at the bottom keeps the tyre on the road, as the traffic's do)
+    // (a vertex at the bottom keeps the tire on the road, as the traffic's do)
     const tire = new THREE.CylinderGeometry(radius, radius, width, 10);
     tire.rotateY(Math.PI / 2); tire.rotateZ(Math.PI / 2);
     kit.parts.details.push(tinted(tire, [side * x, radius, z], DARK));
@@ -403,7 +403,7 @@ export function createSpecialCar(entry) {
       const pivot = new THREE.Group(); pivot.position.set(side * x, radius, z); car.add(pivot);
       const wheel = new THREE.Mesh(tire, tireMaterial); wheel.rotation.z = Math.PI / 2; wheel.castShadow = true; pivot.add(wheel);
       const hub = new THREE.Mesh(hubGeometry, hubMaterial); hub.rotation.z = Math.PI / 2; pivot.add(hub);
-      // The controller spins wheels for the wagon's tyre; these turn at their own size.
+      // The controller spins wheels for the wagon's tire; these turn at their own size.
       wheels.push({ pivot, wheel, hub, front: axle === 'front', spinRatio: .48 / radius });
     }
   }

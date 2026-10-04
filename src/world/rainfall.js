@@ -7,7 +7,7 @@ const wrap = (value, extent) => value - Math.floor(value / extent) * extent - ex
 // Rain in a world-anchored volume, built like the snowfall: one draw
 // call of points, wrapped around the car. Each point is masked to a thin
 // vertical streak instead of a soft disc and falls straight down. Nearer
-// drops draw longer; the distant ones thin out into a grey veil.
+// drops draw longer; the distant ones thin out into a gray veil.
 export class Rainfall {
   constructor() {
     const positions = new Float32Array(COUNT * 3), sizes = [], opacity = [];

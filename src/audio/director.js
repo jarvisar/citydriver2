@@ -4,7 +4,7 @@ const CRICKETS = [{ period: .42, rate: 1, pan: -.55 }, { period: .57, rate: .94,
 
 // The life of the city round the car, placed by where it is (see
 // citySoundscape) and the weather: songbirds in the parks and gardens by
-// day, gulls and lapping water by the harbour, crickets and an owl on a dry
+// day, gulls and lapping water by the harbor, crickets and an owl on a dry
 // night, horns somewhere off in the busy streets, gusts and thunder in a
 // storm, drips in the rain. Each is an occasional event, never a loop.
 export class SoundDirector {

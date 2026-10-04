@@ -39,7 +39,7 @@ export class AmbientOcclusion {
     });
     this.setQuality('high');
     // Draw geometry once more for depth alone. N8AO derives its normals from
-    // depth, so nothing reads this pass's colour and no fragment is shaded.
+    // depth, so nothing reads this pass's color and no fragment is shaded.
     this.depthMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, fog: false });
     this.aoTarget = new THREE.WebGLRenderTarget(2, 2, { depthBuffer: false });
     this.material = new THREE.ShaderMaterial({

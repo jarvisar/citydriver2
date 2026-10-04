@@ -41,9 +41,9 @@ export function edgeFacade(c, a, b) {
     local(x, s) { const ex = x - mx, ey = s - my; return { offset: ex * tx + ey * ty, outward: ex * nx + ey * ny }; },
     // Whether a rectangle on the wall would stand behind a sign
     blocked(offset, y, w, h) { return this.clear.some(z => offset + w / 2 > z.from && offset - w / 2 < z.to && y + h / 2 > z.bottom && y - h / 2 < z.top); },
-    // Whether the pavement in front of the wall at `offset`, `reach` metres
+    // Whether the pavement in front of the wall at `offset`, `reach` meters
     // out and a little either side, is clear of `plots`: the building's own
-    // footprint (a wing standing forward) and its neighbours' lots
+    // footprint (a wing standing forward) and its neighbors' lots
     open(offset, reach) {
       return !(this.plots ?? []).some(plot => [-.35, .35].some(side => [.3, reach / 2, reach].some(out => {
         const p = this.position(offset + side, 0, out);
@@ -163,7 +163,7 @@ export function edgeWindows(c, b, f, bottom, floors, random) {
       if (balcony) {
         f.add(offset, y - 1.58, .68, windowWidth + 1.1, .2, 1.5, '#d1c9b5', 'solid', true);
         // Lower privacy panels with an open handrail above: a balcony reads
-        // as usable space instead of a coloured box pasted onto the wall.
+        // as usable space instead of a colored box pasted onto the wall.
         f.add(offset, y - 1.18, 1.36, windowWidth + 1.1, .6, .12, b.accent, 'solid', true);
         f.add(offset, y - .57, 1.36, windowWidth + 1.16, .08, .12, '#495b5c');
         for (const edge of [-1, 1]) {
@@ -199,7 +199,7 @@ export function shopAwning(c, f, offset, width, accent, variation) {
     c.bodies.face(...a, ...b, ...d, colour); c.bodies.face(...a, ...d, ...e, colour);
     c.bodies.face(...d, ...b, ...a, colour); c.bodies.face(...e, ...d, ...a, colour);
   };
-  // At a distance a cream-striped canopy keeps its average colour.
+  // At a distance a cream-striped canopy keeps its average color.
   const plain = c.distant && variation % 2 === 0 ? new THREE.Color(accent).lerp(new THREE.Color('#e6d8b8'), .5) : accent;
   for (let stripe = 0; stripe < stripes; stripe++) {
     const left = offset + (stripe / stripes - .5) * width, right = left + width / stripes;
@@ -221,9 +221,9 @@ function cap(bodies, a, b, y, colour) {
 // A cornice, a parapet and the roof deck inside it, with the same again round
 // any courtyard. Returns the deck polygon and the holes in it.
 // A wall shared with the house next door carries its cornice only to the lot
-// line (`reach` gives each wall's), where the neighbour's meets it; and no
+// line (`reach` gives each wall's), where the neighbor's meets it; and no
 // cornice reaches past its lot (`within`) at all. (The reach alone let two
-// neighbours' cornices overlap where a wall stood nearer its lot line than
+// neighbors' cornices overlap where a wall stood nearer its lot line than
 // the district's setback, their tops flickering through each other.)
 export function cornice(bodies, ring, top, trim, roofColour, wall, parapet, courts = [], reach = null, within = null) {
   let band = (reach && signedArea(ring) > 0 && offsetPolygonMapped(ring, (p, q, k) => reach(k))?.points) || offsetPolygon(ring, .32);

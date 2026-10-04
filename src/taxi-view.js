@@ -26,7 +26,7 @@ export const HINTS = {
   tips: 'Drifts, jumps and near misses tip · crashes end the combo',
 };
 const HINT_SECONDS = 7, HINTS_KEY = 'citydriver-taxi-hints';
-// Rating colours, as in taxi.css
+// Rating colors, as in taxi.css
 const RATING_COLOURS = { speedy: '#7ce787', normal: '#ffd238', slow: '#ff8a7a' };
 // The ring's outline round a drop-off stretch, in the marker's frame (local -z
 // is the stop's heading). Each end is a half ring, so a one-point stretch
@@ -72,7 +72,7 @@ function stretchShape(stop) {
   };
   return { band: geometry(band), wall: geometry(wall) };
 }
-// A special rider's icon, about 32 px, centred on (x, y)
+// A special rider's icon, about 32 px, centered on (x, y)
 function moodIcon(ctx, mood, x, y) {
   ctx.save(); ctx.translate(x, y); ctx.fillStyle = '#fff8e7'; ctx.beginPath();
   if (mood === 'hurry') [[4, -16], [-9, 2], [-1, 2], [-4, 16], [9, -2], [1, -2]].forEach(([px, py], i) => i ? ctx.lineTo(px, py) : ctx.moveTo(px, py));
@@ -117,7 +117,7 @@ export class TaxiView {
     if (event.seconds > 0) this.labels.pop({ amount: `+${event.seconds}s`, colour: '#8ff0b0' });
     return event.kind === 'tip' || event.stunt > 0 || Boolean(event.paid) || event.kind === 'dropoff' || event.seconds > 0;
   }
-  // Every waiting fare gets a badge: a dollar sign in the ring's colour, as in
+  // Every waiting fare gets a badge: a dollar sign in the ring's color, as in
   // Crazy Taxi, plus ×N for a group or an icon for a special rider (bolt for
   // a hurry, star for a thrill seeker, heart for nervous).
   badge(count, color, mood = null) {
@@ -139,7 +139,7 @@ export class TaxiView {
     }
     return this.partyBadges.get(key);
   }
-  // Fares come in a handful of colours. Keeping their materials keeps their
+  // Fares come in a handful of colors. Keeping their materials keeps their
   // shader programs: disposing a program's last material deletes it, and the
   // next fare would stall the drive while it compiled again.
   markerMaterials(color) {
@@ -182,7 +182,7 @@ export class TaxiView {
   marker(stop, status) {
     const street = stop.profile ?? roadAt(stop.s, stop.u, 60)?.road.profile ?? profileOf('minor');
     const group = new THREE.Group(), { solid, glow } = this.markerMaterials(stop.color);
-    // Local -z is the way the stop faces; riders wait on the kerb to its right.
+    // Local -z is the way the stop faces; riders wait on the curb to its right.
     group.rotation.y = -(stop.heading ?? 0);
     // A drop-off with a stretch gets its own ring shape
     const shape = status === 'driving' && stop.stretch?.length > 1 ? stretchShape(stop) : null;

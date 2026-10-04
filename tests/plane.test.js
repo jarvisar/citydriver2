@@ -22,7 +22,7 @@ const flat = {
 const plane = (state = {}) => { const p = new DrivingController(flat, state, 'plane'); p.freeDriving = true; return p; };
 const fly = (p, seconds, input = {}, fps = 120, each = null) => { for (let i = 0; i < Math.round(seconds * fps); i++) { p.update(1 / fps, input); each?.(p); } };
 const height = p => p.groundedPosition.y - GROUND;
-// Up in the air at `up` metres, going `speed`, level
+// Up in the air at `up` meters, going `speed`, level
 const aloft = (p, up = 40, speed = 34) => { p.pilot.takeOver(p.heading, speed, GROUND + up); p.pilot.landed = false; p.pilot.speed = speed; p.update(0, {}); };
 // Two quick presses of `key` (a double tap)
 function doubleTap(p, key, value = 1) {
@@ -42,7 +42,7 @@ test('the plane is in the garage with the helicopter, not the wheeled fleet, and
     model.car.traverse(object => { if (object.isMesh) assert.ok([...object.geometry.attributes.position.array].every(Number.isFinite)); });
     disc.visible = false;
     const box = new THREE.Box3().setFromObject(model.car);
-    assert.ok(Math.abs(box.min.y) < .02, `its tyres stand on the ground: ${box.min.y}`);
+    assert.ok(Math.abs(box.min.y) < .02, `its tires stand on the ground: ${box.min.y}`);
     assert.ok(Math.abs(box.max.x - box.min.x - PLANE_SHAPE.span) < .3, `the wings span ${(box.max.x - box.min.x).toFixed(2)} m`);
     // Each moving part turns about its own hinge, axle or shaft
     for (const part of [propeller, nose, ...wheels.map(w => w.group), ...Object.values(surfaces)]) {

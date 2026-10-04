@@ -81,7 +81,7 @@ export class CityGuide {
       row.dataset.found = String(best !== undefined);
       row.querySelector('small').textContent = best === undefined ? where : `${where} · best ${best} m`;
       row.querySelector('.notebook-check').textContent = starText(stars);
-      row.setAttribute('aria-label', `${site.name}, ${where}: ${best === undefined ? 'not jumped yet' : `best ${best} metres, ${stars} of 3 stars`}`);
+      row.setAttribute('aria-label', `${site.name}, ${where}: ${best === undefined ? 'not jumped yet' : `best ${best} meters, ${stars} of 3 stars`}`);
     }
     $('city-jumps-progress').textContent = sites.length ? `${book.landed} / ${sites.length} landed. Take a run at a ramp: stars for how far you fly.` : 'This city has no named jumps.';
     const r = book.records, records = $('city-jump-records');
@@ -122,7 +122,7 @@ export class CityGuide {
     if (this.demolition?.running) { this.updateDemolition(draw); return; }
     attribute(this.canvas, 'title', 'Local street map');
     hide($('taxi-offer'), true);
-    attribute(this.canvas, 'aria-label', `Local street map. Your heading is up; the white arrow is ${vehicle.walker ? 'you' : 'your car'}. Coloured dots are places you have found. Yellow cars are cabs and the orange one the demolition truck: get in one to work.${this.onFoot?.parked ? ' The car in a teal ring is your own, where you left it.' : ''}`);
+    attribute(this.canvas, 'aria-label', `Local street map. Your heading is up; the white arrow is ${vehicle.walker ? 'you' : 'your car'}. Colored dots are places you have found. Yellow cars are cabs and the orange one the demolition truck: get in one to work.${this.onFoot?.parked ? ' The car in a teal ring is your own, where you left it.' : ''}`);
     if (this.expanded && draw) this.draw(vehicle);
   }
   updateTaxi(draw = true) {

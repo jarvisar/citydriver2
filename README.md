@@ -10,7 +10,7 @@ This is the sequel to [Citydriver](https://github.com/jarvisar/citydriver). The 
 
 ## Features
 
-- Island city with a harbour, a river, parks, boulevards and a ring road
+- Island city with a harbor, a river, parks, boulevards and a ring road
 - Six districts: Old town, Garden quarter, Warehouse district, Market district, Civic quarter and Midtown
 - Buildings shaped to fit their lots
 - Traffic that follows signals, stop signs and give-way signs
@@ -41,11 +41,11 @@ The modes all happen in the same city. In a cab you own, passengers wait around 
 
 R puts the car back on the road. New city is in the pause menu, and it has to be pressed twice since the places you've found and your jump stars are only kept for the current city.
 
-Hold Space and steer to drift. The car hops and then slides round the corner until you let go. Steer into the corner to tighten the drift or away from it to widen it, and brake to tighten it more. Keep drifting and the sparks at the back wheels turn blue, then orange, then pink. Let go to get a speed boost, bigger for each colour. Steering hard into the drift charges it faster. Crashing or slowing right down loses the charge. Below about 18 mph, Space is a handbrake.
+Hold Space and steer to drift. The car hops and then slides round the corner until you let go. Steer into the corner to tighten the drift or away from it to widen it, and brake to tighten it more. Keep drifting and the sparks at the back wheels turn blue, then orange, then pink. Let go to get a speed boost, bigger for each color. Steering hard into the drift charges it faster. Crashing or slowing right down loses the charge. Below about 18 mph, Space is a handbrake.
 
 There are jumps around the city. Loading ramps sit in parking spaces in the Warehouse district, parks have dirt mounds, and a half-built bridge reaches out over the river. The river jump needs a fast car and a long run up. Fall short and you're put back at the start of the run up. In a run that also costs 5 seconds. In the air, steer to turn the nose. Press Space just as you leave a ramp to do a trick, or press and hold Space and steer to spin. Land a trick or a spin and you get a boost like a drift's. Land roughly straight or the car spins out. You can also land on other cars. The ramps and the river jump get up to three stars for distance, and the pause menu lists them with your best for the current city. They're marked on both maps.
 
-In free drive, press E to get out of the car and walk around. Press E near your car, a car in traffic or a car parked along the street to get in. A marker shows which car. If it's a few metres away you walk over to it on your own, and a car in traffic stops to wait for you. Moving the stick or pressing a movement key cancels it. A car taken from traffic drives off on its own when you get out. A parked car stays where you leave it and goes back to its space once you are far away. Your own car stays where you left it and is marked on both maps. Picking a car in the garage puts you in it. If the car is still going fast, press E a second time to jump out while it slows down.
+In free drive, press E to get out of the car and walk around. Press E near your car, a car in traffic or a car parked along the street to get in. A marker shows which car. If it's a few meters away you walk over to it on your own, and a car in traffic stops to wait for you. Moving the stick or pressing a movement key cancels it. A car taken from traffic drives off on its own when you get out. A parked car stays where you leave it and goes back to its space once you are far away. Your own car stays where you left it and is marked on both maps. Picking a car in the garage puts you in it. If the car is still going fast, press E a second time to jump out while it slows down.
 
 The helicopter and the plane land by themselves when you press E, and you get out once they're down. Any flying control takes over again. Press E a second time while you're still up high to jump out, and the empty helicopter or plane lands on its own nearby. If you get out on a roof you can walk around up there and step off the edge.
 
@@ -89,7 +89,7 @@ The controller layout is the one most driving games use (Need for Speed Heat, Bu
 | Street map (show / hide) | N, or its arrow button | |
 | Menus | Tab, Enter | D-pad or left stick to choose, A / Cross to select, B / Circle to go back |
 
-On touch screens, drag anywhere with one thumb to drive and use Boost and Drift at the bottom right with the other. Hold Drift while steering to drift in chase view. The Drift button shows the spark colour and a bar that fills toward the next one. Press and hold Drift in the air and steer to spin. Release the stick to stop. In first or third person, keep one thumb on the stick and drag a second thumb across the scene to look around. In the helicopter and the plane, hold Climb or Descend. On foot, drag the stick the way to walk and push it further to run. Tap Jump to hop or hold it to fly, hold Sprint, and tap Get out or Get in.
+On touch screens, drag anywhere with one thumb to drive and use Boost and Drift at the bottom right with the other. Hold Drift while steering to drift in chase view. The Drift button shows the spark color and a bar that fills toward the next one. Press and hold Drift in the air and steer to spin. Release the stick to stop. In first or third person, keep one thumb on the stick and drag a second thumb across the scene to look around. In the helicopter and the plane, hold Climb or Descend. On foot, drag the stick the way to walk and push it further to run. Tap Jump to hop or hold it to fly, hold Sprint, and tap Get out or Get in.
 
 Zoom all the way in to enter first person. Zoom out to return to a close third-person view. This works while driving or walking, with the mouse wheel, [ / ], D-pad left / right or the tablet camera buttons.
 

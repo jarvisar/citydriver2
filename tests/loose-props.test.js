@@ -24,7 +24,7 @@ const colliders = () => [...world().world.chunks.values()].flatMap(chunk => chun
 // The nearest standing piece of a kind to the start that a car driven along
 // its street (see drive) meets: beside the carriageway, square off it, with
 // nothing else standing (a tree, a shelter) in the car's way over the last
-// ten metres to it, or `beyond` metres after it (where the car pushes on
+// ten meters to it, or `beyond` meters after it (where the car pushes on
 // what it has knocked over). (Not one past a street's end or back in a
 // square, which the car would miss, nor one behind a tree, which would stop
 // it short.)
@@ -63,7 +63,7 @@ function aboveGround(body) {
   return true;
 }
 // A car driven along the nearest road into `target`, its side over it by .6 m
-// (or its middle, `headOn`), its nose `run` metres short of it, for
+// (or its middle, `headOn`), its nose `run` meters short of it, for
 // `seconds` (braking half a second after it, with `brake`), told of each step
 // (`onStep(props, car)`): its speed just before the knock and just after, and
 // the loose pieces
@@ -93,7 +93,7 @@ const tilt = body => Math.acos(new THREE.Vector3(0, 1, 0).applyQuaternion(body.q
 // How far a loose piece is inside a car's body, as the pieces meet it (see pieceInCar)
 const inside = (props, body, car) => pieceInCar(body, props.carOf(car));
 // A straight bit of road from the start, and walls (convex outlines) set
-// along it: `along` metres on from the start, `across` to its right, as a
+// along it: `along` meters on from the start, `across` to its right, as a
 // chunk of scenery of their own
 function street() {
   const start = journeyStart(), road = roadAt(start.s, start.u, 40), heading = Math.atan2(road.tx, road.ty);
@@ -115,7 +115,7 @@ function street() {
 // Pieces at rest on their own, with no car (the player lying down, a body themselves)
 const alone = { groundedPosition: new THREE.Vector3(), spec: {}, walker: { down: true } };
 
-test('every car knocks over a tree and a bus shelter, and the heavy ones plough on through', () => {
+test('every car knocks over a tree and a bus shelter, and the heavy ones plow on through', () => {
   // (bus shelters stand on main roads, not always near the start: a second city round the nearest)
   const piece = [...world().world.furnitureByChunk.values()].flat().filter(p => p.kind === 'shelter')
     .sort((a, b) => Math.hypot(a.u - world().start.u, a.s - world().start.s) - Math.hypot(b.u - world().start.u, b.s - world().start.s))[0];
@@ -160,7 +160,7 @@ test('a lamp post hit at speed snaps and falls over, dark, and the car carries o
     const [post] = lamp.prop.bodies;
     assert.ok(tilt(post) > 70, `lying down (${tilt(post).toFixed(0)}°)`);
     assert.ok(post.asleep && aboveGround(post), 'and still, on the ground');
-    // (pushed on a few metres by the car as it falls: 8-17 m on five seeds)
+    // (pushed on a few meters by the car as it falls: 8-17 m on five seeds)
     assert.ok(Math.hypot(post.p.x - lamp.x, post.p.z - lamp.z) < 20, 'near where it stood, not flung down the street');
     const lost = (before - after) / before;
     assert.ok(lost > .05 && lost < .3, `the car lost ${(lost * 100).toFixed(0)}% of its speed`);
@@ -199,18 +199,18 @@ test('a post landed on its lamp\'s arm rolls straight off it and lies still, not
   } finally { props.dispose(); }
 });
 
-test('a bin rolled over a kerb comes to rest on the pavement, not sunk into it', () => {
+test('a bin rolled over a curb comes to rest on the pavement, not sunk into it', () => {
   // (seed 3499445261: each point kept the ground it had looked up 30 cm
   // back, the road's, and the bin lay 12 cm into the pavement)
   const start = journeyStart(), road = roadAt(start.s, start.u, 40), nx = road.ty, ny = -road.tx;
-  // (out from the middle of the street, square to it, to its kerb)
+  // (out from the middle of the street, square to it, to its curb)
   let side = 0, reach = 0;
   for (const k of [1, -1]) {
     let t = 0;
     while (t < 20 && surfaceAt(road.y + ny * k * t, road.x + nx * k * t) === 'road') t += .01;
     if (t < 20) { side = k; reach = t; break; }
   }
-  assert.ok(side, 'a kerb beside the start');
+  assert.ok(side, 'a curb beside the start');
   const kerb = { x: road.x + nx * side * reach, y: road.y + ny * side * reach };
   for (const [back, speed] of [[.3, .8], [.25, 1.2], [.2, .6], [.15, 1]]) {
     const props = new LooseProps(new THREE.Scene(), new THREE.MeshBasicMaterial());
@@ -219,14 +219,14 @@ test('a bin rolled over a kerb comes to rest on the pavement, not sunk into it',
     try {
       body.v.set(nx * side * speed, 0, -ny * side * speed);
       for (let i = 0; i < 120 * 6 && !body.asleep; i++) props.step(body, 1 / 120, null);
-      assert.ok(body.asleep && aboveGround(body), `rolled from ${back} m short of the kerb at ${speed} m/s: ${body.asleep ? 'asleep' : 'awake'}, ${aboveGround(body) ? 'on' : 'in'} the ground`);
+      assert.ok(body.asleep && aboveGround(body), `rolled from ${back} m short of the curb at ${speed} m/s: ${body.asleep ? 'asleep' : 'awake'}, ${aboveGround(body) ? 'on' : 'in'} the ground`);
     } finally { props.dispose(); }
   }
 });
 
 test('a post stands firm against a slow nudge, as a wall would', () => {
   const lamp = nearest('lamp');
-  // (from a metre off: from six, a car rolling at 3 m/s can stop short of it)
+  // (from a meter off: from six, a car rolling at 3 m/s can stop short of it)
   const { props, car } = drive(lamp, 'taxi', 3, 2, false, world(), null, { run: 1 });
   try {
     assert.ok(!lamp.woken, 'still standing');
@@ -299,7 +299,7 @@ test('a hydrant knocked off its stump sprays a jet of water a while, no more tha
   } finally { props.dispose(); car.disposeModel(); }
 });
 
-test('buildings stand firm, and trees and shelters do against someone on foot; lamps, signals, signs, bins, benches and the kerbside fittings can be knocked loose', () => {
+test('buildings stand firm, and trees and shelters do against someone on foot; lamps, signals, signs, bins, benches and the curbside fittings can be knocked loose', () => {
   const all = colliders(), loose = all.filter(c => c.prop);
   const kinds = new Set(loose.map(c => c.prop.pieces[0].kind));
   for (const kind of ['lamp', 'lantern', 'sign', 'bin', 'bench', 'tree', 'hydrant']) assert.ok(kinds.has(kind), `${kind} can be knocked loose`);
@@ -347,7 +347,7 @@ test('a cafe table and its four chairs come loose as five pieces, and settle apa
   try {
     player.toggleFreeDriving(); player.s = piece.s + 60; player.u = piece.u; player.update(0, {});
     // (met from the side it has most room on: from the street, a table
-    // thrown into a shopfront a metre off was never thrown clear)
+    // thrown into a shopfront a meter off was never thrown clear)
     const all = [...built.chunks.values()].flatMap(chunk => chunk.features.colliders);
     const room = a => {
       const dx = Math.cos(a), dz = Math.sin(a);
@@ -391,7 +391,7 @@ test('a post knocked over is pushed by the car that hit it, head on or glancing:
 });
 
 test('a post knocked loose starts exactly where it stood, and its foot never jumps: it moves no faster than the car pushes it', () => {
-  // (its foot was once kicked clear of the car at the knock: a metre's jump)
+  // (its foot was once kicked clear of the car at the knock: a meter's jump)
   const lamp = nearest('lamp', undefined, 12), stood = new THREE.Vector3().setFromMatrixPosition(lamp.prop.matrix(new THREE.Matrix4()));
   const foot = body => body.p.clone().sub(body.shape.com.clone().applyQuaternion(body.q));
   for (const headOn of [true, false]) {

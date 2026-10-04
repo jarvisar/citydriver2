@@ -165,7 +165,7 @@ test('a tree stops a car that meets it squarely and lets a clipped corner past',
 });
 
 test('a model stands on the outline of its lowest quarter, turned and scaled with it', () => {
-  // A 2 x 4 hut under a roof that overhangs it by a metre all round.
+  // A 2 x 4 hut under a roof that overhangs it by a meter all round.
   const hut = new THREE.BoxGeometry(2, 3, 4).translate(5, 1.5, 0), roof = new THREE.BoxGeometry(4, 1, 6).translate(5, 3.5, 0);
   const position = new Float32Array([...hut.attributes.position.array, ...roof.attributes.position.array]);
   const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.BufferAttribute(position, 3));
@@ -180,7 +180,7 @@ test('a model stands on the outline of its lowest quarter, turned and scaled wit
 });
 
 test('a free-roaming car keeps its whole length back from a drop, not just its middle', () => {
-  // Level ground that falls ten metres at u = 30.
+  // Level ground that falls ten meters at u = 30.
   const ledge = { ...straightRoute, height: (s, u) => u > 30 ? -10 : 0, position: (s, u, y = u > 30 ? -10 : 0) => ({ x: u, y, z: -s }) };
   const car = new DrivingController(ledge, { s: 24 });
   car.toggleFreeDriving();
@@ -216,7 +216,7 @@ test('a wall met head-on at speed throws the car back a little, and leaning on i
   } finally { car.disposeModel(); }
 });
 
-test('a post met off centre swings the car round it, and one met square does not', () => {
+test('a post met off center swings the car round it, and one met square does not', () => {
   const yawAfter = offset => {
     const chunks = scenery(chunk => solidPost(chunk, 2.4 + offset, -30, .35));
     const car = new DrivingController(straightRoute, { s: 24 });
@@ -234,7 +234,7 @@ test('a post met off centre swings the car round it, and one met square does not
 
 test('a corner clipped by the edge of the nose glances the car aside instead of stopping it', () => {
   const run = inside => {
-    // A parked car's corner, `inside` metres within the line of the car's right side
+    // A parked car's corner, `inside` meters within the line of the car's right side
     const car = new DrivingController(straightRoute, { s: 24 });
     const chunks = scenery(chunk => solidBox(chunk, 2.4 + car.spec.width / 2 - inside + 1, -40, 0, 1, 2.2));
     try {
@@ -306,7 +306,7 @@ test('the chase camera sees up to 2.2 m short of a building below its roof, and 
   assert.equal(sightLine([block()], { x: 8, y: 2, z: 0 }, { x: 8, y: 5, z: -30 }), 1, 'a line that passes it by');
   // The scene lies `origin` along z from the colliders
   assert.ok(Math.abs(sightLine([block()], { ...from, z: 500 }, { ...to, z: 470 }, 500) - 12.8 / 30) < 1e-9);
-  // A car nearer the wall than that still keeps the camera half a metre off it
+  // A car nearer the wall than that still keeps the camera half a meter off it
   assert.ok(Math.abs(sightLine([block()], { x: 0, y: 2, z: -13.5 }, { x: 0, y: 5, z: -30 }) - 1 / 16.5) < 1e-9);
   // A sharp corner is bevelled, not grown into a spike far past its tip
   const wedge = { corners: [{ x: 0, z: -10 }, { x: 5, z: -40 }, { x: -5, z: -40 }], x: 0, z: -30, reach: 21, top: 10 };

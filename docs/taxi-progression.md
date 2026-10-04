@@ -10,7 +10,7 @@ Taxi runs work like Crazy Taxi: a shift clock that fares add time to. The number
 - Boarding and drop-off need the cab to be stopped for 0.45 seconds.
 - The drop-off zone is a stretch of the street in front of the destination, and the cab can stop anywhere within 8 m of it. A building's zone covers the middle half of its front. A park or square has no single door, so its zone runs along its side of the street, up to 40 m either way from the gate. Zones stop well short of junctions and never go onto a bridge. Fares are still measured to the entrance, so a long zone can save a few seconds.
 - The timer pill shows the rating the rider would give now and how many seconds are left before it drops. In the last rating it counts down to the rider giving up.
-- A drift tips each time its sparks change colour: Drift ($2) at blue, Super drift ($4) at orange and Ultra drift ($7) at pink. It only counts while heading toward the drop-off.
+- A drift tips each time its sparks change color: Drift ($2) at blue, Super drift ($4) at orange and Ultra drift ($7) at pink. It only counts while heading toward the drop-off.
 - Coming into a pickup ring or drop-off zone at 12 m/s (27 mph) or more and drifting or handbraking to a stop in it is a Crazy stop, worth $5.
 - A jump with a passenger aboard is a Crazy jump, as in Crazy Taxi: $3, or $6 for every second in the air if that's more, plus $6 for each full spin. It only counts while heading toward the drop-off. Spinning out on landing loses the combo, and a hard landing upsets a nervous rider. Going in the river puts the cab back at the start of its run up and costs 5 seconds, the same as a reset.
 - A crash resets the stunt combo but keeps the tips already earned, and stunts don't score again for 0.8 seconds. Only a real hit counts as a crash, a bit like BallisticNG: nosing into a wall, a tree or the back of a car, or getting T-boned. Scraping along a wall or trading paint with traffic isn't a crash, but a drift that touches anything stops tipping.
@@ -33,7 +33,7 @@ Short fares keep the clock going. Long fares and groups pay more money per minut
 
 If time runs out with riders aboard, the shift carries on until they have all got out or given up. Their fares still pay, but no more time is added. If time runs out with nobody aboard, the shift ends.
 
-Group fares add their route time at the last stop. A group pays 20% more per metre than a single fare for each rider after the first (60% more for four), plus a group bonus, and stunt tips are multiplied by the number of riders. It pays nothing if a rider's clock runs out.
+Group fares add their route time at the last stop. A group pays 20% more per meter than a single fare for each rider after the first (60% more for four), plus a group bonus, and stunt tips are multiplied by the number of riders. It pays nothing if a rider's clock runs out.
 
 ## Special Riders
 
@@ -53,7 +53,7 @@ The first shifts show short hints in the task card: how to pick a fare, how to r
 
 ## Group Routes
 
-A group's stops are picked one at a time from the places near the previous stop. Candidates are ranked by distance plus penalties, in metres:
+A group's stops are picked one at a time from the places near the previous stop. Candidates are ranked by distance plus penalties, in meters:
 
 - 320 for a stop on the same street as the previous one
 - 140 for a stop straight ahead
@@ -67,7 +67,7 @@ Every shift picks three goals from a list of twelve: fares, riders, groups, Spee
 
 Goal targets come in three tiers by driver rank. Rookie and Cabbie get tier one, Regular and Pro get tier two, and Veteran and above get tier three. The third goal is always one tier harder than the other two.
 
-Completing a goal adds its bonus ($150 to $600) to the fleet balance. Bonuses don't count toward the run score, so licences are still based on fare money only, but they do count toward the driver rank. Goals are shown in the pause menu under Shift goals, on the map card, as a popup when completed, and on the results screen.
+Completing a goal adds its bonus ($150 to $600) to the fleet balance. Bonuses don't count toward the run score, so licenses are still based on fare money only, but they do count toward the driver rank. Goals are shown in the pause menu under Shift goals, on the map card, as a popup when completed, and on the results screen.
 
 ## Career, Ranks and Records
 
@@ -85,7 +85,7 @@ The career saves lifetime shifts, fares, riders, groups, earnings, tips and goal
 
 Each rank unlocks a cab livery in the garage.
 
-Records are kept for most fares in a shift, best combo, longest Speedy streak, most tips in a shift and longest shift. On the results screen, a tile turns gold when that shift beat the record. The first shift sets the records without marking them. The best cash score is saved separately with the licence under `citydriver-taxi-best`.
+Records are kept for most fares in a shift, best combo, longest Speedy streak, most tips in a shift and longest shift. On the results screen, a tile turns gold when that shift beat the record. The first shift sets the records without marking them. The best cash score is saved separately with the license under `citydriver-taxi-best`.
 
 ## Tests
 

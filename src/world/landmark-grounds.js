@@ -44,7 +44,7 @@ const LAWN_TOP = G + .05, PAVED_TOP = G + .07, SLAB_TOP = G + .1;
 
 // Where each feature goes. `g` is the site as buildLandmark lays it out, in
 // its own axes: u along the street and v into the site, the building W by D
-// centred on (0, 0), its front at v `front` and the forecourt `court` wide
+// centered on (0, 0), its front at v `front` and the forecourt `court` wide
 // from there out to the street. `taken` is what the builder puts on the
 // grounds itself (a civic hall's beds and flags). Returns the cover, whether
 // trees keep to the edge, the features and the rectangles they hold
@@ -56,7 +56,7 @@ export function planGrounds(g) {
   const forecourt = { u: 0, v: g.front - 40, w: g.court + 1, d: 80 - 1.5 };
   if (g.plinth) held.push({ u: g.plinth.u, v: g.plinth.into, w: 8, d: 3.4 });
   const overlaps = (r, others = [building, forecourt, ...held], margin = 1) => others.some(o => Math.abs(r.u - o.u) < (r.w + o.w) / 2 + margin && Math.abs(r.v - o.v) < (r.d + o.d) / 2 + margin);
-  // On the lot with a little to spare, tried every few metres along a long side
+  // On the lot with a little to spare, tried every few meters along a long side
   const fits = r => {
     const w = r.w + 1.2, d = r.d + 1.2, nu = Math.max(2, Math.ceil(w / 6)), nv = Math.max(2, Math.ceil(d / 6));
     for (let i = 0; i <= nu; i++) for (let j = 0; j <= nv; j++) if (!g.onLot(r.u + (i / nu - .5) * w, r.v + (j / nv - .5) * d)) return false;

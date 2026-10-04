@@ -46,9 +46,9 @@ const FORECOURT = { cityhall: 9, museum: 8, library: 7, postoffice: 6, hospital:
 export const PAVED_DISTRICTS = new Set(['Old town', 'Market district', 'Midtown', 'Warehouse district']);
 const TIGHT_FORECOURT = { cinema: 1, music: 1, hotel: 2.5 };
 export const venueFits = (site, type) => Boolean(site) && site.width >= (VENUE_SIZE[type]?.[0] ?? 14) && site.depth >= (VENUE_SIZE[type]?.[1] ?? 12);
-// The building's rectangle on its site: centred on it along the street, set
+// The building's rectangle on its site: centered on it along the street, set
 // back behind the forecourt, in the site's axes. `setback` is how far its
-// front stands behind the site's front, which is itself a few metres in from
+// front stands behind the site's front, which is itself a few meters in from
 // the lot's street edge. A venue with a whole block to itself stands in its
 // grounds, a wider forecourt before it.
 export function venueFootprint(site, type, whole = false, paved = false) {

@@ -134,7 +134,7 @@ export default class StreamlineGenerator {
     const nextDirection = this.integrator.integrate(params.previousPoint, major, params.previousDirection);
     // Stop at degenerate point
     if (nextDirection.lengthSq() < .01) { params.valid = false; return; }
-    // Keep travelling the same way
+    // Keep traveling the same way
     if (nextDirection.dot(params.previousDirection) < 0) nextDirection.negate();
     const nextPoint = params.previousPoint.clone().add(nextDirection);
     if (this.pointInBounds(nextPoint)

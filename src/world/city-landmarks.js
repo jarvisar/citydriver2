@@ -226,7 +226,7 @@ export function buildLandmark(c, lot, place) {
       left: grow(spread.map(k => [-halfW, k * halfD]), -1, 0), right: grow(spread.map(k => [halfW, k * halfD]), 1, 0) };
     const around = [at(-halfW - out.left, -halfD - out.front), at(halfW + out.right, -halfD - out.front), at(halfW + out.right, halfD + out.back), at(-halfW - out.left, halfD + out.back)];
     const paving = intersection(region(union(solids([apron, around.map(p => ({ x: p.x, y: p.s }))]))), solids([lotLocal]));
-    // (its ten-centimetre edge at the pavement is closed as every thin slab's is, see addSurfacePolygon)
+    // (its ten-centimeter edge at the pavement is closed as every thin slab's is, see addSurfacePolygon)
     for (const piece of paving) c.polygon(piece.outer.map(p => [p.x, p.y]), G + .07, .06, PAVING);
     // Where a tree may stand: on the lawn, clear of the lot's edge, the
     // building and the forecourt
@@ -294,7 +294,7 @@ export function buildLandmark(c, lot, place) {
   };
   const forecourtSign = () => plinthSign(plinthAt.u, plinthAt.into);
   // (each step down to the ground: the top one, reaching back past the one
-  // below it to the landing, hung ten centimetres over the forecourt there)
+  // below it to the landing, hung ten centimeters over the forecourt there)
   const steps = (w, into) => { for (let k = 0; k < 3; k++) box(0, G + (.2 + k * .3) / 2, into - 1.6 + k * .5, w + 2 - k * .6, .2 + k * .3, 1.2, TRIM); };
   const portico = (w, height, depth = 3.6) => {
     // Paired columns leave a central opening; the steps meet a landing all
@@ -402,7 +402,7 @@ export function buildLandmark(c, lot, place) {
     // What stands on the roof tells the halls apart: City Hall's dome and
     // clock tower; a museum's dome, a raised top-lit court or a glazed
     // gallery vault; a library's glass reading drum or lantern (the two of a
-    // kind in a city have neighbouring variants, so they differ)
+    // kind in a city have neighboring variants, so they differ)
     const side = Math.min(W, D);
     if (place.type === 'cityhall' || (place.type === 'museum' && place.variant === 0)) domeOn(G + H + .5, side * .2);
     if (place.type === 'museum' && place.variant === 1) {
@@ -443,7 +443,7 @@ export function buildLandmark(c, lot, place) {
     top = G + H + 12;
   } else if (kind === 'tower') {
     // (a tower in Midtown; anywhere else, a few floors over its podium, not
-    // 50 or 60 metres over houses of two or three)
+    // 50 or 60 meters over houses of two or three)
     const tall = cityStyleDistrict(place.s, place.u) === 'Midtown', draw = random();
     const podium = localRing(W, D), H1 = 9, floors = tall ? 11 + Math.floor(draw * 6) : 3 + Math.floor(draw * 3), tower = localRing(W - 6, D - 6, 1.5), H2 = H1 + floors * 3.6;
     bodies.prism(podium, G, G + H1, wall);

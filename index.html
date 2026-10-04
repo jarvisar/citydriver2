@@ -86,7 +86,7 @@
       <div id="loading" class="loading" role="status"><span class="loading-bar" aria-hidden="true"></span><span id="loading-status">Loading Citydriver…</span></div>
       <noscript>
         <h1>Citydriver 2</h1>
-        <p>A free 3D taxi driving game built with Three.js. Every visit generates a new island city with a harbour, a river, parks and six districts. Pick up passengers and get them to their stop before time runs out, or wreck the city in a demolition truck. Citydriver 2 needs JavaScript and WebGL to run.</p>
+        <p>A free 3D taxi driving game built with Three.js. Every visit generates a new island city with a harbor, a river, parks and six districts. Pick up passengers and get them to their stop before time runs out, or wreck the city in a demolition truck. Citydriver 2 needs JavaScript and WebGL to run.</p>
       </noscript>
       <canvas id="scene" aria-label="A generated low-poly island city. Drive with WASD or the arrow keys."></canvas>
       <div id="menu-view-fade" aria-hidden="true"></div>
@@ -158,7 +158,7 @@
       </section>
       <aside id="city-guide" class="city-guide" aria-label="Street map">
         <div class="city-guide-header"><span>PLACES <b id="city-stamps" title="Kinds of place found">0 / 22</b></span><div class="city-guide-actions"><button type="button" id="city-map-open" aria-haspopup="dialog" title="City map (M / View / Share)"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m3 6 6-2 6 2 6-2v14l-6 2-6-2-6 2V6Zm6-2v14m6-12v14" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg><span>City map</span></button><button type="button" id="city-map-toggle" aria-expanded="true" aria-controls="city-map" aria-label="Hide map" title="Hide map (N)"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 10 5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></div>
-        <canvas id="city-map" width="208" height="144" role="img" aria-label="Local street map. Your heading is up; the white arrow is your car. Coloured dots are places you have found."></canvas>
+        <canvas id="city-map" width="208" height="144" role="img" aria-label="Local street map. Your heading is up; the white arrow is your car. Colored dots are places you have found."></canvas>
         <p id="taxi-offer" hidden></p>
       </aside>
       <p id="vr-error" role="status" hidden></p>
@@ -301,7 +301,7 @@
       <dialog id="world-map-dialog" class="chooser world-map-dialog" aria-labelledby="world-map-heading">
         <div class="chooser-heading"><h2 id="world-map-heading" class="garage-title">City map</h2><button type="button" id="close-world-map" class="icon-button" aria-label="Close city map"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
         <div class="world-map-body">
-          <div class="world-map-frame"><canvas id="world-map" role="img" aria-label="Map of the whole city, north up. Each district is its own colour and each neighbourhood is named; sand is the grounds of the city's venues, coloured dots are places you have found, the white arrow is you, and a car in a teal ring is your own car where you left it."></canvas></div>
+          <div class="world-map-frame"><canvas id="world-map" role="img" aria-label="Map of the whole city, north up. Each district is its own color and each neighborhood is named; sand is the grounds of the city's venues, colored dots are places you have found, the white arrow is you, and a car in a teal ring is your own car where you left it."></canvas></div>
           <div class="world-map-key">
             <p id="world-map-status" class="world-map-status" role="status"></p>
             <ul id="world-map-legend" class="world-map-legend" aria-label="Districts"></ul>
@@ -312,7 +312,7 @@
       </dialog>
       <dialog id="car-dialog" class="chooser" aria-labelledby="car-heading">
         <div class="chooser-heading"><div class="garage-heading"><h2 id="car-heading" class="garage-title">Garage</h2><p class="garage-wallet"><strong id="garage-wallet"></strong><span id="garage-saving"></span></p></div><div class="garage-heading-actions"><button type="button" id="offer-back" class="offer-back" hidden><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m14 6-6 6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>All cars</button><button id="close-cars" class="icon-button" aria-label="Close garage"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div></div>
-        <span class="controller-hint">D-pad / stick: choose · A / Cross: select · B / Circle: close<br>Custom paint: A / Cross to change colour</span>
+        <span class="controller-hint">D-pad / stick: choose · A / Cross: select · B / Circle: close<br>Custom paint: A / Cross to change color</span>
         <section id="paint-shop" class="paint-shop" aria-labelledby="paint-heading">
           <div class="paint-shop-heading">
             <h3 id="paint-heading">Paint</h3>

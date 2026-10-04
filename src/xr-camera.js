@@ -12,7 +12,7 @@ export class XRCameraRig {
     this.rig = new THREE.Group();
     this.camera = new THREE.PerspectiveCamera(60, 1, .1, 1200);
     this.rig.add(this.camera);
-    // Panels hang here: at the head's recentred position, level, facing the
+    // Panels hang here: at the head's recentered position, level, facing the
     // way the game's camera looks. A HUD rides along with the car like a
     // dashboard, and a menu stays put while the drive is paused.
     this.anchor = new THREE.Group();
@@ -66,7 +66,7 @@ export class XRCameraRig {
 // other than your own head. It is moderate (the middle of the view stays
 // clear and bright), fades as soon as the turn ends and never shows while
 // paused. The chase camera easing back out from a building counts as a
-// surge, and its jump in (over JUMP metres) is a blink: dark at once, then
+// surge, and its jump in (over JUMP meters) is a blink: dark at once, then
 // clearing over BLINK seconds, the usual way to make a teleport comfortable.
 // The pause menu's Comfort vignette switch turns both off.
 const APERTURE = { wide: THREE.MathUtils.degToRad(58), narrow: THREE.MathUtils.degToRad(34) };

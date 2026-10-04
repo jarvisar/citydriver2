@@ -89,8 +89,8 @@ test('garage selection uses car and paint state, and preserves paint-first heads
   assert.match(model.subtitle, /\$0 · 3 of 21 owned/);
   assert.equal(model.items.find(item => item.id === 'jetpack')?.label, 'Jetpack', 'the gear after the cars');
   assert.ok(!garage.paints.some(item => item.id === 'rainbow'), 'no rainbow before the code');
-  assert.ok(garage.paints.filter(item => item.id !== DEFAULT_PAINT).every(item => item.disabled), 'no colour without the money for it');
-  assert.equal(garage.paints[0].disabled, false, 'each car\'s own colour is free');
+  assert.ok(garage.paints.filter(item => item.id !== DEFAULT_PAINT).every(item => item.disabled), 'no color without the money for it');
+  assert.equal(garage.paints[0].disabled, false, 'each car\'s own color is free');
   assert.deepEqual([...new Set(garage.cars.map(car => car.group))], ['Cabs', 'Cars', 'Specials', 'Aircraft'], 'the garage in sections');
   assert.ok(!garage.cars.some(car => ['auto', 'desert', 'city'].includes(car.id)), 'without the old route wagons');
   assert.equal(model.items.at(-1).label, 'Back');
@@ -227,9 +227,9 @@ test('rendering the same HUD twice does not advance cash or hints, and desktop e
 });
 
 test('location and result summaries are available before either interface renders', () => {
-  const car = player(), location = locationHudModel({ ...car, heading: -Math.PI / 2 }, 'Harbour', 'Night');
-  assert.deepEqual(location, { distance: '1.0', heading: 'W', place: 'Harbour', weather: 'Night', cash: '' });
-  assert.equal(headsetHudModel(null, location).place, 'Harbour');
+  const car = player(), location = locationHudModel({ ...car, heading: -Math.PI / 2 }, 'Harbor', 'Night');
+  assert.deepEqual(location, { distance: '1.0', heading: 'W', place: 'Harbor', weather: 'Night', cash: '' });
+  assert.equal(headsetHudModel(null, location).place, 'Harbor');
   const run = new TaxiRun(); run.start(car); run.cash = 600; run.timeLeft = .01; run.update(.02, car);
   const taxi = taxiResultModel(run, [{ name: 'Museum' }]);
   assert.equal(taxi.cash, '$600'); assert.match(taxi.best, /1 new place found/); assert.match(taxi.next, /New best license/);

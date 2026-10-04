@@ -17,7 +17,7 @@ export const CITY_PLACES = Object.freeze({
   music: { name: 'Blue Note Club', label: 'Jazz club', short: 'Live music', color: '#d5a3cb', symbol: 'XIII', description: 'Neon, a piano keyboard across the front and gig posters by the door.' },
   sports: { name: 'Athletic Club', label: 'Sports club', short: 'Courts & clubhouse', color: '#b9cf85', symbol: 'XIV', description: 'Tennis and basketball courts before a clubhouse, with stands either side.' },
   firehouse: { name: 'Engine House', label: 'Fire station', short: 'Historic fire station', color: '#e99883', symbol: 'XV', description: 'Red engine doors, a hose tower and a heritage fire engine.' },
-  park: { name: 'Neighbourhood Gardens', label: 'Park', short: 'Lawns, walks & ponds', color: '#aac793', symbol: 'XVI', description: 'The city’s big green: long walks, lawns and groves, usually with a pond.' },
+  park: { name: 'Neighborhood Gardens', label: 'Park', short: 'Lawns, walks & ponds', color: '#aac793', symbol: 'XVI', description: 'The city’s big green: long walks, lawns and groves, usually with a pond.' },
   plaza: { name: 'City Squares', label: 'Fountain square', short: 'Fountain & cafe tables', color: '#dfc6a0', symbol: 'XVII', description: 'A fountain in a paved square, with a cafe’s tables beside it.' },
   postoffice: { name: 'Central Post Office', label: 'Post office', short: 'Letters & parcels', color: '#e6b284', symbol: 'XVIII', description: 'An envelope crest, roof lights over the sorting hall and a pillar box out front.' },
   bathhouse: { name: 'Mosaic Baths', label: 'Public baths', short: 'Pools & tiled arcade', color: '#90c9c8', symbol: 'XIX', description: 'A terracotta vault behind a tiled arcade, and a pool terrace outside.' },
@@ -39,11 +39,11 @@ export const SPACE_NAMES = Object.freeze({
   hospital: ['Healing garden', 'Patient entrance', 'Pale wings'], observatory: ['Copper dome', 'Celestial garden', 'Telescope terrace'],
   music: ['Courtyard stage', 'Piano facade', 'Neon club'], sports: ['Clubhouse courts', 'Grandstand', 'Running track'],
   firehouse: ['Engine doors', 'Hose tower', 'Heritage engine'], park: ['Willow Green', 'Linden Gardens', 'Meadow Park', 'Orchard Walk'],
-  plaza: ['Fountain Square', 'Market Square', 'Old Town Square', 'Station Square', 'Harbour Square', 'Jubilee Square'], postoffice: ['Sorting hall', 'Envelope crest', 'Parcel yard'],
+  plaza: ['Fountain Square', 'Market Square', 'Old Town Square', 'Station Square', 'Harbor Square', 'Jubilee Square'], postoffice: ['Sorting hall', 'Envelope crest', 'Parcel yard'],
   bathhouse: ['Tiled pavilions', 'Turquoise pools', 'Colonnaded terrace'], farmersmarket: ['Produce stalls', 'Flower stands', 'Coffee courtyard'],
   donut: ['Giant donut', 'Pastel diner', 'Coffee terrace'], cityhall: ['Civic chambers'],
 });
-// Where each kind of venue is at home: the districts that favour it
+// Where each kind of venue is at home: the districts that favor it
 export const VENUE_DISTRICTS = {
   Midtown: ['hotel', 'cinema', 'museum', 'station', 'music', 'hospital'],
   'Old town': ['museum', 'market', 'bathhouse', 'donut', 'music', 'postoffice'],

@@ -34,7 +34,7 @@
 .pause-header .wheel-icon { width: 24px; height: 24px; }
 /* Taxi shift and Demolition (Free drive in a job's place on its standby)
    get a row of their own under the bar, glossy like the title's buttons but
-   smaller, each in its own mode's colours whatever the screen's accent.
+   smaller, each in its own mode's colors whatever the screen's accent.
    The label comes first in the markup for menu-dom, so the icon is moved
    before it. */
 .pause-modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 22px; }

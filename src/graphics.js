@@ -22,7 +22,7 @@
 // High keeps a wider square of detailed city blocks. Lower levels use fewer
 // furnished blocks, with a cheap distant skyline covering the same camera views.
 //
-// The sun's shadow reaches `shadowDistance` metres from the camera, on a map
+// The sun's shadow reaches `shadowDistance` meters from the camera, on a map
 // `shadowMap` texels square. A lower level reaches less far rather than only
 // blurring: its shadow pass draws fewer casters (about half of every frame's
 // draws and triangles are that pass) and a texel stays 9-17 cm, where the old

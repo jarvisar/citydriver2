@@ -48,7 +48,7 @@ test('the world streams detailed chunks around the car and keeps the skyline eve
       assert.ok(Math.max(Math.abs(chunk.ix - cell.ix), Math.abs(chunk.iz - cell.iz)) <= world.radius, `old detail released (${chunk.index})`);
     }
     for (let ix = cell.ix - 1; ix <= cell.ix + 1; ix++) for (let iz = cell.iz - 1; iz <= cell.iz + 1; iz++) {
-      if (world.inCity(ix, iz)) assert.ok(world.chunks.has(`${ix},${iz}`), `the collision neighbourhood is complete (${ix},${iz})`);
+      if (world.inCity(ix, iz)) assert.ok(world.chunks.has(`${ix},${iz}`), `the collision neighborhood is complete (${ix},${iz})`);
     }
     assert.ok(world.chunks.size < before, 'the far ring waits for later frames');
     assert.ok(world.pending.length > 0, 'the outer ring streams in over later frames');
@@ -97,7 +97,7 @@ test('buildings block the car and the parks and water stay open', () => {
   try {
     car.toggleFreeDriving();
     world.update(car.s, car.u); while (world.pending.length) world.update(car.s, car.u);
-    // Stand the car on the pavement a few metres in front of the nearest
+    // Stand the car on the pavement a few meters in front of the nearest
     // building with nothing else in the way, facing it, and drive into it
     const colliders = [...world.chunks.values()].flatMap(c => c.features.colliders);
     const footprint = c => c.corners.map(p => ({ x: p.x, y: -p.z }));
@@ -142,7 +142,7 @@ test('roofs follow the buildings under them and trees keep their crowns off the 
       if (plan.kind !== 'building') continue;
       plans.push(plan);
       roofs[plan.roofType] = (roofs[plan.roofType] ?? 0) + 1;
-      // A pitched roof sits on a four-sided building of a few storeys, its
+      // A pitched roof sits on a four-sided building of a few stories, its
       // eave along a street front unless it is a shed's
       if (plan.roofType === 'gable') {
         assert.equal(plan.footprint.length, 4);
@@ -153,7 +153,7 @@ test('roofs follow the buildings under them and trees keep their crowns off the 
       if (plan.domestic) assert.ok(!plan.shopfront);
     }
     assert.ok(roofs.gable > 50 && roofs.flat > 50, JSON.stringify(roofs));
-    // No tree crown reaches a metre into a building
+    // No tree crown reaches a meter into a building
     const cells = new Map(), key = (x, y) => `${Math.floor(x / 30)},${Math.floor(y / 30)}`;
     for (const plan of plans) {
       const seen = new Set();
@@ -195,7 +195,7 @@ test('at the lowest detail the ring ahead streams in, is built ahead of time, an
     world.update(s, middle); while (world.pending.length) world.update(s, middle);
     assert.equal(world.radius, 1); assert.equal(world.chunks.size, 9);
     const left = column(cell.ix - 1).map(k => world.chunks.get(k));
-    // A metre into the next cell east: the new column is a cell ahead and waits
+    // A meter into the next cell east: the new column is a cell ahead and waits
     world.update(s, (cell.ix + 1) * CITY_CELL + 1, { budgetMs: 0 });
     assert.deepEqual(world.pending.map(next => next.key).sort(), column(cell.ix + 2).sort());
     assert.ok(column(cell.ix + 2).every(k => !world.chunks.has(k)), 'nothing a cell ahead is built at once');
@@ -339,7 +339,7 @@ test('a parked car the player runs into is knocked loose, and put back in its ba
   try {
     car.toggleFreeDriving();
     world.update(car.s, car.u); while (world.pending.length) world.update(car.s, car.u);
-    // The nearest parked car, met square at its tail from a few metres behind
+    // The nearest parked car, met square at its tail from a few meters behind
     const parked = [...world.chunks.values()].flatMap(c => c.features.colliders).filter(c => c.parked?.ready)
       .sort((a, b) => Math.hypot(a.x - car.u, -a.z - car.s) - Math.hypot(b.x - car.u, -b.z - car.s))[0];
     assert.ok(parked, 'a parked car near the start');

@@ -102,15 +102,15 @@ test('a party wall is painted only on the band clear of the house next door, ove
       const next = other ? planLot(world, byIndex.get(other.index)) : null;
       // (over a venue next door, only above its walls)
       if (next?.kind === 'landmark') assert.ok(paint.bottom >= VENUE_WALLS[placeForLot(other.index).type] + .8, `painted below a venue's walls at ${lot.centre.x.toFixed(0)},${lot.centre.y.toFixed(0)}`);
-      if (next?.kind === 'building') assert.ok(paint.bottom >= wallTop(next) + .8, `painted below the neighbour's roof at ${lot.centre.x.toFixed(0)},${lot.centre.y.toFixed(0)}`);
+      if (next?.kind === 'building') assert.ok(paint.bottom >= wallTop(next) + .8, `painted below the neighbor's roof at ${lot.centre.x.toFixed(0)},${lot.centre.y.toFixed(0)}`);
       assert.ok(paint.bottom >= (b.domestic ? 3.6 : 5.4) - .7 && paint.ceiling <= top - .9 && paint.ceiling - paint.bottom >= 3.2, 'over the ground floor and under the cornice');
     }
   }
   assert.ok(painted > 50 && ads > 15 && painted - ads > 15, `${painted} walls painted, ${ads} with adverts`);
 });
 
-test('a cornice never reaches past its lot, where the neighbour\'s is', () => {
-  // (seeds 3113444836 and 8675309: two neighbours' cornices overlapped in the
+test('a cornice never reaches past its lot, where the neighbor\'s is', () => {
+  // (seeds 3113444836 and 8675309: two neighbors' cornices overlapped in the
   // 20 cm between their walls, their tops flickering through each other)
   const ring = rectangle(0, 0, 12, 10), lot = rectangle(-.1, -1.5, 12.2, 13), top = 20, bodies = new Surface();
   cornice(bodies, ring, top, '#ffffff', '#777777', '#999999', .65, [], () => .32, lot);
@@ -173,7 +173,7 @@ test('metal loading shutters fill their opening once, down to the pavement at bo
 
 test('office lobby glazing leaves a real opening for two framed door leaves', () => {
   for (const distant of [false, true]) for (const span of [12, 20, 27]) for (const primary of [false, true]) {
-    // (a lobby lit after dark marks its panes' colours: see city-glass.js)
+    // (a lobby lit after dark marks its panes' colors: see city-glass.js)
     const pieces = [], panes = [], c = { distant, bodies: new Surface(), materials: {},
       box(x, y, s, w, h, d, colour, kind) { pieces.push({ x, y, w, h, colour }); if (kind === 'glass') panes.push({ x, y, w, h, colour: daylight(colour) }); },
       item(key, geometry, material, p, scale, colour) { if (key === 'distant-glass') panes.push({ x: p[0], y: p[1], w: scale[0], h: scale[1], colour: daylight(colour) }); } };
@@ -214,7 +214,7 @@ test('residential door panels tile one opaque face from the doorstep to the head
   }
 });
 
-test('refined tree crowns fit existing planting clearances and parked tyres retain road contact', () => {
+test('refined tree crowns fit existing planting clearances and parked tires retain road contact', () => {
   for (const tree of cityTrees) {
     const g = tree.leaves, p = g.attributes.position;
     assert.ok((g.index?.count ?? p.count) / 3 <= 88, 'a crown stays a small shared mesh');
@@ -225,17 +225,17 @@ test('refined tree crowns fit existing planting clearances and parked tyres reta
   }
   for (const { paint, trim } of Object.values(parkedCars)) {
     paint.computeBoundingBox(); trim.computeBoundingBox();
-    assert.ok(Math.abs(trim.boundingBox.min.y) < 1e-6, 'tyres touch the road at model zero');
-    assert.ok(paint.boundingBox.min.y > 0, 'the body sits above the tyres');
+    assert.ok(Math.abs(trim.boundingBox.min.y) < 1e-6, 'tires touch the road at model zero');
+    assert.ok(paint.boundingBox.min.y > 0, 'the body sits above the tires');
   }
 });
 
-test('windows can overlook open ground but not neighbouring plots or the return of a concave building', () => {
+test('windows can overlook open ground but not neighboring plots or the return of a concave building', () => {
   const building = rectangle(0, 0, 20, 15);
   assert.ok(wallHasOutlook(building, 1, []), 'an exposed side has an outlook');
   assert.ok(wallHasOutlook(building, 1, [rectangle(24, 0, 20, 15)]), 'a wide gap admits windows');
   assert.equal(wallHasOutlook(building, 1, [rectangle(20.2, 0, 20, 15)]), false, 'a party wall stays blank');
-  assert.equal(wallHasOutlook(building, 1, [rectangle(22, 11, 20, 4)]), false, 'the whole face needs clearance, not just its centre');
+  assert.equal(wallHasOutlook(building, 1, [rectangle(22, 11, 20, 4)]), false, 'the whole face needs clearance, not just its center');
   assert.equal(wallHasOutlook(building, 1, [rectangle(22, 7, .2, .2)]), false, 'a narrow intrusion between samples is still found');
   const courtyard = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 15 }, { x: 12, y: 15 }, { x: 12, y: 5 }, { x: 10, y: 5 }, { x: 10, y: 15 }, { x: 0, y: 15 }];
   assert.equal(wallHasOutlook(courtyard, 3, []), false, 'a tight return of the same building blocks the outlook');
@@ -249,7 +249,7 @@ const tree = (east, start, x, s, distant, seed) => {
   CityChunk.prototype.tree.call(c, x, s, 8);
   return items.find(item => item.key.startsWith('tree-crowns-'));
 };
-test('tree shape, colour and orientation belong to its world position at every detail level', () => {
+test('tree shape, color and orientation belong to its world position at every detail level', () => {
   const detail = tree(160, -320, 30, 40, false, 1);
   assert.deepEqual(tree(160, -320, 30, 40, true, 937), detail);
   assert.deepEqual(tree(0, 0, 190, -280, false, 832), detail);
@@ -288,7 +288,7 @@ test('stacked balconies have doors meeting their decks and leave ordinary window
     for (const deck of decks) {
       const door = pieces.find(p => ['glass', 'lit'].includes(p.kind) && p.x === deck.x && Math.abs(p.y - p.h / 2 - deck.y - deck.h / 2) < 1e-8);
       assert.ok(door && door.h > 2.4, 'each deck has a full-height door at its surface');
-      assert.equal(decks.filter(p => p.x === deck.x).length, 3, 'balconies align through all three storeys');
+      assert.equal(decks.filter(p => p.x === deck.x).length, 3, 'balconies align through all three stories');
     }
     assert.ok(pieces.some(p => p.d === .48), 'ordinary window bays retain their sills');
   }
@@ -357,7 +357,7 @@ test('median lawns stay on land while bridge separators retain their raised foot
   const water = region([...CITY.seaWater, ...CITY.riverWater]), medians = cityMedians().list;
   let crossings = 0, grass = 0;
   for (const median of medians) {
-    // Clipper rounds each new intersection to millimetres at the bank.
+    // Clipper rounds each new intersection to millimeters at the bank.
     assert.ok(area(intersection(region(median.lawns), water)) < .01, 'no lawn over water');
     if (area(intersection([median.polygon], water)) > 10) crossings++;
     grass += area(median.lawns);
@@ -381,7 +381,7 @@ test('every enclosed venue has a doorway and vehicle bays open onto a paved apro
       const along = side * site.width * (['depot', 'firehouse'].includes(place.type) ? .4 : .2);
       const into = -D / 2 - d;
       const p = { x: site.centre.x + site.tx * along + site.nx * into, y: site.centre.y + site.ty * along + site.ny * into };
-      // (the paving is clipped to the lot to the millimetre)
+      // (the paving is clipped to the lot to the millimeter)
       if (!insidePolygon(p, place.polygon) || distanceToPolyline(p, edge) < .01) break;
       assert.ok(paving.some(ring => insidePolygon(p, ring)), `${place.name}: the approach stops ${d.toFixed(1)} m ahead of the building, before reaching the pavement`);
     }

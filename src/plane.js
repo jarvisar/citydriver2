@@ -17,7 +17,7 @@ import { landward, meetPiers } from './helicopter.js';
 // A double tap on a steering direction rolls it right round, and on climb it
 // loops the loop.
 //
-// Speeds in m/s, rates in 1/s, angles in radians, heights in metres.
+// Speeds in m/s, rates in 1/s, angles in radians, heights in meters.
 //   MIN, CRUISE     the slowest it flies (brake held) and its speed hands off
 //   LIFT, ROTATE    on the ground, climb lifts it off from LIFT; full throttle alone at ROTATE
 //   REVERSE         it backs up this slowly on the ground
@@ -29,11 +29,11 @@ import { landward, meetPiers } from './helicopter.js';
 //   GROUND_TURN     how fast the nose wheel turns it, taxiing
 //   SAG             how fast it sinks once it has slowed to a stop in the air
 //   FLARE           descending near the floor, it sinks no faster than
-//                   FLARE[0] plus FLARE[1] m/s a metre up: it settles on rather than hits
+//                   FLARE[0] plus FLARE[1] m/s a meter up: it settles on rather than hits
 //   HARD            a touchdown faster than this (m/s down) bounces it
 //   SKIM            the least it flies over the water
 //   AIRBORNE        above the street by this much it clears traffic, people, walls and railings
-//   STEP            the highest a roof or kerb can be above the wheels to roll onto; higher is a wall
+//   STEP            the highest a roof or curb can be above the wheels to roll onto; higher is a wall
 //   CEILING         its highest, over the ground
 //   APPROACH, GLIDE landing on its own (see `land`): its speed, and how fast it comes down,
 //   SHORE           and over the water, how high it keeps making for the shore

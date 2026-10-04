@@ -14,7 +14,7 @@
 .update-notice button:active { background: linear-gradient(var(--city-accent-bottom), var(--city-accent-top)); box-shadow: inset 0 2px 5px #00000066; }
 .update-notice button:focus-visible { outline: 2px solid var(--city-text); outline-offset: 2px; }
 .update-notice button:disabled { cursor: wait; opacity: .6; }
-/* Top centre of the title, above the name, still inside #welcome for the controller */
+/* Top center of the title, above the name, still inside #welcome for the controller */
 #welcome .update-notice { position: absolute; bottom: 100%; left: 50%; margin-bottom: 8px; transform: translateX(-50%); animation: update-toast .45s cubic-bezier(.2, .9, .3, 1.25) both; }
 @keyframes update-toast { from { opacity: 0; transform: translate(-50%, -14px) scale(.92); } }
 @media (prefers-reduced-motion: reduce) { #welcome .update-notice { animation: update-fade .3s ease-out both; } }

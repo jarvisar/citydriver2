@@ -3,13 +3,13 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { stableShadowDepth } from './world/shadow-depth.js';
 import { partsKit } from './helicopter.js';
 
-// The garage's plane: a small high-wing monoplane on big soft tyres, the
+// The garage's plane: a small high-wing monoplane on big soft tires, the
 // kind that gets in and out of short strips. The footprint (width, length)
 // is its wheels and fuselage, which is what meets cars and walls on the
 // ground; `span` is from wingtip to wingtip, which only buildings stop (see
 // plane.js). `prop` is the propeller's radius. Like the helicopter, `eye`
 // seats the first-person camera and `chaseLift` raises the chase camera
-// over the wing, and `door` (metres ahead of the middle) and `seat` (metres
+// over the wing, and `door` (meters ahead of the middle) and `seat` (meters
 // up) are where someone climbs in and out. Getting out, they step down
 // behind the wing, clear of its struts, at `exit` (across, along).
 export const PLANE_SHAPE = { name: 'plane', width: 2.4, length: 7.4, span: 9.4, eye: [0, 1.95, -1.25], chaseLift: 1.1, door: .9, seat: 1.05, exit: [2.3, -1.4], prop: .95 };
@@ -77,7 +77,7 @@ export const PLANE_PROFILE = { body: BODY, windows: WINDOWS, wing: WING, lift, s
 
 const v3 = (x, y, z) => new THREE.Vector3(x, y, z);
 
-// Faces laid one by one in car space, gathered by category and colour, for
+// Faces laid one by one in car space, gathered by category and color, for
 // the shapes a box will not bend to: skins through rings of points, the caps
 // on their ends and flat plates of any outline
 function faceKit(kit) {
@@ -94,7 +94,7 @@ function faceKit(kit) {
   const faces = {
     // A skin through rings of points, all the same count and wound the same
     // way. `style(k, i)` dresses the face from ring k's edge i to the next
-    // ring: [category, colour] or null for none. A ring of one repeated point
+    // ring: [category, color] or null for none. A ring of one repeated point
     // closes it to an apex.
     loft(rings, style) {
       // (Newell's normal of the first ring, against the way the rings run)
@@ -241,13 +241,13 @@ function build(kit, faces) {
   box([.04, .03, .02], [0, 1.63, 3.195], 'details', TAIL_LIGHT);
   box([.12, .07, .16], [0, .845, .3], 'beacon');
 
-  // The main gear: a V of legs down to each axle, and the fat tyres on it
+  // The main gear: a V of legs down to each axle, and the fat tires on it
   for (const side of [-1, 1]) {
     const axle = [side * .88, MAIN.y, MAIN.z];
     for (const z of [-.62, .2]) bar([side * .44, .86, z], axle, [.06, .05]);
   }
-  // A balloon of a tyre, crowned across its tread, on a small cream hub
-  // (whose octagon is cut to cover the tyre's rim)
+  // A balloon of a tire, crowned across its tread, on a small cream hub
+  // (whose octagon is cut to cover the tire's rim)
   const tyre = (middle, radius, width, count, category) => {
     const h = width / 2, profile = [[-.8, .32], [-1, .64], [-.7, .92], [0, 1], [.7, .92], [1, .64], [.8, .32]];
     loft(profile.map(([along, out]) => circle(middle.clone().add(v3(along * h, 0, 0)), out * radius, count, 'x')), () => [category, DARK]);

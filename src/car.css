@@ -22,7 +22,7 @@
 .panel-button-label { min-width: 0; }
 @media (max-height: 560px) { .pause-panel { margin: 2px 0 8px; } .pause-panel h3 { margin-bottom: 6px; } }
 
-/* The paint counter sits above the fleet: the colour the garage is wearing,
+/* The paint counter sits above the fleet: the color the garage is wearing,
    and one row of chips that repaint the car where it stands. */
 .paint-shop { margin: 2px 0 20px; padding: 13px 16px 14px; border: 1px solid #25473e24; border-radius: 12px; background: #fff7; }
 .paint-shop-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
@@ -31,13 +31,13 @@
 .paint-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .paint-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
 .paint-swatch { position: relative; display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%; background: none; }
-/* Chips stay 34px so a dozen colours fit on one line; the hit area is 44px. */
+/* Chips stay 34px so a dozen colors fit on one line; the hit area is 44px. */
 .paint-swatch::after { content: ''; position: absolute; inset: -5px; border-radius: 50%; }
 .paint-chip { width: 26px; height: 26px; border-radius: 50%; background: var(--swatch, #d96143); box-shadow: inset 0 0 0 1px #0000002e; transition: transform .18s; }
 .paint-swatch:hover .paint-chip { transform: scale(1.14); }
 .paint-swatch[aria-checked=true] { box-shadow: 0 0 0 2px var(--ink); }
 .paint-swatch[aria-checked=true] .paint-chip { transform: scale(.82); }
-/* Default is not a colour, so it reads as an empty swatch with a line through
+/* Default is not a color, so it reads as an empty swatch with a line through
    it rather than a disc that could be mistaken for one. */
 .paint-default .paint-chip { background: linear-gradient(135deg, transparent 45%, currentColor 45%, currentColor 55%, transparent 55%); box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 28%, transparent); }
 .paint-custom { position: relative; display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 13px 0 4px; border: 1px dashed #25473e45; border-radius: 17px; cursor: pointer; }
@@ -154,13 +154,13 @@ body[data-journey=city] .paint-shop { background: #fff6; }
 @media (max-width: 380px) { .offer-actions { grid-template-columns: 1fr; } }
 .car-card[data-owned=true] .car-price { background: linear-gradient(#ffffff59, #ffffff00 50%), linear-gradient(#a8eaa9, #4fae58); border-color: #1f5a27; color: #10230f; text-shadow: var(--city-emboss); }
 @media (min-width: 601px) { .offer-art .car-art { max-width: 420px; margin: 0 auto; } }
-/* A colour costs money, so one the balance can't cover is greyed out */
+/* A color costs money, so one the balance can't cover is grayed out */
 .paint-swatch:disabled { opacity: .35; cursor: default; }
 .paint-swatch:disabled:hover .paint-chip { transform: none; }
 .paint-custom:has(input:disabled) { opacity: .45; }
 .paint-custom:has(input:disabled) input { cursor: default; }
 /* The Konami code's rainbow paint runs the garage's portraits through every
-   hue, as it does the car (a typed property, so the colour can animate) */
+   hue, as it does the car (a typed property, so the color can animate) */
 @property --car-paint { syntax: '<color>'; inherits: true; initial-value: #d96143; }
 @keyframes rainbow-paint {
   0% { --car-paint: #ff4d4d; } 17% { --car-paint: #ffd84d; } 33% { --car-paint: #5ee05e; } 50% { --car-paint: #4dd8ff; }

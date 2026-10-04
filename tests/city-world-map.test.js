@@ -19,13 +19,13 @@ test('every city has one district of each kind, none of them tiny or most of the
   }
 });
 
-test('the city map names every district the city has, on land, and has a colour for each', () => {
+test('the city map names every district the city has, on land, and has a color for each', () => {
   for (const city of cities) {
     const labels = worldMapLabels(city), named = new Set(labels.map(label => label.style));
     for (const block of city.blocks) if (block.style) assert.ok(named.has(block.style), `seed ${city.seed}: ${block.style} unnamed`);
     assert.ok(labels.filter(label => label.downtown).length <= 1);
     for (const label of labels) {
-      assert.ok(DISTRICT_COLORS[label.style], `no colour for ${label.style}`);
+      assert.ok(DISTRICT_COLORS[label.style], `no color for ${label.style}`);
       assert.ok(!city.mask.at(label.x, label.y), `seed ${city.seed}: ${label.name} label in the water at ${label.x.toFixed(0)},${label.y.toFixed(0)}`);
     }
     // one name per district, and none twice

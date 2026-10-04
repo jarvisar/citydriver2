@@ -80,20 +80,20 @@ function signPlace(c, f, w, centres) {
   }
   return best;
 }
-// Whether a sign standing out `reach` metres from the wall at `offset` is
+// Whether a sign standing out `reach` meters from the wall at `offset` is
 // clear of the trees' crowns and the lamps along the pavement, and of any
 // wall standing forward of this one (see edgeFacade's open)
 function clearAt(c, f, offset, reach) {
   return (f.open?.(offset, reach) ?? true) && !obstaclesBefore(c, f).some(p => Math.abs(p.offset - offset) < p.reach + .4 && p.outward - p.reach < reach + .4);
 }
 
-// A board flat on the wall, `out` metres proud of it, with the dark edge of
+// A board flat on the wall, `out` meters proud of it, with the dark edge of
 // the board round it (cut-out letters have none)
 function wallSign(c, f, sign, offset, y, w, h, out) {
   const p = f.position(offset, y, out + (sign.letters ? 0 : .05));
   c.signFace('shop-signs', sign, p[0], p[1], -p[2], f.yaw, w, h, sign.letters ? null : .05, .05);
 }
-// A sign standing out from the wall at `offset`, its inner edge `wall` metres
+// A sign standing out from the wall at `offset`, its inner edge `wall` meters
 // out, the bottom at `bottom`: painted both sides, hung from an arm over it
 // when it is squarish, fixed by an arm at its top and foot when it is tall
 function projectingSign(c, f, sign, offset, bottom, width, wall) {

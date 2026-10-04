@@ -10,7 +10,7 @@ const SCALE = 47, GROUND = 130, CENTER = 140;
 const PAINT = 'var(--car-paint)', GLASS = '#3d5b63', TIRE = '#2b3434', HUB = '#bfc4b9', TRIM = '#b9bfb4';
 const CARBON = '#2e3538', VISOR = '#161b1d', SUIT = '#e7e3d5';
 
-// Drawing helpers in the car's own metres: z runs from the nose at the right to
+// Drawing helpers in the car's own meters: z runs from the nose at the right to
 // the tail at the left, y up from the road. A lowered shell drops with `drop`.
 // A car with road-car proportions fills the card at the shared scale; a long,
 // low one is drawn a little larger and sat higher so it is framed rather than
@@ -193,7 +193,7 @@ function formulaParts(entry) {
     shape2d([[-.74, .66], [-.64, 1.03], [.08, 1.03], [.4, .72], [.3, .72], [.04, .97], [-.58, .97], [-.66, .66]], CARBON),
     wheel(-wheelZ), wheel(wheelZ),
     ...(entry.taxi ? [
-      // Chequers down the tub, the roof sign on its plinth, and lamps on the
+      // Checkers down the tub, the roof sign on its plinth, and lamps on the
       // front wing.
       ...[0, 1, 2, 3, 4, 5, 6, 7].map(i => slab(-.56 + i * .14, -.43 + i * .14, .36 + (i % 2) * .1, .46 + (i % 2) * .1, VISOR, 0)),
       slab(.74, .9, 1, 1.18, PAINT, 0),
@@ -246,7 +246,7 @@ const SPECIAL_ART = {
       slab(-2.05, 2.05, .98, 1.22, CARBON, 2),
       ...shocks(-1.55), ...shocks(1.55),
       slab(.705, .795, 2, 2.99, CARBON, 1), slab(.71, .81, 2.99, 3.17, CARBON, 1), slab(.63, .74, 3, 3.16, LAMP, 1),
-      // The fender line clears the tyres; the cab's sills come down between them.
+      // The fender line clears the tires; the cab's sills come down between them.
       slab(-2.25, 2.25, 1.73, 2.11, PAINT, 4),
       slab(-.82, .82, 1.45, 1.8, PAINT, 3),
       ...cabin(draw, -1.03, .52, 2.11, 2.81),
@@ -317,7 +317,7 @@ const SPECIAL_ART = {
       ...tyres(draw, shape.wheels),
     ];
   },
-  // The bus's kerb side, both doors on it, as busGeometry lays them out
+  // The bus's curb side, both doors on it, as busGeometry lays them out
   bus(shape) {
     const draw = pen({ scale: 21, ground: 122 }), { slab, disc, shadow } = draw, half = shape.length / 2;
     const on = -BUS_DOORS.on, off = -BUS_DOORS.off;
@@ -361,7 +361,7 @@ const SPECIAL_ART = {
 function accessories(entry, draw) {
   const { slab, shape2d, disc, px, py, size, l, roofY } = draw;
   // A taxi's sign on its foot over the middle of the roof, a little deeper
-  // than the model's so its lettering fits, and the chequers along the doors.
+  // than the model's so its lettering fits, and the checkers along the doors.
   if (entry.taxi) {
     const { roof: [front, rear] } = draw.profile, z = (front + rear) / 2, top = roofY + .075, chequers = taxiChequers(entry.shape);
     return [
@@ -456,7 +456,7 @@ function coupeKit({ slab, l, profile }) {
 function helicopterParts(shape) {
   const draw = pen({ scale: 24, ground: 124 }), { px, py, size, slab, shape2d, disc, shadow } = draw;
   const hub = -1.35, rotor = shape.rotor;
-  // A path through points and cubic curves, in the model's metres
+  // A path through points and cubic curves, in the model's meters
   const path = (steps, fill, extra = '') => `<path d="${steps.map(([command, ...points]) => command + points.map(([z, y]) => `${px(z)} ${py(y)}`).join(' ')).join('')}Z" fill="${fill}"${extra}/>`;
   const nose = [-3.52, 1.5], chin = [-3.2, .9], belly = [-1.95, .78], tip = [-.45, 1.8], rim = [-1.37, 2.28], crown = [-2.1, 2.33];
   return [
@@ -493,7 +493,7 @@ function helicopterParts(shape) {
 
 // The plane, from plane-model.js's own tables: the fuselage with its stripe
 // and windows, the wing over the cabin on its V struts, the striped rudder,
-// the tailplane end on, the propeller edge on, and the fat tyres on their
+// the tailplane end on, the propeller edge on, and the fat tires on their
 // legs. The wing is its root section drawn a bit thicker. Its cream tip is
 // left out: seen end on it sits above the root (the dihedral) and made the
 // whole wing look cream.

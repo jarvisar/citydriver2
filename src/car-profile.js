@@ -5,7 +5,7 @@ import * as THREE from 'three';
 // each slice from tail to nose. A box as tall as the roof sign stood a wall
 // up in front of the windscreen, and shoved a lamp post bodily down the
 // street; this has the bonnet low and the windscreen set back, and a
-// truck's cab flat up to its roof. Heights are over where the tyres meet
+// truck's cab flat up to its roof. Heights are over where the tires meet
 // the ground (the model's y = 0); forward is the model's -z.
 export const SLICE = .25;
 const toModel = new THREE.Matrix4(), partMatrix = new THREE.Matrix4(), a = new THREE.Vector3(), b = new THREE.Vector3();
@@ -35,7 +35,7 @@ export function carProfile(model, length) {
   if (!height) heights.fill(height = 1.5);
   return { heights, slice: SLICE, length, height };
 }
-// Where a car's boost flames come out, in its body's metres (x right, z
+// Where a car's boost flames come out, in its body's meters (x right, z
 // back): low on the back of the car, found by casting rays at its tail. The
 // backs differ too much for one place: a fixed .36 m up and half the length
 // back hung under the classic's high tail and floated behind the Formula's
@@ -67,7 +67,7 @@ export function tailPipes(body) {
   }
   return { x: .34, y: .36, z: box.max.z - .05 };
 }
-// How high a car stands `along` metres from its middle toward its nose, or
+// How high a car stands `along` meters from its middle toward its nose, or
 // -Infinity off either end
 export function profileHeight(profile, along) {
   if (along < -profile.length / 2 || along >= profile.length / 2) return -Infinity;

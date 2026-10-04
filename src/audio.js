@@ -176,7 +176,7 @@ export class DriveAudio {
     // a second rather than cutting out, and just in, the next one comes up
     // rather than starting at full idle (see SWAP)
     const swap = now - this.swapped < SWAP, fade = swap ? profile.silent ? .4 : .2 : undefined;
-    // The car: engine, then tyres, wind and whatever it is scraping along
+    // The car: engine, then tires, wind and whatever it is scraping along
     g.engineBank.update(state.rpm, state.load, set);
     set(g.engineLevel, state.engineLevel * 3.2, fade); set(g.engineFilter, state.engineCutoff * 1.5, .18);
     layer(g.combustion, (.004 + state.load * .01) * profile.rasp, fade); set(g.combustion.frequency, 380 + state.load * 700);
@@ -236,7 +236,7 @@ export class DriveAudio {
         g.event('engine', { time: now + at, duration: .05 + g.random() * .04, frequency: 900 + g.random() * 700, endFrequency: 260, level: (.05 + g.random() * .04) * profile.pops, attack: .002, q: 1.1 });
       }
     }
-    // A drift's sparks changing colour (see Drift): a crackle and a chime a
+    // A drift's sparks changing color (see Drift): a crackle and a chime a
     // step higher for each stage
     if (Number.isFinite(telemetry.driftStages) && telemetry.driftStages !== this.driftStages) {
       this.driftStages = telemetry.driftStages;
@@ -276,7 +276,7 @@ export class DriveAudio {
         if (impact > 3) this.duck(Math.min(.45, impact * .03));
       }
     }
-    // Over a kerb: the front wheels, then the back ones a wheelbase later
+    // Over a curb: the front wheels, then the back ones a wheelbase later
     if (Number.isFinite(telemetry.bumpSerial) && telemetry.bumpSerial !== this.bumpSerial) {
       this.bumpSerial = telemetry.bumpSerial;
       this.bump(now, speed, Math.min(1, (Number(telemetry.bump) || .12) / .12));

@@ -3,7 +3,7 @@ import Tensor from './tensor.js';
 export const FIELD_TYPE = Object.freeze({ Radial: 0, Grid: 1 });
 
 // Grid or radial field, combined with others to make the tensor field. Its
-// weight falls off from the centre over `size`, shaped by `decay`.
+// weight falls off from the center over `size`, shaped by `decay`.
 export class BasisField {
   constructor(centre, size, decay) { this._centre = centre.clone(); this._size = size; this._decay = decay; }
   get centre() { return this._centre.clone(); }

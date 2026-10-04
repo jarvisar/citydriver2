@@ -9,12 +9,12 @@ const bounds = new THREE.Box3(), point = new THREE.Vector3(), direction = new TH
 export const CASTER_TOP = 130;
 // A lit surface looks its shadow up a texel and a bit out along its normal
 // (about a texel keeps it from shadowing itself, and more lifts contact
-// shadows off the ground: the tyres), and a few centimetres towards the sun.
+// shadows off the ground: the tires), and a few centimeters towards the sun.
 const NORMAL_BIAS = 1.15, DEPTH_BIAS = .035;
 
 // The shadow camera round `bounds` (in the light's frame), with the fade band
 // beyond it (and a texel over, which snapping may take), and the biases for
-// its texels and depth. Returns a texel's size in metres.
+// its texels and depth. Returns a texel's size in meters.
 function frame(sun, worldOrigin) {
   const lightCamera = sun.shadow.camera, { x: across, y: up } = sun.shadow.mapSize;
   const width = Math.ceil((bounds.max.x - bounds.min.x) / SHADOW_FADE * (1 + 2 / across) * 16) / 16;
@@ -53,7 +53,7 @@ function lightFrame(sun) {
 // Enclose the visible terrain, from valleys to peaks, with shadows out to
 // `distance` from a perspective camera. heightOrigin moves both height planes
 // to a local elevation datum; translating them preserves the shadow map's
-// texel density. Returns the shadow texel's size in metres.
+// texel density. Returns the shadow texel's size in meters.
 export function fitSunShadow(camera, sun, heightOrigin = 0, worldOrigin = 0, distance = 100) {
   camera.updateMatrixWorld();
   const toLight = lightFrame(sun);
@@ -85,7 +85,7 @@ export function fitSunShadow(camera, sun, heightOrigin = 0, worldOrigin = 0, dis
 
 // A headset can look any way at any moment, so its shadows reach `distance`
 // every way round the head. The head turning changes nothing, and moving it
-// shifts the map by whole texels. Returns the texel's size in metres.
+// shifts the map by whole texels. Returns the texel's size in meters.
 export function fitSunShadowAround(position, sun, distance, worldOrigin = 0) {
   point.copy(position).applyMatrix4(lightFrame(sun));
   bounds.min.copy(point).addScalar(-distance);

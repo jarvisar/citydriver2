@@ -18,7 +18,7 @@ for (const block of city.blocks) parts.push(polygon(block.sidewalk, 'fill="#d3d2
 for (const block of city.blocks) if (block.yard?.length) parts.push(polygon(block.yard, 'fill="#a9b98f"'));
 for (const lot of city.lots) parts.push(polygon(lot, 'fill="#8d7c6e" stroke="#5b4f46" stroke-width="1"'));
 for (const road of city.roads) parts.push(polyline(road.points, `stroke="${road.kind === 'path' ? '#b9ad8e' : '#3d4347'}" stroke-width="${road.profile.halfWidth * 2}" stroke-linecap="round" stroke-linejoin="round"`));
-// Medians green, avenues' centre lines dashed
+// Medians green, avenues' center lines dashed
 for (const road of city.roads) if (road.profile.median) parts.push(polyline(road.points, `stroke="#7f9c5c" stroke-width="${road.profile.median * 2}"`));
   else if (road.profile.kind === 'avenue') parts.push(polyline(road.points, 'stroke="#c8b98a" stroke-width="1.5" stroke-dasharray="8 8"'));
 // Each park's pond and plaza

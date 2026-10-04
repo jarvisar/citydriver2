@@ -23,7 +23,7 @@ export function averagePoint(polygon) {
   return sum.divideScalar(polygon.length);
 }
 
-// The centre of area, which unlike the vertex average does not drift toward
+// The center of area, which unlike the vertex average does not drift toward
 // the densely sampled side of a curved block.
 export function polygonCentroid(polygon) {
   let area = 0, x = 0, y = 0;
@@ -139,7 +139,7 @@ export function distanceToPolyline(point, points) {
 }
 
 // A polyline moved sideways by `distance` (positive to its left), with
-// mitred corners that are clipped at sharp angles.
+// mitered corners that are clipped at sharp angles.
 export function offsetPolyline(points, distance) {
   const n = points.length;
   if (n < 2) return points.map(p => p.clone());
@@ -202,7 +202,7 @@ export function offsetPolygon(input, distance) {
 
 // The same offset for a clean counter-clockwise polygon, also saying which
 // output vertex each input vertex became: source[k] is the index in points of
-// input vertex k. Edges that collapse share their neighbours' vertex, so the
+// input vertex k. Edges that collapse share their neighbors' vertex, so the
 // map runs round the output in order. Returns null when the shape collapses.
 export function offsetPolygonMapped(polygon, distance) {
   const distanceOf = typeof distance === 'function' ? distance : () => distance;
@@ -223,8 +223,8 @@ export function offsetPolygonMapped(polygon, distance) {
       x = e0.ox + e0.dx * t; y = e0.oy + e0.dy * t;
     }
     // Only where the two offset lines diverge (growing round an outside corner,
-    // shrinking round an inside one) is a far mitre wrong; there it is cut
-    // back. Shrinking round a sharp outside corner the far mitre is the
+    // shrinking round an inside one) is a far miter wrong; there it is cut
+    // back. Shrinking round a sharp outside corner the far miter is the
     // corner, and cutting it back would leave the edge too close to its road.
     if ((cross * (e0.d + e1.d) > 0 || Math.abs(cross) < 1e-9) && Math.hypot(x - near.x, y - near.y) > limit) {
       const ax = e0.dy + e1.dy, ay = -e0.dx - e1.dx, al = Math.hypot(ax, ay) || 1, d = (e0.d + e1.d) / 2;
@@ -235,7 +235,7 @@ export function offsetPolygonMapped(polygon, distance) {
   let verts = polygon.map((p, i) => meet(edges[(i - 1 + n) % n], edges[i], p)), edgeList = edges.slice();
   let owners = polygon.map((p, i) => [i]);
   // An edge that now runs backwards has collapsed: its two ends become the one
-  // point where its neighbours' offset lines meet.
+  // point where its neighbors' offset lines meet.
   for (let guard = 0; guard < n; guard++) {
     const m = verts.length;
     if (m < 3) return null;
@@ -251,7 +251,7 @@ export function offsetPolygonMapped(polygon, distance) {
     owners.splice(flipped, 2, owners[flipped].concat(owners[flipped + 1]));
     edgeList.splice(flipped, 1);
   }
-  // Merge coincident neighbours, keeping every owner
+  // Merge coincident neighbors, keeping every owner
   const points = [], merged = [];
   verts.forEach((v, k) => {
     if (points.length && Math.hypot(points[points.length - 1].x - v.x, points[points.length - 1].y - v.y) <= 1e-6) merged[merged.length - 1].push(...owners[k]);

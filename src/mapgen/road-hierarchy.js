@@ -2,7 +2,7 @@
 // their class. The longest avenues through the middle of town are made
 // boulevards, so every city has a few however its field fell; the ring road
 // is a parkway with a grass median; a few long side streets well away from
-// the avenues are collectors, carrying a neighbourhood's traffic through it;
+// the avenues are collectors, carrying a neighborhood's traffic through it;
 // and each district's other side streets are as wide as its buildings want:
 // narrow lanes in the old town, streets with parking where the houses have
 // gardens or the warehouses have vans.
@@ -11,8 +11,8 @@
 // path), rank (its place in the hierarchy, which decides who gives way at a
 // junction: 4 the boulevards and the parkway, 3 the avenues, 2 the
 // collectors, 1 the local streets, 0 the old town's lanes), centre (its
-// centre line: 'double', 'dashed' or none), halfWidth, lane (the centre of
-// the lane traffic keeps to, right of the centre line), speed, median (half
+// center line: 'double', 'dashed' or none), halfWidth, lane (the center of
+// the lane traffic keeps to, right of the center line), speed, median (half
 // its width; 0 for none) and, for a street with parking, the half width of
 // the carriageway outside the parking bays.
 export const PROFILES = Object.freeze({
@@ -49,7 +49,7 @@ function pointsAlong(points, count) {
   return out;
 }
 
-// Points every `step` metres along a polyline, with the unit tangent there
+// Points every `step` meters along a polyline, with the unit tangent there
 function samplesAlong(points, step) {
   const out = [];
   for (let i = 0, next = step / 2, travelled = 0; i < points.length - 1; i++) {
@@ -65,7 +65,7 @@ const ARTERIAL = new Set(['main', 'major', 'ring', 'coast', 'riverbank']);
 
 // The collectors: long side streets that run well away from every avenue and
 // every other collector alongside them, the longest first, so they fall
-// between the avenues wherever those leave a neighbourhood without a through
+// between the avenues wherever those leave a neighborhood without a through
 // road. Marks road.collector. Where the avenues are so close together that
 // that leaves under `least` of the side streets' length as collectors, more
 // are chosen a little nearer them, so every city has its through streets.
@@ -109,7 +109,7 @@ export function chooseCollectors(roads, { gap = 210, minLength = 380, share = .6
 // roads: [{ kind, points }]. downtownDistance(p): 0 at the middle of town, 1
 // at the edge of downtown. streetStyle(p): the profile name for a side street
 // whose middle is at p. Promotes majors to boulevards (kind 'main') until the
-// city has `boulevards` metres of them, chooses the collectors (collectors:
+// city has `boulevards` meters of them, chooses the collectors (collectors:
 // options for chooseCollectors, or null for none), and sets road.profile on
 // every road.
 export function assignProfiles(roads, { downtownDistance = () => 1, streetStyle = () => 'side', boulevards = 2200, minLength = 320, most = 3, collectors = {} } = {}) {

@@ -19,7 +19,7 @@ const extrude = polygons => {
   return compactGeometry(geometry);
 };
 // The gold beam leans out from the top of the orange one, which stands on
-// the plinth; they are drawn in two colours, so each is its own geometry
+// the plinth; they are drawn in two colors, so each is its own geometry
 export const balancingBeam = extrude(subtractPolygon(gold, orange));
 export const standingBeam = extrude([orange]);
 export const STANDING_BEAM = '#d19a3c';

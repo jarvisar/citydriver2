@@ -5,7 +5,7 @@ const STREET_LIMIT = 96, HEADLIGHT_LIMIT = 25, RANGE = 145;
 // A lit shop window's light on the pavement in front of it: up to this many,
 // within this range, drawn with the street lamps' pools (see shopFront)
 const SHOP_LIMIT = 40, SHOP_RANGE = 90;
-// (warm, cool white and dimmer shop lights, times the pools' own colour)
+// (warm, cool white and dimmer shop lights, times the pools' own color)
 const SHOP_TINTS = [new THREE.Color(.8, .76, .68), new THREE.Color(.58, .72, 1.05), new THREE.Color(.5, .47, .42)];
 const up = new THREE.Vector3(0, 1, 0), lensColor = new THREE.Color('#fff1c8');
 
@@ -72,7 +72,7 @@ export class NightLighting {
     };
     halo.customProgramCacheKey = () => 'city-lamp-halo-v1';
     this.halos = make('street-light-halos', new THREE.PlaneGeometry(1, 1), halo, STREET_LIMIT);
-    // Precompile sees instance colours even when the game starts in daylight.
+    // Precompile sees instance colors even when the game starts in daylight.
     for (const mesh of this.group.children) mesh.setColorAt(0, this.color.setScalar(1));
   }
   update(world, player, traffic, level) {

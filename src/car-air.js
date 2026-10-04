@@ -9,9 +9,9 @@ import { propTop } from './loose-props.js';
 // What it meets in the air is met as on the ground, height and all (see passes).
 //
 //   GRAVITY    a little over the real thing, so a car comes down with weight
-//   TRAVEL     how far a wheel reaches down and still grips: a kerb stepped
-//              down never lifts the car off its tyres
-//   STEP       the highest a wheel climbs, a kerb or a ramp's foot. Higher is a wall
+//   TRAVEL     how far a wheel reaches down and still grips: a curb stepped
+//              down never lifts the car off its tires
+//   STEP       the highest a wheel climbs, a curb or a ramp's foot. Higher is a wall
 //   BELLY      how far the floor pan clears the ground under the middle
 //   AIRBORNE   up this far over the street it clears traffic, people, walls
 //              and railings, as the helicopter does
@@ -24,7 +24,7 @@ export const STEP = .45;
 const BELLY = .2, AIRBORNE = 2.5;
 // In the air the nose follows the arc (FOLLOW of the way it flies, never more
 // than PITCH_MOST) and comes round to the ground under it over the last LEVEL
-// metres, so it lands on its wheels. Slower than TIPS m/s over an edge it tips.
+// meters, so it lands on its wheels. Slower than TIPS m/s over an edge it tips.
 const FOLLOW = .55, PITCH_MOST = .6, ROLL_MOST = .45, LEVEL = 2.2, TIPS = 6;
 // It swings there on a soft spring (stiffness AIR_SWING, LAND_SWING by the
 // ground, damped to AIR_DAMPING of critical) that starts from the turn the
@@ -35,7 +35,7 @@ const AIR_SWING = 7, LAND_SWING = 45, AIR_DAMPING = .8;
 // comes straight again at STRAIGHTEN. With drift held it spins at SPIN rad/s
 const LEAN = .42, STRAIGHTEN = 5, SPIN = 6.8;
 // Landing more than SLIDE_MOST off the way it is going spins it out. A nose
-// landed just off it slides for SETTLE seconds while the tyres bite again
+// landed just off it slides for SETTLE seconds while the tires bite again
 const SLIDE_MOST = .55, SETTLE = .35;
 // Faster down than this (m/s) is a hard landing, and onto a car faster than
 // STOMP it takes the blow
@@ -136,11 +136,11 @@ export class CarAir {
   groundRate(vs, vu) {
     const shape = this.shape;
     if (!shape) return 0;
-    // (the slope is per metre east and south: s runs north)
+    // (the slope is per meter east and south: s runs north)
     shapeSlope(shape, this.points[4], this.slope);
     return this.slope.x * vu - this.slope.z * vs;
   }
-  // How much the ground climbs per metre the car goes along `heading`, under its middle
+  // How much the ground climbs per meter the car goes along `heading`, under its middle
   grade(heading) {
     const shape = this.shape;
     if (!shape) return 0;
@@ -204,9 +204,9 @@ export class CarAir {
     if (!placed) { const tilt = this.groundTilt(0); m.pitch = tilt.pitch; m.roll = tilt.roll; }
     const held = this.support(), rate = this.groundRate(vs, vu);
     let vy = m.vy - (this.hopping ? HOP_GRAVITY : GRAVITY) * dt, y = placed ? m.y + vy * dt : held, landing = -1;
-    // A kerb stepped down (no deeper than the suspension reaches) the wheels
+    // A curb stepped down (no deeper than the suspension reaches) the wheels
     // follow at once and the body settles after them. Only the street has
-    // kerbs: a ramp or a mound falls away smoothly, and that is left to
+    // curbs: a ramp or a mound falls away smoothly, and that is left to
     // gravity, as is anything deeper.
     const street = this.heights.every(h => h === -Infinity), kerbs = street && this.street && placed && !this.free;
     this.street = street;
@@ -222,7 +222,7 @@ export class CarAir {
       y = held; vy = rate;
     }
     this.held = held; this.rate = rate;
-    // A kerb under a wheel thumps (see DriveAudio.bump), front and back
+    // A curb under a wheel thumps (see DriveAudio.bump), front and back
     if (placed && landing < 0 && Math.hypot(vs, vu) > 1) for (let i = 0; i < 4; i++) {
       const step = Math.abs(this.floors[i] - this.last[i]);
       if (step > .05 && step < .5) { telemetry.bump = step; telemetry.bumpSerial++; break; }
@@ -276,13 +276,13 @@ export class CarAir {
       if (roof) { const p = m.groundedPosition; m.events.push({ kind: 'stomp', on: roof, impact, x: p.x, z: p.z }); }
     }
     if (!flight) return;
-    // Hard down, the tyres scrub a little speed off
+    // Hard down, the tires scrub a little speed off
     if (impact > 5) m.speed *= 1 - clamp((impact - 5) * .012, 0, .15);
     const turns = Math.round(this.turn / WHOLE), off = this.turn - turns * WHOLE;
     let landing = impact > HARD_LANDING ? 'hard' : 'clean';
     if (this.splashed) landing = 'splash';
     else if (Math.abs(off) > SLIDE_MOST) {
-      // Well off the way it is going: the tyres take the slide and the spin
+      // Well off the way it is going: the tires take the slide and the spin
       // (see carryKnock), as after a blow
       const travel = m.slideHeading, heading = travel + off, speed = m.speed, along = speed * Math.cos(off);
       m.knock.x += Math.sin(travel) * speed - Math.sin(heading) * along; m.knock.z += -Math.cos(travel) * speed + Math.cos(heading) * along;
@@ -374,7 +374,7 @@ export class CarAir {
     }
     return false;
   }
-  // The share of grip the tyres have, a moment after landing just off the
+  // The share of grip the tires have, a moment after landing just off the
   // way the car is going: it slides, then bites
   get grip() { return this.settle >= SETTLE ? 1 : .18 + .82 * this.settle / SETTLE; }
 }

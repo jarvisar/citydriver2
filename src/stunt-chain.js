@@ -113,7 +113,7 @@ export class StuntChain {
     // (a jump keeps the chain waiting while the car is in the air)
     if (this.chain && !aloft && (this.chainTime -= dt) <= 0) this.bank();
   }
-  // A drift's sparks changing colour (see Drift)
+  // A drift's sparks changing color (see Drift)
   drifted(event, at) {
     if (this.elapsed - this.scrapedAt < event.time) return 0;
     const [label, value] = STUNTS.drift[event.stage - 1] ?? [];

@@ -22,7 +22,7 @@ test('closed walks join across their seam and keep their central lawn', () => {
   }
 });
 
-test('path junctions have a single surface, no edging across branches, and clip their full width to the kerb', () => {
+test('path junctions have a single surface, no edging across branches, and clip their full width to the curb', () => {
   const e = entry(), roads = [
     { points: [{ x: -30, y: -26 }, { x: 30, y: 26 }], profile: { halfWidth: 2 } },
     { points: [{ x: -30, y: 0 }, { x: 30, y: 0 }], profile: { halfWidth: 2 } },
@@ -41,11 +41,11 @@ test('square entrances cross the grass gap and meet pavement across an angled mo
   e.walks = [[{ x: -16.5, y: -4 }, { x: 0, y: 0 }]];
   e.plaza = { x: 0, y: 0, radius: 4 };
   const p = parkSurfaces(e, []);
-  for (const y of [-6.1, -4.9, -3.5]) assert.ok(contains(p.walks, -19.99, y), 'the full mouth reaches the kerb');
+  for (const y of [-6.1, -4.9, -3.5]) assert.ok(contains(p.walks, -19.99, y), 'the full mouth reaches the curb');
   assert.ok(contains(p.walks, -16.8, -4.1), 'no strip of lawn across the entrance');
   assert.ok(area(intersection(region(p.walks), region(p.plaza))) < .001, 'walks and plaza cannot fight for depth');
   const corner = connectWalk([{ x: -16.7, y: -16.7 }, { x: 0, y: 0 }], e.park.lawn, e.park.kerb);
-  assert.ok(corner[0].x < -20 && corner[0].y < -20, 'a ray hitting a kerb vertex also connects');
+  assert.ok(corner[0].x < -20 && corner[0].y < -20, 'a ray hitting a curb vertex also connects');
 });
 
 test('generated park paving stays inside its park and clear of pond water', () => {
@@ -55,7 +55,7 @@ test('generated park paving stays inside its park and clear of pond water', () =
     const p = parkSurfaces(e, roads), all = [...p.walks, ...p.plaza, ...p.edging];
     assert.ok(area(difference(region(all), solids([e.park.kerb]))) < .03, `park ${e.index}: no path corners in the carriageway`);
     assert.ok(area(intersection(region(p.walks), region(p.plaza))) < .01, 'plazas and walks meet without overlap');
-    // Re-intersecting shared oblique edges can leave millimetre slivers:
+    // Re-intersecting shared oblique edges can leave millimeter slivers:
     // Clipper rounds every new intersection. Limit each overlap's width,
     // rather than accumulating that rounding over a whole park perimeter.
     for (const overlap of intersection(region(p.edging), region([...p.walks, ...p.plaza]))) {

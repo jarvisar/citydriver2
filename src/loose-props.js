@@ -36,7 +36,7 @@ const KINDS = {
   table: { mass: .05, firm: 0, lift: .3, bounce: .3, sound: 'light' },
   chair: { mass: .01, firm: 0, lift: .5, bounce: .3, sound: 'light' },
   stall: { mass: .35, firm: 2, lift: .15, bounce: .15, sound: 'wood', bits: 'fruit' },
-  // The kerbside fittings (see placeStreetFurniture). A hydrant snapped off
+  // The curbside fittings (see placeStreetFurniture). A hydrant snapped off
   // its stump sprays a jet of water a while (see spout)
   hydrant: { mass: .12, firm: 6, topples: true, lift: .2, bounce: .15, sound: 'metal', bits: 'splash' },
   // (a post box spills its letters as it goes: `spill` bursts the bits at the knock, as for what does not topple)
@@ -63,7 +63,7 @@ const SPOUT = 7, SPRAY = 40, SPOUTS = 2;
 // A pedestrian's body nobody has drawn for this long (their fare taken, or
 // their block streamed out) is put away, so nothing unseen lies in the road
 const UNSEEN = 4;
-// The ground is never higher than a median's kerb, so a point above it needs no lookup
+// The ground is never higher than a median's curb, so a point above it needs no lookup
 const TOP = ROAD_LEVEL + MEDIAN_KERB + .01;
 // Friction: the ground under a sliding piece, a car's bumper dragging one
 // along, and its roof, which something landing on it slides off
@@ -139,7 +139,7 @@ const position = new THREE.Vector3(), rotation = new THREE.Quaternion(), scale =
 // surface (every edge walked in short steps, then the point furthest from
 // those taken so far, until none is more than a third of its size, and at
 // most .45 m, from one, or 56 are taken: a chair keeps all four feet),
-// about its centre of mass (the middle of that surface); and its turning
+// about its center of mass (the middle of that surface); and its turning
 // inertia per tonne, as a box its size.
 const shapes = new WeakMap();
 // How high a piece of standing furniture reaches (the world height of its
@@ -225,7 +225,7 @@ function contactShape(geometry) {
 // furniture is built of simple solids (a pole, an arm, a lamp's head, a
 // chair's legs and seat), merged but not joined, so each separate part (its
 // triangles joined by shared corners) is nearly convex: its convex hull
-// stands for it, as the planes of its faces about the centre of mass (an
+// stands for it, as the planes of its faces about the center of mass (an
 // outward normal and how far out along it the face lies, four numbers
 // each), within a sphere ({ x, y, z, r }) that turns most points away first.
 // (One hull round the whole piece would fill in a lamp's arm and a cafe
@@ -287,7 +287,7 @@ function scaledShape(unit, s) {
   };
 }
 
-// The ground under a point: a pavement, a median's kerb or the road, and
+// The ground under a point: a pavement, a median's curb or the road, and
 // none (NaN) over the water
 export function level(x, z) {
   const surface = surfaceAt(-z, x);
@@ -369,12 +369,12 @@ function turnBy(body, torque, out) {
   const inertia = body.shape.inertia, mass = body.kind.mass;
   return out.set(out.x / (inertia.x * mass), out.y / (inertia.y * mass), out.z / (inertia.z * mass)).applyQuaternion(body.q);
 }
-// How far a unit blow along `dir` at `at` (from its centre) changes that point's speed along `dir`
+// How far a unit blow along `dir` at `at` (from its center) changes that point's speed along `dir`
 function give(body, at, dir) {
   turnBy(body, t1.crossVectors(at, dir), t1);
   return 1 / body.kind.mass + t2.crossVectors(t1, at).dot(dir);
 }
-// (a light piece clipped off-centre would otherwise spin like a propeller)
+// (a light piece clipped off-center would otherwise spin like a propeller)
 const SPIN_MOST = 20;
 function impulse(body, at, blow) {
   body.v.addScaledVector(blow, 1 / body.kind.mass);
@@ -438,7 +438,7 @@ export function overlap(a, b) {
   return Math.max(deepestIn(a, b).depth, deepestIn(b, a).depth);
 }
 // The deepest of `body`'s points inside one of `other`'s parts (see
-// partsOf): `depth` (0 if none is), the point (from body's centre, in the
+// partsOf): `depth` (0 if none is), the point (from body's center, in the
 // world) `at`, and the way out through that part's nearest face (in the world) `n`.
 // With `entry`, a point that was outside a step ago goes back out the face it
 // came in by instead, as against a wall: a person falling onto a bench went
@@ -584,7 +584,7 @@ class Bits {
 }
 
 export class LooseProps {
-  // `material`: the street furniture's own (vertex colours, instanced)
+  // `material`: the street furniture's own (vertex colors, instanced)
   constructor(scene, material) {
     this.group = new THREE.Group(); this.group.name = 'loose-props'; scene.add(this.group);
     this.material = material; this.pools = new Map(); this.bodies = []; this.loose = []; this.people = []; this.alpha = 1;
@@ -638,7 +638,7 @@ export class LooseProps {
     let nx = -contact.x + ax * side * ASIDE, nz = -contact.z + az * side * ASIDE;
     const length = Math.hypot(nx, nz); nx /= length; nz /= length;
     // (met on the furniture's own outline, which for a cafe's chair can be
-    // a metre off it: the blow lands on the chair's side, not beyond it)
+    // a meter off it: the blow lands on the chair's side, not beyond it)
     r.set(point.x - hit.p.x, 0, point.z - hit.p.z);
     const reach = Math.max(hit.shape.size.x, hit.shape.size.z) / 4, off = Math.hypot(r.x, r.z);
     if (off > reach) r.multiplyScalar(reach / off);
@@ -811,7 +811,7 @@ export class LooseProps {
     const tip = Math.min(4, speed * .15) / Math.max(.8, body.shape.height), turn = body.jitter * Math.min(4, speed * .15);
     body.w.x += dz * tip; body.w.z -= dx * tip; body.w.y += turn;
   }
-  // A car and a piece meeting at `at` (from the piece's centre), the car's
+  // A car and a piece meeting at `at` (from the piece's center), the car's
   // side facing out along (nx, nz): the piece takes a blow tipped up by `lift`,
   // as a bumper lifts what it hits, and is dragged along as they slide past.
   // Returns the change in the car's velocity and turn, or null if they are
@@ -870,7 +870,7 @@ export class LooseProps {
     }
     if (best >= 0) r.set(points[best], points[best + 1], points[best + 2]).applyQuaternion(body.q);
     // Someone on foot is narrower than the gaps between a long piece's
-    // points (a fallen post's are up to a metre apart), so their outline
+    // points (a fallen post's are up to a meter apart), so their outline
     // is also tried against its solid parts (see partsOf)
     if (round && body.shape.parts) {
       into.copy(body.q).invert();
@@ -973,7 +973,7 @@ export class LooseProps {
     body.sunk = true; body.pool.dirty = true;
   }
   // Whether a piece has a wall hard behind it the way (nx, nz) a push at
-  // `at` (a point of it, from its centre) would move it, near enough square
+  // `at` (a point of it, from its center) would move it, near enough square
   // on (see CityTraffic.pinned): what stands near it (see walls), behind the
   // part pushed (a wall behind a fallen tree's crown only turns it), and not
   // furniture or a parked car, which is no wall to what is pushed into it.
@@ -1038,7 +1038,7 @@ export class LooseProps {
     else { const roll = Math.exp(-dt * ROLL); v.x *= roll; v.z *= roll; }
     body.awake += dt; body.clatter = Math.max(0, body.clatter - dt);
     // Nearly still on the ground, it stops. It is judged by how far it has
-    // gone lately rather than how fast it is going: a piece rocking on a kerb
+    // gone lately rather than how fast it is going: a piece rocking on a curb
     // or balanced on a chair's back jitters without getting anywhere. Slow,
     // it is held down, unless it is sinking: a topple starts slow, and held,
     // a post lying on its lamp's arm took seconds to roll off it.
@@ -1064,7 +1064,7 @@ export class LooseProps {
       if (y > top) continue;
       const x = p.x + r.x, z = p.z + r.z;
       // (looked up again once it has moved 30 cm, and wherever it is no higher
-      // over the ground than a kerb: a kerb is a sharp step, and a point that
+      // over the ground than a curb: a curb is a sharp step, and a point that
       // had looked from the road just beyond it sank into the pavement. Over
       // a ramp or a mound, every step: they slope.)
       if (raised?.length) { ground[i] = x; ground[i + 1] = z; ground[i + 2] = raisedLevel(raised, x, y, z); }
@@ -1090,7 +1090,7 @@ export class LooseProps {
     if (hardest > 3 && body.kind.topples && body.kind.bits && !body.shed) { body.shed = true; this.bits.burst(body.kind.bits, at.x, at.y, at.z, body.v.x * .3, body.v.z * .3); }
   }
   // What stands near a piece, gathered again once it has moved a couple of
-  // metres, and the ramps and mounds among it, which are ground to it (see
+  // meters, and the ramps and mounds among it, which are ground to it (see
   // raisedLevel) as well as walls where it is below their tops
   gather(body, chunks) {
     const p = body.p;
@@ -1200,7 +1200,7 @@ export class LooseProps {
     // (the one lying still stays still, unless knocked)
     const innerFree = !inner.asleep || knocked, outerFree = !outer.asleep || knocked;
     if (!innerFree && !outerFree) return;
-    // (all but the last centimetre, which the blow alone keeps from growing:
+    // (all but the last centimeter, which the blow alone keeps from growing:
     // put right in full, one resting on another is lifted off it every step
     // and falls back, and never lies still)
     const mi = inner.kind.mass, mo = outer.kind.mass, share = !outerFree ? 1 : !innerFree ? 0 : mo / (mi + mo), away = Math.min(depth - SLOP, PART);
@@ -1283,7 +1283,7 @@ export class LooseProps {
         for (let pass = 0; car && pass < PASSES; pass++) {
           const blow = this.contact(body, car);
           if (!blow) break;
-          // (a piece is no car to push: the engine is not held to its tyres' grip, see Vehicle.pushing)
+          // (a piece is no car to push: the engine is not held to its tires' grip, see Vehicle.pushing)
           player.resolveTrafficCollision(blow.px, blow.pz, blow.x, blow.z, blow.spin, player.walker ? blow.closing : Math.hypot(blow.x, blow.z) * FELT, 0, false);
           car = player.walker?.down ? null : this.carOf(player);
         }

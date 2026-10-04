@@ -154,7 +154,7 @@ export function createSoundGraph(ctx) {
   // Fixed voice pools: a long session never accumulates nodes. Busy voices
   // are skipped, never cut mid-note. `tone` voices play a fresh oscillator (or
   // a sample) per note; `noise` voices a slice of noise through a bandpass
-  // whose centre sweeps; a horn voice has a lowpass for distance.
+  // whose center sweeps; a horn voice has a lowpass for distance.
   const pools = {};
   for (const [name, count, bus, kind] of [
     ['ambience', 6, 'ambience', 'tone'], ['cue', 6, 'cues', 'tone'], ['clang', 4, 'road', 'tone'], ['thump', 3, 'road', 'tone'], ['horn', 2, 'traffic', 'horn'],

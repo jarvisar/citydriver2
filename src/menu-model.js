@@ -23,7 +23,7 @@ export function menuControls(state, actions) {
     end: control(taxi ? 'End shift' : 'End run', actions.end),
     // (in free drive on a job's standby, its button would start what is
     // already waiting: Free drive takes its place, back in their own car)
-    // (`job`: which mode the button starts, for its colour and icon on the
+    // (`job`: which mode the button starts, for its color and icon on the
     // pause screen. In a run it is Free drive, beside the other run.)
     switchMode: run || state.standby === 'taxi' ? control('Free drive', actions.free, { job: 'free' }) : control('Taxi shift', actions.taxi, { job: 'taxi' }),
     otherRun: state.mode === 'demolition' ? control('Taxi shift', actions.taxi, { job: 'taxi' })
@@ -56,7 +56,7 @@ export function menuModel(state, controls, { garage, result, mapImage, mapKey, m
   if (state.chooser === 'garage' && garage.offer) return { id: 'car-offer', title: garage.offer.label, subtitle: garage.offer.summary,
     items: garage.offer.items, hint: VR_POINTING };
   if (state.chooser === 'garage') return { id: 'car-dialog', title: 'Garage', flow: true, hint: VR_POINTING,
-    subtitle: garage.shift ? `${garage.balance}${garage.unsaved ? ` · ${UNSAVED}` : ''} · Cab changes apply to your next shift` : `${garage.summary} · Paint ${garage.paintPrice} a colour, on every car`,
+    subtitle: garage.shift ? `${garage.balance}${garage.unsaved ? ` · ${UNSAVED}` : ''} · Cab changes apply to your next shift` : `${garage.summary} · Paint ${garage.paintPrice} a color, on every car`,
     items: [...garage.paints, ...garage.liveries, ...garage.cars, ...garage.gear, back] };
   if (state.over) return { id: `${state.mode}-results`, title: `Time up · ${result.cash}`,
     subtitle: [result.name, state.mode === 'demolition' ? result.next : result.best].filter(Boolean).join(' · '), hint: VR_POINTING,

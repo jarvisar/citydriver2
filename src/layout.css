@@ -55,7 +55,7 @@ body[data-controller=true] .pause-overlay button:focus { outline: 2px solid var(
 .touch-controls { opacity: 1; transition: opacity .15s; }
 .touch-controls.autodrive-hidden { opacity: 0; transition: opacity 1.5s; }
 #touch-stick { width: var(--stick-size); height: var(--stick-size); opacity: .65; }
-/* Hidden until a thumb lands on the scene; then centred on that exact point. */
+/* Hidden until a thumb lands on the scene; then centered on that exact point. */
 #touch-stick { position: fixed; z-index: 2; translate: -50% -50%; pointer-events: none; display: none; }
 #touch-stick.active { display: block; }
 .stick-thumb { width: 52.8px; height: 52.8px; left: calc(50% - 26.4px); top: calc(50% - 26.4px); }

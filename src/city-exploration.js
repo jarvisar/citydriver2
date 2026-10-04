@@ -21,7 +21,7 @@ const BLOCK_SPACING = 380, LOT_SPACING = 300, EACH = 2;
 let places = null;
 const apart = (a, b) => Math.hypot(a.centre.x - b.centre.x, a.centre.y - b.centre.y);
 
-// The kerbside lane of the street nearest `p` (not a park walk), running so
+// The curbside lane of the street nearest `p` (not a park walk), running so
 // that `toward` is on the driver's right, a little way along the street if
 // that is where it is clear of the junctions. Given the way a building faces
 // (`normal`, into its site), only a street running along its front will do,
@@ -31,7 +31,7 @@ function entranceFacing(p, toward, radius = 60, normal = null) {
   const road = CITY.roadIndex.nearest(p.x, p.y, radius, (segment, distance) => segment.road.kind === 'path' || across(segment) ? Infinity : distance - segment.road.profile.halfWidth);
   if (!road) return nearestLanePose(toward.y, toward.x, 0, 400);
   const facing = here => lanePose(here, Math.atan2(here.tx, here.ty) + ((toward.x - here.x) * here.ty - (toward.y - here.y) * here.tx >= 0 ? 0 : Math.PI));
-  // (well clear of a crossing street's kerb, or if nowhere is, clear of it)
+  // (well clear of a crossing street's curb, or if nowhere is, clear of it)
   for (const clear of [14, 6]) for (const along of [0, 6, -6, 12, -12, 18, -18, 24, -24, 30, -30]) {
     const here = CITY.roadIndex.nearest(road.x + road.tx * along, road.y + road.ty * along, 10, (segment, distance) => segment.road === road.road ? distance : Infinity);
     if (!here) continue;
@@ -188,7 +188,7 @@ function buildPlaces() {
     const park = entry.park, type = entry.design ?? 'plaza', variant = type === 'plaza' ? 0 : nextVariant(type);
     // (a park's middle is the middle of its ground, not the average of its
     // outline's points, which crowd round a bend: on a big park the drop-off
-    // was hundreds of metres from where the map showed it)
+    // was hundreds of meters from where the map showed it)
     const middle = polygonCentroid(park.polygon);
     const centre = entry.plaza && park.square ? { x: entry.plaza.x, y: entry.plaza.y } : insidePolygon(middle, park.polygon) ? middle : interiorPoint(park.polygon);
     // The drop-off is at a park's gate on its busiest street, or at a
@@ -222,7 +222,7 @@ function buildPlaces() {
   const lots = spread(lotSites, EACH * lotTypes.length, taken, LOT_SPACING, 200);
   for (const [site, type] of assignTypes(lots, lotTypes)) kinds.set(site, type);
   // Any kind the dealing left out has the best site that fits it, closer to
-  // its neighbours the fewer sites there are
+  // its neighbors the fewer sites there are
   const dealt = new Set(kinds.values());
   for (const [types, sites] of [[blockTypes, blocks], [lotTypes, lotSites]]) for (const type of types) {
     for (const least of [200, 175, 155]) {
@@ -242,7 +242,7 @@ function buildPlaces() {
   }
   for (const [site, type] of kinds) {
     const variant = type === 'cityhall' ? 0 : nextVariant(type), whole = site.block !== undefined, footprint = venueFootprint(facingBusiest(site, type), type, whole, !whole && PAVED_DISTRICTS.has(site.district));
-    // The drop-off is in the kerbside lane of the street the landmark faces,
+    // The drop-off is in the curbside lane of the street the landmark faces,
     // running so the building is on the driver's right
     const reach = footprint.setback + 10, door = { x: footprint.front.x - footprint.nx * reach, y: footprint.front.y - footprint.ny * reach };
     const entrance = entranceFacing(door, footprint.front, 30, { x: footprint.nx, y: footprint.ny });
@@ -255,7 +255,7 @@ function buildPlaces() {
 }
 // A fountain square takes its name from what is round it: Station Square by
 // a station, Market Square by a market or in the Market district, Old Town
-// Square in the old town, Harbour Square on the harbour front, and otherwise
+// Square in the old town, Harbor Square on the harbor front, and otherwise
 // Fountain or Jubilee Square. (The names were dealt in turn, and a Station
 // Square stood by a station in 1 city of 19.) The nearest claim wins a name.
 const PLAZA = { fountain: 0, market: 1, oldTown: 2, station: 3, harbour: 4, jubilee: 5 };
@@ -267,7 +267,7 @@ function namePlazas(places) {
     if (market < 320) wants.push([place, PLAZA.market, market]);
     if (style === 'Market district') wants.push([place, PLAZA.market, 400]);
     if (style === 'Old town') wants.push([place, PLAZA.oldTown, 400]);
-    if (place.district === 'Harbour') wants.push([place, PLAZA.harbour, 450]);
+    if (place.district === 'Harbor') wants.push([place, PLAZA.harbour, 450]);
     wants.push([place, PLAZA.fountain, 1000], [place, PLAZA.jubilee, 1100]);
   }
   const named = new Set(), taken = new Set();
@@ -279,10 +279,10 @@ function namePlazas(places) {
 }
 export function cityPlaces() { return places ??= buildPlaces(); }
 
-// Where a place's riders can get out: a stretch of the kerbside lane through
+// Where a place's riders can get out: a stretch of the curbside lane through
 // its entrance. The cab can stop anywhere near it. A building's stretch covers
 // the middle half of its front. A park's or square's runs along its side of
-// the street as far as its kerb goes, up to OPEN_REACH each way from the gate.
+// the street as far as its curb goes, up to OPEN_REACH each way from the gate.
 // Stretches stay on one street and stop short of junctions and water.
 export const OPEN_REACH = 40;
 const STRETCH_STEP = 2, JUNCTION_CLEAR = 14;
@@ -312,9 +312,9 @@ export function dropOffStretch(place) {
     const p = navGraph().pose(line, along, 1, lane);
     if (waterAt(p.s, p.u)) return null;
     const crossing = CITY.roadIndex.nearest(p.u, p.s, 40, (segment, distance) => segment.road === road || segment.road.kind === 'path' ? Infinity : distance - segment.road.profile.halfWidth);
-    // (a circus's streets meet it every forty metres or so: half as far clear of them)
+    // (a circus's streets meet it every forty meters or so: half as far clear of them)
     if (crossing && crossing.score <= (road.circus ? JUNCTION_CLEAR / 2 : JUNCTION_CLEAR)) return null;
-    // A park's or square's kerb must be beside the lane
+    // A park's or square's curb must be beside the lane
     const out = side * (road.profile.halfWidth + 3) - lane;
     if (kerb && !insidePolygon({ x: p.u + p.ty * out, y: p.s - p.tx * out }, kerb)) return null;
     return { s: p.s, u: p.u };

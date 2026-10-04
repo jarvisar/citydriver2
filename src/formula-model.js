@@ -115,7 +115,7 @@ export function createFormulaCar(entry) {
   box([1.5, .05, .26], [0, .34, -2.24], 'details', CARBON);
   for (const side of [-1, 1]) box([.05, .26, .56], [side * .77, .33, -2.38], 'details', CARBON);
   // Rear wing on a central pylon from the crash structure, carbon like the
-  // wing it carries so it does not read as a fin in the paint colour.
+  // wing it carries so it does not read as a fin in the paint color.
   box([.07, .64, .22], [0, .74, 2.14], 'details', CARBON);
   box([1.05, .07, .42], [0, 1.08, 2.15], 'details', CARBON);
   box([1, .06, .26], [0, 1.22, 2.28], 'details', CARBON);
@@ -165,7 +165,7 @@ export function createFormulaCar(entry) {
   const { radius, width, rearWidth, hubRadius, x } = FORMULA_WHEEL;
   const frontTire = new THREE.CylinderGeometry(radius, radius, width, 12);
   const rearTire = new THREE.CylinderGeometry(radius, radius, rearWidth, 12);
-  // Each hub just proud of its own tyre: a rear-width hub stood out of the
+  // Each hub just proud of its own tire: a rear-width hub stood out of the
   // narrower fronts' inner faces.
   const frontHub = new THREE.CylinderGeometry(hubRadius, hubRadius, width + .02, 10);
   const rearHub = new THREE.CylinderGeometry(hubRadius, hubRadius, rearWidth + .02, 10);

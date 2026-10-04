@@ -1,14 +1,14 @@
 import * as THREE from 'three';
 
 // What a drift looks like from outside (see Drift), for the player's car in
-// every mode: tyre smoke while it charges, then sparks off the back wheels in
-// the charge's colour, each wheel glowing with it, a burst of sparks at each
-// new stage, flames from the back while a turbo or the boost lasts, and tyre
+// every mode: tire smoke while it charges, then sparks off the back wheels in
+// the charge's color, each wheel glowing with it, a burst of sparks at each
+// new stage, flames from the back while a turbo or the boost lasts, and tire
 // marks. Sparks, glows and flames are unlit, so they read at night. They
 // are not added to what is behind them: over grass that turned orange sparks
-// yellow-green, and the colour is how the stage is told.
+// yellow-green, and the color is how the stage is told.
 
-// Each stage's colour (blue, orange, pink, as Mario Kart's), and the boost's
+// Each stage's color (blue, orange, pink, as Mario Kart's), and the boost's
 export const STAGE_COLOURS = [null, '#57c3ff', '#ffa12e', '#ff58d8'];
 const BOOST_COLOUR = '#ffc84a';
 // Sparks a second from each back wheel at each stage, how many at once when
@@ -17,7 +17,7 @@ const SPARK_RATE = [0, 34, 44, 56], BURST = 14, SPARKS = 160;
 // Smoke puffs a second from each back wheel before the first stage and after,
 // and how many there can be
 const SMOKE_RATE = [12, 5], PUFFS = 64;
-// Tyre marks: a length laid each time a wheel has gone MARK_STEP metres, as
+// Tire marks: a length laid each time a wheel has gone MARK_STEP meters, as
 // many as MARKS, the oldest going first
 const MARKS = 600, MARK_STEP = .6;
 const GRAVITY = 9.8;
@@ -47,16 +47,16 @@ export class DriftEffects {
     const streak = new THREE.OctahedronGeometry(1, 0); streak.scale(.035, .035, .12);
     this.glow = glowMaterial();
     this.sparks = instanced(streak, this.glow, SPARKS);
-    // A glow at each back wheel in the stage's colour
+    // A glow at each back wheel in the stage's color
     this.flares = instanced(new THREE.IcosahedronGeometry(.16, 0), this.glow, 2);
-    // Flames: a coloured cone from each side of the back, a white core in each
+    // Flames: a colored cone from each side of the back, a white core in each
     // (the cone's point out behind, its base at the back of the car)
     const cone = new THREE.ConeGeometry(.17, 1, 7, 1, true); cone.rotateX(Math.PI / 2); cone.translate(0, 0, .5);
     this.flames = instanced(cone, this.glow, 4);
     // Smoke: pale puffs that rise and swell as they thin out
     this.smokeMaterial = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: .34, depthWrite: false });
     this.puffs = instanced(new THREE.IcosahedronGeometry(1, 0), this.smokeMaterial, PUFFS);
-    // Tyre marks, a length of tread at a time, each from where the wheel last laid one
+    // Tire marks, a length of tread at a time, each from where the wheel last laid one
     const mark = new THREE.PlaneGeometry(.24, 1); mark.rotateX(-Math.PI / 2);
     this.markMaterial = new THREE.MeshBasicMaterial({ color: '#1e2324', transparent: true, opacity: .42, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     this.marks = instanced(mark, this.markMaterial, MARKS, false);
@@ -65,7 +65,7 @@ export class DriftEffects {
     this.spawn = [0, 0]; this.fume = 0; this.seen = null; this.flicker = 0;
   }
   // Stand-ins to compile their programs with everything else, as they are
-  // drawn the moment they are wanted (with instance colours where they have them)
+  // drawn the moment they are wanted (with instance colors where they have them)
   warmupObjects() {
     return [this.sparks, this.flames, this.puffs, this.marks].map(mesh => {
       const standIn = new THREE.InstancedMesh(mesh.geometry, mesh.material, 1);
@@ -79,7 +79,7 @@ export class DriftEffects {
     for (const mesh of [this.sparks, this.flares, this.flames, this.puffs, this.marks]) mesh.count = 0;
     this.markIndex = 0; this.seen = null;
   }
-  // A point on the car, in its own metres (x right, z back), as the scene has it
+  // A point on the car, in its own meters (x right, z back), as the scene has it
   at(car, x, y, z, out = point) { return out.set(x, y, z).applyQuaternion(car.quaternion).add(car.position); }
   // One frame. `vehicle` the player's (see ActorMotion), `running` false
   // while paused, when nothing moves
@@ -100,7 +100,7 @@ export class DriftEffects {
     this.flares.count = 0;
     if (drifting) {
       const stage = drift.stage;
-      // Smoke all through, thicker before the first stage, then sparks in the stage's colour
+      // Smoke all through, thicker before the first stage, then sparks in the stage's color
       this.fume += dt * SMOKE_RATE[stage ? 1 : 0] * 2 * Math.min(1, Math.abs(vehicle.speed) / 12);
       for (; this.fume >= 1; this.fume--) this.puff(car, wheels[this.random() < .5 ? 0 : 1], velocity, out);
       if (stage) {
@@ -170,7 +170,7 @@ export class DriftEffects {
       bit.p.addScaledVector(bit.v, dt);
     }
   }
-  // Flames from the back: a turbo's in its stage's colour, bigger for a
+  // Flames from the back: a turbo's in its stage's color, bigger for a
   // bigger one, the boost's gold
   flame(vehicle, dt) {
     const drift = vehicle.drift, boost = drift.boost, turbo = boost > 0;
@@ -187,7 +187,7 @@ export class DriftEffects {
       const length = (core ? .55 : 1) * burning * flicker, width = (core ? .55 : 1.05) * Math.min(1.2, .8 + burning * .3);
       matrix.compose(point.set(x, tail.y, tail.z).applyMatrix4(body.matrixWorld), turn, size.set(width, width, length));
       this.flames.setMatrixAt(n, matrix);
-      // (the core only a little paler than the flame, so the stage's colour holds)
+      // (the core only a little paler than the flame, so the stage's color holds)
       this.flames.setColorAt(n, core ? colour.set(hue).lerp(WHITE, .45) : colour.set(hue));
       n++;
     }
@@ -227,7 +227,7 @@ export class DriftEffects {
       turn.setFromUnitVectors(forward, way.copy(spark.v).normalize());
       matrix.compose(spark.p, turn, size.set(spark.size * fade, spark.size * fade, spark.size * stretch));
       this.sparks.setMatrixAt(i, matrix);
-      // (a spark cools from white to its colour as it goes)
+      // (a spark cools from white to its color as it goes)
       this.sparks.setColorAt(i, colour.set(STAGE_COLOURS[spark.stage]).lerp(WHITE, Math.max(0, 1 - spark.age / .07)).multiplyScalar(1.6 * fade + .3));
     }
     this.sparks.count = list.length;

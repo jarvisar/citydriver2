@@ -18,7 +18,7 @@ export function driverRank(earnings = 0) {
 }
 export const rankIndex = id => DRIVER_RANKS.findIndex(rank => rank.id === id);
 
-// Cab colours, one per rank. A null colour is the cab's own factory yellow.
+// Cab colors, one per rank. A null color is the cab's own factory yellow.
 export const LIVERIES = [
   { id: 'yellow', name: 'Classic Yellow', color: null, rank: 'rookie' },
   { id: 'cream', name: 'Checker Cream', color: '#e7e3d5', rank: 'cabbie' },
@@ -30,7 +30,7 @@ export const LIVERIES = [
 ];
 export const liveryById = id => LIVERIES.find(livery => livery.id === id) ?? LIVERIES[0];
 
-// What a shift can set a personal best in. Best cash is the licence's job.
+// What a shift can set a personal best in. Best cash is the license's job.
 export const RECORDS = [
   { id: 'fares', value: run => run.delivered },
   { id: 'combo', value: run => run.bestCombo },

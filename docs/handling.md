@@ -4,7 +4,7 @@ The driving uses arcade grip handling. The handling comes from a speed-dependent
 
 ## Steering
 
-- Steering reaches 90% in about 38 ms and returns to centre in about 26 ms. Countersteering switches direction on the next simulation tick. If two keyboard directions are held, the newest press wins.
+- Steering reaches 90% in about 38 ms and returns to center in about 26 ms. Countersteering switches direction on the next simulation tick. If two keyboard directions are held, the newest press wins.
 - The controller deadzone is 12%, and the rest of the stick range is remapped so small movements are precise. Full lock is tight enough for slow city junctions, and the turning circle widens at higher speed.
 - Launch torque is up to 22% stronger on tarmac, fading out by 12 m/s. Top speeds, grip and off-road speed for each car are in `src/cars.js`.
 - Brake takes priority over throttle. After stopping, holding brake waits 0.5 seconds before reversing, so the cab stays still for pickups and drop-offs. Release and press brake again to reverse straight away.
@@ -20,7 +20,7 @@ Keyboard, controller, VR and the chase-view touch stick all use the same steerin
 I wanted drifting to work like the inside drift in Mario Kart Wii and Mario Kart 8, where you commit to a drift, hold it through the corner and get a boost on the way out. It isn't a copy of either. The code is in [src/drift.js](../src/drift.js).
 
 - Hold Drift and steer either way above 8 m/s (18 mph). The car hops a little when the button goes down, and the steering at that moment or any time after picks the direction. Holding it without steering does nothing else, so you can press it early.
-- Once it's drifting the car goes round its own arc until you let go. Steering into the drift tightens it and steering out of it widens it, but centring or countersteering doesn't end it. Braking tightens it more.
+- Once it's drifting the car goes round its own arc until you let go. Steering into the drift tightens it and steering out of it widens it, but centering or countersteering doesn't end it. Braking tightens it more.
 - The nose only points 6 to 16° into the corner, so the car follows the inside line instead of swinging its tail out.
 - A drift gets less than half the engine's pull and scrubs off a little speed, so holding one down a straight doesn't pay. At city speeds it isn't tighter than full lock. In the Taxi at 20 m/s it turns on about a 15 m radius, or 10 m steered in, against 9 m for full lock. From about 23 m/s a drift steered in is tighter than the tires can manage. Grippier cars drift tighter and loose ground widens it.
 - Sparks at the back wheels show the charge. They turn blue after 0.42 seconds, orange after 0.945 and pink after 1.61, steered more than halfway into the drift. Steering less than that charges at 40% of the speed.
@@ -31,7 +31,7 @@ I wanted drifting to work like the inside drift in Mario Kart Wii and Mario Kart
 - Tap to drift in the pause menu makes the button a toggle, for anyone who finds holding it tiring. The first tap holds it down and the next lets go.
 - There's no drifting with the overhead views' touch stick, since it points the car straight at where the thumb is.
 
-Sparks, smoke and tire marks come off the back wheels while drifting. A turbo shoots flames out the back in its colour and widens the chase camera's view for a moment, unless reduced motion is on. Each new colour has a crackle and a chime, and controllers and phones buzz with it if Vibration is on.
+Sparks, smoke and tire marks come off the back wheels while drifting. A turbo shoots flames out the back in its color and widens the chase camera's view for a moment, unless reduced motion is on. Each new color has a crackle and a chime, and controllers and phones buzz with it if Vibration is on.
 
 ## Turning Radius
 
@@ -39,7 +39,7 @@ Side streets are 13 m wide, avenues 18 m and boulevards 24 m. The full-lock radi
 
 Each car has its own low-speed radius as well as its grip: 3.2 m for the Micro, 3.6 m for the Formula cars and 5.4 m for the truck. The Formula cars have the most grip (2.25 for the Formula and 2.2 for the Formula Taxi, compared to the Taxi's 1.4). Cars only drift when you hold Drift.
 
-Full-lock radius in metres on tarmac, from `node scripts/handling-sweep.mjs`:
+Full-lock radius in meters on tarmac, from `node scripts/handling-sweep.mjs`:
 
 | Car | 10 m/s (22 mph) | 15 m/s (34 mph) | 20 m/s (45 mph) |
 | --- | ---: | ---: | ---: |
@@ -58,13 +58,13 @@ A Formula at 50 m/s still needs about 35 m to turn, so slow down before sharp ju
 Cars go up and down with what they drive over and can leave the ground off ramps, mounds and crests. It's still arcade physics, not a vehicle simulation. The code is in [src/car-air.js](../src/car-air.js).
 
 - The four wheels and the middle of the car each check what's under them: the street, or the top of a ramp, a mound, a roof or another car. The car sits on the highest of those it can reach, pitched and rolled to match.
-- A wheel climbs up to 0.45 m, like a kerb or the foot of a ramp. Anything taller is a wall.
-- Kerbs never lift a car off its tyres. A drop of up to 0.3 m is followed straight away and the body settles after it.
+- A wheel climbs up to 0.45 m, like a curb or the foot of a ramp. Anything taller is a wall.
+- Curbs never lift a car off its tires. A drop of up to 0.3 m is followed straight away and the body settles after it.
 - The car leaves the ground wherever the ground falls away faster than it can fall, like a ramp's lip or a crest taken fast. It also counts as off the ground once both front wheels are over an edge, so it can't keep steering on its back wheels.
 - Gravity is 13 m/s², a bit more than real, so jumps come down with some weight. A car keeps nearly all its speed in the air.
-- In the air the car keeps the turn the ramp gave it, then swings round on a soft spring to follow the arc and, over the last couple of metres, the ground under it, so it lands on its wheels without snapping level. The body squats and nods on landing. Going slowly over an edge, it tips over it instead.
+- In the air the car keeps the turn the ramp gave it, then swings round on a soft spring to follow the arc and, over the last couple of meters, the ground under it, so it lands on its wheels without snapping level. The body squats and nods on landing. Going slowly over an edge, it tips over it instead.
 - Steering in the air turns the nose up to about 24° off the way the car is flying, and it straightens up when you let go. Press and hold Drift in the air and steer to spin it. Holding it from before the jump doesn't spin. Let go and it carries on round to the next full turn. Tricks and spins landed cleanly fire a turbo (see [Drifting](#drifting)).
-- Landing more than about 30° off the way it's going spins the car out. A bit off, it slides for a moment while the tyres grip again. Coming down faster than 5 m/s scrubs off some speed, up to 15%, and faster than 12 m/s shakes the camera a little.
+- Landing more than about 30° off the way it's going spins the car out. A bit off, it slides for a moment while the tires grip again. Coming down faster than 5 m/s scrubs off some speed, up to 15%, and faster than 12 m/s shakes the camera a little.
 - A car can come down on another car's bonnet or roof and drive off it. The car underneath gets knocked about and its driver stops for a moment.
 - A car that falls in the river sinks and is put back at the start of its run-up.
 
@@ -90,7 +90,7 @@ The plane uses the same controls. On the ground it taxis like a slow car on its 
 - In the air it cruises at 34 m/s and holds its height when nothing is pressed. W takes it up to 56 m/s and S down to 17 m/s. Climbs and dives change its speed a little.
 - Steering banks it up to about 57° and turns it at about 55° a second at cruising speed, tighter when slow.
 - If it slows right down in the air, the nose drops until it has flying speed again.
-- It never flies into the ground. Near the floor it can only sink at 1.1 m/s plus 0.75 m/s for every metre of height, so a dive flattens out and holding Shift lands it softly. A landing faster than 4.5 m/s, or with the wings banked over 0.6 rad, bounces.
+- It never flies into the ground. Near the floor it can only sink at 1.1 m/s plus 0.75 m/s for every meter of height, so a dive flattens out and holding Shift lands it softly. A landing faster than 4.5 m/s, or with the wings banked over 0.6 rad, bounces.
 - It can land on streets, parks and flat roofs, and says so after a gentle landing or one on a roof. Over the water it skims 1.1 m above it and can't land.
 - Its wings hit buildings as well as its body. It glances off anything it flies into instead of stopping dead in the air.
 - A double tap of a steering direction does a barrel roll that steps it about 5 m to that side. A double tap of climb loops the loop, about 44 m high, if it's flying faster than 24 m/s with 5 m of room below. A press held longer than 0.28 s isn't a tap.

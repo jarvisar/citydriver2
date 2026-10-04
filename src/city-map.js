@@ -16,16 +16,16 @@ export function drawParkedCar(ctx, x, y, radius = 6.5) {
   ctx.restore();
 }
 
-// How far a run of shapes may spread, in metres, and how far past the view a
+// How far a run of shapes may spread, in meters, and how far past the view a
 // shape still counts as in it (a few pixels, for its anti-aliased edge)
 const RUN = 100, EDGE = 12;
 
 // The local street map: the generated roads, water, parks and lots drawn
 // from cached Path2D shapes in world coordinates. A venue's grounds, a block
-// to itself or a lot, are a colour of their own (they were park green, so
+// to itself or a lot, are a color of their own (they were park green, so
 // most of the green on the map was museums and stations).
 // The street map shows only ~350 m round the car, so the shapes are also kept
-// in runs of neighbours, in their original order, each with its bounding box.
+// in runs of neighbors, in their original order, each with its bounding box.
 // A draw fills only the runs in view, joined into one path, and joins them
 // again only when a run comes into view or leaves it. A shape out of view
 // adds no winding inside it, so the result matches filling the whole city,
@@ -115,7 +115,7 @@ export class CityMapCache {
   // Rotate a north-up bitmap each frame. The extra border covers turns and
   // short moves without rasterizing the streets again.
   drawCached(ctx, vehicle, scale, width, height, ratio) {
-    // Keep the centre on a pixel at common DPI scales, including 1.25x.
+    // Keep the center on a pixel at common DPI scales, including 1.25x.
     const border = 32, size = Math.ceil((Math.hypot(width, height) + border * 2) / 4) * 4;
     if (!this.image) {
       const canvas = document.createElement('canvas');

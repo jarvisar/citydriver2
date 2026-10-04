@@ -134,7 +134,7 @@ test('every venue is built as its landmark, with its name on it', () => {
       if (!cells.has(key)) cells.set(key, new CityChunk(world, ix, iz));
       const chunk = cells.get(key);
       assert.ok(chunk.features.buildings.some(b => b.type === `landmark-${place.type}` && Math.hypot(b.x - place.u, b.s - place.s) < 1), `${place.name} is not built`);
-      // (a sign board's instance colour is its face's rectangle in the sign atlas)
+      // (a sign board's instance color is its face's rectangle in the sign atlas)
       const tint = discoverySignFor(place.type, place.variant).tint.join(), colour = new THREE.Color(), tints = [];
       chunk.group.traverse(mesh => {
         if (!mesh.name.endsWith('sign-board')) return;
@@ -198,7 +198,7 @@ test('a fountain square is named for what is round it', () => {
     if (place.name === 'Station Square') assert.ok(near(place, ['station']) < 320, 'Station Square with no station near');
     if (place.name === 'Market Square') assert.ok(near(place, ['market', 'farmersmarket']) < 320 || style === 'Market district', 'Market Square with no market near');
     if (place.name === 'Old Town Square') assert.equal(style, 'Old town');
-    if (place.name === 'Harbour Square') assert.equal(place.district, 'Harbour');
+    if (place.name === 'Harbor Square') assert.equal(place.district, 'Harbor');
   }
 });
 

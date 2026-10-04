@@ -22,7 +22,7 @@ export const PEDESTRIAN_REJOIN_AHEAD = 1.5;
 // The last stretch of the walk back turns them to face the way they were going
 const TURN_IN = .8;
 // How quickly a person turns to look (a spring, per second), and how far
-// they lean into a hurry (radians, at a metre a second over their pace)
+// they lean into a hurry (radians, at a meter a second over their pace)
 const TURN_RATE = 4, LEAN = .14;
 
 const position = new THREE.Vector3(), scale = new THREE.Vector3(), rotation = new THREE.Quaternion();
@@ -65,7 +65,7 @@ const wrap = angle => Math.atan2(Math.sin(angle), Math.cos(angle));
 const E = PEDESTRIAN_EASE;
 
 // How far a resident has walked round their block (m, the way they go) at
-// `time`. Their stride is { d, at, from, rate, until }: `d` metres at `at`,
+// `time`. Their stride is { d, at, from, rate, until }: `d` meters at `at`,
 // easing from `from` to `rate` m/s over PEDESTRIAN_EASE, until `until`, when
 // they ease back to their own pace. Every stop, hurry and wait is one of
 // these, worked out from the time alone, so a resident out of sight is where
@@ -107,13 +107,13 @@ export function nearestOnLoop(loop, x, y) {
   }
   return at;
 }
-// Metres from b to a round a loop the way a walker goes, between -half and half a lap
+// Meters from b to a round a loop the way a walker goes, between -half and half a lap
 const around = (a, b, perimeter) => a - b - Math.round((a - b) / perimeter) * perimeter;
 // How far either side of a corner of their walk a resident turns through it (m)
 const WALKER_TURN = 1.2;
-// Where a walker is on their loop, `walked` metres on: world (x east, s
+// Where a walker is on their loop, `walked` meters on: world (x east, s
 // north) and a yaw facing the way they walk. The yaw turns through each
-// corner over a metre or so either side of it (less on a short side), so a
+// corner over a meter or so either side of it (less on a short side), so a
 // walker rounds it rather than snapping about, and a pair's sideways
 // spacing, which follows the yaw, swings round with them.
 export function walkPose(walker, walked) {

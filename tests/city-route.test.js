@@ -19,17 +19,17 @@ test('the drive starts in a lane of a wide road near the middle of the city, fac
   assert.equal(cityHeight(start.s, start.u), ROAD_LEVEL);
 });
 
-test('heights come from the kerbs, the roadway and the water, and bridges stay dry', () => {
+test('heights come from the curbs, the roadway and the water, and bridges stay dry', () => {
   let roadPoints = 0, pavementPoints = 0, waterPoints = 0, bridgePoints = 0, medianPoints = 0;
   // All over the city, out to the ring road
   for (let s = -CITY.height / 2; s <= CITY.height / 2; s += 23) for (let u = -CITY.width / 2; u <= CITY.width / 2; u += 29) {
     const height = cityHeight(s, u), surface = surfaceAt(s, u);
-    // Inside a block's kerb is pavement, and a kerb never reaches onto a carriageway
+    // Inside a block's curb is pavement, and a curb never reaches onto a carriageway
     const kerbed = CITY.blocks.some(block => block.kerb.length >= 3 && insidePolygon({ x: u, y: s }, block.kerb));
     // (a carriageway ending square across its road's end, as it is drawn)
     if (kerbed) { assert.equal(surface, 'pavement'); const road = CITY.roadIndex.nearest(u, s, 26, carriagewayScore); assert.ok(!road || road.score > -.6, `pavement on a road at ${u},${s}`); }
     if (surface === 'pavement') { pavementPoints++; assert.equal(height, PAVEMENT_LEVEL); }
-    // A boulevard's median stands a kerb above its carriageway, down its middle
+    // A boulevard's median stands a curb above its carriageway, down its middle
     else if (surface === 'median') { medianPoints++; assert.equal(height, ROAD_LEVEL + MEDIAN_KERB); assert.ok(roadAt(s, u).distance < roadAt(s, u).road.profile.median + .01); }
     else if (surface === 'water') { waterPoints++; assert.equal(height, WATER_LEVEL); assert.equal(citydriverRoute.water(s, u), true); assert.ok(!onRoadAt(s, u)); }
     else {
@@ -91,5 +91,5 @@ test('the pavement index answers as a full point-in-polygon test, before and aft
   for (const [x, y] of points) assert.equal(index.find(x, y), full(x, y));
   index.seal();
   for (const [x, y] of points) assert.equal(index.find(x, y), full(x, y), `at ${x},${y}`);
-  assert.ok(CITY.pavement.sealed, 'the city seals its pavement once its kerbs are final');
+  assert.ok(CITY.pavement.sealed, 'the city seals its pavement once its curbs are final');
 });

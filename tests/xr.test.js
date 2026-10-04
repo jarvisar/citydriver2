@@ -368,7 +368,7 @@ test('panels hang from an anchor that follows the game camera with yaw only', ()
   const pose = { transform: { position: new THREE.Vector3(.3, .1, -.2), orientation } };
   rig.update(source, pose);
   const anchor = rig.anchor.getWorldPosition(new THREE.Vector3()), turn = rig.anchor.getWorldQuaternion(new THREE.Quaternion());
-  assert.ok(anchor.distanceTo(source.position) < 1e-9, 'where the recentred head is');
+  assert.ok(anchor.distanceTo(source.position) < 1e-9, 'where the recentered head is');
   assert.ok(turn.angleTo(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), .8)) < 1e-6, 'facing the camera\'s way, level');
 });
 

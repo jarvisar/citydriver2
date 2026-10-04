@@ -9,9 +9,9 @@
 //   home      a block of flats' name, on a board on its roof
 //   upstairs  a business on an upper floor, on a projecting sign
 //   vacant    an empty shop's letting board (fascia) or poster (window)
-//   decal     a sticker or card in a shop window; `size` is its height in metres
+//   decal     a sticker or card in a shop window; `size` is its height in meters
 // `letters` marks cut-out lettering with no board behind it.
-// `backing` is a colour painted behind a design whose panel the sheet leaves
+// `backing` is a color painted behind a design whose panel the sheet leaves
 // see-through (black lettering on it would vanish against a dark fascia).
 // Left out: the strip of overprinted opening hours under EET.24, too garbled
 // to read as anything.

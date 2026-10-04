@@ -92,7 +92,7 @@ export function* buildGrassFringeSteps(c) {
       const p = [c.east + x, c.start + s];
       if (obstacles.some(({ polygon, margin }) => containsPoint(polygon, ...p, -margin)) || accepted.some(q => Math.hypot(p[0] - q[0], p[1] - q[1]) < .85)) continue;
       // A fringe in maintained city lawns, not knee-high weeds. Keep its
-      // simple silhouette subordinate to the kerb and the planted trees.
+      // simple silhouette subordinate to the curb and the planted trees.
       const width = .65 + random() * .3, height = .4 + random() * .25;
       tint.set(area.color).multiplyScalar(.92 + random() * .35);
       c.item('grass-fringe', grassGeometry, c.materials.props, [x, area.y, -s], [width, height, width], `#${tint.getHexString()}`, random() * Math.PI * 2);

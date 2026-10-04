@@ -21,7 +21,7 @@ import { DrivingController } from '../src/vehicle.js';
 import { averagePoint, calcPolygonArea, insidePolygon, polygonBounds, bufferPolyline, distanceToPolyline } from '../src/mapgen/polygon-util.js';
 
 const furniture = (() => { const pieces = []; placeStreetFurniture(navGraph(), findBridges(), piece => pieces.push(piece)); return pieces; })();
-// Where an item's modelled front (+z) and its +x point on the map (see city-layout-render.js)
+// Where an item's modeled front (+z) and its +x point on the map (see city-layout-render.js)
 const front = yaw => ({ x: Math.sin(yaw), y: -Math.cos(yaw) });
 const side = yaw => ({ x: Math.cos(yaw), y: Math.sin(yaw) });
 
@@ -41,14 +41,14 @@ test('boats lie wholly on the water, clear of each other and away from the bridg
   // The boats going by keep to open water all round their loops, off every
   // bridge and clear of the boats on their buoys
   const routes = harbourRoutes();
-  assert.ok(routes.length >= 2, `${routes.length} harbour loops`);
+  assert.ok(routes.length >= 2, `${routes.length} harbor loops`);
   for (const { points } of routes) for (const p of points) {
-    for (const [dx, dy] of [[0, 0], [8, 0], [-8, 0], [0, 8], [0, -8]]) assert.equal(surfaceAt(p.y + dy, p.x + dx), 'water', `a harbour loop runs aground at ${p.x.toFixed(0)},${p.y.toFixed(0)}`);
-    assert.ok(!CITY.decks.some(deck => insidePolygon(p, deck.outer)), 'a harbour loop under a bridge');
+    for (const [dx, dy] of [[0, 0], [8, 0], [-8, 0], [0, 8], [0, -8]]) assert.equal(surfaceAt(p.y + dy, p.x + dx), 'water', `a harbor loop runs aground at ${p.x.toFixed(0)},${p.y.toFixed(0)}`);
+    assert.ok(!CITY.decks.some(deck => insidePolygon(p, deck.outer)), 'a harbor loop under a bridge');
   }
 });
 
-test('parking markings and parked cars leave the full width of kerb openings clear', () => {
+test('parking markings and parked cars leave the full width of curb openings clear', () => {
   const { index, gaps } = parkingGaps();
   assert.ok(gaps.length > 10);
   for (const { polygon, bounds } of gaps) {
@@ -95,7 +95,7 @@ test('landmark approaches stay clear of street furniture and overhanging tree cr
   }
 });
 
-test('paved tree openings stay within the kerb and out of building lots and lawns', () => {
+test('paved tree openings stay within the curb and out of building lots and lawns', () => {
   const pits = furniture.filter(p => p.kind === 'tree' && p.pit);
   assert.ok(pits.length > 1000, 'street trees have soil openings');
   for (const tree of pits) {
@@ -103,7 +103,7 @@ test('paved tree openings stay within the kerb and out of building lots and lawn
     const street = tree.pitLevel === undefined, paving = CITY.pavement.find(tree.u, tree.s);
     const inner = paving?.kind === 'block' ? CITY.blocks[paving.block].inner : paving?.kind === 'park' ? CITY.parkPlans[paving.park].lawn : [];
     for (const p of tree.pit) {
-      assert.ok(CITY.pavement.find(p.x, p.y) && !onRoadAt(p.y, p.x), `tree opening over a kerb at ${p.x},${p.y}`);
+      assert.ok(CITY.pavement.find(p.x, p.y) && !onRoadAt(p.y, p.x), `tree opening over a curb at ${p.x},${p.y}`);
       if (street) assert.ok(!insidePolygon(p, inner), 'the opening stays in the pavement strip');
     }
   }
@@ -124,7 +124,7 @@ test('lamps, trees, signs and signals stand on the pavement, never on a carriage
       assert.ok(insidePolygon({ x: piece.u, y: piece.s }, CITY.blocks[piece.yard].yard) && !onRoadAt(piece.s, piece.u), `yard car off its yard at ${piece.u.toFixed(1)},${piece.s.toFixed(1)}`);
       continue;
     }
-    // A parked car stands in a parking bay, between the traffic lane and the kerb
+    // A parked car stands in a parking bay, between the traffic lane and the curb
     if (piece.kind === 'parked') {
       const road = onRoadAt(piece.s, piece.u);
       assert.ok(road?.road.profile.parking && road.distance > road.road.profile.parking - .2 && road.distance < road.road.profile.halfWidth, `parked car off its bay at ${piece.u.toFixed(1)},${piece.s.toFixed(1)}`);
@@ -148,7 +148,7 @@ test('lamps, trees, signs and signals stand on the pavement, never on a carriage
   }
 });
 
-test('kerbside fittings stand on the lamps\' line, clear of the rest and of the bus stops, placed after everything else', () => {
+test('curbside fittings stand on the lamps\' line, clear of the rest and of the bus stops, placed after everything else', () => {
   const fittings = ['hydrant', 'post-box', 'cabinet', 'news-boxes', 'bike-rack'], placed = furniture.filter(piece => fittings.includes(piece.kind));
   for (const kind of fittings) assert.ok(placed.some(piece => piece.kind === kind), `${kind} placed`);
   // (last, so every other piece stands where it did before they came)
@@ -157,8 +157,8 @@ test('kerbside fittings stand on the lamps\' line, clear of the rest and of the 
   const shelters = furniture.filter(piece => piece.kind === 'shelter'), others = furniture.filter(piece => !['grass', 'rim', 'railing', 'parked', 'boat', 'mooring'].includes(piece.kind));
   for (const piece of placed) {
     const p = { x: piece.u, y: piece.s }, at = `${piece.kind} at ${piece.u.toFixed(1)},${piece.s.toFixed(1)}`;
-    // (the residents walk 1.5 m in from the kerb, clear of them)
-    assert.ok(kerbs.some(kerb => Math.abs(distanceToPolyline(p, kerb) - .65) < .05), `${at} off the kerb line`);
+    // (the residents walk 1.5 m in from the curb, clear of them)
+    assert.ok(kerbs.some(kerb => Math.abs(distanceToPolyline(p, kerb) - .65) < .05), `${at} off the curb line`);
     assert.ok(shelters.every(stop => Math.hypot(stop.u - p.x, stop.s - p.y) > 4.9), `${at} at a bus stop`);
     for (const other of others) if (other !== piece) assert.ok(Math.hypot(other.u - p.x, other.s - p.y) > 1.15, `${at} on a ${other.kind}`);
   }
@@ -169,7 +169,7 @@ test('gratings, manhole covers and mended patches are set in the asphalt, clear 
   buildStreetSurfaces(surfaces, navGraph(), findBridges());
   const p = surfaces.roads.positions, c = surfaces.roads.colors, walks = cityCrosswalks(navGraph()), marks = [];
   for (let i = 0; i < p.length; i += 9) {
-    // (the asphalt is white, which the road material colours: what is set in it is a shade of that)
+    // (the asphalt is white, which the road material colors: what is set in it is a shade of that)
     if (c[i] > .999 && c[i + 1] > .999 && c[i + 2] > .999) continue;
     marks.push({ x: (p[i] + p[i + 3] + p[i + 6]) / 3, y: -(p[i + 2] + p[i + 5] + p[i + 8]) / 3, height: p[i + 1] });
   }
@@ -190,7 +190,7 @@ test('signs and signals face the drivers they are for, lamps lean over the road'
     let owner = null;
     for (const [node, control] of controls) for (const [edge, approach] of control.approaches) {
       if (approach.kind !== sign.kind) continue;
-      // The approach where the sign stands, a few metres behind the stop line
+      // The approach where the sign stands, a few meters behind the stop line
       const away = edge.a === node.id ? 1 : -1;
       for (let back = 0; back <= 6; back += .5) {
         const p = nav.pose(edge, stopLineDistance(approach.clear) + .9 + back, away), dx = sign.u - p.u, dy = sign.s - p.s;
@@ -198,7 +198,7 @@ test('signs and signals face the drivers they are for, lamps lean over the road'
         if (f.x * p.tx + f.y * p.ty > .95 && dx * -p.ty + dy * p.tx > 0) owner = approach;
       }
     }
-    assert.ok(owner, `${sign.kind} at ${sign.u.toFixed(0)},${sign.s.toFixed(0)} faces no approach from its right-hand kerb`);
+    assert.ok(owner, `${sign.kind} at ${sign.u.toFixed(0)},${sign.s.toFixed(0)} faces no approach from its right-hand curb`);
   }
   for (const lamp of furniture.filter(piece => piece.kind === 'lamp')) {
     // The arm reaches along local -x: its head hangs over the carriageway
@@ -256,7 +256,7 @@ test('the street hierarchy: collectors between the avenues, marked by rank, and 
   assert.ok(collectors > 1.5 && collectors < side * .3, `${collectors.toFixed(1)} km of collectors of ${side.toFixed(1)} km of side streets`);
   for (const road of CITY.roads) {
     assert.ok(Number.isFinite(road.profile.rank), `${road.kind} has no rank`);
-    if (road.profile.rank >= 2 && road.profile.kind !== 'boulevard') assert.ok(road.profile.centre, `${road.profile.kind} has no centre line`);
+    if (road.profile.rank >= 2 && road.profile.kind !== 'boulevard') assert.ok(road.profile.centre, `${road.profile.kind} has no center line`);
     if (road.profile.rank <= 1) assert.ok(!road.profile.centre);
   }
   // A mix of controls: not every junction of two side streets is a stop
@@ -275,21 +275,21 @@ test('the street hierarchy: collectors between the avenues, marked by rank, and 
   assert.ok(counts.signal > 10 && counts.stop > total * .25 && (counts.all ?? 0) < total * .3, JSON.stringify(counts));
 });
 
-test('a sharp kerb corner is rounded however the booleans left its point', () => {
+test('a sharp curb corner is rounded however the booleans left its point', () => {
   // (seed 3113444836: a corner left as two points 2 cm apart had a short
   // edge beside each, was never rounded, and stood a needle of pavement
-  // kerbed on both sides out into the junction)
+  // curbed on both sides out into the junction)
   const kerb = [{ x: 0, y: 0 }, { x: 40, y: -12 }, { x: 40, y: 12 }, { x: .018, y: .004 }];
   const { polygon, patches } = roundCorners(kerb, 5.5);
   assert.ok(patches.length >= 1, 'rounded');
   assert.ok(polygon.every(p => Math.hypot(p.x, p.y) > 1), 'no needle left at the point');
 });
 
-test('a block with no lot is a planted island: a lawn inside its kerb, with only planting on it', () => {
+test('a block with no lot is a planted island: a lawn inside its curb, with only planting on it', () => {
   const lotted = new Set(CITY.lotBlocks);
   for (const island of cityIslands()) {
     assert.ok(!lotted.has(island.index) && !island.block.park);
-    for (const p of island.lawn) assert.ok(insidePolygon(p, island.block.kerb), `island lawn outside its kerb at ${p.x.toFixed(1)},${p.y.toFixed(1)}`);
+    for (const p of island.lawn) assert.ok(insidePolygon(p, island.block.kerb), `island lawn outside its curb at ${p.x.toFixed(1)},${p.y.toFixed(1)}`);
   }
   for (const piece of furniture) {
     if (!['bed', 'sculpture'].includes(piece.kind) || piece.yard !== undefined) continue;
@@ -315,7 +315,7 @@ test('the parks, squares and islands have longer grass round and over their lawn
   }
 });
 
-test('crosswalks and stop lines begin beyond the kerb corners, and turns join the lanes smoothly', () => {
+test('crosswalks and stop lines begin beyond the curb corners, and turns join the lanes smoothly', () => {
   const nav = navGraph(), geometry = junctionGeometry(nav);
   for (const shape of geometry.values()) for (const arm of shape.arms) {
     // At the crosswalk the whole carriageway is clear of the other roads
@@ -368,7 +368,7 @@ test('buildings stand inside their lots without touching each other, and every v
     footprints.push(plan.footprint);
   });
   assert.ok(footprints.length > 1000);
-  // Neighbours share a party wall at most: sample for overlap
+  // Neighbors share a party wall at most: sample for overlap
   const cells = new Map();
   footprints.forEach((footprint, i) => {
     const b = polygonBounds(footprint), key = `${Math.floor((b.minX + b.maxX) / 80)},${Math.floor((b.minY + b.maxY) / 80)}`;
@@ -402,7 +402,7 @@ test('traffic turns through junctions without snapping and never leaves the road
           fastest = Math.max(fastest, Math.abs(Math.atan2(Math.sin(car.heading - before.heading), Math.cos(car.heading - before.heading))) * 60);
           if (before.edge !== car.edge) turns++;
         }
-        // On the carriageway: a road, or the corner of one the kerb rounds off
+        // On the carriageway: a road, or the corner of one the curb rounds off
         if (car.edge) assert.equal(surfaceAt(car.s, car.u), 'road', 'a car left the road');
         last.set(car, { heading: car.heading, generation: car.generation, edge: car.edge });
       }
@@ -434,7 +434,7 @@ test('a car park behind the buildings has a driveway in from the street, kept cl
   }
 });
 
-test('a bridge has a footway along its deck that joins the promenade, and the crosswalks stop at its kerb', () => {
+test('a bridge has a footway along its deck that joins the promenade, and the crosswalks stop at its curb', () => {
   const walks = cityCrosswalks(navGraph());
   let footways = 0;
   for (const bridge of findBridges()) for (const footway of bridge.footways) {
@@ -447,7 +447,7 @@ test('a bridge has a footway along its deck that joins the promenade, and the cr
     footway.polygon.forEach((a, i) => { const b = footway.polygon[(i + 1) % footway.polygon.length], n = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / .5); for (let k = 0; k < n; k++) edge.push({ x: a.x + (b.x - a.x) * k / n, y: a.y + (b.y - a.y) * k / n }); });
     const joins = edge.some(v => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => { const p = { x: v.x + dx * .4, y: v.y + dy * .4 }; return CITY.pavement.find(p.x, p.y) && !insidePolygon(p, footway.polygon); }));
     // (or, where the bridge is a causeway with no promenade at either end,
-    // it runs from one road's kerb to another's)
+    // it runs from one road's curb to another's)
     const line = footway.line, beyond = (p, q) => { const l = Math.hypot(p.x - q.x, p.y - q.y) || 1; return surfaceAt(p.y + (p.y - q.y) / l * .6, p.x + (p.x - q.x) / l * .6) === 'road'; };
     const kerbToKerb = beyond(line[0], line[1]) && beyond(line.at(-1), line.at(-2));
     assert.ok(joins || kerbToKerb, `a footway that meets no other pavement near ${middle.x.toFixed(0)},${middle.y.toFixed(0)}`);

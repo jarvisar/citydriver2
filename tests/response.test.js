@@ -79,7 +79,7 @@ test('a collision correction cannot throw the drawn body ahead of the car', () =
     car.s += 12; car.update(0, {}); car.copyPose(car.previousPose, { ...car.currentPose, position: car.currentPose.position.clone().setZ(car.currentPose.position.z + 12) });
     car.render(1);
     assert.ok(car.car.position.distanceTo(car.currentPose.position) <= .5 + 1e-9,
-      'the projection is capped at half a metre');
+      'the projection is capped at half a meter');
   } finally { car.disposeModel(); }
 });
 

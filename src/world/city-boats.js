@@ -6,8 +6,8 @@ import { harbourRoutes } from './city-streets.js';
 import { boatModels } from './city-assets.js';
 import { randomAt } from './route.js';
 
-// A few boats going about the harbour: launches and workboats at a slow
-// few metres a second round the loops off the sea walls (see city-streets.js),
+// A few boats going about the harbor: launches and workboats at a slow
+// few meters a second round the loops off the sea walls (see city-streets.js),
 // one on a short loop, two spaced apart on a long one, rising and falling a
 // little on the water. Where each is follows from the game's clock alone, so
 // they stop when it does. Only those near the camera are drawn: a paint and
@@ -39,7 +39,7 @@ function wake(length, beam) {
 }
 const PAINTS = { launch: ['#2f4b68', '#ecebe4', '#6f9fbf', '#b8413a'], work: ['#a1433a', '#2f5d4f', '#35536e', '#c0892f'] };
 
-// A point and heading along a closed loop, `distance` metres round it
+// A point and heading along a closed loop, `distance` meters round it
 function along(route, distance) {
   const { points, lengths } = route, d = ((distance % route.length) + route.length) % route.length;
   let i = 0;

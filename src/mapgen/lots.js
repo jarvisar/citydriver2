@@ -19,7 +19,7 @@ import { offsetPolygonMapped, signedArea, calcPolygonArea, isSimple, dedupePolyg
 // stepped corner; no two cuts may meet there (see fans and squareCuts).
 //
 // Each lot comes with the kind of each of its edges: 'street' along the
-// pavement, 'side' against a neighbour, 'rear' against the yard.
+// pavement, 'side' against a neighbor, 'rear' against the yard.
 
 const TURN = .5;  // A corner turns more than this (radians); gentler bends are part of one frontage
 
@@ -154,7 +154,7 @@ function fans(polygon, geometry, inset, depth, sharp) {
 // Every cut in a fan meets the others at one point, leaving slivers that end
 // in a point (cake slices, from above). So a fan goes to one lot: a cut in it
 // moves out to its nearer end, where it runs square to the street, and the
-// slivers that leaves join their smaller neighbour. A gentle bend's fan is
+// slivers that leaves join their smaller neighbor. A gentle bend's fan is
 // narrow and a cut there leans only a little, so it keeps one. A fan round
 // more than one corner (the end of a narrow block) has a lot for each corner,
 // cut halfway between them.
@@ -186,7 +186,7 @@ function squareCuts(cuts, zones, sharp, perimeter, least) {
   }
   if (out.length === cuts.length && out.every((s, i) => s === cuts[i])) return cuts;
   out = [...new Set(out)].sort((a, b) => a - b);
-  // Join each sliver beside a moved cut to its smaller neighbour
+  // Join each sliver beside a moved cut to its smaller neighbor
   for (let guard = 0; guard < cuts.length && out.length > 2; guard++) {
     const m = out.length, width = i => wrap(out[(i + 1) % m] - out[i]) || perimeter;
     let sliver = -1;
@@ -247,7 +247,7 @@ export function frontageLots(inner, { depth = 22, frontage = [12, 18], corner = 
   if (signedArea(polygon) < 0) polygon = polygon.slice().reverse();
   let inset = offsetPolygonMapped(polygon, -depth), used = depth;
   if (!inset || calcPolygonArea(inset.points) < 30) return null;
-  // A yard only a few metres across is a sliver nobody can use: deepen the
+  // A yard only a few meters across is a sliver nobody can use: deepen the
   // lots until they nearly meet back to back.
   const yardArea = calcPolygonArea(inset.points), yardWidth = 2 * yardArea / frame(inset.points).perimeter;
   if (yardWidth < 9) {

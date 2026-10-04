@@ -76,7 +76,7 @@ Save for this pins a car. The garage header and both results screens show how fa
 
 The jetpack is sold under the cars, in its own Gear section. Without it, holding jump in the air does nothing more than a jump. The parachute is still free, since it's what you have when you bail out of an aircraft. Its free try is two minutes too, but the clock only runs while you're on foot. When it runs out mid-flight you drop, and a tap of jump still opens the parachute.
 
-Paint costs $100 a colour, the rainbow included. Going back to each car's own colour is free, and so is picking the colour you already have. Paint is saved with the fleet now, since it costs money. The custom colour picker only charges when you let go of it, and closing the garage on a colour you were still picking puts the old one back.
+Paint costs $100 a color, the rainbow included. Going back to each car's own color is free, and so is picking the color you already have. Paint is saved with the fleet now, since it costs money. The custom color picker only charges when you let go of it, and closing the garage on a color you were still picking puts the old one back.
 
 The Konami code (up, up, down, down, left, right, left, right, B, A, or the same on a controller's D-pad) adds $10,000 to your balance every time and unlocks Rainbow paint in the garage. It works again after a reload. The money does not count toward the driver rank.
 

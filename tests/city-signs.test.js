@@ -16,7 +16,7 @@ import { averagePoint, calcPolygonArea, insidePolygon } from '../src/mapgen/poly
 
 const apart = (a, b, gap = 0) => a[0] + a[2] + gap <= b[0] || b[0] + b[2] + gap <= a[0] || a[1] + a[3] + gap <= b[1] || b[1] + b[3] + gap <= a[1];
 
-test('every design on the sheet is catalogued once, inside the sheet and clear of the others', () => {
+test('every design on the sheet is cataloged once, inside the sheet and clear of the others', () => {
   assert.ok(SHEET_SIGNS.length >= 120);
   for (const sign of SHEET_SIGNS) {
     const [x, y, w, h] = sign.rect;
@@ -37,7 +37,7 @@ test('the atlas gives every face a rectangle of its own at the face\'s proportio
     const [x, y, w, h] = sign.atlas;
     assert.ok(x >= gutter && y >= gutter && x + w + gutter <= width && y + h + gutter <= height, `${sign.name} fits the atlas`);
     assert.ok(Math.abs(w / h / sign.aspect - 1) < .03, `${sign.name} keeps its proportions`);
-    // (the instance colour carries the rectangle to the shader, flipped)
+    // (the instance color carries the rectangle to the shader, flipped)
     const [r, g, b] = sign.tint, faceWidth = Math.floor(b / 4096);
     assert.deepEqual([r, height - g - (b - faceWidth * 4096), faceWidth, b - faceWidth * 4096], sign.atlas);
     assert.ok(b < 2 ** 24, 'exact in a float');
@@ -163,7 +163,7 @@ test('an upstairs sign stands out between the first-floor windows, clear of balc
       for (const w of windows) assert.ok(Math.abs(w.offset - blade.offset) > w.w / 2 + .1, `${sign.name} clear of the windows`);
       // (pilasters and fins run up the piers; the sign starts at their face)
       for (const p of pieces.filter(p => p.h > 3 && Math.abs(p.offset - blade.offset) < p.w / 2)) assert.ok(blade.outward - blade.w / 2 >= p.outward + p.d / 2, `${sign.name} clear of the ${type} pier`);
-      // (balconies are the broad pieces standing out more than a metre)
+      // (balconies are the broad pieces standing out more than a meter)
       for (const p of pieces.filter(p => p.w > 1 && p.d > 1 && p.outward > .3)) assert.ok(Math.abs(p.offset - blade.offset) > p.w / 2 + .05, `${sign.name} clear of a balcony`);
     }
     // (a glass front's windows leave no room between them)
@@ -176,7 +176,7 @@ test('a sign standing out from a wall keeps clear of a wall standing forward bes
   for (const side of [1, -1]) {
     const { f, hung } = signedWall('brick', 18, 3, sign);
     assert.equal(hung.length, 1);
-    // A neighbour's plot reaching 4 m forward of the front over the sign's end of the wall
+    // A neighbor's plot reaching 4 m forward of the front over the sign's end of the wall
     const end = side * f.span / 2, corner = (along, out) => { const p = f.position(along, 0, out); return { x: p[0], y: -p[2] }; };
     const plot = [corner(end, -8), corner(end - side * 7, -8), corner(end - side * 7, 4), corner(end, 4)];
     const moved = signedWall('brick', 18, 3, sign, [plot]).hung;

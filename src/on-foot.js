@@ -15,7 +15,7 @@ import { cityCell } from './world/city.js';
 // Simpsons: Hit & Run, where its driver lets the player take the wheel: when
 // they get out, the driver drives on from there, back to the nearest lane
 // the car faces (see CityTraffic.giveBack). So can a car parked along the
-// kerb, while there is traffic: its bay stays empty, and where they get out
+// curb, while there is traffic: its bay stays empty, and where they get out
 // it stands as though knocked loose to there, going back to its bay once
 // they are well away (see CityTraffic.leaveParked).
 //
@@ -64,7 +64,7 @@ const STOPPING = { stop: 1 }, LANDING = { land: true }, STILL = { walk: { x: 0, 
 const FLYING = ['forward', 'brake', 'left', 'right', 'climb', 'descend'];
 const flown = state => FLYING.some(key => state[key]) || Boolean(state.touchStick || state.touchDrive?.amount);
 
-// From someone's side at `p` to a car's (`shape`, see shapeOf), in metres
+// From someone's side at `p` to a car's (`shape`, see shapeOf), in meters
 function gapTo(p, shape) {
   const dx = p.x - shape.x, dz = p.z - shape.z, cos = Math.cos(shape.heading), sin = Math.sin(shape.heading);
   const across = Math.max(0, Math.abs(dx * cos + dz * sin) - shape.halfWidth), along = Math.max(0, Math.abs(dx * sin - dz * cos) - shape.halfLength);
@@ -219,7 +219,7 @@ export class OnFoot {
     this.traffic.playerCars.push(car);
     return '';
   }
-  // A garage colour (or null) for the garage car, if it is parked: true if it was
+  // A garage color (or null) for the garage car, if it is parked: true if it was
   paint(color) {
     const car = this.parked;
     if (!car) return false;
@@ -309,7 +309,7 @@ export class OnFoot {
   // in records kept from frame to frame
   sightCars() {
     const sight = this.sight ??= { ground: 0, bodies: [], pool: [] }, traffic = this.traffic, v = this.vehicle;
-    // (the street's height, where the kerb's parked cars stand: from a roof, at
+    // (the street's height, where the curb's parked cars stand: from a roof, at
     // theirs, the cars below stood in the camera's way as walls up there)
     sight.ground = v.route.height(v.s, v.u); sight.bodies.length = 0;
     const add = car => {
@@ -326,7 +326,7 @@ export class OnFoot {
     return sight;
   }
   // Every car they could get into near them, `visit(found)` for each: their
-  // own ({ car, own }), the traffic's ({ car }), or one parked along the kerb
+  // own ({ car, own }), the traffic's ({ car }), or one parked along the curb
   // ({ bay }, in its bay or knocked loose), while there is traffic
   candidates(visit) {
     const p = this.vehicle.groundedPosition, traffic = this.traffic, far = ENTER + 6;

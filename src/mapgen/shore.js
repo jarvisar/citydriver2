@@ -2,8 +2,8 @@ import Vector from './vector.js';
 import { insidePolygon, offsetPolylineClean, offsetPolygon, signedArea, calcPolygonArea, lineRectanglePolygon, bufferPolyline } from './polygon-util.js';
 import { union, difference, intersection, region, solids, clean, grow } from './booleans.js';
 
-// Where the land ends. The city is an island with a harbour's edge all
-// round: the shore follows the promenade outside the ring road, the harbour
+// Where the land ends. The city is an island with a harbor's edge all
+// round: the shore follows the promenade outside the ring road, the harbor
 // side is cut by the promenade along the coast road, and the river runs
 // through it from shore to shore. Land and water are computed with polygon
 // booleans from those few shapes, so together they cover the whole world
@@ -46,7 +46,7 @@ function seaBeyond(line, side, bounds) {
 }
 
 // The river from where it leaves the sea to where it reaches it again: its
-// centre line carried on until it is past the shore at both ends.
+// center line carried on until it is past the shore at both ends.
 function riverThrough(centre, onIsland, beyond = 60) {
   const extend = (points, length) => {
     const out = points.slice(), a = out[0], b = out[1], c = out[out.length - 1], d = out[out.length - 2];
@@ -70,14 +70,14 @@ function riverThrough(centre, onIsland, beyond = 60) {
 // side that cuts off the smaller part of the domain, as the water generator
 // chose its sea. (Not whichever side a point a little way off the line is
 // in the sea: that missed a sliver of sea cut off a corner, or fell outside
-// the domain where the coast runs along its edge, and the harbour took the
+// the domain where the coast runs along its edge, and the harbor took the
 // whole island.)
 export function seaSideOf(line, origin, dimensions) {
   const left = calcPolygonArea(lineRectanglePolygon(origin, dimensions, line, 1)), right = calcPolygonArea(lineRectanglePolygon(origin, dimensions, line, -1));
   return left <= right ? 1 : -1;
 }
 
-// The harbour's water: the sea side of the coast road's promenade, within bounds
+// The harbor's water: the sea side of the coast road's promenade, within bounds
 export function harbourWater(coast, bounds) {
   if (!coast || coast.line.length < 2) return null;
   return seaBeyond(offsetPolylineClean(coast.line, coast.seaSide * coast.reach), coast.seaSide, bounds);
@@ -85,19 +85,19 @@ export function harbourWater(coast, bounds) {
 
 // Land, sea and river for the whole world:
 //   island     the outline from islandOutline
-//   coast      the coast road's centre line, and reach: how far its water's edge
+//   coast      the coast road's center line, and reach: how far its water's edge
 //              stands from it; seaSide: +1 if the sea is on its left
-//   river      the river's centre line and its channel's half width
+//   river      the river's center line and its channel's half width
 //   bounds     { minX, minY, maxX, maxY } the sea covers
 //   keep       optional rings the city stands on (its blocks, and each road
 //              with its promenade): land on the shore outside them is a bare
 //              tip past where the roads round a corner, and goes to the sea
 // Returns { land, sea, river } as lists of { outer, holes } (anticlockwise
-// outers), the island's dry land before the river, and the river's centre
+// outers), the island's dry land before the river, and the river's center
 // line as used.
 export function landAndWater({ island, coast = null, river = null, bounds, keep = null }) {
   const harbour = harbourWater(coast, bounds);
-  // The island less the harbour
+  // The island less the harbor
   let dryPieces = harbour ? difference(region(union([island])), [harbour]) : union([island]);
   if (keep?.length) dryPieces = withoutTips(dryPieces, keep);
   const dry = region(dryPieces);
@@ -131,7 +131,7 @@ export function landAndWater({ island, coast = null, river = null, bounds, keep 
 // What each road (not a park's path) covers with its promenade, reach(road)
 // either side of it, for landAndWater to keep: round at its ends, as a pen
 // that wide would draw it. (Square, the outside of a bend was left bare where
-// two roads met a metre or so apart, or a ring road's two ends met on a bend,
+// two roads met a meter or so apart, or a ring road's two ends met on a bend,
 // and it went to the sea as a tip, notching the promenade or biting into the
 // road.)
 export function roadFootprints(roads, reach) {
@@ -205,7 +205,7 @@ function bluntTips(pieces, { maxAngle = 90 * Math.PI / 180, width = 8, reach = 4
 }
 
 // The edges between land and water as runs, water on the right: every one a
-// quay wall, the city's edge being a harbour all round.
+// quay wall, the city's edge being a harbor all round.
 export function shoreRuns(land, { step = 6 } = {}) {
   const runs = [];
   for (const piece of land) for (const ring of [piece.outer, ...piece.holes]) {

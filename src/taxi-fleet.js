@@ -46,7 +46,7 @@ export class TaxiFleet {
     if (GARAGE_IDS.includes(legacy) && carPrice(legacy) !== null && !isCab(legacy)) this.owned.add(legacy);
     if (version === 1 || this.owned.size > 1) this.save();
   }
-  // The colour the selected livery paints the cab, or null for factory yellow.
+  // The color the selected livery paints the cab, or null for factory yellow.
   get liveryColor() { return liveryById(this.livery).color; }
   // A save's contents, over the defaults. The sets are refilled in place.
   load(data) {
@@ -126,7 +126,7 @@ export class TaxiFleet {
     if (cost === null || this.balance < cost) return false;
     this.balance -= cost; this.tried.add(id); this.save(); return true;
   }
-  // What painting the garage `color` costs now: nothing for the colour it
+  // What painting the garage `color` costs now: nothing for the color it
   // already wears or each car's own, else PAINT_PRICE
   paintCost(color) { return color === this.paint || color === null ? 0 : PAINT_PRICE; }
   // Paints the garage, if it can: rainbow only once the code has unlocked it

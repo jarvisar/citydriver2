@@ -3,7 +3,7 @@ import Vector from './vector.js';
 import { offsetPolygon, dedupePolygon, signedArea } from './polygon-util.js';
 
 // Polygon booleans for the shore and the blocks, with Clipper
-// (https://www.angusj.com/delphi/clipper.php) in whole millimetres: integer
+// (https://www.angusj.com/delphi/clipper.php) in whole millimeters: integer
 // arithmetic, so coincident and nearly coincident edges, folds and
 // self-crossings never trip it up.
 //
@@ -53,15 +53,15 @@ export const strictly = {
   difference: (subject, ...clips) => run(ClipperLib.ClipType.ctDifference, subject, clips.flat(), true),
   intersection: (a, b) => run(ClipperLib.ClipType.ctIntersection, a, b, true),
 };
-// A region grown by `distance` metres (mitred corners)
+// A region grown by `distance` meters (mitered corners)
 export function grow(rings, distance) {
   const offset = new ClipperLib.ClipperOffset(2, .25), out = new ClipperLib.Paths();
   offset.AddPaths(rings.filter(ring => ring.length >= 3).map(toPath), ClipperLib.JoinType.jtMiter, ClipperLib.EndType.etClosedPolygon);
   offset.Execute(out, distance * SCALE);
   return union(out.map(fromPath));
 }
-// A region grown (or, negative, shrunk) by `distance` metres with rounded
-// corners, arcs true to within `tolerance` metres
+// A region grown (or, negative, shrunk) by `distance` meters with rounded
+// corners, arcs true to within `tolerance` meters
 export function growRound(rings, distance, tolerance = .05) {
   const offset = new ClipperLib.ClipperOffset(2, tolerance * SCALE), out = new ClipperLib.Paths();
   offset.AddPaths(rings.filter(ring => ring.length >= 3).map(toPath), ClipperLib.JoinType.jtRound, ClipperLib.EndType.etClosedPolygon);
@@ -69,7 +69,7 @@ export function growRound(rings, distance, tolerance = .05) {
   return union(out.map(fromPath));
 }
 // Pieces with their spikes (an edge out and straight back, left where two
-// shapes shared an edge) and near-collinear points within `tolerance` metres gone
+// shapes shared an edge) and near-collinear points within `tolerance` meters gone
 export const clean = (pieces, tolerance = .01) => union(region(pieces).map(ring => fromPath(ClipperLib.Clipper.CleanPolygon(toPath(ring), tolerance * SCALE))));
 // A piece cut straight across each of its holes into pieces with none, which
 // together cover it exactly: a ring of ground round something else (a

@@ -2,7 +2,7 @@ import { randomAt } from './world/route.js';
 
 // Three goals per shift give each run its own shape: a shift spent hunting
 // groups plays differently from one chasing a stunt chain. Bonuses go to the
-// fleet bank rather than the score, so a licence still measures pure fare
+// fleet bank rather than the score, so a license still measures pure fare
 // money while the goals bring the next cab closer. Targets step up with the
 // driver's rank, and the third goal is always one tier harder than the rest.
 export const GOALS = [

@@ -1,4 +1,4 @@
-// The complete sign catalogue, as the atlas holds it, grouped by use (the
+// The complete sign catalog, as the atlas holds it, grouped by use (the
 // sheet's business signs) and by place (the discovery boards), for a visual
 // review: node scripts/sign-review.mjs [outDir] [--street seed] [--shops]
 // Every face is cut from the game's own atlas, so this is exactly what the
@@ -116,7 +116,7 @@ try {
         return r.renderer.domElement.toDataURL('image/png');
       };
       // Large parks put their boards at a gate, sometimes well away from the
-      // park's centre. Include both so every existing sign family is sampled;
+      // park's center. Include both so every existing sign family is sampled;
       // the places stand among ordinary streets, with their shops and offices.
       return cityPlaces().flatMap(p => [{ u: p.u, s: p.s, family: p.type }, { u: p.entrance.u, s: p.entrance.s, family: p.type }]);
     });

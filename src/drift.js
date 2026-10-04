@@ -24,13 +24,13 @@ const PICK = .3;
 // the nose points in past the way it goes (rad). Inside drifting keeps that
 // small: the car follows the inside line rather than swinging its tail out.
 // The turn eases off only as the square root of the speed past SWIFT m/s
-// (the tyres' grip alone would go as the speed itself), so a fast drift turns
-// tighter than the tyres could (the Taxi's from about 23 m/s).
+// (the tires' grip alone would go as the speed itself), so a fast drift turns
+// tighter than the tires could (the Taxi's from about 23 m/s).
 // Below SLOW m/s it turns slower too, or a slow drift would spin on the spot.
 const YAW = [.9, 1.6, 2.5], SLIP = [.1, .18, .28], SWIFT = 14, SLOW = 10;
 // Braking tightens a drift this much at full pedal (a brake drift), at this
 // share of the brakes, and a drift costs DRAG m/s² of speed and takes only
-// POWER of the engine's pull: the tyres are sliding, and a drift that kept
+// POWER of the engine's pull: the tires are sliding, and a drift that kept
 // gathering speed would run wide however it was steered
 export const BRAKE_BEND = .6, BRAKE_SHARE = .55, DRAG = .6, POWER = .45;
 // How fast the nose swings to its angle, and the steering follows into the arc

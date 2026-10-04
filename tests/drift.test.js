@@ -13,7 +13,7 @@ import { taxiHudModel } from '../src/run-hud-model.js';
 import { cueNotes } from '../src/audio/cues.js';
 
 const STEP = 1 / 120, GROUND = 24;
-// A flat open road, and a ramp in it `at` metres north for the jumps
+// A flat open road, and a ramp in it `at` meters north for the jumps
 const road = { grid: true, laneAssist: false, frame: () => ({ angle: 0, scale: 1 }), position: (s, u, y = GROUND) => ({ x: u, y, z: -s }), height: () => GROUND, water: () => false, bounds: () => [-1e9, 1e9], looseness: () => 0 };
 function ramp(at = 40, rise = 1.6, run = 6, flat = 1.2, width = 4) {
   const z0 = -at, z1 = -(at + run + flat), w = width / 2;
@@ -38,7 +38,7 @@ function hold(c, seconds, input, speed = null, hz = 120) {
   return events;
 }
 
-test('the drift button hops the car at speed, a quick hop that keeps its tyres working, and a thump as it lands', () => {
+test('the drift button hops the car at speed, a quick hop that keeps its tires working, and a thump as it lands', () => {
   const c = car();
   try {
     const bumps = c.audioTelemetry.bumpSerial;
@@ -49,7 +49,7 @@ test('the drift button hops the car at speed, a quick hop that keeps its tyres w
     }
     assert.ok(peak > .14 && peak < .27, `hopped ${peak.toFixed(3)} m`);
     assert.ok(landed >= .14 && landed <= .2, `landed in ${landed} s`);
-    assert.ok(!aloft, 'never off its tyres');
+    assert.ok(!aloft, 'never off its tires');
     assert.ok(Math.abs(c.y - GROUND) < 1e-6 && c.audioTelemetry.bumpSerial > bumps, 'down again with a thump');
     // Held on going straight, no drift, no brake and no second hop
     const speed = c.speed, hops = c.drift.hops;
@@ -299,7 +299,7 @@ test('the Drift button shows the charge toward the next stage, then the turbo', 
   } finally { c.disposeModel(); }
 });
 
-test('sparks fly in the stage\'s colour, a burst at each stage, flames while a turbo lasts, and tyre marks', () => {
+test('sparks fly in the stage\'s color, a burst at each stage, flames while a turbo lasts, and tire marks', () => {
   const scene = new THREE.Scene(), c = car(), effects = new DriftEffects(scene, () => .5);
   scene.add(c.car);
   try {
@@ -307,7 +307,7 @@ test('sparks fly in the stage\'s colour, a burst at each stage, flames while a t
     let input = { right: 1, handbrake: true };
     frame(.4);
     assert.equal(effects.sparks.count, 0, 'no sparks before blue');
-    assert.ok(effects.marks.count > 4, 'tyre marks');
+    assert.ok(effects.marks.count > 4, 'tire marks');
     frame(.3);
     assert.ok(effects.sparks.count > 10, `a burst at blue (${effects.sparks.count})`);
     assert.ok(effects.list.every(spark => spark.stage === 1), 'blue sparks');

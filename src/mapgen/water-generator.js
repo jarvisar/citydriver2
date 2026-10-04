@@ -35,7 +35,7 @@ export default class WaterGenerator extends StreamlineGenerator {
     this._seaPolygon = [];  // Domain rectangle cut by the simplified coast road
     this._riverPolygon = [];
     this._riverSecondaryRoad = [];
-    this.riverStreamline = [];  // Noisy centre line
+    this.riverStreamline = [];  // Noisy center line
     this.hasCoast = false; this.hasRiver = false;
   }
   get coastline() { return this._coastline; }
@@ -84,7 +84,7 @@ export default class WaterGenerator extends StreamlineGenerator {
     const oldSea = this.tensorField.sea;
     this.tensorField.sea = [];
     if (this.params.riverNoise.noiseEnabled) this.tensorField.enableGlobalNoise(this.params.riverNoise.noiseAngle, this.params.riverNoise.noiseSize);
-    // One smoothed centre line is the river: its channel, the bank roads either
+    // One smoothed center line is the river: its channel, the bank roads either
     // side of it and the water the game draws are all offsets of it, so the
     // quays are the same width all along and no bank road dips into the water.
     // Where the stream runs out to sea and back, only its longest run on land
@@ -114,7 +114,7 @@ export default class WaterGenerator extends StreamlineGenerator {
     // where it meets the coast road and carried just across it, so the two
     // meet in a junction. The domain edge is left to the ring road.
     const bank = side => {
-      // Offsets of the centre carried on out to sea, so both banks reach the coast road
+      // Offsets of the center carried on out to sea, so both banks reach the coast road
       const line = offsetPolylineClean(extendPolyline(centre, 150), side * this.params.riverSize);
       const runs = this._seaPolygon.length >= 3 ? clipInside(line, this._seaPolygon, .6, false) : [line];
       return runs.sort((a, b) => b.length - a.length)[0] ?? [];
@@ -143,7 +143,7 @@ export default class WaterGenerator extends StreamlineGenerator {
     return withSecondary;
   }
   getSeaPolygon(polyline) { return lineRectanglePolygon(this.origin, this.worldDimensions, polyline); }
-  // How far a line runs within `riverEdge` metres of the domain's edge, away
+  // How far a line runs within `riverEdge` meters of the domain's edge, away
   // from its ends (where a river leaves the city it crosses the edge anyway)
   alongEdge(line, { margin = this.params.riverEdge ?? 170, mouth = 250 } = {}) {
     const total = polylineLength(line), x0 = this.origin.x, y0 = this.origin.y, x1 = x0 + this.worldDimensions.x, y1 = y0 + this.worldDimensions.y;
@@ -156,7 +156,7 @@ export default class WaterGenerator extends StreamlineGenerator {
     }
     return near;
   }
-  // Insert samples until neighbours are at most dstep apart
+  // Insert samples until neighbors are at most dstep apart
   complexifyStreamline(s) {
     const out = [];
     for (let i = 0; i < s.length - 1; i++) out.push(...this.complexifyStreamlineRecursive(s[i], s[i + 1]));

@@ -25,7 +25,7 @@ export function fitFogDistance(camera, fog, trackedHead = null) {
   if (!camera.isPerspectiveCamera || !fog?.isFog) return;
   let reach = fog.far;
   if (fog.isPlayerFog) {
-    // A sphere's furthest depth is its centre's depth plus its radius. XR
+    // A sphere's furthest depth is its center's depth plus its radius. XR
     // can look anywhere, so include the whole offset from the tracked head.
     camera.updateMatrixWorld();
     reach += trackedHead ? trackedHead.distanceTo(fog.origin)

@@ -31,7 +31,7 @@ test('traffic spawns on the streets around the car, drives on and stays on the r
     for (const car of traffic.vehicles) {
       assert.ok(Number.isFinite(car.speed) && car.speed >= 0);
       if (!car.edge) continue;
-      // On the carriageway: a road, or a corner the kerb rounds off
+      // On the carriageway: a road, or a corner the curb rounds off
       assert.equal(surfaceAt(car.s, car.u), 'road', 'still on a street after ten seconds');
       if (car.speed > 1) moved++;
     }
@@ -210,10 +210,10 @@ test('autodrive never loses its way: it never whips round, circles on the spot o
 
 // Cars pinned to a long, plain street near the start (with no median, or
 // one that `where` picks), the rest out of the way: [along, speed, model
-// name, lane (its kerb lane), direction (1)] each
+// name, lane (its curb lane), direction (1)] each
 function pinnedStreet(player, cars, where = e => !e.profile.median) {
   const traffic = new CityTraffic(new THREE.Scene(), player.route, player.s, 'city', player.u), start = journeyStart();
-  // (plain: straight over its first 100 m, within a metre, so no car slows
+  // (plain: straight over its first 100 m, within a meter, so no car slows
   // there for a bend and meets a blow late)
   const straight = e => {
     const a = traffic.nav.pose(e, 0, 1, 0), b = traffic.nav.pose(e, 100, 1, 0), l = Math.hypot(b.u - a.u, b.s - a.s) || 1;
@@ -341,7 +341,7 @@ test('a city car shoved above its cruise speed coasts down without hard braking'
   } finally { traffic.dispose(); player.disposeModel(); }
 });
 
-// The player's car square to the lane at `along`, `across` metres to its left and `ahead` metres on
+// The player's car square to the lane at `along`, `across` meters to its left and `ahead` meters on
 function besideLane(traffic, edge, player, along, across, ahead, speed) {
   const rail = traffic.nav.pose(edge, along, 1, edge.profile.lane), h = rail.heading;
   player.s = rail.s + Math.sin(h) * across + Math.cos(h) * ahead; player.u = rail.u - Math.cos(h) * across + Math.sin(h) * ahead;
@@ -409,7 +409,7 @@ test('weight decides a side-on hit: a truck throws a hatchback further than the 
   assert.ok(truck.speed > 14 && truck.speed > taxi.speed && taxi.speed > racer.speed, 'and the heavier car carries on the faster');
 });
 
-test('pushing another car goes only as hard as the tyres grip: a truck shoves a stopped van aside, a light racer cannot', () => {
+test('pushing another car goes only as hard as the tires grip: a truck shoves a stopped van aside, a light racer cannot', () => {
   const shove = id => {
     const player = new DrivingController(citydriverRoute, journeyStart(), id);
     player.toggleFreeDriving();
@@ -557,8 +557,8 @@ test('a car left standing across the lane is waited behind, driven round once th
     }
     assert.ok(startedWith, 'it went round');
     assert.ok(startedWith.waited > 1, `after waiting behind it (${startedWith.waited.toFixed(1)} s)`);
-    // (round the side toward the centre line: a side street has no room at the kerb)
-    assert.ok(widest > 2.5 && home - widest - follower.spec.width / 2 < 0, `across the centre line, ${widest.toFixed(1)} m out of its lane`);
+    // (round the side toward the center line: a side street has no room at the curb)
+    assert.ok(widest > 2.5 && home - widest - follower.spec.width / 2 < 0, `across the center line, ${widest.toFixed(1)} m out of its lane`);
     assert.ok(startedWith.coming < 0, `only once the car coming the other way was past (${startedWith.coming.toFixed(0)} m)`);
     assert.ok(passed && !follower.around && follower.lane === follower.edge.profile.lane && follower.speed > 3, `back in its lane at ${follower.speed.toFixed(1)} m/s`);
   } finally { traffic.dispose(); }
@@ -590,7 +590,7 @@ test('on a boulevard a car catching a slower one pulls out by the median, passes
   const start = journeyStart();
   const { traffic, edge, pinned: [slow, fast] } = pinnedStreet({ route: citydriverRoute, s: start.s, u: start.u }, [[45, 5], [5, 15]], e => e.profile.divider);
   try {
-    // (both going straight on, so neither must keep to the kerb lane for a turn)
+    // (both going straight on, so neither must keep to the curb lane for a turn)
     for (const car of [slow, fast]) headFor(traffic, car, true);
     traffic.random = (car, salt) => (salt === 41 ? 0 : CityTraffic.prototype.random.call(traffic, car, salt));
     const watcher = onlooker(traffic, edge, 80), [kerb, median] = lanesOf(edge.profile);
@@ -601,14 +601,14 @@ test('on a boulevard a car catching a slower one pulls out by the median, passes
       passed ||= aheadOf(slow, fast) > 8;
       back ||= passed && fast.lane === fast.edge.profile.lane;
       assert.ok(apart(slow, fast), `they never touch (${(i / 60).toFixed(1)} s)`);
-      // (and moving across no faster than a driver would, a couple of metres a second)
+      // (and moving across no faster than a driver would, a couple of meters a second)
       assert.ok(fast.speed * Math.abs(Math.sin(fast.heading - fast.laneHeading)) < 2.05, 'a gentle lane change');
     }
     assert.ok(kerb !== median && out && passed && back, JSON.stringify({ out, passed, back }));
   } finally { traffic.dispose(); }
 });
 
-test('on a boulevard a car by the median that must turn gets over in time, let in by the kerb lane, or else goes straight on', () => {
+test('on a boulevard a car by the median that must turn gets over in time, let in by the curb lane, or else goes straight on', () => {
   const start = journeyStart();
   const { traffic, edge, pinned: [merger, ...stream] } = pinnedStreet({ route: citydriverRoute, s: start.s, u: start.u }, [[62, 10], [60, 10], [49, 10], [38, 10], [27, 10]], e => e.profile.divider);
   try {
@@ -625,7 +625,7 @@ test('on a boulevard a car by the median that must turn gets over in time, let i
       if (merger.edge === edge && merger.turn && merger.along > merger.turn.start && Math.abs(merger.lane - kerb) > .6 && !traffic.carriesOn(merger)) turnedFromMedian = true;
       for (const car of stream) assert.ok(apart(merger, car), `the merger touches nobody (${(i / 60).toFixed(1)} s)`);
     }
-    assert.ok(waitedToMerge, 'the kerb lane was busy: it had to wait to be let in');
+    assert.ok(waitedToMerge, 'the curb lane was busy: it had to wait to be let in');
     assert.ok(!turnedFromMedian, 'never turning off from the median lane');
     assert.ok(onto, 'and on its way');
     assert.ok(onto === planned || onto.profile.divider, `round its turn, or straight on (${onto.kind})`);

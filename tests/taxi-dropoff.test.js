@@ -11,7 +11,7 @@ const places = cityPlaces();
 const lengthOf = line => line.slice(1).reduce((sum, p, i) => sum + Math.hypot(p.s - line[i].s, p.u - line[i].u), 0);
 const open = place => place.park !== undefined;
 
-test('every drop-off is a stretch of kerbside lane through its entrance, on its one street', () => {
+test('every drop-off is a stretch of curbside lane through its entrance, on its one street', () => {
   for (const place of places) {
     const line = dropOffStretch(place), e = place.entrance;
     assert.equal(dropOffStretch(place), line, 'worked out once');
@@ -24,16 +24,16 @@ test('every drop-off is a stretch of kerbside lane through its entrance, on its 
       assert.equal(road?.road, street, `${place.name}: its stretch leaves its street`);
       assert.ok(Math.abs(road.distance - street.profile.lane) < .3, `${place.name}: its stretch leaves the lane`);
       if (p.s === e.s && p.u === e.u) continue;
-      // (clear of the streets crossing it, a car's length short of their kerbs)
+      // (clear of the streets crossing it, a car's length short of their curbs)
       const crossing = CITY.roadIndex.nearest(p.u, p.s, 30, (segment, distance) => segment.road === street || segment.road.kind === 'path' ? Infinity : distance - segment.road.profile.halfWidth);
       assert.ok(!crossing || crossing.score > 8, `${place.name}: its stretch runs into a junction`);
     }
     const length = lengthOf(line);
     if (open(place)) {
       assert.ok(length <= OPEN_REACH * 2 + 4, `${place.name}: ${length.toFixed(0)} m`);
-      // (beside its own kerb all the way)
+      // (beside its own curb all the way)
       const kerb = CITY.parkPlans[place.park].kerb;
-      if (kerb.length >= 3) for (const p of line) assert.ok(distanceToPolyline({ x: p.u, y: p.s }, [...kerb, kerb[0]]) < street.profile.halfWidth + 3, `${place.name}: its stretch runs past its kerb`);
+      if (kerb.length >= 3) for (const p of line) assert.ok(distanceToPolyline({ x: p.u, y: p.s }, [...kerb, kerb[0]]) < street.profile.halfWidth + 3, `${place.name}: its stretch runs past its curb`);
     } else assert.ok(length <= place.footprint.width / 2 + 1, `${place.name}: ${length.toFixed(0)} m, beyond the middle of its front`);
   }
   // Parks and squares are dropped off anywhere along their side of the street,

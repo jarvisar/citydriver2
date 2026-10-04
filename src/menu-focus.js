@@ -69,7 +69,7 @@ function adjust(element, step, { colour = false } = {}) {
 export function rotateHue(hex, degrees) {
   const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255);
   const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, d = max - min;
-  // A grey has no hue to turn, so it starts from red at a usable saturation.
+  // A gray has no hue to turn, so it starts from red at a usable saturation.
   const s = d ? d / (1 - Math.abs(2 * l - 1)) : .6;
   let h = !d ? 0 : max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
   h = ((h * 60 + degrees) % 360 + 360) % 360;
@@ -79,7 +79,7 @@ export function rotateHue(hex, degrees) {
   return `#${[rr, gg, bb].map(v => Math.round((v + m) * 255).toString(16).padStart(2, '0')).join('')}`;
 }
 
-// The nearest control in the pressed direction. Up and down favour controls
+// The nearest control in the pressed direction. Up and down favor controls
 // that share a column, so a right-aligned list still sits in the column above
 // it; left and right only move along a row.
 function nearest(current, targets, [dx, dy], root) {

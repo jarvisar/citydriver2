@@ -52,12 +52,12 @@ test('night lighting has a fixed budget, switches off by day, and survives rebas
   assert.equal(lighting.group.parent, null);
 });
 
-test('lighting prepares every instance-colour shader before the first night', () => {
+test('lighting prepares every instance-color shader before the first night', () => {
   const lighting = new NightLighting(new THREE.Scene());
   try {
     assert.equal(lighting.group.visible, false);
     for (const mesh of lighting.group.children) {
-      assert.ok(mesh.instanceColor, `${mesh.name} can precompile the coloured variant in daylight`);
+      assert.ok(mesh.instanceColor, `${mesh.name} can precompile the colored variant in daylight`);
       assert.equal(mesh.count, 0);
     }
   } finally { lighting.dispose(); }

@@ -7,14 +7,14 @@
 // (a wall, a tree) is a body of infinite mass at the point of contact.
 
 // Cars crumple far more than they rebound, and scrape as they slide past.
-// Walls, trees and kerbside furniture give nothing back but a little bounce,
+// Walls, trees and curbside furniture give nothing back but a little bounce,
 // and scrape a car sliding along them.
 export const CAR_SURFACE = { bounce: .2, friction: .3 }, SCENERY_SURFACE = { bounce: .25, friction: .2 };
 // Below this closing speed a touch does not bounce at all, so a car leaning on
 // another, or on a wall, rests against it instead of chattering; the full
 // bounce comes in by twice this.
 const REST = 1.5;
-// Tonnes: .18 to the square metre puts a hatchback at 1.1 and a van at 1.8.
+// Tonnes: .18 to the square meter puts a hatchback at 1.1 and a van at 1.8.
 export const footprintMass = (width, length) => width * length * .18;
 
 // Where they touch: the middle of whichever corners have gone inside the other
@@ -101,11 +101,11 @@ export function rock(jolt, dt) {
 
 // What a car weighs in a blow with another. Differences in mass count for a
 // little more than they would, and the player's car for a little more again,
-// so a truck ploughs through traffic and the taxi shoves a hatchback aside,
+// so a truck plows through traffic and the taxi shoves a hatchback aside,
 // while a light racer still bounces off a van.
 export const heft = (mass, player = false) => mass ** 1.3 * (player ? 1.3 : 1);
 
-// A car knocked loose, skidding on its own tyres: its shaken driver has the
+// A car knocked loose, skidding on its own tires: its shaken driver has the
 // brakes locked, and a crashed car stops a little quicker than a clean skid
 // would, so they take speed along its heading at `grip.roll` (m/s²) and
 // scrub any slide across it at `grip.side`, each only as far as stopping it.
