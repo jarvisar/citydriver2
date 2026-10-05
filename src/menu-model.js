@@ -19,7 +19,7 @@ export function menuControls(state, actions) {
     // Carrying on in free drive after a run, in the same car at the same spot
     keep: control('Free drive', actions.keep, { job: 'free' }),
     // (free drive's is New city, asked twice: it drops the places found and the jump stars)
-    restart: control(run ? 'Restart run' : state.newCityArmed ? 'Again for a new city' : 'New city', state.mode === 'demolition' ? actions.demolition : actions.newCity),
+    restart: control(run ? 'Restart run' : state.newCityArmed ? 'Are you sure? Your progress is saved.' : 'New city', state.mode === 'demolition' ? actions.demolition : actions.newCity),
     end: control(taxi ? 'End shift' : 'End run', actions.end),
     // (in free drive on a job's standby, its button would start what is
     // already waiting: Free drive takes its place, back in their own car)
