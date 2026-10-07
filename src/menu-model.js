@@ -33,6 +33,7 @@ export function menuControls(state, actions) {
     autodrive: control('Autodrive', actions.autodrive, { toggle: state.autodrive, disabled: locked }),
     traffic: control('Traffic', actions.traffic, { toggle: state.traffic, disabled: locked }),
     driftTap: control('Tap to drift', actions.driftTap, { toggle: state.driftTap }),
+    popups: control('Popups', actions.popups, { toggle: state.popups }),
     reset: control('Reset car', actions.reset, { value: state.running ? '−5 seconds' : '' }),
     map: control('City map', actions.map, { value: state.location.place }),
     weather: control('Weather', actions.weather, { value: WEATHER_CHOICES.find(([id]) => id === state.weather)?.[1] }),
@@ -71,7 +72,7 @@ export function menuModel(state, controls, { garage, result, mapImage, mapKey, m
       item('resume', { primary: true, header: true }),
       ...(state.mode === 'taxi' ? ['end', 'free', 'demolition', 'garage'] : state.mode === 'demolition' ? ['restart', 'end', 'free', 'taxi']
         : [state.standby === 'taxi' ? 'free' : 'taxi', state.standby === 'demolition' ? 'free' : 'demolition', 'garage', 'autodrive', 'traffic']).map(drive),
-      drive('driftTap'), drive('reset'), item('map', { group: 'The city' }), item('weather', { group: 'The city' }),
+      drive('driftTap'), drive('popups'), drive('reset'), item('map', { group: 'The city' }), item('weather', { group: 'The city' }),
       ...['view', 'recenter', 'lookSensitivity', 'comfort', 'graphics'].map(view), ...(state.rates.length ? [view('rate')] : []),
       item('sound', { column: 1, group: 'Sound' }), item('mix', { column: 1, group: 'Sound' }), item('vibration', { column: 1, group: 'Sound' }), item('exit', { footer: true }),
     ] };

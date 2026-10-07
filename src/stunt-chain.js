@@ -57,9 +57,8 @@ export class StuntChain {
   get chainLeft() { return this.chain ? Math.max(0, Math.min(1, this.chainTime / chainSeconds(this.multiplier))) : 0; }
   get nextStep() { return this.multiplier >= MULTIPLIER_MAX ? 0 : CHAIN_STEP * this.multiplier - this.chain; }
   // A stunt worth `value` dollars before the multiplier. `at` is where in the
-  // world it happened, for the number floating off it (`pop` false where the
-  // stunt has a label of its own, as a jump or a flying stunt does).
-  add(value, label, at = null, kind = 'stunt', pop = true) {
+  // world it happened.
+  add(value, label, at = null, kind = 'stunt') {
     if (!(value > 0) || this.cooldown > 0) return 0;
     const before = this.multiplier;
     if (!this.chain) this.began = this.elapsed;
@@ -67,7 +66,7 @@ export class StuntChain {
     const multiplier = this.multiplier, earned = Math.round(value * multiplier);
     this.chainTime = chainSeconds(multiplier); this.pot += earned;
     this.last = { label, value: earned };
-    this.events.push({ kind, label, value: earned, chain: this.chain, multiplier, pop, x: at?.x ?? 0, y: at?.y ?? 0, z: at?.z ?? 0 });
+    this.events.push({ kind, label, value: earned, chain: this.chain, multiplier, x: at?.x ?? 0, y: at?.y ?? 0, z: at?.z ?? 0 });
     if (multiplier > before) this.events.push({ kind: 'multiplier', multiplier, text: `${CALLOUTS[multiplier]}! ×${multiplier}` });
     return earned;
   }
@@ -125,12 +124,12 @@ export class StuntChain {
     if (event.landing === 'splash') return this.lose('In the river');
     const turns = Math.abs(event.turns ?? 0);
     const value = STUNTS.jump + Math.round(STUNTS.air * event.air) + turns * STUNTS.spin + (event.trick ? STUNTS.trick : 0);
-    return this.add(value, turns ? `${turns * 360} spin` : event.trick ? 'Trick' : event.air >= 1.6 ? 'Big air' : 'Air', at, 'stunt', false);
+    return this.add(value, turns ? `${turns * 360} spin` : event.trick ? 'Trick' : event.air >= 1.6 ? 'Big air' : 'Air', at);
   }
   // A flying machine's stunt or landing (see Helicopter and Plane)
   flew(event, at) {
     if (event.kind === 'bounce') return this.lose('Hard landing');
-    return this.add(STUNTS.flight[event.text] ?? 0, event.text, at, 'stunt', false);
+    return this.add(STUNTS.flight[event.text] ?? 0, event.text, at);
   }
   // Furniture knocked loose (see LooseProps.onSmash)
   smashed(kinds, at) {

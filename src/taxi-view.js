@@ -107,8 +107,10 @@ export class TaxiView {
     this.watch = new THREE.Vector3(); this.unplace = new THREE.Matrix4();
     this.labels = new FloatingLabels(scene, 'taxi-labels'); this.shownCash = 0;
   }
-  // Labels over the cab for pay, time and tips. True if the event has any.
+  // Labels over the cab for pay, time and tips. True if the event has any
+  // (never with popups off, so its whole text is toasted instead).
   pop(event) {
+    if (!this.labels.enabled) return false;
     const tip = (amount, stunt) => this.labels.pop({ amount: `+$${amount}`, caption: stunt.toUpperCase(), colour: '#ffe07a' });
     if (event.kind === 'tip') tip(event.tip, `${event.trick}${event.combo > 1 ? ` ×${event.combo}` : ''}`);
     if (event.stunt > 0) tip(event.stunt, 'Crazy stop');

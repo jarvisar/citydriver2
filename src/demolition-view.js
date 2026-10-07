@@ -31,7 +31,7 @@ export class DemolitionView {
   // A stand-in for the labels' program, compiled with the city
   warmupObjects() { return this.labels.warmupObjects(); }
   reset() { this.labels.reset(); this.shown = 0; }
-  // A blow's price (or a fine, or time won) rising over the truck
+  // A blow's price (or a fine, or time won) rising over the truck. False with popups off.
   pop(event) {
     const style = LABEL_STYLES[event.kind] ?? LABEL_STYLES.smash;
     const amount = event.kind === 'penalty' ? event.fine ? `−$${event.fine.toLocaleString('en-US')}` : 'CHAIN LOST'
@@ -39,7 +39,7 @@ export class DemolitionView {
     // (a blow in a chain says what it was multiplied by)
     const times = ['smash', 'dent', 'wreck'].includes(event.kind) && event.multiplier > 1 ? `×${event.multiplier}` : '';
     const caption = [style.caption, times].filter(Boolean).join(' ');
-    this.labels.pop({ amount, caption, colour: style.colour });
+    return this.labels.pop({ amount, caption, colour: style.colour });
   }
   // Over the player's car; `camera`, if given, keeps near labels small
   render(vehicle, time, camera = null) { this.labels.render(time, camera, vehicle.car, vehicle.spec?.height); }

@@ -8,11 +8,13 @@ import * as THREE from 'three';
 // driver's eyes (the camera within FIRST_PERSON of the car) over the roof is
 // out of view, so they rise AHEAD meters in front instead.
 const LABELS = 12, LABEL_LIFE = 1.8, LABEL_RISE = 2, LABEL_HEIGHT = 2.4, FIRST_PERSON = 3, AHEAD = 7;
-const PIXEL_HEIGHT = 88, WORLD_HEIGHT = 1;
+// PITCH is the stack's spacing in canvas heights. A captioned label's drawn rows take about .9 of one.
+const PIXEL_HEIGHT = 80, WORLD_HEIGHT = 1, PITCH = 1.06;
+const AMOUNT_FONT = "700 104px Oswald, 'Arial Narrow', Arial, sans-serif", CAPTION_FONT = "600 44px Oswald, 'Arial Narrow', Arial, sans-serif";
 const eye = new THREE.Vector3(), base = new THREE.Vector3(), front = new THREE.Vector3(), up = new THREE.Vector3(), depth = new THREE.Vector3(), screen = new THREE.Vector3();
 // Use CSS pixels and the shorter edge so rotating a phone cannot enlarge its rewards.
-const pixelHeight = () => Math.max(56, Math.min(PIXEL_HEIGHT, Math.min(globalThis.innerWidth || 1280, globalThis.innerHeight || 800) * .15));
-const stackSlots = () => Math.max(1, Math.min(4, Math.floor(((globalThis.innerHeight || 800) - 180) / (pixelHeight() * 1.12))));
+const pixelHeight = () => Math.max(52, Math.min(PIXEL_HEIGHT, Math.min(globalThis.innerWidth || 1280, globalThis.innerHeight || 800) * .14));
+const stackSlots = () => Math.max(1, Math.min(4, Math.floor(((globalThis.innerHeight || 800) - 180) / (pixelHeight() * PITCH))));
 
 export class FloatingLabels {
   constructor(scene, name) {
@@ -21,11 +23,12 @@ export class FloatingLabels {
       const canvas = document.createElement('canvas'); canvas.width = 768; canvas.height = 208;
       const map = new THREE.CanvasTexture(canvas); map.colorSpace = THREE.SRGBColorSpace;
       const material = new THREE.SpriteMaterial({ map, depthTest: false, depthWrite: false, transparent: true, fog: false });
-      const sprite = new THREE.Sprite(material); sprite.visible = false; sprite.renderOrder = 3; sprite.userData.ambientOcclusion = false;
+      // (anchored by the bottom edge, so a label with no caption keeps its amount on the stack's rhythm)
+      const sprite = new THREE.Sprite(material); sprite.visible = false; sprite.renderOrder = 3; sprite.userData.ambientOcclusion = false; sprite.center.set(.5, 0);
       this.group.add(sprite);
-      return { canvas, ctx: canvas.getContext('2d'), map, material, sprite, age: Infinity, stack: 0, aspect: 1 };
+      return { canvas, ctx: canvas.getContext('2d'), map, material, sprite, age: Infinity, stack: 0, aspect: 1, rows: 1 };
     }) : [];
-    this.next = 0; this.lastTime = null;
+    this.next = 0; this.lastTime = null; this.shown = true;
     this.calm = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
   }
   // A stand-in for the labels' program, compiled with the city
@@ -34,43 +37,53 @@ export class FloatingLabels {
     for (const label of this.labels) { label.age = Infinity; label.sprite.visible = false; }
     this.lastTime = null;
   }
-  // Shows `amount` under an optional `caption`, rising over the car (see render).
+  // The pause menu's Popups switch
+  get enabled() { return this.shown; }
+  set enabled(on) { this.shown = on; if (!on) this.reset(); }
+  // Shows `amount` under an optional `caption`, rising over the car (see
+  // render). False if nothing popped (the labels are switched off).
   pop({ amount, caption = '', colour }) {
-    if (!this.labels.length) return;
+    if (!this.labels.length || !this.shown) return false;
     const label = this.labels[this.next]; this.next = (this.next + 1) % this.labels.length;
     const { ctx, canvas } = label;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.lineJoin = 'round';
     const centre = canvas.width / 2, accent = colour ?? '#9ff2e6';
-    ctx.font = "700 112px Oswald, 'Arial Narrow', Arial, sans-serif";
-    const amountWidth = Math.min(680, ctx.measureText(amount).width);
-    ctx.font = "600 44px Oswald, 'Arial Narrow', Arial, sans-serif";
-    const captionWidth = Math.min(650, ctx.measureText(caption).width);
-    const width = Math.min(744, Math.max(176, amountWidth + 64, captionWidth + 68));
-    // Crop empty texture space so short rewards get the same readable type as long ones.
-    label.map.repeat.set(width / canvas.width, 1); label.map.offset.x = (1 - width / canvas.width) / 2;
-    label.aspect = width / canvas.height;
+    // (letter spacing keeps the outlined digits from running together; it trails, so centered text moves half of it back)
+    ctx.font = AMOUNT_FONT; ctx.letterSpacing = '2px';
+    const amountWidth = Math.min(680, ctx.measureText(amount).width), rise = ctx.measureText('0').actualBoundingBoxAscent;
+    ctx.font = CAPTION_FONT; ctx.letterSpacing = '3px';
+    const captionWidth = Math.min(620, ctx.measureText(caption).width), cap = ctx.measureText('H').actualBoundingBoxAscent;
+    const width = Math.min(744, Math.max(176, amountWidth + 56, caption ? captionWidth + 100 : 0));
+    // The amount sits near the bottom edge with the caption's plate just over it.
+    // Empty space round them is cropped with the texture's UV transform, so short
+    // rewards get the same type size as long ones.
+    const baseline = canvas.height - 28, plateBottom = baseline - rise - 16, plateTop = plateBottom - 54;
+    const top = Math.max(0, caption ? plateTop - 12 : baseline - rise - 18), rows = canvas.height - top;
+    label.map.repeat.set(width / canvas.width, rows / canvas.height); label.map.offset.set((1 - width / canvas.width) / 2, 0);
+    label.aspect = width / rows; label.rows = rows / canvas.height;
     if (caption) {
-      const left = centre - captionWidth / 2 - 22, right = centre + captionWidth / 2 + 22;
-      const plate = ctx.createLinearGradient(0, 10, 0, 62);
-      plate.addColorStop(0, '#344852'); plate.addColorStop(1, '#101c24');
-      ctx.fillStyle = plate; ctx.strokeStyle = accent; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(left + 9, 10); ctx.lineTo(right, 10); ctx.lineTo(right - 9, 62); ctx.lineTo(left, 62); ctx.closePath();
-      ctx.shadowColor = '#030910'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 4; ctx.fill();
-      ctx.shadowBlur = ctx.shadowOffsetY = 0; ctx.stroke();
-      ctx.fillStyle = accent; ctx.fillText(caption, centre, 48, 650);
-      ctx.fillStyle = '#ffffff30'; ctx.fillRect(left + 12, 13, right - left - 22, 2);
+      const half = captionWidth / 2 + 32, left = centre - half, right = centre + half, slant = 10;
+      const plate = ctx.createLinearGradient(0, plateTop, 0, plateBottom);
+      plate.addColorStop(0, '#3e535d'); plate.addColorStop(.5, '#24363f'); plate.addColorStop(.5, '#17262f'); plate.addColorStop(1, '#0e1a22');
+      ctx.beginPath(); ctx.moveTo(left + slant, plateTop); ctx.lineTo(right, plateTop); ctx.lineTo(right - slant, plateBottom); ctx.lineTo(left, plateBottom); ctx.closePath();
+      ctx.shadowColor = '#030910c0'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 4;
+      ctx.fillStyle = plate; ctx.fill();
+      ctx.shadowColor = 'transparent'; ctx.lineWidth = 2.5; ctx.strokeStyle = accent; ctx.stroke();
+      ctx.fillStyle = '#ffffff30'; ctx.fillRect(left + slant + 3, plateTop + 4, right - left - slant - 8, 2);
+      ctx.shadowColor = '#000000b0'; ctx.shadowOffsetY = 2; ctx.shadowBlur = 0;
+      ctx.fillStyle = accent; ctx.fillText(caption, centre + 1.5, (plateTop + plateBottom + cap) / 2, 620);
     }
-    const baseline = caption ? 177 : 147;
-    ctx.font = "700 112px Oswald, 'Arial Narrow', Arial, sans-serif";
-    ctx.lineWidth = 18; ctx.strokeStyle = '#101c24';
-    ctx.shadowColor = '#030910'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 7;
-    ctx.strokeText(amount, centre, baseline, 680);
-    ctx.shadowBlur = ctx.shadowOffsetY = 0;
-    ctx.fillStyle = accent; ctx.fillText(amount, centre + 2, baseline + 5, 680);
-    const ink = ctx.createLinearGradient(0, baseline - 108, 0, baseline);
+    ctx.font = AMOUNT_FONT; ctx.letterSpacing = '2px';
+    const x = centre + 1;
+    ctx.lineWidth = 14; ctx.strokeStyle = '#101c24';
+    ctx.shadowColor = '#030910c0'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 6;
+    ctx.strokeText(amount, x, baseline, 680);
+    ctx.shadowColor = 'transparent'; ctx.shadowBlur = ctx.shadowOffsetY = 0;
+    ctx.fillStyle = accent; ctx.fillText(amount, x, baseline + 4, 680);
+    const ink = ctx.createLinearGradient(0, baseline - rise, 0, baseline);
     ink.addColorStop(0, '#ffffff'); ink.addColorStop(.45, '#fffbea'); ink.addColorStop(1, accent);
-    ctx.fillStyle = ink; ctx.fillText(amount, centre, baseline, 680);
+    ctx.fillStyle = ink; ctx.fillText(amount, x, baseline, 680);
     label.map.needsUpdate = true;
     // Short screens fit fewer slots. Reuse the oldest rather than covering another reward.
     const rising = this.labels.filter(other => other !== label && other.age < LABEL_LIFE);
@@ -79,6 +92,7 @@ export class FloatingLabels {
     for (const other of rising) if (other.stack === stack) { other.age = LABEL_LIFE; other.sprite.visible = false; }
     Object.assign(label, { age: 0, stack });
     label.sprite.visible = true; label.material.opacity = 1;
+    return true;
   }
   // Moves the labels up and fades them, over `car` (the player's, as drawn),
   // `height` its height. `camera`, if given, keeps near labels small.
@@ -105,7 +119,8 @@ export class FloatingLabels {
       }
       highest = Math.min(rising.length, slots) - 1;
     }
-    const ceiling = 1 - (2 * Math.min(90, viewportHeight * .18) + labelHeight * 1.15 + highest * labelHeight * 2.24) / viewportHeight;
+    // (the top label's top edge, allowing for the bounce, stays under the HUD)
+    const ceiling = 1 - 2 * (Math.min(90, viewportHeight * .18) + labelHeight * (1 + highest * PITCH)) / viewportHeight;
     for (const label of this.labels) {
       if (label.age >= LABEL_LIFE) { if (label.sprite.visible) label.sprite.visible = false; continue; }
       label.age += dt;
@@ -113,13 +128,15 @@ export class FloatingLabels {
       label.sprite.position.copy(base);
       if (!this.calm) label.sprite.position.y += LABEL_RISE * (1 - (1 - t) ** 3);
       const pixels = camera ? 2 * (camera.isPerspectiveCamera ? Math.max(camera.near, depth.copy(label.sprite.position).sub(eye).dot(front)) : 1) / (camera.projectionMatrix.elements[5] * viewportHeight) : 0;
-      const wantedHeight = camera ? labelHeight * pixels : WORLD_HEIGHT;
+      const full = camera ? labelHeight * pixels : WORLD_HEIGHT, wantedHeight = full * label.rows;
+      // (bottom-anchored, so dropped by about half a label to keep the middle where it rose from)
+      label.sprite.position.addScaledVector(up, -.42 * full);
       // Bring the whole stack down when its top would run into the HUD or off screen.
       if (camera) {
         screen.copy(label.sprite.position).project(camera);
         if (screen.y > ceiling) label.sprite.position.addScaledVector(up, (ceiling - screen.y) * viewportHeight * pixels / 2);
       }
-      label.sprite.position.addScaledVector(up, label.stack * wantedHeight * 1.12);
+      label.sprite.position.addScaledVector(up, label.stack * full * PITCH);
       const width = Math.min(pop * wantedHeight * label.aspect, camera ? Math.min(viewportWidth * .55, 340) * pixels : 4);
       label.sprite.scale.set(width, width / label.aspect, 1);
       label.material.opacity = t > .75 ? 1 - (t - .75) / .25 : 1;
