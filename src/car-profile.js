@@ -6,16 +6,20 @@ import * as THREE from 'three';
 // up in front of the windscreen, and shoved a lamp post bodily down the
 // street; this has the bonnet low and the windscreen set back, and a
 // truck's cab flat up to its roof. Heights are over where the tires meet
-// the ground (the model's y = 0); forward is the model's -z.
-export const SLICE = .25;
+// the ground (the model's y = 0); forward is the model's -z. `sides` leaves
+// out the middle meter, where a cab's roof sign stands: counted all the way
+// across, a post caught behind it off to one side rode along for good.
+export const SLICE = .25, MIDDLE = .5;
 const toModel = new THREE.Matrix4(), partMatrix = new THREE.Matrix4(), a = new THREE.Vector3(), b = new THREE.Vector3();
 export function carProfile(model, length) {
-  const count = Math.max(1, Math.ceil(length / SLICE)), heights = new Float32Array(count), half = length / 2;
+  const count = Math.max(1, Math.ceil(length / SLICE)), heights = new Float32Array(count), sides = new Float32Array(count), half = length / 2;
   // (each edge walked in short steps: a panel's height is at its edges, and a
   // raked windscreen stays a slope rather than one step as tall as its top)
-  const mark = (along, y) => {
+  const mark = (along, y, x) => {
     const k = Math.floor((along + half) / SLICE);
-    if (k >= 0 && k < count && y > heights[k]) heights[k] = y;
+    if (k < 0 || k >= count) return;
+    if (y > heights[k]) heights[k] = y;
+    if (Math.abs(x) >= MIDDLE && y > sides[k]) sides[k] = y;
   };
   model.updateMatrixWorld(true); toModel.copy(model.matrixWorld).invert();
   model.traverse(part => {
@@ -27,13 +31,13 @@ export function carProfile(model, length) {
       a.fromBufferAttribute(position, corner(t + e)).applyMatrix4(partMatrix);
       b.fromBufferAttribute(position, corner(t + (e + 1) % 3)).applyMatrix4(partMatrix);
       const steps = Math.max(1, Math.ceil(Math.abs(a.z - b.z) / (SLICE / 2)));
-      for (let k = 0; k <= steps; k++) mark(-(a.z + (b.z - a.z) * k / steps), a.y + (b.y - a.y) * k / steps);
+      for (let k = 0; k <= steps; k++) mark(-(a.z + (b.z - a.z) * k / steps), a.y + (b.y - a.y) * k / steps, a.x + (b.x - a.x) * k / steps);
     }
   });
   let height = 0;
   for (const h of heights) height = Math.max(height, h);
-  if (!height) heights.fill(height = 1.5);
-  return { heights, slice: SLICE, length, height };
+  if (!height) { heights.fill(height = 1.5); sides.fill(height); }
+  return { heights, sides, slice: SLICE, length, height };
 }
 // Where a car's boost flames come out, in its body's meters (x right, z
 // back): low on the back of the car, found by casting rays at its tail. The

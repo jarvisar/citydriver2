@@ -4,6 +4,7 @@ import { surfaceAt, ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL } from './world/city
 import { MEDIAN_KERB } from './world/city-medians.js';
 import { collisionImpulse } from './impact.js';
 import { insideConvex, shapeHeight } from './collision.js';
+import { MIDDLE } from './car-profile.js';
 import { stableShadowDepth } from './world/shadow-depth.js';
 
 // Street furniture a car can knock loose, the way the arcade driving games
@@ -399,7 +400,7 @@ function inBody(car, x, y, z) {
   const profile = car.profile, over = up + CROWN * Math.abs(across) / car.halfWidth;
   let top, ahead, behind;
   if (profile) {
-    const heights = profile.heights, n = heights.length, slice = profile.slice, tail = -profile.length / 2;
+    const heights = Math.abs(across) >= MIDDLE ? profile.sides : profile.heights, n = heights.length, slice = profile.slice, tail = -profile.length / 2;
     const k = Math.min(n - 1, Math.max(0, Math.floor((along - tail) / slice)));
     top = heights[k] - over;
     if (top <= 0) return 0;
