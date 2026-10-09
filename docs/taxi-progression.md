@@ -17,19 +17,21 @@ Taxi runs work like Crazy Taxi: a shift clock that fares add time to. The number
 
 ## The Shift Clock
 
-A shift starts at 100 seconds, from the first pickup, and holds at most 180. Boarding adds 8 seconds, plus 2 for each extra rider. Finishing a fare adds a rating bonus (Speedy +10, Normal +6, Slow +1), a second for every 30 m of its route, and up to 5 seconds for a Speedy streak. Riders who get out before the last stop of a group add 2 seconds for Speedy and 1 for Normal.
+A shift starts at 100 seconds, from the first pickup, and holds at most 120. Boarding adds 8 seconds, plus 2 for each extra rider. Finishing a fare adds a rating bonus (Speedy +10, Normal +6, Slow +1), a second for every 30 m of its route, and up to 5 seconds for a Speedy streak. Riders who get out before the last stop of a group add 2 seconds for Speedy and 1 for Normal.
 
-Time rewards shrink by 4.5% for every minute of the shift, down to 40%, so every shift ends.
+Time rewards shrink by 8% for every minute of the shift, down to 10%, so every shift ends. After about 11 minutes a fare adds only a few seconds.
 
 Short fares keep the clock going. Long fares and groups pay more money per minute but cost time. A bot that drives the street routes at a steady pace and takes the nearest fare gets these shift lengths:
 
 | Route pace | Shift |
 | --- | --- |
-| 13 m/s | about 3 minutes |
+| 13 m/s | about 3.5 minutes |
 | 16 m/s | about 4.5 minutes |
-| 19 m/s | about 7 minutes |
-| 22 m/s | about 12 minutes |
-| 25 m/s | about 15 minutes |
+| 19 m/s | about 5 minutes |
+| 22 m/s | about 8 minutes |
+| 25 m/s | about 9 minutes |
+| 28 m/s | about 10 minutes |
+| 32 m/s | about 11 minutes |
 
 If time runs out with riders aboard, the shift carries on until they have all got out or given up. Their fares still pay, but no more time is added. If time runs out with nobody aboard, the shift ends.
 
