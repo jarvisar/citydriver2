@@ -57,7 +57,7 @@ test('joystick distance controls speed and release stops without reversing', () 
   const dx = Math.sin(frame.angle), dz = -Math.cos(frame.angle);
   const x = dx * m[0] + dz * m[2], y = dx * m[4] + dz * m[6], length = Math.hypot(x, y);
   for (let i = 0; i < 50; i++) car.update(1 / 60, { touchDrive: touchDrivingInput({ x: x / length * .25, y: y / length * .25 }, camera, car.route, car.s, car.u) });
-  assert.ok(car.speed > 5 && car.speed <= 7);
+  assert.ok(car.speed > 5 && car.speed <= 8.25);
   for (let i = 0; i < 60; i++) {
     car.update(1 / 60, { touchDrive: { amount: 0 } });
     assert.ok(car.speed >= 0);

@@ -13,32 +13,32 @@ const straightRoute = {
 for (const hz of [30, 60, 75, 120, 144, 165, 240]) {
   test(`car advances on every display frame at ${hz} Hz with identical physics`, () => {
     const car = new DrivingController(straightRoute), clock = new FrameClock();
-    car.speed = 28;
+    car.speed = 33;
     let steps = 0, previousZ;
     for (let i = 0; i <= hz * 3; i++) {
       clock.tick(i * 1000 / hz, true, dt => { car.update(dt, { forward: true }); steps++; });
       car.render(clock.alpha);
-      if (i > hz / 2) assert.ok(Math.abs(previousZ - car.car.position.z - 28 / hz) < 1e-9, `uneven movement at frame ${i}`);
+      if (i > hz / 2) assert.ok(Math.abs(previousZ - car.car.position.z - 33 / hz) < 1e-9, `uneven movement at frame ${i}`);
       previousZ = car.car.position.z;
     }
     assert.equal(steps, 360);
-    assert.ok(Math.abs(car.s - 108) < 1e-9);
+    assert.ok(Math.abs(car.s - 123) < 1e-9);
     // Projected forward, not interpolated back: the display shows the car
     // where the simulation has it now, with no step of latency added.
-    assert.ok(Math.abs(car.car.position.z + 108) < 1e-9);
+    assert.ok(Math.abs(car.car.position.z + 123) < 1e-9);
   });
 }
 
 test('irregular display intervals and refresh-rate changes preserve smooth travel', () => {
   const car = new DrivingController(straightRoute), clock = new FrameClock();
-  car.speed = 28;
+  car.speed = 33;
   let timestamp = 0;
   clock.tick(0, true, dt => car.update(dt, { forward: true }));
   for (const interval of [7, 6, 9, 16, 8, 24, 4, 5, 12, 33, 7, 4, 6, 16]) {
     timestamp += interval;
     clock.tick(timestamp, true, dt => car.update(dt, { forward: true }));
     car.render(clock.alpha);
-    if (timestamp > 17) assert.ok(Math.abs(car.car.position.z + 24 + 28 * (timestamp / 1000)) < 1e-9);
+    if (timestamp > 17) assert.ok(Math.abs(car.car.position.z + 24 + 33 * (timestamp / 1000)) < 1e-9);
   }
 });
 

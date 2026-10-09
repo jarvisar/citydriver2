@@ -72,7 +72,7 @@ Cars go up and down with what they drive over and can leave the ground off ramps
 
 The helicopter in the garage flies with the driving controls. Forward and brake fly it forward and back, steering turns it, and Climb and Descend move it up and down. It holds its height when nothing is pressed and slows to a hover on its own. Pressing forward on the ground lifts it off to a low hover.
 
-- It reaches 40 m/s (90 mph), climbs at 8 m/s and descends at 9 m/s. It turns at about 110° a second while hovering and banks into turns at speed.
+- It reaches 47 m/s (105 mph), climbs at 8 m/s and descends at 9 m/s. It turns at about 110° a second while hovering and banks into turns at speed.
 - It slows down as it gets close to the ground, so landings are gentle. It can land on streets and roofs. Over the water it hovers just above the surface.
 - It bumps into buildings below their roofs and flies over them above. It meets street furniture like a car does until it is above it. More than 2.5 m up, it passes over traffic and people.
 - It flies up to 120 m above the streets. The chase camera tilts down the higher it goes.
@@ -87,7 +87,7 @@ The flight code is in [src/helicopter.js](../src/helicopter.js).
 
 The plane uses the same controls. On the ground it taxis like a slow car on its nose wheel and brakes with S, then backs up at 4 m/s. Holding W, it lifts off by itself at 25 m/s. Holding Space as well, it lifts off at 19 m/s and climbs.
 
-- In the air it cruises at 34 m/s and holds its height when nothing is pressed. W takes it up to 56 m/s and S down to 17 m/s. Climbs and dives change its speed a little.
+- In the air it cruises at 34 m/s and holds its height when nothing is pressed. W takes it up to 66 m/s and S down to 17 m/s. Climbs and dives change its speed a little.
 - Steering banks it up to about 57° and turns it at about 55° a second at cruising speed, tighter when slow.
 - If it slows right down in the air, the nose drops until it has flying speed again.
 - It never flies into the ground. Near the floor it can only sink at 1.1 m/s plus 0.75 m/s for every meter of height, so a dive flattens out and holding Shift lands it softly. A landing faster than 4.5 m/s, or with the wings banked over 0.6 rad, bounces.

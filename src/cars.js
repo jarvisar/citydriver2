@@ -33,21 +33,21 @@ export const ROUTE_PAINT = { coast: '#d96143', desert: '#78977b', snow: '#9fc4d5
 //
 // A car weighs what its footprint covers (see impact.js) unless it gives its
 // own `mass` in tonnes, which decides how a collision with traffic is shared.
-const BASE = { topSpeed: 28, acceleration: 11.3, braking: 20, grip: 1, offRoad: 18.5 };
+const BASE = { topSpeed: 33, acceleration: 14.5, braking: 20, grip: 1, offRoad: 21.8 };
 
 export const CARS = {
   taxi: {
     name: 'Taxi', kind: 'built', taxi: true, paint: '#f5c42e', shape: { ...shape('sedan'), name: 'taxi' },
-    stats: { topSpeed: 40, acceleration: 21, braking: 32, grip: 1.4, offRoad: 28 },
+    stats: { topSpeed: 47, acceleration: 27, braking: 32, grip: 1.4, offRoad: 32.9 },
   },
   taxiGT: {
     name: 'GT Taxi', kind: 'built', taxi: true, paint: '#f5c42e', shape: SPORTS_MODEL,
-    stats: { topSpeed: 46, acceleration: 29, braking: 34, grip: 1.55, offRoad: 28 },
+    stats: { topSpeed: 54, acceleration: 37, braking: 34, grip: 1.55, offRoad: 32.9 },
   },
   taxiFormula: {
     name: 'Formula Taxi', mass: .95, kind: 'formula', taxi: true, paint: '#f5c42e',
     shape: { ...FORMULA_SHAPE, name: 'taxi-formula', cabin: [1.12, .34, 1.1], eye: [-.28, .88, -.76] },
-    stats: { topSpeed: 50, acceleration: 40, braking: 36, grip: 2.2, offRoad: 28, turnRadius: 3.6 },
+    stats: { topSpeed: 59, acceleration: 51, braking: 36, grip: 2.2, offRoad: 32.9, turnRadius: 3.6 },
   },
   auto: {
     name: 'Default',
@@ -59,82 +59,82 @@ export const CARS = {
   },
   desert: {
     name: 'Off-road Wagon', kind: 'classic', trim: 'desert', paint: '#78977b', shape: CLASSIC_SHAPE,
-    stats: { topSpeed: 27.2, acceleration: 11, braking: 19.4, grip: .97, offRoad: 19 },
+    stats: { topSpeed: 32.1, acceleration: 14.1, braking: 19.4, grip: .97, offRoad: 22.4 },
   },
   snow: {
     name: 'Winter Wagon', kind: 'classic', trim: 'snow', paint: '#9fc4d5', shape: CLASSIC_SHAPE,
-    stats: { topSpeed: 27.4, acceleration: 10.9, braking: 21, grip: 1.06, offRoad: 18.4 },
+    stats: { topSpeed: 32.3, acceleration: 14, braking: 21, grip: 1.06, offRoad: 21.7 },
   },
   jungle: {
     name: 'Utility Wagon', kind: 'classic', trim: 'jungle', paint: '#e0b44a', shape: CLASSIC_SHAPE,
-    stats: { topSpeed: 26.6, acceleration: 11.5, braking: 19.2, grip: .96, offRoad: 18.6 },
+    stats: { topSpeed: 31.4, acceleration: 14.7, braking: 19.2, grip: .96, offRoad: 21.9 },
   },
   plains: {
     name: 'Country Wagon', kind: 'classic', trim: 'plains', paint: '#4f8f8b', shape: CLASSIC_SHAPE,
-    stats: { topSpeed: 27.8, acceleration: 11.2, braking: 19.8, grip: .99, offRoad: 18.8 },
+    stats: { topSpeed: 32.8, acceleration: 14.3, braking: 19.8, grip: .99, offRoad: 22.2 },
   },
   city: {
     name: 'City Wagon', kind: 'classic', trim: 'city', paint: '#7a3b47', shape: CLASSIC_SHAPE,
-    stats: { topSpeed: 26.4, acceleration: 11.8, braking: 20.4, grip: 1.02, offRoad: 17.6 },
+    stats: { topSpeed: 31.2, acceleration: 15.1, braking: 20.4, grip: 1.02, offRoad: 20.8 },
   },
   hatchback: {
     name: 'City Hatch', kind: 'built', paint: '#6fa9c2', shape: shape('hatchback'),
-    stats: { topSpeed: 26.2, acceleration: 12.1, braking: 20.6, grip: 1.1, offRoad: 16.8 },
+    stats: { topSpeed: 30.9, acceleration: 15.5, braking: 20.6, grip: 1.1, offRoad: 19.8 },
   },
   sedan: {
     name: 'Highway Sedan', kind: 'built', paint: '#e7e3d5', shape: shape('sedan'),
-    stats: { topSpeed: 28.6, acceleration: 11.1, braking: 20.2, grip: 1.01, offRoad: 18 },
+    stats: { topSpeed: 33.7, acceleration: 14.2, braking: 20.2, grip: 1.01, offRoad: 21.2 },
   },
   wagon: {
     name: 'Estate Wagon', kind: 'built', paint: '#5f7a5a', shape: shape('wagon'),
-    stats: { topSpeed: 28, acceleration: 10.7, braking: 19.6, grip: .97, offRoad: 18.3 },
+    stats: { topSpeed: 33, acceleration: 13.7, braking: 19.6, grip: .97, offRoad: 21.6 },
   },
   pickup: {
     name: 'Work Pickup', kind: 'built', paint: '#b06a3a', shape: shape('pickup'),
-    stats: { topSpeed: 26.4, acceleration: 10.3, braking: 18.6, grip: .92, offRoad: 18.4 },
+    stats: { topSpeed: 31.2, acceleration: 13.2, braking: 18.6, grip: .92, offRoad: 21.7 },
   },
   van: {
     name: 'Delivery Van', kind: 'built', paint: '#9aa6ad', shape: shape('van'),
-    stats: { topSpeed: 27, acceleration: 9.9, braking: 18.8, grip: .9, offRoad: 16.7 },
+    stats: { topSpeed: 31.9, acceleration: 12.7, braking: 18.8, grip: .9, offRoad: 19.7 },
   },
   sports: {
     name: 'GT', kind: 'built', paint: '#b8232f', shape: SPORTS_MODEL,
-    stats: { topSpeed: 33, acceleration: 13.5, braking: 23, grip: 1.14, offRoad: 20.1 },
+    stats: { topSpeed: 38.9, acceleration: 17.3, braking: 23, grip: 1.14, offRoad: 23.7 },
   },
   exotic: {
     name: 'Exotic', kind: 'built', paint: '#407394', shape: EXOTIC_MODEL,
-    stats: { topSpeed: 37.5, acceleration: 15, braking: 23, grip: 1.22, offRoad: 20.1 },
+    stats: { topSpeed: 44.3, acceleration: 19.5, braking: 23, grip: 1.22, offRoad: 23.7 },
   },
   // Light, short and on knobbly tires: it barely notices the tarmac ending.
   buggy: {
     name: 'Buggy', mass: .7, kind: 'special', paint: '#e2a23b', shape: SPECIAL_SHAPES.buggy,
-    stats: { topSpeed: 25.5, acceleration: 14.5, braking: 19, grip: 1.12, offRoad: 23.5 },
+    stats: { topSpeed: 30.1, acceleration: 18.6, braking: 19, grip: 1.12, offRoad: 27.7 },
   },
   // Goes anywhere at the same unhurried pace, and leans on its tires to stop or turn.
   monster: {
     name: 'Monster Truck', mass: 4.5, kind: 'special', paint: '#3f7fb5', shape: SPECIAL_SHAPES.monster,
-    stats: { topSpeed: 23.5, acceleration: 10.4, braking: 16.5, grip: .8, offRoad: 21.5 },
+    stats: { topSpeed: 27.7, acceleration: 13.3, braking: 16.5, grip: .8, offRoad: 25.7 },
   },
   // All engine: quicker in a straight line than the coupe, and nowhere else.
   hotrod: {
     name: 'Hot Rod', kind: 'special', paint: '#1f2326', shape: SPECIAL_SHAPES.hotrod,
-    stats: { topSpeed: 37, acceleration: 17.5, braking: 17, grip: .86, offRoad: 20.5 },
+    stats: { topSpeed: 43.7, acceleration: 22.4, braking: 17, grip: .86, offRoad: 24.2 },
   },
   // Eight tonnes of tractor unit. It gets there, and it needs the room to stop.
   rig: {
     name: 'Truck', mass: 8, kind: 'special', paint: '#a3312c', shape: SPECIAL_SHAPES.rig,
-    stats: { topSpeed: 27, acceleration: 8.6, braking: 15.5, grip: .78, offRoad: 16.2, turnRadius: 5.4 },
+    stats: { topSpeed: 31.9, acceleration: 11, braking: 15.5, grip: .78, offRoad: 19.2, turnRadius: 5.4 },
   },
   // The city's bus, as heavy as the truck and bigger: it goes through what
   // the truck does, is nearly as slow away, and swings wide at a corner.
   bus: {
     name: 'City Bus', mass: BUS_MODEL.mass, kind: 'special', paint: BUS_PAINT, shape: SPECIAL_SHAPES.bus,
-    stats: { topSpeed: 25, acceleration: 9.2, braking: 16.2, grip: .8, offRoad: 16, turnRadius: 6.8 },
+    stats: { topSpeed: 29.5, acceleration: 11.8, braking: 16.2, grip: .8, offRoad: 18.9, turnRadius: 6.8 },
   },
-  // Out of breath by 48 mph, but it changes lanes like a thought.
+  // Out of breath by 57 mph, but it changes lanes like a thought.
   micro: {
     name: 'Micro', kind: 'special', paint: '#8fcfc0', shape: SPECIAL_SHAPES.micro,
-    stats: { topSpeed: 21.5, acceleration: 12.6, braking: 22, grip: 1.26, offRoad: 13.2, turnRadius: 3.2 },
+    stats: { topSpeed: 25.4, acceleration: 16.1, braking: 22, grip: 1.26, offRoad: 15.6, turnRadius: 3.2 },
   },
   formula: {
     name: 'Formula', mass: .8, kind: 'formula', paint: '#d8452f', shape: FORMULA_SHAPE,
@@ -146,7 +146,7 @@ export const CARS = {
   // weighs in heavy enough to keep going: a tree takes about a tenth of its speed.
   helicopter: {
     name: 'Helicopter', mass: 4, kind: 'helicopter', flies: true, paint: '#c9362f', shape: HELICOPTER_SHAPE,
-    stats: { topSpeed: 40, acceleration: 13, braking: 16, grip: 1.2, offRoad: 40 },
+    stats: { topSpeed: 47, acceleration: 16.6, braking: 16, grip: 1.2, offRoad: 47 },
   },
   // A light plane on big soft tires (see plane.js): it needs a run at it to
   // take off, and after that it is the quickest thing in the garage. It is
@@ -154,7 +154,7 @@ export const CARS = {
   // through only costs it a bite of its speed.
   plane: {
     name: 'Plane', mass: 2.2, kind: 'plane', flies: true, paint: '#2f6fa8', shape: PLANE_SHAPE,
-    stats: { topSpeed: 56, acceleration: 12, braking: 14, grip: 1.1, offRoad: 56 },
+    stats: { topSpeed: 66, acceleration: 15.4, braking: 14, grip: 1.1, offRoad: 66 },
   },
 };
 
@@ -252,19 +252,19 @@ export function carStats(id) {
 // it was built for. The formula racer is off that scale by design and pegs the
 // first three; what its slicks cost shows on the fourth.
 const METERS = [
-  { label: 'Top speed', key: 'topSpeed', low: 20, high: 38 },
-  { label: 'Acceleration', key: 'acceleration', low: 7.5, high: 18.5 },
+  { label: 'Top speed', key: 'topSpeed', low: 23.6, high: 44.8 },
+  { label: 'Acceleration', key: 'acceleration', low: 9.6, high: 23.7 },
   { label: 'Handling', key: 'grip', low: .72, high: 1.3 },
-  { label: 'Off road', key: 'offRoad', low: 12, high: 24.5 },
+  { label: 'Off road', key: 'offRoad', low: 14.2, high: 28.9 },
 ];
 // The cabs are tuned past every road car, so on that scale all three pegged
 // every bar. They get one of their own from zero (the old Taxi fleet's), so
 // the Taxi, GT Taxi and Formula Taxi still tell apart in the garage.
 const CAB_METERS = [
-  { label: 'Top speed', key: 'topSpeed', low: 0, high: 55 },
-  { label: 'Acceleration', key: 'acceleration', low: 0, high: 42 },
+  { label: 'Top speed', key: 'topSpeed', low: 0, high: 65 },
+  { label: 'Acceleration', key: 'acceleration', low: 0, high: 54 },
   { label: 'Handling', key: 'grip', low: 0, high: 2.3 },
-  { label: 'Off road', key: 'offRoad', low: 0, high: 32 },
+  { label: 'Off road', key: 'offRoad', low: 0, high: 38 },
 ];
 export function carMeters(id) {
   const { stats, taxi } = carEntry(id);

@@ -197,7 +197,7 @@ test('a press just after leaving a ramp is a trick, and a trick or a spin landed
       c.s = 10; c.update(0, {});
       const turbos = [];
       let took = null;
-      for (let i = 0; i < 600; i++) {
+      for (let i = 0; i < 720; i++) {
         let keys = { forward: 1 };
         if (c.aloft && took === null) took = i;
         const since = took === null ? -1 : (i - took) * STEP;

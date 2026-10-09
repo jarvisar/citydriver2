@@ -14,9 +14,9 @@ The livery row sits under the Cabs heading in the garage. Liveries are unlocked 
 
 | Cab | Price | Top speed (m/s / mph) | Acceleration | Braking | Grip | Off-road speed |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Taxi | Included | 40 / 89 | 21 | 32 | 1.40 | 28 |
-| GT Taxi | $10,000 | 46 / 103 | 29 | 34 | 1.55 | 28 |
-| Formula Taxi | $40,000 | 50 / 112 | 40 | 36 | 2.20 | 28 |
+| Taxi | Included | 47 / 105 | 27 | 32 | 1.40 | 32.9 |
+| GT Taxi | $10,000 | 54 / 121 | 37 | 34 | 1.55 | 32.9 |
+| Formula Taxi | $40,000 | 59 / 132 | 51 | 36 | 2.20 | 32.9 |
 
 Acceleration and braking are in m/s², and off-road speed is in m/s. Grip is relative to the original wagon. Boost adds 10 m/s to top speed. Fares, boost, timers and passenger capacity are the same for every taxi.
 
@@ -28,9 +28,9 @@ Straight-road measurements at 120 Hz without boost:
 
 | Cab | 300 m from rest | 0-60 mph | Braking from 67 mph |
 | --- | ---: | ---: | ---: |
-| Taxi | 8.68 s | 1.51 s | 12.08 m |
-| GT Taxi | 7.48 s | 1.04 s | 11.45 m |
-| Formula Taxi | 6.73 s | 0.73 s | 10.88 m |
+| Taxi | 7.43 s | 1.08 s | 12.08 m |
+| GT Taxi | 6.42 s | 0.76 s | 11.45 m |
+| Formula Taxi | 5.74 s | 0.54 s | 10.88 m |
 
 ## Tests
 

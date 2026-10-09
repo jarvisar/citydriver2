@@ -81,8 +81,8 @@ test('every car can reverse from rest and after braking off road', () => {
 
 test('the coastal wagon keeps the original handling and every car stays close to it', () => {
   const base = carStats(DEFAULT_CAR);
-  assert.equal(base.topSpeed, 28); assert.equal(base.acceleration, 11.3); assert.equal(base.braking, 20);
-  assert.equal(base.grip, 1); assert.equal(base.offRoad, 18.5);
+  assert.equal(base.topSpeed, 33); assert.equal(base.acceleration, 14.5); assert.equal(base.braking, 20);
+  assert.equal(base.grip, 1); assert.equal(base.offRoad, 21.8);
   for (const id of CAR_IDS) {
     if (CHOOSER_ONLY.includes(id)) continue;
     const stats = carStats(id);
