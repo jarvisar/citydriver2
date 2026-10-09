@@ -84,6 +84,11 @@ export class DriftEffects {
   // One frame. `vehicle` the player's (see ActorMotion), `running` false
   // while paused, when nothing moves
   update(vehicle, dt, running = true) {
+    this.step(vehicle, dt, running);
+    // (an empty instanced mesh still costs a draw call)
+    for (const mesh of [this.sparks, this.flares, this.flames, this.puffs, this.marks]) mesh.visible = mesh.count > 0;
+  }
+  step(vehicle, dt, running) {
     const drift = vehicle.drift, car = vehicle.car;
     if (!running || !dt) return;
     this.age(dt);

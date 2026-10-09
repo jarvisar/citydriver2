@@ -514,7 +514,7 @@ function bitMesh(geometry, material, name, count) {
   geometry.deleteAttribute('uv');
   geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(geometry.attributes.position.count * 3).fill(1), 3));
   const mesh = new THREE.InstancedMesh(geometry, material, count);
-  mesh.name = name; mesh.count = 0; mesh.frustumCulled = false; mesh.castShadow = false;
+  mesh.name = name; mesh.count = 0; mesh.visible = false; mesh.frustumCulled = false; mesh.castShadow = false;
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   for (let i = 0; i < count; i++) mesh.setColorAt(i, white);
   return mesh;
@@ -577,7 +577,7 @@ class Bits {
       target.setMatrixAt(i, matrix.compose(position, rotation, scale.set(size * sx, size * sy, size * sz)));
       target.setColorAt(i, this.colour.set(bit.colour));
     }
-    mesh.count = bits; puffs.count = puffed; puffs.visible = puffed > 0;
+    mesh.count = bits; mesh.visible = bits > 0; puffs.count = puffed; puffs.visible = puffed > 0;
     for (const each of [mesh, puffs]) { each.instanceMatrix.needsUpdate = true; each.instanceColor.needsUpdate = true; }
   }
   clear() { this.list = []; }

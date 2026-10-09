@@ -5,7 +5,7 @@ import { citydriverRoute } from './world/city-route.js';
 import { stableShadowDepth } from './world/shadow-depth.js';
 import { CARS, DEFAULT_CAR, DRAG, ROUTE_PAINT, carEntry, carStats } from './cars.js';
 import { createShapeCar } from './car-models.js';
-import { wheelGeometry } from './traffic-models.js';
+import { bodyMaterial, lampGlow, markedBody, wheelGeometry } from './traffic-models.js';
 import { createFormulaCar } from './formula-model.js';
 import { createSpecialCar } from './special-models.js';
 import { createHelicopter, Helicopter } from './helicopter.js';
@@ -34,6 +34,37 @@ function outline(group, points, [x0, x1], material) {
   mesh.castShadow = true; mesh.receiveShadow = true; group.add(mesh); return mesh;
 }
 // Fixed parts of a group that share a material draw together; `keep` stays loose.
+// A group's plain parts drawn in one with its paint and lamps, as a road car
+// is (see markedBody). Plain is the default roughness with no metal or glow,
+// so only glass and chrome are left. `lamps` maps a stand-in material to its
+// lamp.
+function markParts(group, paint, lamps, keep) {
+  const sets = { paint: [], details: [], headlights: [], taillights: [] };
+  let receive = false;
+  for (const mesh of [...group.children]) {
+    if (mesh === keep || !mesh.isMesh) continue;
+    const material = mesh.material;
+    const plain = !material.vertexColors && material.roughness === .74 && !material.metalness && !material.emissive?.getHex();
+    const set = material === paint ? 'paint' : lamps.get(material) ?? (plain ? 'details' : null);
+    if (!set) continue;
+    mesh.updateMatrix();
+    const geometry = (mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone()).applyMatrix4(mesh.matrix);
+    geometry.deleteAttribute('uv');
+    if (set !== 'paint') {
+      const colours = new Float32Array(geometry.attributes.position.count * 3);
+      for (let i = 0; i < colours.length; i += 3) material.color.toArray(colours, i);
+      geometry.setAttribute('color', new THREE.BufferAttribute(colours, 3));
+    }
+    sets[set].push(geometry); receive ||= mesh.receiveShadow;
+    group.remove(mesh); mesh.geometry.dispose();
+  }
+  const parts = Object.fromEntries(Object.entries(sets).map(([set, list]) => [set, list.length > 1 ? mergeGeometries(list) : list[0]]));
+  for (const list of Object.values(sets)) if (list.length > 1) for (const geometry of list) geometry.dispose();
+  if (!Object.values(parts).some(Boolean)) return;
+  const mesh = new THREE.Mesh(markedBody(parts, {}), paint);
+  mesh.castShadow = true; mesh.receiveShadow = receive;
+  group.add(mesh);
+}
 function mergeParts(group, keep) {
   const batches = new Map();
   for (const mesh of group.children) {
@@ -54,11 +85,14 @@ function mergeParts(group, keep) {
 export function createClassicCar(entry = carEntry(DEFAULT_CAR)) {
   const car = new THREE.Group();
   const body = new THREE.Group(); car.add(body);
-  const paint = mat('#d96143'); const roof = mat('#f5e8c8'); const glass = mat('#36545a', { roughness: .3, metalness: .16 });
+  // The paint, the hardtop, the tires and the lamps differ only in color and
+  // glow, so they draw as one (see markParts). The lamps' materials only mark
+  // their parts.
+  const head = lampGlow('#e9cc84', .24), tail = lampGlow('#b8220d', .1);
+  const paint = bodyMaterial('#d96143', { head: head.uniform, tail: tail.uniform }); const roof = mat('#f5e8c8'); const glass = mat('#36545a', { roughness: .3, metalness: .16 });
   const tires = mat('#303b36'); const chrome = mat('#c9cbb6', { metalness: .2 });
-  const front = mat('#fff5cf', { emissive: '#e9cc84', emissiveIntensity: .24 });
-  const rear = mat('#8e3328', { emissive: '#b8220d', emissiveIntensity: .1 });
-  const nightLights = [{ material: front, day: .24, night: 2.2 }, { material: rear, day: .1, night: 2.5 }];
+  const front = mat('#fff5cf'), rear = mat('#8e3328'), lamps = new Map([[front, 'headlights'], [rear, 'taillights']]);
+  const nightLights = [{ material: head.material, day: .24, night: 2.2 }, { material: tail.material, day: .1, night: 2.5 }];
   // A boxy tourer: the tub, a bonnet and a boot stepped up from it, and the
   // glasshouse under a cream hardtop.
   box(body, [2.05, .64, 3.9], [0, .9, 0], paint);
@@ -90,9 +124,12 @@ export function createClassicCar(entry = carEntry(DEFAULT_CAR)) {
   box(body, [1.98, .14, .17], [0, .64, -1.97], chrome);
   box(body, [1.98, .14, .17], [0, .64, 1.97], chrome);
   const plate = box(body, [.6, .22, .03], [0, .91, 1.96], roof);
-  // The plate still moves for the spare tire; accessories and animated
-  // wheels stay separate.
-  mergeParts(body, plate);
+  // With the spare on, the plate drops to the bumper beside it, under a lamp.
+  // Only the default car's trim follows the route, so only its plate stays
+  // loose to move. Accessories and animated wheels stay separate.
+  const placePlate = spare => plate.position.set(spare ? -.69 : 0, spare ? .825 : .91, 1.96);
+  if (entry.trim) placePlate(entry.trim === 'desert');
+  markParts(body, paint, lamps, entry.trim ? null : plate); mergeParts(body, plate);
   // One roof or tail accessory per wagon trim (see cars.js). The rack's bars
   // stand on feet at the hardtop's edges, and every load rests on them, or on
   // the hardtop between them.
@@ -102,13 +139,14 @@ export function createClassicCar(entry = carEntry(DEFAULT_CAR)) {
     box(rack, [1.72, .09, .12], [0, RACK - .045, z], tires);
     for (const side of [-1, 1]) box(rack, [.1, .045, .15], [side * .8, 2.1325, z], tires);
   }
-  mergeParts(rack);
+  markParts(rack, paint, lamps);
   const surfboard = new THREE.Group(); surfboard.name = 'surfboard'; body.add(surfboard);
   const boardShape = new THREE.Shape();
   boardShape.moveTo(0, -1.65); boardShape.quadraticCurveTo(.5, -1.35, .47, .65); boardShape.quadraticCurveTo(.43, 1.55, 0, 1.65); boardShape.quadraticCurveTo(-.43, 1.55, -.47, .65); boardShape.quadraticCurveTo(-.5, -1.35, 0, -1.65);
   const board = new THREE.Mesh(new THREE.ExtrudeGeometry(boardShape, { depth: .11, bevelEnabled: false, curveSegments: 3 }), roof);
   board.rotation.x = Math.PI / 2; board.position.set(.14, RACK + .11, .04); board.castShadow = true; surfboard.add(board);
   box(surfboard, [.065, .02, 2.85], [.14, RACK + .115, .02], paint);
+  markParts(surfboard, paint, lamps);
   // The spare hangs on the tail, clear of the lamps and the plate.
   const spare = new THREE.Group(); spare.name = 'desert-spare'; spare.position.set(0, 1.22, 2.095); body.add(spare);
   const spareTire = new THREE.Mesh(new THREE.CylinderGeometry(.48, .48, .28, 12), tires);
@@ -120,7 +158,7 @@ export function createClassicCar(entry = carEntry(DEFAULT_CAR)) {
   outline(roofBox, [[-.8, RACK + .07], [-.66, RACK], [1, RACK], [1.06, RACK + .05], [1.06, RACK + .3], [-.74, RACK + .3], [-.8, RACK + .25]], [-.62, .62], tires);
   box(roofBox, [1.16, .12, 1.72], [0, RACK + .36, .13], mat('#536774'));
   for (const x of [-.4, .4]) box(roofBox, [.07, .025, 1.74], [x, RACK + .4325, .13], chrome);
-  mergeParts(roofBox);
+  markParts(roofBox, paint, lamps); mergeParts(roofBox);
   // Round loads lie across the car; `open` leaves a strap's band without ends.
   const across = (group, radius, length, [x, y, z], material, segments, open = false) => {
     const part = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length, segments, 1, open), material);
@@ -132,7 +170,7 @@ export function createClassicCar(entry = carEntry(DEFAULT_CAR)) {
   for (const x of [-.52, .52]) box(cargo, [.44, .34, .3], [x, RACK + .17, -.55], olive);
   across(cargo, .19, 1.5, [0, RACK + .19, .75], canvas, 8);
   for (const x of [-.45, .45]) across(cargo, .2, .05, [x, RACK + .19, .75], olive, 8, true);
-  mergeParts(cargo);
+  markParts(cargo, paint, lamps);
   // A round bale lies on the hardtop between the bars, strapped round.
   const bale = new THREE.Group(); bale.name = 'plains-bale'; body.add(bale);
   const straw = mat('#d8b566'), cutEnd = mat('#b8964f'), strap = mat('#5e4c33');
@@ -142,7 +180,7 @@ export function createClassicCar(entry = carEntry(DEFAULT_CAR)) {
     across(bale, .2, .03, [side * .72, 2.515, .135], straw, 10);
     across(bale, .435, .06, [side * .4, 2.515, .135], strap, 10, true);
   }
-  mergeParts(bale);
+  markParts(bale, paint, lamps);
   // A bicycle stands in a wheel tray across the bars, held by an arm at its
   // down tube, for the city commute.
   const bike = new THREE.Group(); bike.name = 'city-bike'; body.add(bike);
@@ -166,7 +204,7 @@ export function createClassicCar(entry = carEntry(DEFAULT_CAR)) {
   box(bike, [.09, .04, .22], [0, axle + .64, .27], rubber); box(bike, [.44, .035, .035], [0, axle + .6, -.316], rubber);
   across(bike, .1, .02, [.045, axle - .04, .08], chrome, 10);
   tube([.05, RACK + .045, -.16], [.05, axle + .22, -.16], .022, rubber); box(bike, [.1, .07, .07], [.025, axle + .19, -.158], rubber);
-  mergeParts(bike);
+  markParts(bike, paint, lamps); mergeParts(bike);
   // One draw per wheel (see wheelGeometry)
   const wheels = [], wheelMaterial = mat('#ffffff', { vertexColors: true });
   for (const x of [-1.02, 1.02]) for (const z of [-1.18, 1.21]) {
@@ -186,8 +224,7 @@ export function createClassicCar(entry = carEntry(DEFAULT_CAR)) {
     paint.color.set(customPaint ?? ROUTE_PAINT[kit] ?? ROUTE_PAINT.coast);
     surfboard.visible = kit === 'coast'; spare.visible = kit === 'desert'; roofBox.visible = kit === 'snow'; cargo.visible = kit === 'jungle'; bale.visible = kit === 'plains'; bike.visible = kit === 'city';
     rack.visible = surfboard.visible || roofBox.visible || cargo.visible || bale.visible || bike.visible;
-    // With the spare on, the plate drops to the bumper beside it, under a lamp.
-    plate.position.set(spare.visible ? -.69 : 0, spare.visible ? .825 : .91, 1.96);
+    if (plate.parent) placePlate(spare.visible);
   }
   function paintCar(color) { customPaint = color || null; applyTrim(kitJourney); }
   applyTrim('coast');

@@ -377,7 +377,8 @@ export function busGeometry(spec = BUS_MODEL, { wheels = true } = {}) {
 // marked [paint, lamp] for bodyMaterial (lamp 1 is a headlight, 2 a taillight).
 // Trim keeps its vertex colors and each lamp gets its own color.
 export function markedBody({ paint, details, headlights, taillights }, { head, tail }) {
-  const marked = [[paint, 1, 0], [details, 0, 0], [headlights, 0, 1, head], [taillights, 0, 2, tail]].map(([geometry, painted, lamp, color]) => {
+  // (a part may be missing, as on a wagon's roof load)
+  const marked = [[paint, 1, 0], [details, 0, 0], [headlights, 0, 1, head], [taillights, 0, 2, tail]].filter(([geometry]) => geometry).map(([geometry, painted, lamp, color]) => {
     const count = geometry.attributes.position.count;
     if (!geometry.attributes.color) {
       const tint = new THREE.Color(color ?? '#ffffff'), colors = new Float32Array(count * 3);
