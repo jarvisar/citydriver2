@@ -34,6 +34,7 @@ import { cityDistrict, citySoundscape, cityHeight, nearestLanePose, journeyStart
 import { CITY } from './world/city.js';
 import { signSheet } from './world/city-signs.js';
 import { loadingStage, startupErrorMessage } from './loading-status.js';
+import { warmInterface } from './interface-warmup.js';
 import { navGraph } from './world/nav-graph.js';
 import { CityGuide, placePay } from './city-guide.js';
 import { CITY_PLACES } from './world/city-places.js';
@@ -350,21 +351,21 @@ async function boot() {
     // earned, anywhere) and the fleet balance
     const careerText = () => `${taxi.career.rank.name} · ${cashText()}${taxi.fleet.saved && taxi.career.saved ? '' : ` · ${UNSAVED}`}`;
     function renderCareer() { $('#pause-career').textContent = careerText(); }
-    // The whole city, from the pause screen: built the first time it opens,
-    // drawn again whenever it opens or the window changes size
+    // The whole city, from the pause screen: built while the game loads (see
+    // prepareWorldMap), drawn again whenever it opens or the window changes size
     let worldMap = null;
     const worldMapCanvas = $('#world-map');
     const hereText = () => `You are in ${cityDistrict(vehicle.s, vehicle.u)}`;
-    function drawWorldMap() {
-      if (!worldMapDialog.open) return;
+    function drawWorldMap(dialog = worldMapDialog) {
+      if (!dialog.open) return;
       // as wide as its column, or as tall as the dialog leaves room for once
       // its heading, and the key when that sits below the map, are counted
-      const body = worldMapCanvas.closest('.world-map-body'), key = body.lastElementChild;
+      const canvas = dialog.querySelector('#world-map'), body = canvas.closest('.world-map-body'), key = body.lastElementChild;
       const below = getComputedStyle(body).gridTemplateColumns.split(' ').length < 2;
-      const chrome = worldMapDialog.offsetHeight - body.offsetHeight + (below ? key.offsetHeight + parseFloat(getComputedStyle(body).rowGap) : 0);
-      const room = Math.max(140, parseFloat(getComputedStyle(worldMapDialog).maxHeight) - chrome - 2);
-      worldMapCanvas.style.width = `${Math.floor(Math.min(worldMapCanvas.parentElement.clientWidth, room * worldMap.aspect))}px`;
-      worldMap.draw(worldMapCanvas, vehicle, onFoot.parked, cityGuide.foundPlaces(), mapJumps());
+      const chrome = dialog.offsetHeight - body.offsetHeight + (below ? key.offsetHeight + parseFloat(getComputedStyle(body).rowGap) : 0);
+      const room = Math.max(140, parseFloat(getComputedStyle(dialog).maxHeight) - chrome - 2);
+      canvas.style.width = `${Math.floor(Math.min(canvas.parentElement.clientWidth, room * worldMap.aspect))}px`;
+      worldMap.draw(canvas, vehicle, onFoot.parked, cityGuide.foundPlaces(), mapJumps());
     }
     // The city's named jumps for the city map, gold once landed (see JumpBook)
     const mapJumps = () => jumpBook.sites.map(site => ({ u: site.u, s: site.s, heading: site.heading, landed: jumpBook.best.has(site.id), site }));
@@ -372,20 +373,21 @@ async function boot() {
       const best = jumpBook.best.get(site.id);
       return [site.kind === 'river' ? site.name : `${site.name} by ${site.where}`, best === undefined ? '' : `best ${best} m ${starText(jumpBook.stars(site))}`].filter(Boolean).join(' · ');
     };
+    function prepareWorldMap() {
+      worldMap = new WorldMap(CITY, cityGuide.mapCache);
+      // The legend: each district this city has, and its share of the blocks
+      const blocks = new Map();
+      for (const label of worldMap.labels) blocks.set(label.style, (blocks.get(label.style) ?? 0) + label.blocks);
+      const total = [...blocks.values()].reduce((sum, n) => sum + n, 0);
+      $('#world-map-legend').innerHTML = Object.keys(DISTRICT_COLORS).filter(style => blocks.has(style)).map(style =>
+        `<li><span class="world-map-swatch" style="--district-color:${DISTRICT_COLORS[style]}"></span>${style}<small>${Math.round(blocks.get(style) / total * 100)}%</small></li>`).join('')
+        + '<li id="world-map-places"><span class="world-map-place"></span>Places found<small></small></li>'
+        + '<li id="world-map-jumps"><span class="world-map-jump"></span>Jumps landed<small></small></li>'
+        + '<li id="world-map-car" hidden><span class="world-map-marker"></span>Your car<small></small></li>';
+      worldMapCanvas.style.aspectRatio = String(worldMap.aspect);
+    }
     function openWorldMap() {
       if (!holdForChooser()) return;
-      if (!worldMap) {
-        worldMap = new WorldMap(CITY, cityGuide.mapCache);
-        // The legend: each district this city has, and its share of the blocks
-        const blocks = new Map();
-        for (const label of worldMap.labels) blocks.set(label.style, (blocks.get(label.style) ?? 0) + label.blocks);
-        const total = [...blocks.values()].reduce((sum, n) => sum + n, 0);
-        $('#world-map-legend').innerHTML = Object.keys(DISTRICT_COLORS).filter(style => blocks.has(style)).map(style =>
-          `<li><span class="world-map-swatch" style="--district-color:${DISTRICT_COLORS[style]}"></span>${style}<small>${Math.round(blocks.get(style) / total * 100)}%</small></li>`).join('')
-          + '<li id="world-map-places"><span class="world-map-place"></span>Places found<small></small></li>'
-          + '<li id="world-map-jumps"><span class="world-map-jump"></span>Jumps landed<small></small></li>'
-          + '<li id="world-map-car" hidden><span class="world-map-marker"></span>Your car<small></small></li>';
-      }
       // and the player's own car, where they left it, and how far off
       const parked = onFoot.parked;
       $('#world-map-car').hidden = !parked;
@@ -393,7 +395,6 @@ async function boot() {
       $('#world-map-jumps').hidden = !jumpBook.sites.length;
       $('#world-map-jumps small').textContent = `${jumpBook.landed} / ${jumpBook.sites.length}`;
       if (parked) $('#world-map-car small').textContent = `${Math.round(Math.hypot(parked.s - vehicle.s, parked.u - vehicle.u) / 10) * 10} m`;
-      worldMapCanvas.style.aspectRatio = String(worldMap.aspect);
       $('#world-map-status').textContent = hereText();
       worldMapDialog.showModal(); chooserName = 'map';
       drawWorldMap();
@@ -401,7 +402,7 @@ async function boot() {
       if (vr?.active) { vrMapCanvas ??= document.createElement('canvas'); vrMapCanvas.width = 940; worldMap.draw(vrMapCanvas, vehicle, onFoot.parked, cityGuide.foundPlaces(), mapJumps()); vrMapKey++; }
       $('#close-world-map').focus();
     }
-    window.addEventListener('resize', drawWorldMap);
+    window.addEventListener('resize', () => drawWorldMap());
     worldMapCanvas.addEventListener('pointermove', event => {
       const box = worldMapCanvas.getBoundingClientRect(), x = event.clientX - box.left, y = event.clientY - box.top;
       const place = worldMap?.placeAt(x, y, box.width, cityGuide.foundPlaces()), jump = !place && worldMap?.jumpAt(x, y, box.width, mapJumps());
@@ -1986,6 +1987,25 @@ async function boot() {
     // Soft shading too, where it is on: loaded and drawn once behind the
     // loading screen, since its first frame compiles for ~200 ms.
     await rendering.ambientOcclusion.prepare();
+    prepareWorldMap();
+    // The menus and the HUD's states, drawn once out of sight so the first
+    // pause, garage, boost or drift doesn't wait on the browser's own shaders.
+    // (only a missed head start if it fails)
+    const driveButtons = [{}, { boosting: 'true' }, { drifting: 'true', stage: '1' }, { turbo: 'true', stage: '3' }];
+    await warmInterface($('#app'), [
+      async ({ copy, show }) => {
+        for (const part of ['.topbar', '#city-guide', '#taxi-hud', '#taxi-dash']) copy($(part));
+        copy($('#toast')).classList.add('show');
+        const task = copy($('#taxi-task')), buttons = copy($('#taxi-buttons'));
+        for (const state of driveButtons) { for (const key of ['boosting', 'drifting', 'turbo', 'stage']) delete buttons.dataset[key]; Object.assign(buttons.dataset, state); await show(); }
+        task.dataset.arriving = 'true'; await show();
+      },
+      ({ copy, scroll }) => scroll(copy(pauseOverlay)),
+      ({ copy, scroll }) => scroll(copy(carDialog, { dialog: true })),
+      async ({ copy, show }) => { drawWorldMap(copy(worldMapDialog, { dialog: true })); await show(); },
+      async ({ copy, show }) => { copy($('#taxi-results')); await show(); },
+      async ({ copy, show }) => { copy($('#demolition-results')); await show(); },
+    ], { frames: 2 }).catch(error => console.warn('Interface warm-up failed', error));
     changingJourney = false;
     renderer.setAnimationLoop(frame);
     // `?xr` in development emulates a Quest 3 (see xr-emulator.js).

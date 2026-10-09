@@ -89,7 +89,7 @@ body[data-journey=city] .paint-shop { background: #fff6; }
 #car-dialog[data-shift=true] :is(#paint-shop, #garage-sections > [data-group]:not([data-group=Cabs])) { display: none; }
 /* The cabs' liveries, under their heading. Rank unlocks them, so a locked one
    stays in view, dimmed, as the road ahead. */
-.garage-livery { margin: 0 0 12px; padding: 12px 14px; border: 1px solid var(--city-edge); border-radius: 6px; background: #151b20; box-shadow: inset 0 2px 5px #00000099, 0 1px 0 #ffffff12; }
+.garage-livery { margin: 0 0 12px; padding: 12px 14px; border: 1px solid var(--city-edge); border-radius: 6px; background: #151b20; box-shadow: var(--city-sunk); }
 .garage-livery-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 2px 12px; margin: 0 0 8px; }
 .garage-livery-heading > span:first-child { color: var(--city-gold); font-family: var(--city-display); font-size: 13px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; text-shadow: var(--city-engrave); }
 #garage-livery-name { color: var(--city-muted); font-size: 12px; }
@@ -141,7 +141,7 @@ body[data-journey=city] .paint-shop { background: #fff6; }
 .offer-actions button:active:not(:disabled), .offer-goal:active { background: var(--city-button-down); box-shadow: var(--city-pressed); }
 .offer-actions button[data-primary=true] { background: var(--city-accent-fill); border-color: var(--city-accent-edge); color: var(--city-on-accent); box-shadow: inset 0 1px 0 #ffffffa6, 0 1px 3px #00000080; text-shadow: var(--city-emboss); }
 .offer-actions button[data-primary=true]:hover:not(:disabled) { background: var(--city-accent-hover-fill); }
-.offer-actions button[data-primary=true]:active:not(:disabled) { background: linear-gradient(var(--city-accent-bottom), var(--city-accent-top)); box-shadow: inset 0 2px 5px #00000066; }
+.offer-actions button[data-primary=true]:active:not(:disabled) { background: linear-gradient(var(--city-accent-bottom), var(--city-accent-top)); box-shadow: var(--city-push-in); }
 .offer-actions button:disabled { background: var(--city-recessed); color: var(--city-muted); border-color: var(--city-edge); box-shadow: var(--city-well); text-shadow: none; opacity: .75; cursor: default; }
 .offer-goal { width: 100%; margin-top: 8px; font-weight: 600; }
 .offer-goal[aria-pressed=true] { color: var(--city-gold); background: var(--city-button-down); box-shadow: var(--city-pressed); }

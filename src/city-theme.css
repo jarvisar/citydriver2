@@ -67,8 +67,17 @@ body, body[data-journey] {
   --city-button-hover: linear-gradient(#5d6b77, #37434c);
   --city-button-down: linear-gradient(#232b31, #353f48);
   --city-bevel: inset 0 1px 0 var(--city-shine), 0 1px 2px #00000073;
-  --city-pressed: inset 0 2px 6px #000000a6, 0 1px 0 #ffffff12;
-  --city-well: inset 0 1px 4px #000000d9, 0 1px 0 #ffffff17;
+  /* Inset shadows are a few crisp 1px steps that darken toward the edge, not
+     a blur. Chrome redoes an inset blur on the GPU every time its box
+     repaints (about 2,000 blurs over a drive and a garage scroll), while
+     steps draw like a border. Each step's alpha is chosen so the edge is as
+     dark as the blur it replaced. */
+  --city-press-in: inset 0 1px 0 #0000003b, inset 0 2px 0 #0000003b, inset 0 3px 0 #0000003b, inset 0 4px 0 #0000003b;
+  --city-push-in: inset 0 1px 0 #0000001f, inset 0 2px 0 #0000001f, inset 0 3px 0 #0000001f, inset 0 4px 0 #0000001f;
+  --city-groove: inset 0 1px 0 #0000008d, inset 0 2px 0 #0000008d;
+  --city-pressed: var(--city-press-in), 0 1px 0 #ffffff12;
+  --city-well: inset 0 1px 0 #00000078, inset 0 2px 0 #00000078, inset 0 3px 0 #00000078, 0 1px 0 #ffffff17;
+  --city-sunk: inset 0 1px 0 #00000034, inset 0 2px 0 #00000034, inset 0 3px 0 #00000034, inset 0 4px 0 #00000034, 0 1px 0 #ffffff12;
   --city-gloss: linear-gradient(#ffffff66, #ffffff26 49%, #ffffff00 51%);
   --city-accent-fill: var(--city-gloss), linear-gradient(var(--city-accent-top), var(--city-accent-bottom));
   --city-accent-hover-fill: var(--city-gloss), linear-gradient(#fffbe9, var(--city-accent-hover));
@@ -152,12 +161,12 @@ body[data-controller=true] #app #city-map-open::before {
 /* The touch stick: a dished socket and a glossy ball */
 #app #touch-stick {
   background: radial-gradient(circle, #0a0e11d9 0 52%, #222a30d9 100%); border: 1px solid #000000; opacity: 1;
-  box-shadow: inset 0 3px 10px #000000cc, 0 0 0 3px #ffffff17, 0 3px 10px #00000080;
+  box-shadow: inset 0 1px 0 #00000046, inset 0 2px 0 #00000046, inset 0 3px 0 #00000046, inset 0 4px 0 #00000046, inset 0 5px 0 #00000046, 0 0 0 3px #ffffff17, 0 3px 10px #00000080;
 }
 #app .stick-guide { border: 1px dashed #ffffff33; }
 #app .stick-thumb {
   background: radial-gradient(circle at 50% 28%, #ffffff, #d0d7db 42%, #808c94); border: 1px solid #2b3339;
-  box-shadow: 0 4px 9px #000000b3, inset 0 -3px 4px #00000033;
+  box-shadow: 0 4px 9px #000000b3, inset 0 -1px 0 #00000012, inset 0 -2px 0 #00000012, inset 0 -3px 0 #00000012;
 }
 #app #touch-stick.active .stick-thumb {
   background: radial-gradient(circle at 50% 28%, #ffffff, var(--city-accent-top) 30%, var(--city-accent-bottom)); border-color: var(--city-accent-edge);
@@ -232,7 +241,7 @@ body[data-controller=true] #app #city-map-open::before {
 /* The drawers under Camera, Graphics and Audio settings, and the paint and
    places lists, are wells sunk into their panel */
 #app :is(.graphics-settings, .audio-mixer, .paint-shop) {
-  color: var(--city-text); border: 1px solid var(--city-edge); background: #151b20; box-shadow: inset 0 2px 5px #00000099, 0 1px 0 #ffffff12;
+  color: var(--city-text); border: 1px solid var(--city-edge); background: #151b20; box-shadow: var(--city-sunk);
 }
 #app .paint-shop { border-radius: 6px; }
 #app .notebook-panel { color: var(--city-text); }
@@ -250,21 +259,21 @@ body[data-controller=true] #app #city-map-open::before {
    glossy knob */
 #app .panel-switch {
   width: 46px; height: 24px; border: 1px solid var(--city-edge); border-radius: 12px;
-  background: linear-gradient(#0c1013, #262e35); box-shadow: inset 0 1px 3px #000000cc, 0 1px 0 #ffffff1a;
+  background: linear-gradient(#0c1013, #262e35); box-shadow: var(--city-groove), 0 1px 0 #ffffff1a;
 }
 #app .panel-switch::after {
   top: 1px; left: 1px; width: 20px; height: 20px;
-  background: radial-gradient(circle at 50% 25%, #ffffff, #d5dbdf 55%, #a7b1b8); box-shadow: 0 1px 3px #000000b3, inset 0 -1px 1px #0000002e;
+  background: radial-gradient(circle at 50% 25%, #ffffff, #d5dbdf 55%, #a7b1b8); box-shadow: 0 1px 3px #000000b3, inset 0 -1px 0 #0000002e;
 }
 #app .panel-toggle[aria-pressed=true] .panel-switch {
   background: linear-gradient(var(--city-accent-bottom), var(--city-accent-top)); border-color: var(--city-accent-edge);
-  box-shadow: inset 0 1px 3px #00000080, 0 1px 0 #ffffff1a;
+  box-shadow: inset 0 1px 0 #0000004b, inset 0 2px 0 #0000004b, 0 1px 0 #ffffff1a;
 }
 #app .panel-toggle[aria-pressed=true] .panel-switch::after { transform: translateX(22px); background: radial-gradient(circle at 50% 25%, #ffffff, #e2e7ea 55%, #b2bbc1); }
 /* Segmented controls: the chosen segment lit in the accent and pressed in */
 #app :is(.graphics-levels button[aria-checked=true], .audio-presets button[aria-pressed=true]) {
   color: var(--city-on-accent); background: linear-gradient(var(--city-accent-bottom), var(--city-accent-top));
-  border-color: var(--city-accent-edge); box-shadow: inset 0 2px 4px #00000059; text-shadow: var(--city-emboss); font-weight: 700;
+  border-color: var(--city-accent-edge); box-shadow: inset 0 1px 0 #00000022, inset 0 2px 0 #00000022, inset 0 3px 0 #00000022; text-shadow: var(--city-emboss); font-weight: 700;
 }
 #app .audio-presets { background: var(--city-recessed); border: 1px solid var(--city-edge); border-radius: var(--city-control-radius); box-shadow: var(--city-well); }
 #app .audio-presets button { color: var(--city-muted); border-radius: 3px; text-shadow: var(--city-engrave); }
@@ -275,14 +284,14 @@ body[data-controller=true] #app #city-map-open::before {
 #app .audio-channel input { --control-level: var(--audio-level, 0%); }
 #app :is(.audio-channel input, .graphics-slider) { --control-track: #0b0f12; appearance: none; background: transparent; cursor: pointer; }
 #app :is(.audio-channel input, .graphics-slider)::-webkit-slider-runnable-track {
-  height: 6px; border-radius: 3px; box-shadow: inset 0 1px 2px #000000e6, 0 1px 0 #ffffff17;
+  height: 6px; border-radius: 3px; box-shadow: inset 0 1px 0 #000000af, inset 0 2px 0 #000000af, 0 1px 0 #ffffff17;
   background: linear-gradient(#ffffff40, #ffffff00) 0 0 / var(--control-level) 100% no-repeat, linear-gradient(to right, var(--city-accent) var(--control-level), var(--control-track) var(--control-level));
 }
 #app :is(.audio-channel input, .graphics-slider)::-webkit-slider-thumb {
   appearance: none; width: 20px; height: 20px; margin-top: -7px; border: 1px solid #2b3339; border-radius: 50%;
   background: radial-gradient(circle at 50% 25%, #ffffff, #d5dbdf 55%, #a2acb3); box-shadow: 0 2px 4px #000000b3;
 }
-#app :is(.audio-channel input, .graphics-slider)::-moz-range-track { height: 6px; border-radius: 3px; background: var(--control-track); box-shadow: inset 0 1px 2px #000000e6, 0 1px 0 #ffffff17; }
+#app :is(.audio-channel input, .graphics-slider)::-moz-range-track { height: 6px; border-radius: 3px; background: var(--control-track); box-shadow: inset 0 1px 0 #000000af, inset 0 2px 0 #000000af, 0 1px 0 #ffffff17; }
 #app :is(.audio-channel input, .graphics-slider)::-moz-range-progress { height: 6px; border-radius: 3px; background: linear-gradient(var(--city-accent-top), var(--city-accent-bottom)); }
 #app :is(.audio-channel input, .graphics-slider)::-moz-range-thumb {
   box-sizing: border-box; width: 20px; height: 20px; border: 1px solid #2b3339; border-radius: 50%;
@@ -311,7 +320,7 @@ body[data-controller=true] #app #city-map-open::before {
   box-shadow: inset 0 1px 0 #ffffffcc, 0 0 0 3px #ffffff1a, 0 2px 10px var(--city-accent-glow);
 }
 #app :is(.start-button, .taxi-result-card button):active, #app #welcome .start-button:active {
-  background: linear-gradient(var(--city-accent-bottom), var(--city-accent-top)); box-shadow: inset 0 3px 6px #00000066, 0 1px 0 #ffffff1f; transform: none;
+  background: linear-gradient(var(--city-accent-bottom), var(--city-accent-top)); box-shadow: var(--city-push-in), 0 1px 0 #ffffff1f; transform: none;
 }
 #app #welcome .start-button.menu-secondary, #app .taxi-result-card button + button {
   color: var(--city-text); background: var(--city-button-fill); border-color: var(--city-edge); box-shadow: var(--city-bevel), 0 2px 5px #00000066; text-shadow: var(--city-engrave);

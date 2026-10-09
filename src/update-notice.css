@@ -11,7 +11,7 @@
   font-size: 13px; font-weight: 700;
 }
 .update-notice button:hover { background: var(--city-accent-hover-fill); }
-.update-notice button:active { background: linear-gradient(var(--city-accent-bottom), var(--city-accent-top)); box-shadow: inset 0 2px 5px #00000066; }
+.update-notice button:active { background: linear-gradient(var(--city-accent-bottom), var(--city-accent-top)); box-shadow: var(--city-push-in); }
 .update-notice button:focus-visible { outline: 2px solid var(--city-text); outline-offset: 2px; }
 .update-notice button:disabled { cursor: wait; opacity: .6; }
 /* Top center of the title, above the name, still inside #welcome for the controller */

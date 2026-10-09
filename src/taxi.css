@@ -16,7 +16,7 @@
 #taxi-clock[data-urgent=true] { color: #721e15; }
 .taxi-score {
   display: grid; align-content: center; gap: 2px; padding: 6px 12px; border: 1px solid var(--city-edge); border-left: 0; border-radius: 0 7px 7px 0;
-  background: linear-gradient(#090c0ef7, #182025f7); box-shadow: inset 0 2px 7px #000000f2, inset 0 -1px 0 #ffffff12, var(--city-shadow);
+  background: linear-gradient(#090c0ef7, #182025f7); box-shadow: inset 0 1px 0 #00000086, inset 0 2px 0 #00000086, inset 0 3px 0 #00000086, inset 0 4px 0 #00000086, inset 0 -1px 0 #ffffff12, var(--city-shadow);
 }
 #taxi-cash { font-family: var(--city-display); font-size: 26px; font-weight: 600; line-height: 1.1; color: var(--city-accent-soft); text-shadow: 0 0 9px var(--city-accent-glow); }
 #taxi-fares { font-size: 12px; color: var(--city-muted); }
@@ -56,7 +56,7 @@
 .taxi-task[data-arriving=true] #taxi-task-detail { color: #c3f4bb; }
 #city-map-toggle:focus-visible, #city-map-open:focus-visible, #taxi-buttons button:focus-visible { outline: 3px solid #fff8e7; outline-offset: 3px; }
 /* The card's bars are striped, sunk into its edges */
-.taxi-stop-track { position: absolute; left: 12px; right: 12px; bottom: 1px; height: 5px; border-radius: 3px; overflow: hidden; background: #00000080; box-shadow: inset 0 1px 2px #000000cc; }
+.taxi-stop-track { position: absolute; left: 12px; right: 12px; bottom: 1px; height: 5px; border-radius: 3px; overflow: hidden; background: #00000080; box-shadow: var(--city-groove); }
 #taxi-stop-progress { display: block; height: 100%; width: 0; background: linear-gradient(-45deg, #ffffff4d 25%, #ffffff00 25% 50%, #ffffff4d 50% 75%, #ffffff00 75%) 0 0 / 10px 10px, linear-gradient(#d9fbd5, #7ce787); }
 
 /* Arrival ratings and fare distance share one traffic-light palette: green
@@ -75,7 +75,7 @@
 @keyframes taxi-timer-pulse { to { transform: scale(1.08); } }
 @media (prefers-reduced-motion: reduce) { .taxi-task[data-urgent=true] #taxi-timer { animation: none; outline: 2px solid #fff8e7; } }
 /* The clock drains along the top edge; ticks mark where the rating drops. */
-.taxi-timer-track { position: absolute; left: 14px; right: 14px; top: 1px; height: 5px; border-radius: 0 0 3px 3px; overflow: hidden; background: #00000080; box-shadow: inset 0 1px 2px #000000cc; }
+.taxi-timer-track { position: absolute; left: 14px; right: 14px; top: 1px; height: 5px; border-radius: 0 0 3px 3px; overflow: hidden; background: #00000080; box-shadow: var(--city-groove); }
 .taxi-timer-track::before, .taxi-timer-track::after { content: ''; position: absolute; top: 0; bottom: 0; width: 2px; background: #0b0f12; z-index: 1; }
 .taxi-timer-track::before { left: 25%; }
 .taxi-timer-track::after { left: 50%; }
@@ -108,21 +108,21 @@ body[data-controller=true] .taxi-dash { bottom: var(--ui-bottom); left: 50%; tra
 #taxi-buttons kbd { width: auto; height: auto; padding: 2px 4px; font-size: 11px; line-height: 1.2; }
 /* Stretch the nested Boost/Sprint button with the rest of the row. */
 .taxi-boost-control { position: relative; display: flex; }
-#taxi-boost { position: absolute; left: 8px; right: 8px; bottom: 6px; height: 5px; border-radius: 3px; background: #00000033; box-shadow: inset 0 1px 1px #00000066, 0 1px 0 #ffffff66; overflow: hidden; pointer-events: none; }
+#taxi-boost { position: absolute; left: 8px; right: 8px; bottom: 6px; height: 5px; border-radius: 3px; background: #00000033; box-shadow: inset 0 1px 0 #00000066, 0 1px 0 #ffffff66; overflow: hidden; pointer-events: none; }
 #taxi-boost-fill { display: block; height: 100%; background: linear-gradient(#3a4650, #172229); }
-#taxi-buttons[data-boosting=true] [data-drive-button=boost] { background: linear-gradient(var(--city-accent-bottom), var(--city-accent-top)); box-shadow: inset 0 3px 7px #00000080, 0 0 14px var(--city-accent-glow); }
+#taxi-buttons[data-boosting=true] [data-drive-button=boost] { background: linear-gradient(var(--city-accent-bottom), var(--city-accent-top)); box-shadow: inset 0 1px 0 #00000029, inset 0 2px 0 #00000029, inset 0 3px 0 #00000029, inset 0 4px 0 #00000029, 0 0 14px var(--city-accent-glow); }
 #taxi-buttons[data-drifting=true] [data-drive-button=handbrake] { background: var(--city-button-down); box-shadow: var(--city-pressed); }
 /* Through a drift the Drift button fills toward the next stage in the sparks' color (see Drift), then shows the turbo running down */
 [data-drive-button=handbrake] { position: relative; }
-.drift-charge { position: absolute; left: 8px; right: 8px; bottom: 6px; height: 5px; border-radius: 3px; background: #00000080; box-shadow: inset 0 1px 2px #000000cc, 0 1px 0 #ffffff17; overflow: hidden; pointer-events: none; visibility: hidden; color: #e6edef; }
+.drift-charge { position: absolute; left: 8px; right: 8px; bottom: 6px; height: 5px; border-radius: 3px; background: #00000080; box-shadow: var(--city-groove), 0 1px 0 #ffffff17; overflow: hidden; pointer-events: none; visibility: hidden; color: #e6edef; }
 #drift-charge-fill { display: block; width: 0; height: 100%; background: linear-gradient(#ffffff73, #ffffff00), currentColor; transition: width .1s linear; }
 #taxi-buttons:is([data-drifting=true], [data-turbo=true]) .drift-charge { visibility: visible; }
 #taxi-buttons[data-stage='1'] .drift-charge { color: #57c3ff; }
 #taxi-buttons[data-stage='2'] .drift-charge { color: #ffa12e; }
 #taxi-buttons[data-stage='3'] .drift-charge { color: #ff58d8; }
-#taxi-buttons[data-stage='1'] [data-drive-button=handbrake] { box-shadow: inset 0 2px 6px #000000a6, inset 0 0 0 2px #57c3ff, 0 0 14px #57c3ffb3; }
-#taxi-buttons[data-stage='2'] [data-drive-button=handbrake] { box-shadow: inset 0 2px 6px #000000a6, inset 0 0 0 2px #ffa12e, 0 0 14px #ffa12eb3; }
-#taxi-buttons[data-stage='3'] [data-drive-button=handbrake] { box-shadow: inset 0 2px 6px #000000a6, inset 0 0 0 2px #ff58d8, 0 0 14px #ff58d8b3; }
+#taxi-buttons[data-stage='1'] [data-drive-button=handbrake] { box-shadow: var(--city-press-in), inset 0 0 0 2px #57c3ff, 0 0 14px #57c3ffb3; }
+#taxi-buttons[data-stage='2'] [data-drive-button=handbrake] { box-shadow: var(--city-press-in), inset 0 0 0 2px #ffa12e, 0 0 14px #ffa12eb3; }
+#taxi-buttons[data-stage='3'] [data-drive-button=handbrake] { box-shadow: var(--city-press-in), inset 0 0 0 2px #ff58d8, 0 0 14px #ff58d8b3; }
 /* In the helicopter they climb and descend, longer names set a little smaller */
 body[data-flying=true] #taxi-buttons span { font-size: 13px; }
 

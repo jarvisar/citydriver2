@@ -46,7 +46,7 @@
 #app .pause-modes .mode-button[data-job=demolition] { --mode-top: #ffc185; --mode-bottom: #ea730e; --mode-edge: #8e4405; --mode-hover: #ffb46e; --mode-glow: #ff94338c; }
 #app .pause-modes .mode-button[data-job=free] { --mode-top: #a4eade; --mode-bottom: #2fab9a; --mode-edge: #1a6a5f; --mode-hover: #8fe0d4; --mode-glow: #5fd0c08c; }
 #app .pause-modes .mode-button:hover { background: var(--city-gloss), linear-gradient(#fffbe9, var(--mode-hover)); box-shadow: inset 0 1px 0 #ffffffcc, 0 0 0 3px #ffffff1a, 0 2px 10px var(--mode-glow); }
-#app .pause-modes .mode-button:active { background: linear-gradient(var(--mode-bottom), var(--mode-top)); box-shadow: inset 0 3px 6px #00000066, 0 1px 0 #ffffff1f; }
+#app .pause-modes .mode-button:active { background: linear-gradient(var(--mode-bottom), var(--mode-top)); box-shadow: var(--city-push-in), 0 1px 0 #ffffff1f; }
 .pause-modes .mode-button span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pause-modes .mode-button svg { display: none; order: -1; flex-shrink: 0; width: 28px; height: 28px; }
 .pause-modes .mode-button[data-job=taxi] .wheel-icon, .pause-modes .mode-button[data-job=demolition] .demolition-icon,
