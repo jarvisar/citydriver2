@@ -21,7 +21,8 @@ export const GROUP_MIN_HOP = 45;
 // or a hop that doubles back through the block it started on.
 export const GROUP_MAX_DETOUR = 1.45;
 export const GROUP_MAX_ROUTE = 2200;
-export const MAX_SHIFT_SECONDS = 180;
+// A low cap keeps a good driver from banking minutes of slack.
+export const MAX_SHIFT_SECONDS = 120;
 // Cosine of the sharpest turn a party route may take between two drop-offs,
 // about 105°. Street routes zigzag, so demanding a strictly forward hop leaves
 // most full cabs with nowhere legal to go.
@@ -71,9 +72,10 @@ export const STREAK_MAX_SECONDS = 5;
 export const streakSeconds = streak => Math.min(STREAK_MAX_SECONDS, Math.max(0, streak - 1));
 // Time rewards shrink by TIME_FADE a minute, down to TIME_FLOOR, so every
 // shift ends. It goes by time, not fares delivered, so short fares are not
-// penalized.
-export const TIME_FADE = .045;
-export const TIME_FLOOR = .4;
+// penalized. At a 40% floor a fast driver earned more than they spent and
+// the shift never ended.
+export const TIME_FADE = .08;
+export const TIME_FLOOR = .1;
 export const timeScale = elapsed => Math.max(TIME_FLOOR, 1 - elapsed / 60 * TIME_FADE);
 // Stunts tip only on the way: a rider pays to get somewhere, so circling a
 // block to drift for tips earns nothing once the cab stops closing in.
