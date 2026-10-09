@@ -12,7 +12,7 @@ The look is based on web apps and Chrome Experiments from around 2010 to 2014: d
 | In-game panel | `--city-hud-fill`: the same at 95% opacity |
 | Button | `--city-button-fill`, `--city-button-hover`, `--city-button-down` |
 | Bevel | `--city-bevel`: a 1px highlight along the top and a small drop shadow |
-| Pressed / sunk | `--city-pressed`, `--city-well` (inset shadows) |
+| Pressed / sunk | `--city-pressed`, `--city-press-in`, `--city-push-in`, `--city-well`, `--city-sunk`, `--city-groove` (inset shadows) |
 | Dark edge | `--city-edge`: `#080b0d`, the 1px border round panels and buttons |
 | Primary text | `--city-text`: `#f4f1e6` |
 | Secondary text | `--city-muted`: `#b9c4cb` |
@@ -30,6 +30,10 @@ Use the dark button for secondary actions and the accent for primary actions and
 Mode buttons keep their own color. Free drive on either results screen uses the title's teal button finish, including hover and pressed states. The headset uses the same free-drive accent.
 
 There is no backdrop blur. The city moves every frame, so a blur gets redrawn every frame for every panel, which phones can't spare, and the panels are nearly opaque anyway. The grain is an SVG noise tile, kept to panels and not every button.
+
+Inset shadows are a few stacked 1px steps with no blur (see the tokens above). Chrome redoes a blurred inset shadow on the GPU every time its box repaints, which was about 2,000 blurs over one drive and garage scroll. Steps draw like a border and look the same at this size. Outer drop shadows can keep their blur, since Chrome caches those.
+
+The first time Chrome draws a new kind of effect it compiles a shader for it on the GPU thread the game also uses, which used to freeze the first pause, garage, boost and drift for 20-200 ms. `src/interface-warmup.js` draws copies of the HUD states and menus under the loading screen so that happens while loading. A new screen or HUD state with its own look should get a scene there in `main.js`.
 
 The action bar matches the district/compass panel's background, border, corners, font and height. The compass, steering stick and switches stay circular.
 

@@ -1977,6 +1977,25 @@ async function boot() {
     buildCarCards(); paintCards(); buildPaintSwatches(); updateCarUi();
     vehicle.render(0, world.origin); traffic.render(1, world.origin); rendering.update(vehicle.car, 1, world.origin); updateHud(); updateJourneyUi(); updateViewUi(); updateGraphicsUi();
     nightLighting.update(world, vehicle, traffic, weather.state.lightLevel);
+    prepareWorldMap();
+    // The menus and the HUD's states, drawn once out of sight so the first
+    // pause, garage, boost or drift doesn't wait on the browser's own shaders.
+    // It runs alongside the graphics stage (only a missed head start if it fails).
+    const buttonStates = [{}, { boosting: 'true' }, { drifting: 'true', stage: '1' }, { turbo: 'true', stage: '3' }];
+    const interfaceWarmed = warmInterface($('#app'), [
+      async ({ copy, show }) => {
+        for (const part of ['.topbar', '#city-guide', '#taxi-hud', '#taxi-dash']) copy($(part));
+        copy($('#toast')).classList.add('show');
+        const task = copy($('#taxi-task')), buttons = copy($('#taxi-buttons'));
+        // (the bars part full, as they are while they fill and run down)
+        for (const bar of [task, buttons].flatMap(part => [...part.querySelectorAll('[id$=-fill], #taxi-stop-progress')])) bar.style.width = '37.3%';
+        for (const state of buttonStates) { for (const key of ['boosting', 'drifting', 'turbo', 'stage']) delete buttons.dataset[key]; Object.assign(buttons.dataset, state); await show(); }
+        task.dataset.arriving = 'true'; await show();
+      },
+      async ({ copy, show }) => { copy(pauseOverlay); await show(); },
+      async ({ copy, show }) => { copy(carDialog, { dialog: true }); await show(); },
+      async ({ copy, show }) => { drawWorldMap(copy(worldMapDialog, { dialog: true })); copy($('#taxi-results')); copy($('#demolition-results')); await show(); },
+    ]).catch(error => console.warn('Interface warm-up failed', error));
     await loadingStage('graphics');
     // (the shop signs are blank until their sheet has loaded)
     await signSheet;
@@ -1987,25 +2006,7 @@ async function boot() {
     // Soft shading too, where it is on: loaded and drawn once behind the
     // loading screen, since its first frame compiles for ~200 ms.
     await rendering.ambientOcclusion.prepare();
-    prepareWorldMap();
-    // The menus and the HUD's states, drawn once out of sight so the first
-    // pause, garage, boost or drift doesn't wait on the browser's own shaders.
-    // (only a missed head start if it fails)
-    const driveButtons = [{}, { boosting: 'true' }, { drifting: 'true', stage: '1' }, { turbo: 'true', stage: '3' }];
-    await warmInterface($('#app'), [
-      async ({ copy, show }) => {
-        for (const part of ['.topbar', '#city-guide', '#taxi-hud', '#taxi-dash']) copy($(part));
-        copy($('#toast')).classList.add('show');
-        const task = copy($('#taxi-task')), buttons = copy($('#taxi-buttons'));
-        for (const state of driveButtons) { for (const key of ['boosting', 'drifting', 'turbo', 'stage']) delete buttons.dataset[key]; Object.assign(buttons.dataset, state); await show(); }
-        task.dataset.arriving = 'true'; await show();
-      },
-      ({ copy, scroll }) => scroll(copy(pauseOverlay)),
-      ({ copy, scroll }) => scroll(copy(carDialog, { dialog: true })),
-      async ({ copy, show }) => { drawWorldMap(copy(worldMapDialog, { dialog: true })); await show(); },
-      async ({ copy, show }) => { copy($('#taxi-results')); await show(); },
-      async ({ copy, show }) => { copy($('#demolition-results')); await show(); },
-    ], { frames: 2 }).catch(error => console.warn('Interface warm-up failed', error));
+    await interfaceWarmed;
     changingJourney = false;
     renderer.setAnimationLoop(frame);
     // `?xr` in development emulates a Quest 3 (see xr-emulator.js).

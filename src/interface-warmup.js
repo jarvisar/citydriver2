@@ -13,10 +13,10 @@
 
 const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
 
-export async function warmInterface(app, scenes, { frames = 3 } = {}) {
+export async function warmInterface(app, scenes, { frames = 1 } = {}) {
   const placed = [];
   const show = async () => { for (let i = 0; i < frames; i++) await nextFrame(); };
-  // A dialog is laid out as showModal would, so it scrolls the same
+  // A dialog is laid out as showModal would
   function copy(element, { dialog = false } = {}) {
     const clone = element.cloneNode(true);
     for (const hidden of [clone, ...clone.querySelectorAll('[hidden]')]) hidden.hidden = false;
@@ -26,20 +26,13 @@ export async function warmInterface(app, scenes, { frames = 3 } = {}) {
     app.append(clone); placed.push(clone);
     return clone;
   }
-  // Every part of a scroller, a screen at a time
-  async function scroll(element) {
-    for (let top = 0; ; top += Math.max(100, element.clientHeight * .8)) {
-      element.scrollTop = top; await show();
-      if (element.scrollTop + element.clientHeight >= element.scrollHeight - 1) break;
-    }
-  }
   // The HUD's and menus' styles follow the title menu, so it is put away
   // meanwhile (without its fade) and they apply as in a drive.
   const welcome = app.querySelector('#welcome'), titled = !welcome.classList.contains('hidden');
   welcome.style.transition = 'none'; welcome.classList.add('hidden');
   try {
     for (const scene of scenes) {
-      await scene({ copy, show, scroll });
+      await scene({ copy, show });
       for (const clone of placed.splice(0)) clone.remove();
     }
   } finally {

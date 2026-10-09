@@ -72,6 +72,10 @@ body[data-controller=true] .pause-overlay button:focus { outline: 2px solid var(
 .chooser-heading { position: sticky; top: -20px; z-index: 1; padding: 4px 0; background: #f6f5ea; }
 /* Focus moved by a controller or the keyboard scrolls clear of the pinned heading. */
 .chooser { scroll-padding-block: 80px 16px; }
+/* The menus scroll on the compositor. Chrome otherwise keeps a rounded, see-through
+   scroller on the main thread to keep subpixel text at 1x, and repainted the whole
+   garage every frame of a scroll (200 ms of GPU work a pass, more the first time). */
+.chooser, .pause-overlay { will-change: scroll-position; }
 body[data-journey=city] .chooser-heading { background: #eef1f4; }
 .chooser-options { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .chooser-card { min-width: 0; }
