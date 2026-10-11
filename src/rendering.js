@@ -99,6 +99,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   renderer.xr.addEventListener('sessionend', () => { graphics.suspend(); resizeCanvas(); });
   const ambientOcclusion = new AmbientOcclusion(renderer, scene, camera, {
     onReady: () => { if (!document.hidden && !renderer.xr.isPresenting) render(); },
+    onFail: () => graphics.failAmbientOcclusion(),
   });
   // Resolution, the sun shadow's size and reach, and the AO budget follow the
   // quality level; whether AO is on at all is the player's choice, else the

@@ -114,6 +114,46 @@ test('a near miss is passing traffic fast and close, not following it or missing
   assert.ok(!nearMiss(car, other({ heading: 0, speed: 24 })), 'going its own speed');
   assert.ok(!nearMiss(car, other({ u: 8 })), 'too far off');
   assert.ok(!nearMiss({ ...car, speed: 10 }, other()), 'too slow');
+  // Only a car it could have hit: it paid $6 for one 50 m below
+  const level = { ...car, groundedPosition: { y: 24 }, spec: { width: 2, height: 1.5 } }, below = other({ position: { y: 24 }, profile: { height: 1.5 } });
+  assert.ok(nearMiss(level, below), 'side by side on the street');
+  assert.ok(!nearMiss({ ...level, groundedPosition: { y: 26 } }, below), 'over its roof');
+  assert.ok(!nearMiss({ ...level, groundedPosition: { y: 20 } }, below), 'or under it');
+  assert.ok(!nearMiss({ ...level, airborne: true }, below), 'or flying past it');
+});
+
+test('a near miss pays once a car, and again once traffic has reused that car for another', () => {
+  const stunts = new StuntChain(), car = { ...player(), s: 0, u: 0, speed: 25, spec: { width: 2 } };
+  const other = { s: 1, u: 3.2, heading: Math.PI, speed: 10, spec: { width: 2 }, generation: 3 };
+  const pass = () => { const before = stunts.chain; stunts.update(1 / 120, car, [other]); return stunts.chain - before; };
+  assert.equal(pass(), 1); assert.equal(pass(), 0, 'the same car pays once');
+  stunts.bank();
+  assert.equal(pass(), 0, 'whatever the chain');
+  // (every traffic car is reused: remembered by the car alone, near misses stopped for good)
+  other.generation++;
+  assert.equal(pass(), 1, 'sent round to turn up elsewhere, it is another car');
+  assert.equal(pass(), 0);
+});
+
+test('a cab in the air over a ring, or on a roof above it, picks nobody up and drops nobody off', () => {
+  const run = new TaxiRun(), car = player();
+  run.standby(car);
+  const fare = run.customers.find(customer => customer.id !== run.blockedPickup?.id);
+  Object.assign(car, { s: fare.s, u: fare.u, aloft: true });
+  run.update(STOP_SECONDS * 2, car);
+  assert.equal(run.status, 'standby', 'falling through the ring is no stop');
+  Object.assign(car, { aloft: false, airborne: true });
+  run.update(STOP_SECONDS * 2, car);
+  assert.equal(run.status, 'standby', 'nor is standing on a roof over it');
+  car.airborne = false;
+  run.update(STOP_SECONDS, car);
+  assert.equal(run.status, 'driving', 'down on the street, they get in');
+  Object.assign(car, { s: run.target.s, u: run.target.u, aloft: true });
+  run.update(STOP_SECONDS * 2, car);
+  assert.equal(run.deliveredPassengers, 0, 'and nobody gets out in the air');
+  car.aloft = false;
+  run.update(STOP_SECONDS, car);
+  assert.ok(run.deliveredPassengers > 0);
 });
 
 test('free drive\'s card shows the chain, then a fare by the cab, and otherwise stays away', () => {

@@ -165,6 +165,9 @@ async function boot() {
       }
     }
     let needsRender = true;
+    // Between the scene's context being lost and restored nothing can be drawn (see setPaused)
+    let graphicsLost = false;
+    const GRAPHICS_LOST = 'Graphics lost. Reload to restart.';
     window.addEventListener('resize', () => { needsRender = true; });
     document.addEventListener('visibilitychange', () => { if (!document.hidden) needsRender = true; });
     const journey = 'city';
@@ -203,6 +206,14 @@ async function boot() {
     vehicle.setAppearance(journey);
     vehicle.setLights(weather.state.lightLevel);
     const carDialog = $('#car-dialog'), pauseOverlay = $('#pause-overlay');
+    // Focus moved by Tab or a controller scrolls a control into view, but one
+    // under the pinned pause header counts as in view already. The menu's
+    // scroll padding keeps the header's height clear. It is measured: the
+    // header grows with a wrapped line, the update notice and the big-screen zoom.
+    const pauseHeader = $('.pause-header');
+    const clearPauseHeader = () => { pauseOverlay.style.scrollPaddingTop = `${Math.ceil(pauseHeader.getBoundingClientRect().height) + 8}px`; };
+    if (globalThis.ResizeObserver) new ResizeObserver(clearPauseHeader).observe(pauseHeader);
+    window.addEventListener('resize', clearPauseHeader);
     const worldMapDialog = $('#world-map-dialog');
     const choosers = [carDialog, worldMapDialog];
     const chooserDialogs = { garage: carDialog, map: worldMapDialog };
@@ -647,6 +658,10 @@ async function boot() {
       beginTaxi();
     }
     function setPaused(value, { preserveInput = false } = {}) {
+      // The drive stays paused while the graphics are lost: Resume used to
+      // start it again with nothing drawn.
+      const refused = !value && graphicsLost;
+      if (refused) value = true;
       menuIdle.stop();
       paused = value; if (!preserveInput) input.clear(); frameClock.suspend();
       if (!paused && autodrive.enabled && !started) beginFree();
@@ -658,6 +673,7 @@ async function boot() {
       $('#pause .control-label').textContent = paused ? 'resume' : 'pause';
       // (the menu opens at the top, wherever it was last scrolled)
       if (paused) { renderGoals(); renderCareer(); pauseOverlay.scrollTop = 0; $('#resume').focus(); } else $('#pause').blur();
+      if (refused) toast(GRAPHICS_LOST);
     }
     function updateJourneyUi() {
       const data = JOURNEYS[journey];
@@ -1397,7 +1413,6 @@ async function boot() {
         notice.className = 'update-notice';
         notice.innerHTML = '<span role="status"></span><button type="button" title="Opens the download page">Download</button>';
         notice.firstChild.textContent = `Version ${update.version} available`;
-        for (const type of ['keydown', 'keyup']) notice.addEventListener(type, event => event.stopPropagation());
         notice.lastChild.addEventListener('click', download);
         $('#welcome').insertBefore(notice, $('#welcome > .controller-hint'));
         const button = document.createElement('button');
@@ -1493,8 +1508,10 @@ async function boot() {
       if (paused) renderCareer();
       if (carDialog.open) renderGarage();
     });
-    $('#scene').addEventListener('webglcontextlost', event => { event.preventDefault(); setPaused(true); toast('Graphics lost. Reload to restart.'); });
-    $('#scene').addEventListener('webglcontextrestored', () => { needsRender = true; toast('Graphics restored. Resume when ready.'); });
+    // (only a drive is paused: over results or a chooser, which hold it paused
+    // already, pausing again opened the pause screen underneath and focused its Resume)
+    $('#scene').addEventListener('webglcontextlost', event => { event.preventDefault(); graphicsLost = true; if (!paused) setPaused(true); toast(GRAPHICS_LOST); });
+    $('#scene').addEventListener('webglcontextrestored', () => { graphicsLost = false; needsRender = true; toast('Graphics restored. Resume when ready.'); });
     const qualityButtons = [...document.querySelectorAll('[data-quality]')];
     const graphicsToggle = $('#graphics-toggle'), graphicsPanel = $('#graphics-settings');
     graphicsToggle.addEventListener('click', () => {
@@ -1540,6 +1557,8 @@ async function boot() {
       needsRender = true;
       updateGraphicsUi(settings);
       if (reason === 'auto') toast(`Graphics · ${settings.label}${settings.ambientOcclusion ? '' : ' · soft shading off'}`);
+      // (its download failed. A browser can remember that until the page reloads.)
+      if (reason === 'ambient-occlusion-failed') toast('Soft shading unavailable. Reload to try again.');
     });
     for (const button of qualityButtons) button.addEventListener('click', () => graphics.setMode(button.dataset.quality));
     softShading.addEventListener('click', () => action('ambientOcclusion'));

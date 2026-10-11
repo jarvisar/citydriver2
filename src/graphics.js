@@ -466,6 +466,15 @@ export class Graphics {
     this.announce('ambient-occlusion');
     return enabled;
   }
+  // AO could not load (see AmbientOcclusion.prepare), so it is off for this
+  // visit and the settings say so. The saved choice stays: the next visit, or
+  // switching it on again, tries again.
+  failAmbientOcclusion() {
+    if (!this.ambientOcclusion) return false;
+    this.aoVisit = false;
+    this.announce('ambient-occlusion-failed');
+    return true;
+  }
 
   // Put back everything a descent gave up, AO included, once that descent has
   // proved it was not buying anything.

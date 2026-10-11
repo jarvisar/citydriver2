@@ -2,9 +2,9 @@
 // render targets out of their startup path, and release its GPU resources when
 // it is switched off.
 export class AmbientOcclusion {
-  constructor(renderer, scene, camera, { onReady = () => {}, load = () => import('./ambient-occlusion-pass.js') } = {}) {
+  constructor(renderer, scene, camera, { onReady = () => {}, onFail = () => {}, load = () => import('./ambient-occlusion-pass.js') } = {}) {
     this.renderer = renderer; this.scene = scene; this.camera = camera;
-    this.onReady = onReady; this.load = load; this.quality = 'high';
+    this.onReady = onReady; this.onFail = onFail; this.load = load; this.quality = 'high';
     this._enabled = false; this.effect = null; this.ready = null; this.disposed = false; this.failed = false;
   }
   get enabled() { return this._enabled; }
@@ -26,6 +26,8 @@ export class AmbientOcclusion {
       this.effect?.dispose(); this.effect = null;
       this.failed = true;
       console.warn('Soft shading could not load; continuing with standard lighting.', error);
+      // (so the switch stops saying it is on: see Graphics.failAmbientOcclusion)
+      this.onFail();
     }).finally(() => { this.ready = null; });
     return this.ready;
   }

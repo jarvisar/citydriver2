@@ -12,7 +12,6 @@
   parent.append(container);
   const button = container.querySelector('button');
   const help = container.querySelector('p');
-  for (const type of ['keydown', 'keyup']) container.addEventListener(type, event => event.stopPropagation());
 
   const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);

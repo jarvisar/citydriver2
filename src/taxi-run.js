@@ -6,7 +6,7 @@ import { randomAt } from './world/route.js';
 import { TaxiFleet } from './taxi-fleet.js';
 import { TaxiCareer } from './taxi-career.js';
 import { shiftGoals, goalProgress } from './taxi-goals.js';
-import { nearMiss } from './stunt-chain.js';
+import { nearMiss, passedBefore } from './stunt-chain.js';
 const B = 112;
 
 export const SHIFT_SECONDS = 100;
@@ -94,6 +94,9 @@ export const STUNT_BOOST = .08;
 // stop in it is a Crazy stop.
 export const CRAZY_STOP_SPEED = 12;
 const distance = (a, b) => Math.hypot(a.s - b.s, a.u - b.u);
+// Stopped at the curb. Riders get in and out of a cab on the street, not one
+// in the air over the ring or up on a roof (see CarAir).
+const stopped = player => Math.abs(player.speed) < 2.5 && !player.aloft && !player.airborne;
 // The point of a stop's stretch nearest `p`, and its distance. A stop with no
 // stretch is its one point.
 export function nearestOnStop(stop, p) {
@@ -544,7 +547,7 @@ export class TaxiRun {
     this.stopIndex = 0; this.onboard = passenger.passengers;
     this.customers = this.customers.filter(customer => customer !== passenger);
     this.servedCustomers.set(passenger.id, this.elapsed + 60);
-    this.hold = 0; this.tips = 0; this.combo = 1; this.passed = new WeakSet(); this.revision++;
+    this.hold = 0; this.tips = 0; this.combo = 1; this.passed = new WeakMap(); this.revision++;
     // Look round the last stop. The cab can stop anywhere along its stretch.
     const last = passenger.stops.at(-1).destination, stretch = last.stretch ?? [last];
     this.lookAround({ s: last.s, u: last.u }, CUSTOMER_RANGE + STOP_RADIUS + Math.max(...stretch.map(p => distance(p, last))));
@@ -566,7 +569,7 @@ export class TaxiRun {
     if (this.blockedPickup && distance(this.blockedPickup, player) >= STOP_RADIUS) this.blockedPickup = null;
     const inside = this.customers.find(p => p.id !== this.blockedPickup?.id && distance(p, player) < STOP_RADIUS) ?? null;
     this.trackRing(inside, player);
-    const passenger = Math.abs(player.speed) < 2.5 ? inside : null;
+    const passenger = stopped(player) ? inside : null;
     if (passenger?.id !== this.boarding?.id) this.hold = 0;
     this.boarding = passenger;
     this.hold = passenger ? this.hold + dt : 0;
@@ -612,7 +615,7 @@ export class TaxiRun {
       if (this.blockedPickup && distance(this.blockedPickup, player) >= STOP_RADIUS) this.blockedPickup = null;
       const inside = this.customers.find(p => p.id !== this.blockedPickup?.id && distance(p, player) < STOP_RADIUS) ?? null;
       this.trackRing(inside, player);
-      const passenger = Math.abs(player.speed) < 2.5 ? inside : null;
+      const passenger = stopped(player) ? inside : null;
       if (passenger?.id !== this.boarding?.id) this.hold = 0;
       this.boarding = passenger;
       this.hold = passenger ? this.hold + dt : 0;
@@ -634,13 +637,13 @@ export class TaxiRun {
     }
     if (!collided && this.crashCooldown === 0) {
       for (const car of traffic) {
-        if (this.passed.has(car) || !nearMiss(player, car)) continue;
-        this.passed.add(car); if (this.onTheWay(player)) this.reward('Near miss', TIPS.nearMiss);
+        if (passedBefore(this.passed, car) || !nearMiss(player, car)) continue;
+        this.passed.set(car, car.generation); if (this.onTheWay(player)) this.reward('Near miss', TIPS.nearMiss);
       }
     }
     const atStop = insideStop(this.target, player);
     this.trackRing(atStop ? this.currentStop : null, player);
-    this.hold = atStop && Math.abs(player.speed) < 2.5 ? this.hold + dt : 0;
+    this.hold = atStop && stopped(player) ? this.hold + dt : 0;
     if (this.hold >= STOP_SECONDS) {
       const stop = this.currentStop, last = this.stopIndex === this.fare.stops.length - 1;
       const remaining = this.legRemaining, rating = arrivalRating(remaining);

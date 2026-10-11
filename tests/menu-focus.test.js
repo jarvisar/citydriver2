@@ -13,9 +13,10 @@ test('the custom paint well turns its hue from a controller and comes full circl
 });
 
 function keyboardFixture(t) {
-  const previous = Object.getOwnPropertyDescriptor(globalThis, 'document');
-  t.after(() => { if (previous) Object.defineProperty(globalThis, 'document', previous); else delete globalThis.document; });
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'document'), style = globalThis.getComputedStyle;
+  t.after(() => { if (previous) Object.defineProperty(globalThis, 'document', previous); else delete globalThis.document; globalThis.getComputedStyle = style; });
   globalThis.document = { activeElement: null };
+  globalThis.getComputedStyle = element => ({ position: element.pinned ? 'sticky' : 'static' });
   const root = { querySelectorAll: () => controls, contains: element => element === root || element === group || controls.includes(element) };
   const group = { querySelectorAll: () => controls.filter(control => control.radio) };
   const control = (name, options = {}) => ({
@@ -26,7 +27,7 @@ function keyboardFixture(t) {
     getClientRects() { return this.hidden ? [] : [{}]; },
     checkVisibility() { return !this.hidden; },
     matches(selector) { return selector === 'button[role="radio"]' && Boolean(this.radio); },
-    focus() { document.activeElement = this; },
+    focus(options) { document.activeElement = this; this.focused = options; },
     click() { this.clicks++; },
   });
   const controls = [control('first'), control('disabled', { disabled: true }), control('hidden', { hidden: true }), control('inert', { inert: true }), control('last')];
@@ -48,6 +49,15 @@ test('modal keyboard Tab wraps both ends and cannot focus hidden background cont
   document.activeElement = f.control('background');
   handleMenuKey(f.root, f.event('Tab'));
   assert.equal(document.activeElement.name, 'first');
+});
+
+test('focus scrolls a control into view, except one in a pinned header, which already is', t => {
+  const f = keyboardFixture(t);
+  f.controls[0].pinned = true; f.controls.at(-1).focus();
+  handleMenuKey(f.root, f.event('Tab'));
+  assert.deepEqual(f.controls[0].focused, { preventScroll: true }, 'wrapping to Resume leaves the list where it was');
+  handleMenuKey(f.root, f.event('Tab'));
+  assert.deepEqual(f.controls.at(-1).focused, { preventScroll: false });
 });
 
 test('radio keyboard arrows wrap, skip disabled choices and activate the selected choice', t => {

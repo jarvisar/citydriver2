@@ -108,6 +108,30 @@ test('a frame cap that divides the display is held evenly, and any other is not 
     const fps = rate(paced(hz, 6, 60));
     assert.ok(fps > 55 && fps <= 60.01, `${hz} Hz capped at 60 draws ${fps.toFixed(1)}`);
   }
+  // A cap that doesn't divide the display still averages out to itself. These drew 72, 60, 120 and 54.
+  for (const [hz, cap] of [[144, 90], [120, 72], [240, 144], [72, 60], [165, 144], [100, 90]]) {
+    const gaps = paced(hz, 8, cap), fps = rate(gaps);
+    assert.ok(fps > cap * .99 && fps <= cap * 1.001, `${cap} on ${hz} Hz draws ${fps.toFixed(1)}`);
+    assert.ok(gaps.every(gap => gap > 1000 / hz - 1e-6), 'never faster than the display');
+  }
+  // A display a little off its nominal rate (119.88 Hz) keeps every other frame, with none slipped in to make 60
+  assert.ok(even(paced(119.88, 30, 60), 2000 / 119.88), '60 on 119.88 Hz');
+  // A dropped display frame under a dividing cap is one long frame, with no
+  // short one after it (dropped on a frame it would have skipped, nothing shows)
+  const dropped = frame => {
+    const late = new FramePacer(), frames = [];
+    let last = null;
+    for (let i = 0; i <= 120 * 4; i++) {
+      const at = i * 1000 / 120;
+      if (i === frame || late.skip(at, 60)) continue;
+      if (last !== null && at > 1100) frames.push(Math.round((at - last) * 120 / 1000));
+      last = at;
+    }
+    return frames;
+  };
+  const runs = [...dropped(301), ...dropped(302)];
+  assert.ok(runs.every(frames => frames >= 2), 'no frame comes early');
+  assert.equal(runs.filter(frames => frames === 3).length, 1, 'the one late frame');
   // A display that drops to the cap's rate (a battery saver) stops being paced within a second
   const pacer = new FramePacer();
   let t = 0, skipped = 0;

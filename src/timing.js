@@ -8,6 +8,9 @@ export const PHYSICS_STEP = 1 / 120;
 // that divides the display's rate is held evenly (60 on 120 Hz is every other
 // frame) and any other cap averages out without going over. The display's
 // rate is the shortest gap between callbacks over the last second.
+// A cap within 5% of dividing the display's rate counts as dividing it, the
+// same margin a cap at the display's own rate gets.
+const EVEN = .05;
 export class FramePacer {
   constructor() { this.last = null; this.owed = 0; this.shortest = Infinity; this.window = Infinity; this.windowStart = 0; }
   // The display's refresh rate, once a second of it has been measured
@@ -19,11 +22,15 @@ export class FramePacer {
     this.last = timestamp;
     if (timestamp - this.windowStart >= 1000) { this.shortest = this.window; this.window = Infinity; this.windowStart = timestamp; }
     const interval = cap ? 1000 / cap : 0;
-    if (!interval || !Number.isFinite(this.shortest) || interval <= this.shortest * 1.05) { this.owed = 0; return false; }
+    if (!interval || !Number.isFinite(this.shortest) || interval <= this.shortest * (1 + EVEN)) { this.owed = 0; return false; }
     this.owed += gap;
     if (this.owed < interval - this.shortest / 2 - .25) return true;
-    // (never ahead: a late frame doesn't buy an early one after it)
-    this.owed = Math.min(0, this.owed - interval);
+    // A cap that divides the display's rate is never ahead: a late frame
+    // doesn't buy an early one after it. Any other carries what is left over,
+    // up to half a display interval. Dropped, 90 on 144 Hz drew every other
+    // frame (72), and 72 on 120 Hz drew 60.
+    const frames = interval / this.shortest, even = Math.abs(frames / Math.round(frames) - 1) < EVEN;
+    this.owed = Math.min(even ? 0 : this.shortest / 2, this.owed - interval);
     return false;
   }
 }

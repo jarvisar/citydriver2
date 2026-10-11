@@ -354,6 +354,26 @@ test('?ao=0 starts every level without soft shading, and can still be switched b
   assert.equal(capableAt(0, { storage: fresh }).ambientOcclusion, true);
 });
 
+test('soft shading that fails to load is off for the visit, and the choice is kept', () => {
+  const storage = memoryStorage(), graphics = graphicsAt(0, { storage }), heard = [];
+  graphics.onChange((settings, reason) => heard.push([reason, settings.ambientOcclusion]));
+  assert.equal(graphics.failAmbientOcclusion(), false, 'nothing to say while it is off');
+  graphics.toggleAmbientOcclusion();
+  assert.equal(graphics.failAmbientOcclusion(), true);
+  assert.equal(graphics.settings.ambientOcclusion, false, 'the settings stop saying it is on');
+  assert.deepEqual(heard.at(-1), ['ambient-occlusion-failed', false]);
+  assert.equal(stored(storage).ambientOcclusion, true, 'the choice is still theirs');
+  assert.equal(graphicsAt(0, { storage }).ambientOcclusion, true, 'so the next visit tries again');
+  assert.equal(graphics.toggleAmbientOcclusion(), true, 'and so does switching it back on');
+  // On by default, a failure is not the default proving too slow
+  const fresh = memoryStorage(), capable = capableAt(0, { storage: fresh });
+  assert.equal(capable.failAmbientOcclusion(), true);
+  assert.equal(capable.ambientOcclusion, false); assert.equal(capable.aoByDefault, false);
+  new Device(capable, 30).run(60);
+  assert.equal(stored(fresh).aoDropped, false);
+  assert.equal(capableAt(0, { storage: fresh }).ambientOcclusion, true);
+});
+
 test('changes reach listeners, and unusable storage never breaks the game', () => {
   const broken = { getItem() { throw new Error('denied'); }, setItem() { throw new Error('denied'); } };
   const graphics = new Graphics({ storage: broken, detect: () => levelIndex('smooth') });

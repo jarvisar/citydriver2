@@ -16,7 +16,6 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
       const notice = document.createElement('div');
       notice.className = 'update-notice';
       notice.innerHTML = '<span role="status">Update available</span><button type="button">Reload</button>';
-      for (const type of ['keydown', 'keyup']) notice.addEventListener(type, event => event.stopPropagation());
       notice.querySelector('button').addEventListener('click', () => {
         reloading = true;
         for (const button of document.querySelectorAll('.update-notice button')) button.disabled = true;

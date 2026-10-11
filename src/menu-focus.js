@@ -34,10 +34,15 @@ export function handleMenuKey(root, event) {
     } else return false;
   }
   event.preventDefault(); event.stopPropagation();
-  next.focus();
+  focus(next, root);
   if (event.key !== 'Tab') next.click();
   return true;
 }
+
+// A menu keeps its pinned header's height clear when it scrolls a focused
+// control into view (scroll-padding). A control in that header is always in
+// view: scrolling to it would only shift the list underneath by that much.
+function focus(target, root) { target.focus({ preventScroll: pinned(target, root) }); }
 
 // Left and right change a slider or a list in place, since each fills its own
 // row. The custom paint well sits in a row of swatches, so left and right pass
@@ -115,14 +120,14 @@ export function moveMenuFocus(root, name) {
   const targets = menuTargets(root);
   if (!targets.length) return;
   const index = targets.indexOf(document.activeElement);
-  if (index < 0) { targets[0].focus(); return; }
+  if (index < 0) { focus(targets[0], root); return; }
   const current = targets[index], direction = DIRECTIONS[name];
   if (!direction) return;
   if (direction[0] && adjust(current, direction[0])) return;
   const target = nearest(current, targets, direction, root);
   // Past the edge, carry on in reading order and wrap round the ends.
   const step = direction[0] + direction[1];
-  (target ?? targets[(index + step + targets.length) % targets.length]).focus();
+  focus(target ?? targets[(index + step + targets.length) % targets.length], root);
 }
 
 // A presses the focused control. Lists and the paint well have no useful

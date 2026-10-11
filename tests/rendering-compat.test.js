@@ -245,18 +245,35 @@ test('AO render failures restore the caller target, scene, overlays and renderer
 
 test('lazy AO falls back after setup failure, releases the effect, and retries only after a toggle', async t => {
   const warnings = []; t.mock.method(console, 'warn', (...args) => warnings.push(args));
-  let loads = 0, disposed = 0, renders = 0;
+  let loads = 0, disposed = 0, renders = 0, failures = 0;
   class BrokenEffect { setQuality() { throw new RenderingCompatibilityError('test setup failure'); } dispose() { disposed++; } }
   const ao = new AmbientOcclusion({ render() { renders++; } }, {}, {}, {
-    load: async () => { loads++; return { AmbientOcclusion: BrokenEffect }; },
+    load: async () => { loads++; return { AmbientOcclusion: BrokenEffect }; }, onFail: () => { failures++; },
   });
   assert.equal(ao.prepare(), null); assert.equal(loads, 0);
   ao.enabled = true; await ao.prepare();
   assert.equal(ao.effect, null); assert.equal(ao.failed, true); assert.equal(disposed, 1); assert.equal(warnings.length, 1);
+  assert.equal(failures, 1, 'and says so, for the settings to show');
   ao.render({}); ao.render({}); await ao.prepare();
   assert.equal(renders, 2); assert.equal(loads, 1);
   ao.enabled = false; ao.enabled = true; await ao.prepare();
   assert.equal(loads, 2); assert.equal(disposed, 2);
+  ao.dispose();
+});
+
+test('a failed AO download is switched off by its owner, and switching it on asks again', async t => {
+  t.mock.method(console, 'warn', () => {});
+  let loads = 0;
+  const ao = new AmbientOcclusion({ render() {} }, {}, {}, {
+    load: async () => { loads++; throw new TypeError('Failed to fetch dynamically imported module'); },
+    // (as Graphics.failAmbientOcclusion does, through the renderer's quality settings)
+    onFail: () => { ao.enabled = false; },
+  });
+  ao.enabled = true; await ao.prepare();
+  assert.equal(ao.enabled, false); assert.equal(ao.effect, null); assert.equal(ao.ready, null);
+  ao.render({}); assert.equal(loads, 1, 'off, it asks for nothing');
+  ao.enabled = true; await ao.prepare();
+  assert.equal(loads, 2); assert.equal(ao.enabled, false);
   ao.dispose();
 });
 

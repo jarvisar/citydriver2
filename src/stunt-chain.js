@@ -41,14 +41,22 @@ export function nearMiss(player, car) {
   const along = ds * Math.cos(player.heading) + du * Math.sin(player.heading);
   const across = Math.abs(du * Math.cos(player.heading) - ds * Math.sin(player.heading));
   const clearance = (player.spec?.width ?? 2) / 2 + (car.spec?.width ?? 2) / 2 + .4;
-  return Math.abs(along) < 2.5 && across > clearance && across < clearance + NEAR_GAP;
+  if (!(Math.abs(along) < 2.5 && across > clearance && across < clearance + NEAR_GAP)) return false;
+  // Only a car it could have hit: not one it is jumping over, or passing on
+  // a roof (the same heights as CityTraffic.collidePlayer)
+  const y = player.groundedPosition?.y, base = car.position?.y;
+  return !(player.airborne || y >= base + (car.profile?.height ?? 1.5) || y + (player.spec?.height ?? 1.5) <= base);
 }
+// Whether `car` was passed before. Traffic reuses its cars, and one sent round
+// to turn up elsewhere (a new `generation`) is a new car to pass. Kept by the
+// car alone, near misses dried up once every car in the fleet had been passed.
+export const passedBefore = (passed, car) => passed.has(car) && passed.get(car) === car.generation;
 
 export class StuntChain {
   constructor() {
     this.events = []; this.elapsed = 0;
     this.scrapedAt = -Infinity; this.lastImpact = null; this.lastCrash = null; this.cooldown = 0;
-    this.cars = new WeakMap(); this.passed = new WeakSet();
+    this.cars = new WeakMap(); this.passed = new WeakMap();
     this.chain = 0; this.pot = 0; this.chainTime = 0; this.last = null; this.began = -Infinity;
     // (how many of each kind of smash the chain has had)
     this.repeats = new Map();
@@ -105,8 +113,8 @@ export class StuntChain {
     else if (crashed) this.lose('Crash');
     if (!player.walker && !player.pilot && !collided && this.cooldown === 0) {
       for (const car of traffic) {
-        if (this.passed.has(car) || !nearMiss(player, car)) continue;
-        this.passed.add(car); this.add(STUNTS.nearMiss, 'Near miss', player.groundedPosition);
+        if (passedBefore(this.passed, car) || !nearMiss(player, car)) continue;
+        this.passed.set(car, car.generation); this.add(STUNTS.nearMiss, 'Near miss', player.groundedPosition);
       }
     }
     // (a jump keeps the chain waiting while the car is in the air)
