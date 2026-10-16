@@ -270,20 +270,46 @@ export function createN8AOIntegration(N8AOPass, version, scene, camera, configur
     for (const key of aoTargets.slice(1, 4)) pass[key].texture.minFilter = pass[key].texture.magFilter = THREE.NearestFilter;
     pass.beautyRenderTarget.texture.type = THREE.UnsignedByteType;
   } catch (error) { disposeN8AO(pass); throw error; }
+  // N8AO rebuilds its AO, denoise and compositor materials for an orthographic
+  // or a perspective lens, and disposes the old ones. A rebuilt shader gets a
+  // new id in three's shader cache, so the retained programs never matched and
+  // every switch between an overhead view and the chase view compiled all
+  // three again. So one set is kept for each kind of lens.
+  const sets = new Map(), spare = new THREE.ShaderMaterial();
+  const current = () => ({ effect: pass.effectShaderQuad.material, denoise: pass.standardDenoiseMaterial,
+    neural: pass.neuralDenoiseMaterial, compositer: pass.effectCompositerQuad.material });
   let disposed = false;
   return {
     get depthTarget() { return pass.beautyRenderTarget; },
     update(camera, width, height) {
-      const cameraChanged = Boolean(pass.camera.isOrthographicCamera) !== Boolean(camera.isOrthographicCamera);
+      const ortho = Boolean(camera.isOrthographicCamera), was = Boolean(pass.camera.isOrthographicCamera);
       pass.camera = camera;
       if (pass.width !== width || pass.height !== height) pass.setSize(width, height);
-      if (cameraChanged) {
-        pass.configureSampleDependentPasses();
-        pass.configureEffectCompositer(pass.configuration.depthBufferType, camera.isOrthographicCamera);
+      if (ortho !== was) {
+        sets.set(was, current());
+        const kept = sets.get(ortho);
+        if (kept) {
+          pass.effectShaderQuad.material = kept.effect; pass.effectCompositerQuad.material = kept.compositer;
+          pass.standardDenoiseMaterial = pass.poissonBlurQuad.material = kept.denoise; pass.neuralDenoiseMaterial = kept.neural;
+          pass.firstFrame();
+        } else {
+          // (N8AO disposes whatever it replaces, so it gets a stand-in, not the set just kept)
+          pass.effectShaderQuad.material = pass.effectCompositerQuad.material = pass.standardDenoiseMaterial = spare;
+          pass.neuralDenoiseMaterial = null;
+          pass.configureSampleDependentPasses();
+          pass.configureEffectCompositer(pass.configuration.depthBufferType, ortho);
+        }
       }
       updateAOFog(pass.effectCompositerQuad.material, scene.fog, camera);
     },
     render(renderer, target) { pass.render(renderer, target); },
-    dispose() { if (!disposed) { disposed = true; disposeN8AO(pass); } },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      // (disposeN8AO takes the set in use)
+      const inUse = new Set(Object.values(current()));
+      for (const set of sets.values()) for (const material of Object.values(set)) if (material && !inUse.has(material)) material.dispose();
+      spare.dispose(); disposeN8AO(pass);
+    },
   };
 }

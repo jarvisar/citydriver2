@@ -166,7 +166,7 @@ test('real N8AO targets keep the filters, depth format and half-resolution layou
   } finally { integration.dispose(); }
 });
 
-test('N8AO recompiles all three projection-dependent shaders only when projection changes', () => {
+test('N8AO builds all three projection-dependent shaders once for each kind of lens', () => {
   const { integration, pass, camera } = aoFixture();
   const materials = () => [pass.effectShaderQuad.material, pass.poissonBlurQuad.material, pass.effectCompositerQuad.material];
   try {
@@ -181,8 +181,11 @@ test('N8AO recompiles all three projection-dependent shaders only when projectio
     });
     integration.update(new THREE.PerspectiveCamera(), 640, 480);
     assert.deepEqual(materials(), perspective, 'another perspective camera reuses shaders');
+    // (rebuilt, they got new shader ids and compiled again at every switch)
     integration.update(camera, 640, 480);
-    materials().forEach(material => assert.match(material.fragmentShader, /#define ORTHO/));
+    assert.deepEqual(materials(), ortho, 'back to orthographic reuses its shaders');
+    integration.update(new THREE.PerspectiveCamera(), 640, 480);
+    assert.deepEqual(materials(), perspective, 'and back to perspective reuses those');
   } finally { integration.dispose(); }
 });
 
@@ -208,6 +211,19 @@ test('N8AO cleanup disposes every current owned resource once and leaves scene r
   camera.addEventListener('dispose', () => assert.fail('camera belongs to the game'));
   integration.dispose(); integration.dispose();
   for (const [resource, count] of counts) assert.equal(count, 1, resource.constructor.name);
+});
+
+test('N8AO cleanup disposes the set kept for the other kind of lens too', () => {
+  const { integration, pass, camera } = aoFixture();
+  const materials = () => [pass.effectShaderQuad.material, pass.poissonBlurQuad.material, pass.effectCompositerQuad.material];
+  const ortho = materials();
+  for (const lens of [new THREE.PerspectiveCamera(), camera, new THREE.PerspectiveCamera()]) integration.update(lens, 800, 600);
+  const perspective = materials(), counts = new Map();
+  for (const material of [...ortho, ...perspective]) {
+    counts.set(material, 0); material.addEventListener('dispose', () => counts.set(material, counts.get(material) + 1));
+  }
+  integration.dispose();
+  for (const [material, count] of counts) assert.equal(count, 1, material.fragmentShader.slice(0, 40));
 });
 
 test('N8AO rejects unknown versions before allocating and changed layouts before rendering', () => {

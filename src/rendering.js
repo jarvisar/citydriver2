@@ -98,9 +98,33 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   renderer.xr.cameraAutoUpdate = false;
   renderer.xr.addEventListener('sessionend', () => { graphics.suspend(); resizeCanvas(); });
   const ambientOcclusion = new AmbientOcclusion(renderer, scene, camera, {
-    onReady: () => { if (!document.hidden && !renderer.xr.isPresenting) render(); },
+    onReady: () => { if (!document.hidden && !renderer.xr.isPresenting) { warmAmbientOcclusion(); render(); } },
     onFail: () => graphics.failAmbientOcclusion(),
   });
+  // The overhead views draw through an orthographic lens without fog, the
+  // chase and first-person views through a perspective one with it. N8AO
+  // builds its shaders for one kind of lens at a time, and three keys each AO
+  // prepass program on whether there is fog. So AO is drawn the other way once
+  // as it loads, and the render after it covers this frame. Otherwise the first
+  // frame after the title compiled them all (150 ms on an RTX 4080, more
+  // without the browser's shader cache).
+  const warmLens = new THREE.PerspectiveCamera(), warmOffset = new THREE.Vector3(-8, 4, -8);
+  function warmAmbientOcclusion() {
+    if (!followedCar) return;
+    const fog = scene.fog;
+    let lens = camera;
+    if (activeCamera().isOrthographicCamera) {
+      // (a chase view from beside the car, so the culling keeps the streets round it)
+      lens = warmLens.copy(thirdPerson.camera);
+      lens.position.copy(followedCar.position).add(warmOffset); lens.lookAt(followedCar.position); lens.updateMatrixWorld();
+      if (drivingFog.isPlayerFog) drivingFog.origin.copy(followedCar.position);
+    }
+    try {
+      scene.fog = lens.isPerspectiveCamera ? drivingFog : null;
+      ambientOcclusion.render(lens);
+      programs.warm();
+    } finally { scene.fog = fog; }
+  }
   // Resolution, the sun shadow's size and reach, and the AO budget follow the
   // quality level; whether AO is on at all is the player's choice, else the
   // device's default. A new shadow map size only takes effect once the old
