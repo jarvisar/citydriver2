@@ -362,6 +362,8 @@ async function boot() {
     // earned, anywhere) and the fleet balance
     const careerText = () => `${taxi.career.rank.name} · ${cashText()}${taxi.fleet.saved && taxi.career.saved ? '' : ` · ${UNSAVED}`}`;
     function renderCareer() { $('#pause-career').textContent = careerText(); }
+    // For reporting city generation bugs: ?seed=n loads the same city
+    $('#city-seed').textContent = `Seed ${SEED}`;
     // The whole city, from the pause screen: built while the game loads (see
     // prepareWorldMap), drawn again whenever it opens or the window changes size
     let worldMap = null;

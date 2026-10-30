@@ -141,8 +141,17 @@ body:not([data-mode=free]) .pause-panel :is(#autodrive, #traffic) { display: non
 .shift-goals small { font-size: 11px; opacity: .72; }
 #goals-summary { margin: 10px 0 0; }
 #goals-summary:empty { display: none; }
+#city-seed { margin: 10px 0 0; font-size: 12px; line-height: 1.5; font-variant-numeric: tabular-nums; }
 /* In the one column of a phone, the discoveries (a long list) come after
    display and sound, which would otherwise be a long scroll away. Beside
    other columns they are already last in theirs. */
 .pause-settings .notebook-panel { order: 1; }
 .pause-settings > .controller-hint { order: 2; }
+/* The last row, under every column: Install Citydriver (web only) and Buy
+   me a coffee, the link sized like the install button. */
+.pause-settings > .pause-links { order: 3; display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: 12px; }
+/* (the install instructions wrap onto a line of their own under both) */
+.pause-settings .pause-links .pwa-install { display: contents; }
+#pause-overlay .pause-links .pwa-install-help { order: 1; flex: 0 0 100%; max-width: none; margin: -4px 0 0; padding-inline: max(0px, (100% - 280px) / 2); }
+#app .support-link { display: inline-flex; justify-content: center; gap: 8px; width: auto; padding: 8px 14px; font-size: 12px; font-weight: inherit; text-decoration: none; }
+#app .support-link:focus-visible, body[data-controller=true] #app .support-link:focus { outline: 3px solid var(--city-gold); outline-offset: 3px; }
