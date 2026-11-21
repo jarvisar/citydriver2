@@ -400,6 +400,8 @@ export class ActorMotion {
   }
   // Lamps from daytime (0) to night (1); a storm runs them part way up.
   setLights(level) { this.night = level; for (const light of this.nightLights) light.material.emissiveIntensity = light.day + (light.night - light.day) * level; }
+  // An emergency vehicle's two sets of beacons, each from dark (0) up (see EmergencyGear)
+  flash(first, second) { this.beacons?.set(first, second); }
   setAppearance(journey) { this.journeyId = journey; this.applyTrim(journey); this.updatePaint(); }
   setRoute(route, state = {}) {
     this.route = route; this.s = state.s ?? 24; this.distance = state.distance ?? 0;

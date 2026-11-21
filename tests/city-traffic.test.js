@@ -686,3 +686,86 @@ test('cabs and the demolition truck come by now and then, and stay off the road 
     assert.ok(jobs.slice(0, 2).some(car => car.edge), 'and back on duty after');
   } finally { traffic.dispose(); }
 });
+
+// The player's siren behind a car (see CityTraffic.giveWay): the player on
+// the street's own rails, `along` meters along it, `across` right of its center line
+function sirenBehind(traffic, edge, along, across, speed) {
+  const pose = traffic.nav.pose(edge, along, 1, across), y = traffic.route.position(pose.s, pose.u).y;
+  // (out of reach of a blow, but at the street's height)
+  return { s: pose.s, u: pose.u, heading: pose.heading, speed, airborne: false, groundedPosition: new THREE.Vector3(1e5, y, 1e5), spec: { width: 2.5, length: 8.4 } };
+}
+
+test('with the siren on behind it, a car pulls over toward the curb and slows to let the player by, then goes back to its lane and its speed', () => {
+  const start = journeyStart(), side = e => e.profile.kind === 'side' && !e.profile.parking && !e.profile.narrow;
+  const { traffic, edge, pinned: [car] } = pinnedStreet({ route: citydriverRoute, s: start.s, u: start.u }, [[45, 9]], side);
+  try {
+    headFor(traffic, car, false) || traffic.choose(car);
+    const home = edge.profile.lane, player = { along: 5, speed: 13 };
+    traffic.siren = true;
+    let widest = 0, slowest = Infinity, passed = false, watcher = null;
+    for (let i = 0; i < 60 * 25; i++) {
+      // Up the middle of the street, past the car, then off out of the way, the siren off
+      player.along += player.speed / 60;
+      const me = watcher ?? sirenBehind(traffic, edge, player.along, home - 2, player.speed);
+      traffic.update(1 / 60, me);
+      if (car.edge === edge) widest = Math.max(widest, car.lane - home);
+      if (!passed) slowest = Math.min(slowest, car.speed);
+      if (!passed && aheadOf(car, me) > 15) { passed = true; traffic.siren = false; watcher = onlooker(traffic, edge, car.along); }
+      assert.ok(car.speed * Math.abs(Math.sin(car.heading - car.laneHeading)) < 2.05, 'a gentle pull over');
+      // (the player keeps to the middle of the street, a little over its lane: the car must pull over for them)
+      assert.ok(watcher || apart(car, { u: me.u, s: me.s, heading: me.heading, spec: me.spec }), `the car is in the player\'s way (${(i / 60).toFixed(1)} s)`);
+      assert.ok([car.s, car.u, car.lane, car.speed].every(Number.isFinite));
+    }
+    assert.ok(widest > 1 && home + widest + car.spec.width / 2 < edge.profile.halfWidth - .2, `pulled over ${widest.toFixed(2)} m, short of the curb`);
+    assert.ok(slowest < 4.5 && slowest > 3, `eased off to ${slowest.toFixed(1)} m/s, never stopping`);
+    assert.ok(passed, 'and the player got by');
+    assert.ok(!car.yielding && car.lane === car.edge.profile.lane && car.speed > 7, `back in its lane at ${car.speed.toFixed(1)} m/s`);
+  } finally { traffic.dispose(); }
+});
+
+test('a minute and a half of autodriving a fire engine with its siren on: traffic gives way, never overlaps, keeps to the road and none is left standing', () => {
+  const player = new DrivingController(citydriverRoute, journeyStart(), 'fireengine');
+  const traffic = new CityTraffic(new THREE.Scene(), player.route, player.s, 'city', player.u);
+  let k = 11;
+  const autodrive = new CityAutodrive({ random: () => (k = (k * 16807) % 2147483647) / 2147483647 });
+  try {
+    player.toggleFreeDriving(); autodrive.toggle();
+    traffic.siren = true;
+    // Every few seconds a car is put on the street ahead of them, their way
+    // (the autodrive alone may meet nobody going its way on some cities)
+    const stage = () => {
+      const hit = traffic.nav.nearest(player.s, player.u);
+      if (!hit || hit.edge.kind === 'path') return;
+      const edge = hit.edge, direction = Math.sin(player.heading) * hit.tx + Math.cos(player.heading) * hit.ty >= 0 ? 1 : -1;
+      const along = (direction > 0 ? hit.along : edge.length - hit.along) + 30, pose = traffic.nav.pose(edge, along, direction, edge.profile.lane);
+      if (along > edge.length - 45 || traffic.vehicles.some(other => other.edge && Math.hypot(other.s - pose.s, other.u - pose.u) < 14)) return;
+      const far = other => Math.hypot(other.s - player.s, other.u - player.u);
+      const car = traffic.vehicles.filter(other => other.edge && !other.service && !other.duty && !other.loose && !other.recover).sort((a, b) => far(b) - far(a))[0];
+      traffic.junctions.release(car);
+      Object.assign(car, { edge, direction, along, next: null, turn: null, after: null, stopWait: 0, claim: null, leaving: null, pending: null, speed: 6 });
+      traffic.settle(car, edge.profile.lane); traffic.choose(car); traffic.pose(car);
+      car.previousPosition.copy(car.position); car.previousQuaternion.copy(car.quaternion);
+    };
+    const still = new Map(), gave = new Set();
+    let longest = 0, offRoad = 0;
+    for (let f = 0; f < 60 * 90; f++) {
+      if (f % (60 * 8) === 60 * 4) stage();
+      player.update(1 / 60, autodrive.update(player, traffic, player.stats.topSpeed, 1 / 60));
+      traffic.update(1 / 60, player);
+      const cars = traffic.vehicles.filter(car => car.edge && car.car.visible);
+      for (const car of cars) {
+        if (car.yielding) gave.add(`${car.index}:${car.generation}`);
+        still.set(car, car.speed < .3 && !car.loose ? (still.get(car) ?? 0) + 1 / 60 : 0);
+        longest = Math.max(longest, still.get(car));
+        if (!car.loose && !car.recover && surfaceAt(car.s, car.u) !== 'road') offRoad++;
+      }
+      for (let i = 0; i < cars.length; i++) for (let j = i + 1; j < cars.length; j++) {
+        if (Math.abs(cars[i].s - cars[j].s) < 8 && Math.abs(cars[i].u - cars[j].u) < 8) assert.ok(apart(cars[i], cars[j]), `cars ${cars[i].index} and ${cars[j].index} overlap`);
+      }
+    }
+    assert.ok(gave.size >= 1, `${gave.size} cars gave way`);
+    assert.ok(longest < 40, `a car stood still for ${longest.toFixed(0)} s`);
+    assert.ok(offRoad < 30, `${offRoad} car steps off the road`);
+    assert.ok(player.distance > 300, `drove ${player.distance.toFixed(0)} m`);
+  } finally { traffic.dispose(); player.disposeModel(); }
+});

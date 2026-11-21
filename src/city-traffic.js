@@ -8,7 +8,7 @@ import { carProfile, profileHeight } from './car-profile.js';
 import { Actor } from './actors.js';
 import { CARS } from './cars.js';
 import { cabGeometry } from './car-models.js';
-import { specialGeometry } from './special-models.js';
+import { specialGeometry, SPECIAL_SHAPES, PARKED_SPECIALS } from './special-models.js';
 import { JunctionTraffic, approachControl } from './city-junctions.js';
 import { turnPath, approachSpeed, wayOn, bendSpeed, hasTurnPath, turnPathSteps, bendSpeedSteps, isLink, HAIRPIN } from './world/lane-paths.js';
 const up = new THREE.Vector3(0, 1, 0), tilt = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -66,6 +66,13 @@ const WARM_SLICE = .1, WARM_MOST = 64;
 // It slows at BUS_DECEL (m/s²) for a stop, pulls in by the curb from PULL_IN m
 // short of it, and pulls out at OUT_SPEED at most.
 const REST = 25, REST_SPREAD = 50, NEAR = 150, BUS_DECEL = 1.6, PULL_IN = 45, OUT_SPEED = 6;
+// Giving way to the player's siren (see EmergencyGear): a car ahead of them
+// going the same way, within YIELD_REACH meters, pulls over YIELD_SHIFT
+// meters toward the curb (short of any parking bays) and eases off to
+// YIELD_SPEED, braking at YIELD_BRAKE, until they are past or the siren has
+// been off YIELD_LINGER seconds. Within YIELD_LINE of its stop line it only
+// slows: a turn starts in its lane. It never stops for it, so nothing stands for good.
+const YIELD_REACH = 50, YIELD_SHIFT = 1.2, YIELD_SPEED = 4, YIELD_BRAKE = 6, YIELD_LINGER = 1.5, YIELD_LINE = 30;
 const wrap = angle => Math.atan2(Math.sin(angle), Math.cos(angle));
 // A parked aircraft can be on a roof above the lane. Missing heights are
 // used by navigation-only callers, which still need the ground-plane test.
@@ -114,7 +121,7 @@ const byWait = (a, b) => (b.stopWait ?? 0) - (a.stopWait ?? 0) || a.index - b.in
 // hash lookup. That made the whole update about twice as slow.
 const DRIVER = Object.fromEntries(['pending', 'leaving', 'claim', 'edge', 'direction', 'along', 'lane', 'next', 'turn', 'after', 'stopWait', 'loose', 'recover', 'rock',
   'dazed', 'shoved', 'bumped', 'tries', 'stranded', 'laneTo', 'laneOn', 'slope', 'around', 'merging', 'mergeWait', 'stood', 'laneTime', 'pace', 'cruiseSpeed', 'speed',
-  's', 'u', 'laneHeading', 'heading', 'held', 'waited', 'blocker', 'think', 'targetSpeed', 'moved', 'dropBack', 'waiting', 'service', 'job', 'duty'].map(key => [key, undefined]));
+  's', 'u', 'laneHeading', 'heading', 'held', 'waited', 'blocker', 'think', 'targetSpeed', 'moved', 'dropBack', 'waiting', 'service', 'job', 'duty', 'yielding', 'giving'].map(key => [key, undefined]));
 // Cars with a job, after the bus: two cabs and the demolition truck. Getting
 // into one on foot puts its job on standby (see main.js). Like the bus they
 // come by now and then, off duty in between (see retire), and coming the
@@ -125,6 +132,9 @@ const JOB_MODELS = {
   demolition: { spec: { name: 'demolition', width: CARS.demolition.shape.width, length: CARS.demolition.shape.length, mass: CARS.demolition.mass, accel: 1.6 },
     paint: CARS.demolition.paint, parts: () => specialGeometry(CARS.demolition.shape) },
 };
+// How CityTraffic.addStandIn knows a parked car's model by its name: by its
+// index among the traffic's shapes, or by name for a parked special
+const standInModel = name => { const index = TRAFFIC_MODELS.findIndex(spec => spec.name === name); return index < 0 ? name : index; };
 // The lanes each way, as offsets right of the center line: the curb lane every
 // turn starts and ends in (the profile's), and on a boulevard or the parkway
 // the lane beside the median as well
@@ -183,6 +193,8 @@ export class CityTraffic {
     this.group = new THREE.Group(); this.group.name = 'city-traffic'; scene.add(this.group);
     this.models = createTrafficModels();
     for (const { spec, parts } of Object.values(JOB_MODELS)) this.models.add(spec, parts);
+    // (and the specials that stand parked, for their stand-ins: see wake)
+    for (const spec of PARKED_SPECIALS) this.models.add(spec, () => specialGeometry(SPECIAL_SHAPES[spec.name]));
     this.junctions = new JunctionTraffic(this.nav);
     this.vehicles = Array.from({ length: 25 + JOBS.length }, (_, index) => {
       const bus = index === 24, job = JOBS[index - 25];
@@ -200,6 +212,9 @@ export class CityTraffic {
     // The bus stops (see BusStops), when there is a city with them: without,
     // the bus just drives
     this.stops = null;
+    // Whether the player's siren is sounding, set every step (see main.js),
+    // and when it was last heard (see giveWay)
+    this.siren = false; this.sirenAt = -Infinity;
     // Stand-ins for parked cars knocked loose (see wake)
     this.woken = []; this.standInLimit = PARKED_MOST; this.parkedActors = new WeakMap();
     this.fleet = new Set(this.vehicles);
@@ -208,6 +223,8 @@ export class CityTraffic {
     // knocked loose is
     this.playerCars = [];
     TRAFFIC_MODELS.forEach((spec, model) => { for (let k = 0; k < PARKED_POOL; k++) this.addStandIn(model); });
+    // (one of each parked special: there are only a few about, and making one builds its model)
+    for (const spec of PARKED_SPECIALS) this.addStandIn(spec.name);
     // Street furniture a loose car can knock over, when there is any (see
     // LooseProps); and the world's chunks, as the last update had them
     this.props = null; this.chunks = null; this.lying = [];
@@ -225,6 +242,7 @@ export class CityTraffic {
     if (!this.profiles.has(model.spec.name)) this.profiles.set(model.spec.name, carProfile(model.car, model.spec.length));
     return this.profiles.get(model.spec.name);
   }
+  // A stand-in of `model`: an index into TRAFFIC_MODELS, or a parked special's name (see standInModel)
   addStandIn(model) {
     const made = this.models.create(model, TRAFFIC_COLORS[0]);
     const car = { ...made, actor: null, index: 100 + this.woken.length, profile: this.profileOf(made), parked: null, loose: null, rock: null, s: 0, u: 0, heading: 0, position: new THREE.Vector3(), previousPosition: new THREE.Vector3(), quaternion: new THREE.Quaternion(), previousQuaternion: new THREE.Quaternion(), generation: undefined, bay: undefined, dazed: undefined, moved: undefined };
@@ -234,7 +252,8 @@ export class CityTraffic {
     return car;
   }
   reset(route, s, journey = 'city', u = 0) {
-    this.route = route; this.time = 0; this.lastS = s; this.lastU = u;
+    // (and no siren heard: its time was this clock's, now gone back to 0)
+    this.route = route; this.time = 0; this.lastS = s; this.lastU = u; this.sirenAt = -Infinity;
     this.travelS = 0; this.travelU = 0; this.lookAhead = 0;
     this.junctions.reset();
     for (const car of this.woken) this.release(car);
@@ -382,7 +401,7 @@ export class CityTraffic {
     const m = this.motion(car);
     if (car.recover && ++car.tries >= STRANDED) car.stranded = WAIT;
     car.loose = { vx: m.vx, vz: m.vz, spin: 0 }; car.speed = 0; car.recover = null;
-    car.slope = 0; car.around = null; car.merging = false;
+    car.slope = 0; car.around = null; car.merging = false; car.yielding = null;
     if (car.service) this.leaveStop(car);
   }
   // Moved a little, as when parted from a car it overlaps
@@ -557,7 +576,7 @@ export class CityTraffic {
     let car = this.woken.find(car => car.parked === collider);
     if (!car) {
       if (collider.woken) return false;
-      car = this.standIn(collider.parked.model) ?? this.addStandIn(TRAFFIC_MODELS.findIndex(spec => spec.name === collider.parked.model));
+      car = this.standIn(collider.parked.model) ?? this.addStandIn(standInModel(collider.parked.model));
       this.stand(car, collider, this.bayPose(collider), false);
     }
     car.parked = null; car.loose = null; car.car.visible = false;
@@ -599,7 +618,7 @@ export class CityTraffic {
       const value = settled ? Infinity : Math.hypot(car.s - this.lastS, car.u - this.lastU);
       if (value > score) { best = car; score = value; }
     }
-    if (score < Infinity && count < this.standInLimit) return this.addStandIn(TRAFFIC_MODELS.findIndex(spec => spec.name === model));
+    if (score < Infinity && count < this.standInLimit) return this.addStandIn(standInModel(model));
     return best;
   }
   // Put back in its bay, out of sight
@@ -781,7 +800,7 @@ export class CityTraffic {
     car.edge = choice.edge; car.direction = choice.direction; car.next = null; car.turn = null;
     const lanes = lanesOf(car.edge.profile);
     car.lane = lane; car.laneTo = !car.around && lanes.length > 1 && Math.abs(lanes[1] - to) < Math.abs(lanes[0] - to) ? lanes[1] : lanes[0]; car.laneOn = car.edge;
-    car.around = null; car.merging = false;
+    car.around = null; car.merging = false; car.yielding = null;
     car.stopWait = 0; car.cruiseSpeed = car.edge.profile.speed * (car.pace ?? 1);
     // (a stop it was slowing for on this street is still ahead)
     if (car.service && (car.service.state || car.service.stop?.edge !== car.edge)) this.leaveStop(car);
@@ -822,7 +841,7 @@ export class CityTraffic {
     return true;
   }
   // Settled in a lane, not changing
-  settle(car, lane) { Object.assign(car, { lane, laneTo: lane, laneOn: car.edge, slope: 0, around: null, merging: false, mergeWait: 0, stood: 0, laneTime: 0 }); }
+  settle(car, lane) { Object.assign(car, { lane, laneTo: lane, laneOn: car.edge, slope: 0, around: null, merging: false, mergeWait: 0, stood: 0, laneTime: 0, yielding: null }); }
   // Steering for another lane of the street it is on
   steerFor(car, lane) { car.laneTo = lane; car.laneOn = car.edge; car.laneTime = 0; }
   // The lane a car is steering for: one chosen on another street (a car
@@ -1004,6 +1023,8 @@ export class CityTraffic {
       if (to === home && car.lane === home) car.around = null;
       return;
     }
+    // (giving way to the siren takes the lane: see pullOver)
+    if (car.yielding) { this.pullOver(car, player); return; }
     const blocker = car.blocker;
     if (car.stood > (blocker === player || this.playerCars.includes(blocker) ? AROUND_WAIT_PLAYER : AROUND_WAIT)) {
       const lane = this.aroundPlan(car, blocker, player);
@@ -1122,6 +1143,33 @@ export class CityTraffic {
     const sides = [lo - clear, hi + clear].filter(lane => lane >= median && lane <= kerb).sort((a, b) => Math.abs(a - car.lane) - Math.abs(b - car.lane));
     return { sides, near, far };
   }
+  // Whether a car gives way to the player's siren (see YIELD_REACH): ahead of
+  // them on the same road going the same way, on its lane and not crossing a
+  // junction or at a bus stop. The most it may go for it.
+  giveWay(car, player, hearing) {
+    let wants = false;
+    if (hearing && !player.airborne && Number.isFinite(player.heading) && !car.around && !car.claim && !car.service?.state && sameHeight(car, player)) {
+      const [dl, dt] = this.relative(car, player, player);
+      wants = dl < -car.spec.length / 2 && dl > -YIELD_REACH && Math.abs(dt) < car.edge.profile.halfWidth
+        && Math.cos(player.heading - car.laneHeading) > .5 && (Boolean(car.yielding) || Math.abs(player.speed ?? 0) > 2);
+    }
+    if (wants) { (car.yielding ??= { back: false }).back = false; return YIELD_SPEED; }
+    if (car.yielding) car.yielding.back = true;
+    return Infinity;
+  }
+  // A car giving way steers toward the curb when there is room, and back to
+  // its lane once the player is past or the siren has stopped, into a gap
+  // as any lane change is. Near its stop line it keeps to its lane.
+  pullOver(car, player) {
+    const profile = car.edge.profile, home = profile.lane, to = this.aim(car);
+    if (!car.yielding.back && this.lineAt(car) - car.along > YIELD_LINE) {
+      const kerb = (profile.parking || profile.halfWidth - .5) - car.spec.width / 2 - .2, lane = Math.max(home, Math.min(kerb, home + YIELD_SHIFT));
+      if (to !== lane && this.clearFor(car, lane, player, { obstacle: player })) this.steerFor(car, lane);
+      return;
+    }
+    if (to !== home) { if (this.clearFor(car, home, player)) this.steerFor(car, home); }
+    else if (car.lane === home && car.yielding.back) car.yielding = null;
+  }
   // The most a car may go for its lane: slowly round something in the road,
   // and, waiting to get over for its turn, no further than the merge point,
   // easing off to fall in behind the car beside it
@@ -1204,6 +1252,8 @@ export class CityTraffic {
     this.travelS = speed > 2 ? ds / moved : 0; this.travelU = speed > 2 ? du / moved : 0;
     this.lookAhead = Math.min(180, speed > 2 ? speed * 3.5 : 0);
     this.lastS = player.s; this.lastU = player.u; this.time += dt;
+    if (this.siren) this.sirenAt = this.time;
+    const hearing = this.time - this.sirenAt < YIELD_LINGER;
     this.junctions.tick(this.time);
     // Whoever has waited longest at a stop line asks for the junction first
     // (sorted from the fleet's own order each step, into one array)
@@ -1251,6 +1301,8 @@ export class CityTraffic {
       car.stood = car.speed < 1 && follow < 1 && this.stuck(this.blocker, player) ? (car.stood ?? 0) + dt : 0;
       // The bus's stops (before its lane is thought about: a stop takes the lane)
       const serving = car.service && !car.loose && !car.recover ? this.serve(car, dt, player) : Infinity;
+      // and the siren (before its lane is thought about: giving way takes the lane)
+      const giving = (hearing || car.yielding) && !car.loose && !car.recover ? this.giveWay(car, player, hearing) : Infinity;
       // Its lane, thought about a few times a second (not all on one frame)
       if (!car.loose && !car.recover) {
         car.laneTime = (car.laneTime ?? 0) + dt;
@@ -1258,8 +1310,11 @@ export class CityTraffic {
         if (car.think <= 0) { car.think += THINK; this.think(car, player); }
       }
       target = Math.min(target, after, follow, this.laneLimit(car, dt), serving);
+      // (giving way it eases off, unless something else wants it slower)
+      car.giving = giving < target && target >= car.speed;
+      target = Math.min(target, giving);
       // (and stops for someone on foot coming to get in, until `waiting`: see OnFoot.hold)
-      if (car.waiting > this.time) target = 0;
+      if (car.waiting > this.time) { target = 0; car.giving = false; }
       car.targetSpeed = target;
     }
     for (const car of this.vehicles) {
@@ -1274,6 +1329,7 @@ export class CityTraffic {
         let target = car.targetSpeed, braking = 16;
         if (car.dazed > 0) { target = 0; if (car.targetSpeed >= car.cruiseSpeed) braking = 4; }
         else if (car.shoved && target >= car.cruiseSpeed) braking = 4;
+        else if (car.giving) braking = YIELD_BRAKE;
         car.speed += clamp(target - car.speed, -braking * dt, (car.spec.accel ?? 3) * dt);
         if (car.speed <= car.cruiseSpeed) car.shoved = false;
         car.along += car.speed * dt;

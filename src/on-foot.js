@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { carEntry } from './cars.js';
 import { collideScenery, roofAt, roofSurface, sceneryContacts } from './collision.js';
 import { rock, rockFrom } from './impact.js';
-import { TRAFFIC_MODELS, BUS_MODEL, BUS_DOORS } from './traffic-models.js';
+import { BUS_MODEL, BUS_DOORS } from './traffic-models.js';
+import { parkedSpec } from './special-models.js';
 import { PLAYER_LOOK, WALKER_SPEC } from './walker.js';
 import { cityCell } from './world/city.js';
 
@@ -361,8 +362,8 @@ export class OnFoot {
     if (standIn) return of(standIn, standIn.profile?.height ?? 1.6);
     if (bay.woken) return null;
     // (the height of the traffic's own car of that shape)
-    const model = TRAFFIC_MODELS.find(each => each.name === bay.parked.model), top = traffic.profiles?.get(model.name)?.height ?? 1.6;
-    return Object.assign(shape, { x: bay.x, z: bay.z, y: this.vehicle.groundedPosition.y, heading: traffic.bayPose(bay).heading, halfWidth: model.width / 2, halfLength: model.length / 2, along: doorAlong(model), seat: .3, top });
+    const model = parkedSpec(bay.parked.model), top = traffic.profiles?.get(model.name)?.height ?? 1.6;
+    return Object.assign(shape, { x: bay.x, z: bay.z, y: this.vehicle.groundedPosition.y, heading: traffic.bayPose(bay).heading, halfWidth: model.width / 2, halfLength: model.length / 2, along: doorAlong(model), seat: model.seat ?? .3, top });
   }
   // The car E or Y would get them into: of those within ENTER, the one they
   // face and are nearest, by San Andreas's score (how nearly they face it

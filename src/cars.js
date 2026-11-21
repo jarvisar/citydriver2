@@ -1,6 +1,6 @@
 import { TRAFFIC_MODELS, SPORTS_MODEL, BUS_MODEL, BUS_PAINT } from './traffic-models.js';
 import { FORMULA_SHAPE } from './formula-model.js';
-import { SPECIAL_SHAPES } from './special-models.js';
+import { SPECIAL_SHAPES, PARKED_SPECIALS } from './special-models.js';
 import { HELICOPTER_SHAPE } from './helicopter.js';
 import { PLANE_SHAPE } from './plane-model.js';
 import { EXOTIC_MODEL } from './exotic-model.js';
@@ -13,6 +13,7 @@ export const CLASSIC_SHAPE = {
 };
 
 const shape = name => TRAFFIC_MODELS.find(spec => spec.name === name);
+const parked = name => PARKED_SPECIALS.find(spec => spec.name === name);
 
 // The default car dresses for the scenery; every other car brings its own paint.
 export const ROUTE_PAINT = { coast: '#d96143', desert: '#78977b', snow: '#9fc4d5', jungle: '#e0b44a', plains: '#4f8f8b', city: '#7a3b47' };
@@ -131,6 +132,20 @@ export const CARS = {
     name: 'City Bus', mass: BUS_MODEL.mass, kind: 'special', paint: BUS_PAINT, shape: SPECIAL_SHAPES.bus,
     stats: { topSpeed: 29.5, acceleration: 11.8, braking: 16.2, grip: .8, offRoad: 18.9, turnRadius: 6.8 },
   },
+  // The emergency vehicles (`emergency`): beacons that flash while they are
+  // driven, and a siren on Boost (`siren`, its sound) that the traffic ahead
+  // pulls over for (see EmergencyGear). One of each stands parked at the
+  // fire station and the hospital, to be borrowed on foot. The fire engine
+  // is as heavy as the truck and the bus, and between them away and to stop;
+  // the ambulance is a loaded van.
+  fireengine: {
+    name: 'Fire Engine', mass: parked('fireengine').mass, kind: 'special', emergency: true, siren: 'wail', paint: parked('fireengine').paint, shape: SPECIAL_SHAPES.fireengine,
+    stats: { topSpeed: 30.8, acceleration: 11.4, braking: 16, grip: .8, offRoad: 19.6, turnRadius: 6.2 },
+  },
+  ambulance: {
+    name: 'Ambulance', mass: parked('ambulance').mass, kind: 'special', emergency: true, siren: 'hilo', paint: parked('ambulance').paint, shape: SPECIAL_SHAPES.ambulance,
+    stats: { topSpeed: 33.5, acceleration: 13.2, braking: 18.6, grip: .9, offRoad: 21.5 },
+  },
   // Out of breath by 57 mph, but it changes lanes like a thought.
   micro: {
     name: 'Micro', kind: 'special', paint: '#8fcfc0', shape: SPECIAL_SHAPES.micro,
@@ -181,7 +196,7 @@ export const GARAGE_IDS = Object.keys(CARS).filter(id => !RETIRED.has(id) && !CA
 export const GARAGE_PRICES = {
   taxi: 0, taxiGT: 10000, taxiFormula: 40000,
   coast: 0, hatchback: 2000, sedan: 2500, wagon: 3000, pickup: 4000, van: 4500, sports: 12000, exotic: 45000,
-  micro: 5000, buggy: 8000, hotrod: 15000, bus: 18000, rig: 25000, monster: 30000, formula: 65000,
+  micro: 5000, buggy: 8000, ambulance: 9000, hotrod: 15000, bus: 18000, fireengine: 22000, rig: 25000, monster: 30000, formula: 65000,
   helicopter: 90000, plane: 140000,
   jetpack: 60000,
 };

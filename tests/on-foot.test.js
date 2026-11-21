@@ -7,13 +7,14 @@ import { OnFoot } from '../src/on-foot.js';
 import { circleContact, collideScenery, roofSurface, sightLine } from '../src/collision.js';
 import { CityTraffic } from '../src/city-traffic.js';
 import { LooseProps } from '../src/loose-props.js';
+import { beachBall } from '../src/world/venue-props.js';
 import { cityAssets } from '../src/world/city-assets.js';
 import { cityWalker } from '../src/world/city-walkers.js';
 import { PedestrianContacts } from '../src/world/pedestrian-reactions.js';
 import { ThirdPersonCamera } from '../src/third-person-camera.js';
 import { FirstPersonCamera } from '../src/first-person-camera.js';
-import { TRAFFIC_MODELS } from '../src/traffic-models.js';
-import { carStats } from '../src/cars.js';
+import { parkedSpec } from '../src/special-models.js';
+import { CARS, carStats } from '../src/cars.js';
 import { GamepadInput } from '../src/gamepad.js';
 import { XRInput } from '../src/xr-input.js';
 import { DriveSoundModel } from '../src/audio/model.js';
@@ -865,11 +866,11 @@ test('on foot the engine, the tires and the wind are silent', () => {
 });
 
 // A car parked in a bay at (u, s), facing `heading`, as the world makes one (see citydriver-world.js)
-function parkedAt(s, u, heading, model = 'sedan') {
-  const spec = TRAFFIC_MODELS.find(each => each.name === model), x = u, z = -s, cos = Math.cos(heading), sin = Math.sin(heading);
+function parkedAt(s, u, heading, model = 'sedan', colour = '#4f7086') {
+  const spec = parkedSpec(model), x = u, z = -s, cos = Math.cos(heading), sin = Math.sin(heading);
   const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => ({ x: x + a * spec.width / 2 * cos + b * spec.length / 2 * sin, z: z + a * spec.width / 2 * sin - b * spec.length / 2 * cos }));
   return { x, z, corners, reach: Math.hypot(spec.width, spec.length) / 2, parked: {
-    model, colour: '#4f7086', nose: { u: Math.sin(heading), s: Math.cos(heading) }, ready: true, hidden: false, hide(hidden = true) { this.hidden = hidden; },
+    model, colour, nose: { u: Math.sin(heading), s: Math.cos(heading) }, ready: true, hidden: false, hide(hidden = true) { this.hidden = hidden; },
   } };
 }
 
@@ -919,6 +920,38 @@ test('a car parked along the curb can be borrowed while there is traffic, and le
     traffic.setEnabled(false, vehicle);
     assert.ok(feet.offer()?.bay === undefined);
   } finally { feet.clear(); traffic.dispose(); vehicle.disposeModel(); }
+});
+
+test('the fire engine and the ambulance parked at their stations are knocked loose, borrowed and put back as a curb car is, and drive as the garage\'s', () => {
+  const kit = actorTraffic(), { vehicle, traffic, feet } = kit;
+  try {
+    feet.getOut();
+    for (const [model, name] of [['fireengine', 'Fire Engine'], ['ambulance', 'Ambulance']]) {
+      const h = vehicle.heading, spec = parkedSpec(model), bay = parkedAt(vehicle.s + Math.cos(h) * 20, vehicle.u + Math.sin(h) * 20, h, model, spec.paint);
+      // Knocked loose: a stand-in of its own shape takes its place, in its paint
+      assert.ok(traffic.wake(bay), `${model} woken`);
+      const standIn = traffic.woken.find(car => car.parked === bay);
+      assert.ok(standIn && standIn.spec.name === model && standIn.spec.length === spec.length && bay.woken && bay.parked.hidden);
+      assert.equal(`#${standIn.paint.color.getHexString()}`, spec.paint);
+      // Someone on foot gets in at its own door, up its own step
+      const shape = feet.shapeOf({ bay });
+      assert.equal(shape.along, CARS[model].shape.door); assert.equal(shape.seat, CARS[model].shape.seat);
+      // Taken where it stands: the garage's car of that name, its beacons and all
+      assert.equal(feet.borrowParked(bay), `${name} · borrowed`);
+      assert.ok(feet.bay === bay && vehicle.carId === model && vehicle.paintColor === spec.paint);
+      assert.deepEqual(vehicle.stats, carStats(model)); assert.ok(vehicle.actor.motion.beacons);
+      assert.ok(Math.hypot(vehicle.s - standIn.s, vehicle.u - standIn.u) < 1e-9, 'driven from where it stood');
+      // Left, it stands where they got out, in its traffic shape, and goes
+      // back to its bay once they are well away
+      feet.leave(vehicle.stepOut());
+      assert.ok(traffic.woken.some(car => car.parked === bay && car.actor.view === 'traffic'));
+      const home = { s: vehicle.s, u: vehicle.u };
+      vehicle.s += 200; vehicle.update(0, {});
+      traffic.update(step, vehicle);
+      assert.ok(!bay.woken && !bay.parked.hidden && !traffic.woken.some(car => car.parked === bay), `${model} back in its bay`);
+      vehicle.s = home.s; vehicle.u = home.u; vehicle.update(0, {}); traffic.reset(vehicle.route, vehicle.s, 'city', vehicle.u);
+    }
+  } finally { kit.dispose(); }
 });
 
 test('on foot, loose pieces are solid: a bin is kicked aside, a fallen post stops them until they hop it, and someone lying there is stepped round', () => {
@@ -974,6 +1007,35 @@ test('on foot, loose pieces are solid: a bin is kicked aside, a fallen post stop
     const person = walkInto(body, 2);
     assert.ok(person < .1, `they stop at them, not in them (${person.toFixed(2)} m)`);
     assert.ok(body.p.distanceTo(bodyAt) < .05, `and do not move them (${body.p.distanceTo(bodyAt).toFixed(2)} m)`);
+  } finally { props.dispose(); vehicle.disposeModel(); }
+});
+
+test('on foot, a ball is kicked loose where it stands and dribbled on ahead of them', () => {
+  const scene = new THREE.Scene(), start = journeyStart(), road = roadAt(start.s, start.u, 40), heading = Math.atan2(road.tx, road.ty);
+  const vehicle = new DrivingController(citydriverRoute, { s: road.y, u: road.x, heading }, 'taxi');
+  scene.add(vehicle.car); vehicle.freeDriving = true;
+  const props = new LooseProps(scene, new THREE.MeshStandardMaterial());
+  vehicle.props = props; vehicle.stepOut();
+  const fx = road.tx, fz = -road.ty, x0 = road.x, z0 = -road.y, along = p => (p.x - x0) * fx + (p.z - z0) * fz;
+  try {
+    // Standing, it is no wall: met on foot, it comes loose and goes on ahead
+    const at = { x: x0 + fx * .6, z: z0 + fz * .6 };
+    const ball = { prop: { pieces: [{ kind: 'ball', geometry: beachBall() }], ready: true, matrix: m => m.makeTranslation(at.x, ROAD_LEVEL, at.z), hide() {} }, x: at.x, z: at.z };
+    for (let i = 0; i < 20; i++) vehicle.update(step, { walk: { x: fx, z: fz } });
+    assert.ok(props.kick(ball, { x: -fx, z: -fz, depth: .05, point: { x: at.x - fx * .3, z: at.z - fz * .3 } }, vehicle), 'kicked loose');
+    const body = ball.prop.bodies[0];
+    assert.ok(body.v.x * fx + body.v.z * fz > 2, 'off ahead of them');
+    // and walking on, they keep it going ahead of them
+    let ahead = 0;
+    for (let i = 0; i < 120 * 2.5; i++) {
+      vehicle.update(step, { walk: { x: fx, z: fz } }); props.update(step, vehicle);
+      if (along(body.p) > along(vehicle.groundedPosition)) ahead++;
+    }
+    assert.ok(along(body.p) > 8, `dribbled ${along(body.p).toFixed(1)} m up the road`);
+    assert.ok(ahead > 120 * 2, `ahead of them all the way (${ahead} of 300 steps, the ball ${along(body.p).toFixed(1)} m, they ${along(vehicle.groundedPosition).toFixed(1)} m)`);
+    // Nothing else standing comes loose on foot
+    const bin = { prop: { pieces: [{ kind: 'bin', geometry: cityAssets.bin }], ready: true, matrix: m => m.makeTranslation(at.x, ROAD_LEVEL, at.z), hide() {} }, x: at.x, z: at.z };
+    assert.equal(props.kick(bin, { x: -fx, z: -fz, depth: .05 }, vehicle), false);
   } finally { props.dispose(); vehicle.disposeModel(); }
 });
 

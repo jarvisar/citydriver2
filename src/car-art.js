@@ -340,6 +340,67 @@ const SPECIAL_ART = {
       ...tyres(draw, shape.wheels),
     ];
   },
+  // The fire engine's right side, as its builder lays it out: the crew cab,
+  // the pump panel, roll-up lockers, the ladder over the hose bed
+  fireengine(shape) {
+    const draw = pen({ scale: 28, ground: 124 }), { slab, shape2d, disc, shadow } = draw;
+    const WHITE = '#efebde', LOCKER = '#c3c7bf', LADDER = '#d9dcd4', RED = '#d23a2c', WELL = '#1c2323';
+    const lockers = [[-.85, .25, .7, 2.45], [.4, 1.5, .7, 2.45], [1.65, 2.95, 1.35, 2.5], [3.08, 3.98, .7, 2.45]];
+    return [
+      shadow(4.3),
+      slab(-3.47, -2.03, .5, 1.2, WELL, 0), slab(1.58, 3.02, .55, 1.2, WELL, 0),
+      slab(-3.75, 3.85, .55, .83, CARBON, 1),
+      // The cab, its glass and roof, the light bar and a horn
+      slab(-4.1, -1.55, 1.2, 2, PAINT, 2), slab(-4.1, -3.47, .5, 1.2, PAINT, 2), slab(-2.03, -1.55, .5, 1.2, PAINT, 1),
+      shape2d([[-4.1, 2], [-3.82, 2.85], [-1.94, 2.85], [-1.8, 2]], GLASS),
+      shape2d([[-4.1, 2], [-4, 2], [-3.72, 2.85], [-3.82, 2.85]], PAINT),
+      ...[-3.25, -2.4].map(z => slab(z - .05, z + .05, 2, 2.85, PAINT, 0)),
+      slab(-1.8, -1.55, 2, 2.92, PAINT, 0), slab(-3.91, -1.55, 2.85, 2.97, WHITE, 1),
+      slab(-3.7, -3.4, 2.97, 3.05, CARBON, 0), slab(-3.69, -3.41, 3.05, 3.19, RED, 1), slab(-3.23, -2.87, 2.97, 3.07, TRIM, 1),
+      slab(-4.1, -1.55, 1.82, 1.92, WHITE, 0), slab(-2.64, -2.46, 1.64, 1.68, TRIM, 0), slab(-2.04, -1.86, 1.64, 1.68, TRIM, 0),
+      // The body, the pump panel and the lockers, a white band over them
+      slab(-1.55, 4.05, 1.2, 2.75, PAINT, 1), slab(-1.55, 1.58, .55, 1.2, PAINT, 0), slab(3.02, 4.05, .55, 1.2, PAINT, 0),
+      slab(-1.5, -.9, .9, 2.4, TRIM, 1), ...[-1.38, -1.2, -1.02].map(z => disc(z, 2.05, .06, CARBON)),
+      ...lockers.flatMap(([front, rear, low, high]) => [slab(front, rear, low, high, LOCKER, 1),
+        ...Array.from({ length: Math.floor((high - low - .4) / .35) + 1 }, (_, k) => slab(front, rear, low + .3 + k * .35 - .01, low + .3 + k * .35 + .01, CARBON, 0))]),
+      slab(-1.55, 4.05, 2.56, 2.66, WHITE, 0),
+      // The ladder on its rack over the hose bed, a beacon at the back corner
+      slab(2.4, 3.9, 2.75, 2.89, '#d6c7a2', 1), slab(-1.13, -1.07, 2.75, 2.95, CARBON, 0), slab(3.77, 3.83, 2.75, 2.95, CARBON, 0),
+      slab(-1.3, 4, 2.95, 3.05, LADDER, 0), slab(3.75, 4.01, 2.75, 3.01, '#e8e6dc', 1), slab(-1.55, -1.29, 2.75, 3.01, '#e8e6dc', 1),
+      // Chrome at both ends, the lamps, and a mirror off the cab
+      slab(-4.26, -4.08, .5, .78, TRIM, 1), slab(-4.145, -4.1, 1.29, 1.51, LAMP, 0), slab(-4.14, -4.1, 1.6, 1.72, '#e8e6dc', 0),
+      slab(4.05, 4.09, .93, 1.37, TAIL, 0), slab(4, 4.22, .5, .6, TRIM, 1), slab(-3.86, -3.7, 2.18, 2.58, TRIM, 1),
+      ...tyres(draw, shape.wheels),
+    ];
+  },
+  // The ambulance's curb side, its door and window, the stripes and a cross
+  ambulance(shape) {
+    const draw = pen({ scale: 35, ground: 126 }), { slab, shape2d, shadow } = draw;
+    const RED = '#c9362f', BLUE = '#2f66d0', WELL = '#1c2323';
+    return [
+      shadow(3.3),
+      slab(-2.53, -1.37, .45, .92, WELL, 0), slab(1.2, 2.3, .5, .92, WELL, 0),
+      // The cab: bonnet, glass and roof, the stripe along it, a mirror
+      shape2d([[-3.05, .92], [-3.05, 1.16], [-2.2, 1.3], [-2.2, .92]], PAINT),
+      slab(-2.2, -1.05, .92, 1.3, PAINT, 0), slab(-3.05, -2.53, .45, .92, PAINT, 1), slab(-1.37, -1.05, .45, .92, PAINT, 0),
+      shape2d([[-2.2, 1.3], [-1.9, 2.05], [-1.2, 2.05], [-1.05, 1.3]], GLASS),
+      shape2d([[-2.2, 1.3], [-2.12, 1.3], [-1.82, 2.05], [-1.9, 2.05]], PAINT),
+      slab(-1.95, -1.05, 2.05, 2.15, PAINT, 1), slab(-3.05, -1.05, .98, 1.1, RED, 0),
+      slab(-2.03, -1.87, 1.45, 1.79, TRIM, 1),
+      // The box, its roof cap and air conditioning, stripes, the door and a cross
+      slab(-1.05, 1.2, .5, 2.75, PAINT, 1), slab(1.2, 2.3, .92, 2.75, PAINT, 0), slab(2.3, 3.05, .5, 2.75, PAINT, 1),
+      slab(-1.03, 3.03, 2.75, 2.81, PAINT, 1), slab(1.8, 2.6, 2.81, 3.03, '#d8dcd6', 1),
+      slab(-1.05, 3.05, 1.33, 1.57, RED, 0), slab(-1.05, 3.05, 2.43, 2.51, RED, 0),
+      slab(-.815, -.785, .62, 2.37, CARBON, 0), slab(.185, .215, .62, 2.37, CARBON, 0),
+      slab(-.6, 0, 1.83, 2.28, GLASS, 1), slab(-.02, .12, 1.73, 1.77, TRIM, 0),
+      slab(1.65, 1.85, 1.7, 2.3, RED, 0), slab(1.45, 2.05, 1.9, 2.1, RED, 0),
+      // Beacons at the box's corners, lamps and chrome at the ends
+      slab(-1.13, -1.05, 2.52, 2.68, BLUE, 1), slab(-.96, -.74, 2.55, 2.71, BLUE, 1), slab(2.74, 2.96, 2.55, 2.71, BLUE, 1), slab(3.05, 3.11, 2.52, 2.68, BLUE, 1),
+      slab(-3.18, -3.02, .41, .63, TRIM, 1), slab(-3.09, -3.05, .87, 1.05, LAMP, 0), slab(-3.09, -3.05, .76, .84, BLUE, 0),
+      slab(3.05, 3.09, .75, 1.25, TAIL, 0), slab(3.03, 3.21, .45, .55, CARBON, 1),
+      ...tyres(draw, shape.wheels),
+    ];
+  },
   micro(shape) {
     const draw = pen({ scale: 58, ground: 126 }), { slab, shape2d, shadow } = draw;
     return [

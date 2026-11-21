@@ -2,9 +2,12 @@ import * as THREE from 'three';
 import { CITY, cityCell, CITY_CELL, cityStyleDistrict } from './city.js';
 import { ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL, DECK_UNDERSIDE } from './city-route.js';
 import { HarbourBoats } from './city-boats.js';
+import { FountainJets } from './fountain-jets.js';
+import { beachBall, BEACH_BALL } from './venue-props.js';
+import { Ducks } from './city-ducks.js';
 import { BusStops } from './bus-stops.js';
 import { cityAssets, cityTrees, CONIFER, looseTree, twinLamp, signalMastPiece, LANTERN_HEIGHT, SIGNAL_LENSES, MAST_HEIGHT, parkedCars, PARKED_PAINTS, boatModels } from './city-assets.js';
-import { TRAFFIC_MODELS } from '../traffic-models.js';
+import { parkedSpec } from '../special-models.js';
 import { carProfile } from '../car-profile.js';
 import { seededRandom, randomAt } from './route.js';
 import { residentWindow } from './resident.js';
@@ -28,7 +31,7 @@ import { basinRim, basinWater } from './city-public-space-geometry.js';
 import { buildStreetSurfaces, placeStreetFurniture, findBridges, bridgePiers, PARAPET } from './city-streets.js';
 import { buildJump } from './city-jump-models.js';
 import { cityParks } from './city-parks.js';
-import { offsetPolygon, calcPolygonArea, averagePoint } from '../mapgen/polygon-util.js';
+import { offsetPolygon, calcPolygonArea, averagePoint, insidePolygon } from '../mapgen/polygon-util.js';
 
 const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
 const windowGeometry = new THREE.PlaneGeometry(1, 1);
@@ -313,7 +316,7 @@ function* renderBatchSteps(group, batches, east = 0, start = 0, distant = false)
 const parkedProfiles = new Map();
 function parkedProfile(model) {
   if (!parkedProfiles.has(model)) {
-    const car = new THREE.Group(), spec = TRAFFIC_MODELS.find(m => m.name === model);
+    const car = new THREE.Group(), spec = parkedSpec(model);
     for (const geometry of [parkedCars[model].paint, parkedCars[model].trim]) car.add(new THREE.Mesh(geometry));
     parkedProfiles.set(model, carProfile(car, spec.length));
   }
@@ -510,6 +513,28 @@ export class CityChunk {
       hide(hidden = true) { for (const item of items) hideItem(item, hidden); world.lampRevision++; },
     };
   }
+  // A car parked at (x, s), its nose along `yaw`, its tires on `base`: a
+  // wall until a car knocks it loose (see CityTraffic.wake), and one the
+  // player can get into on foot. A curb's cars, and a venue's own vans.
+  parkedCar(model, x, s, yaw, colour, base = ROAD_LEVEL, frame = itemFrame(this.start + s, this.east + x, yaw)) {
+    if (this.distant) return null;
+    const shape = parkedCars[model], spec = parkedSpec(model), items = [
+      // (never a structure, even on a venue's grounds: see addWalkerAlert)
+      this.item(`parked-paint-${model}`, shape.paint, this.materials.solid, [x, base, -s], [1, 1, 1], colour, yaw, 0, false),
+      this.item(`parked-trim-${model}`, shape.trim, this.materials.props, [x, base, -s], [1, 1, 1], '#ffffff', yaw, 0, false),
+    ];
+    const solid = this.rigid(x, s, () => this.solid(x, s, spec.width, spec.length), frame);
+    // (which car it is, which way its nose points, and its bay emptied or filled again)
+    for (const item of items) item.wakeable = true;
+    solid.parked = {
+      model, colour, nose: { u: -Math.sin(yaw), s: Math.cos(yaw) },
+      profile: parkedProfile(model), height: parkedProfile(model).height, base,
+      get ready() { return items.every(item => item.render?.mesh); },
+      get hidden() { return items.every(item => item.render?.hidden); },
+      hide(hidden = true) { for (const item of items) hideItem(item, hidden); },
+    };
+    return solid;
+  }
   tree(x, s, scale = 7, species = null) {
     // An address owns its tree: extra garden trees in a detailed chunk must
     // not change the street trees when the distant model hands over to it.
@@ -524,6 +549,34 @@ export class CityChunk {
     this.features.trees.push({ x, s, scale });
     this.post(x, s, .28);
     this.knockable([trunk, crown], [{ kind: 'tree', get geometry() { return looseTree(index, colour); } }]);
+  }
+  // A fountain's moving water (see FountainJets): its spout's top, how high
+  // its plume rises, and the arcs off its bowls' rims, all in the chunk
+  fountain(x, s, spout, plume, tiers) {
+    if (this.distant) return;
+    (this.features.fountains ??= []).push({ x: this.east + x, z: -(this.start + s), spout, plume, tiers, phase: randomAt(Math.round(x * 10), Math.round(s * 10), 7451) * 6 });
+  }
+  // A bandstand's colliders (see bandstand in city-assets.js): its four
+  // octagonal steps, each one up, its columns, and the rail between them
+  // but for the open bay that faces the model's +z
+  bandstand(x, s, yaw) {
+    if (this.distant) return;
+    const cos = Math.cos(yaw), sin = Math.sin(yaw), point = (r, a) => {
+      const lx = Math.sin(a) * r, lz = Math.cos(a) * r;
+      return [x + lx * cos + lz * sin, s + lx * sin - lz * cos];
+    };
+    for (let i = 0; i < 4; i++) {
+      const r = 5.5 - i * .25;
+      this.polygonSolid(Array.from({ length: 8 }, (_, k) => point(r, (k + .5) / 8 * Math.PI * 2)), PAVEMENT_LEVEL + .17 * (i + 1));
+    }
+    const post = k => point(4.4, (k + .5) / 8 * Math.PI * 2);
+    for (let k = 0; k < 8; k++) {
+      const [px, ps] = post(k);
+      this.post(px, ps, .18);
+      if (k === 7) continue;
+      const [nx, ns] = post(k + 1), mx = (px + nx) / 2, ms = (ps + ns) / 2, length = Math.hypot(nx - px, ns - ps);
+      this.rigid(mx, ms, () => { const rail = this.solid(mx, ms, .12, length); if (rail) { rail.base = PAVEMENT_LEVEL + .68; rail.height = 1; } }, itemFrame(this.start + ms, this.east + mx, Math.atan2(ns - ps, nx - px) + Math.PI / 2));
+    }
   }
   // A busy street's furniture, a few dozen pieces per step of a streamed build
   *furnitureSteps() {
@@ -652,6 +705,10 @@ export class CityChunk {
         }
         round(this, x, top + .35, s, .24, .7, .24, stone);
         this.post(x, s, 3.5 * k);
+        // (its water in motion: see FountainJets)
+        const tiers = [[bowl, PAVEMENT_LEVEL + 2.1, 3.4 * k * .62, PAVEMENT_LEVEL + .62]];
+        if (k > 1.3) tiers.unshift([bowl / 2, PAVEMENT_LEVEL + 3.47, bowl * .8, PAVEMENT_LEVEL + 2.12]);
+        this.fountain(x, s, top + .7, .9 + .5 * k, tiers);
       }
       else if (piece.kind === 'lantern') { const lantern = this.prop('lantern', x, s); this.post(x, s, .2); this.knockable([lantern], [{ kind: 'lantern', geometry: cityAssets.lantern }]); }
       // A boat's hull in its own paint, like a parked car's shell, and the
@@ -662,26 +719,14 @@ export class CityChunk {
         this.item(`boat-${piece.model}`, model.detail, this.materials.props, [x, WATER_LEVEL, -s], [1, 1, 1], '#ffffff', piece.yaw);
       }
       else if (piece.kind === 'mooring') this.prop('mooring-line', x, s, piece.yaw, WATER_LEVEL, [piece.span / 1.45, 1, 1]);
-      else if (piece.kind === 'parked') {
-        const model = parkedCars[piece.model], spec = TRAFFIC_MODELS.find(m => m.name === piece.model);
-        if (this.distant) continue;
-        const colour = PARKED_PAINTS[piece.colour % PARKED_PAINTS.length], items = [
-          this.item(`parked-paint-${piece.model}`, model.paint, this.materials.solid, [x, ROAD_LEVEL, -s], [1, 1, 1], colour, piece.yaw),
-          this.item(`parked-trim-${piece.model}`, model.trim, this.materials.props, [x, ROAD_LEVEL, -s], [1, 1, 1], '#ffffff', piece.yaw),
-        ];
-        this.rigid(x, s, () => this.solid(x, s, spec.width, spec.length), itemFrame(piece.s, piece.u, piece.yaw));
-        // A car can knock it loose (see CityTraffic.wake): which car it is,
-        // which way its nose points, and its bay emptied or filled again
-        for (const item of items) item.wakeable = true;
-        this.features.colliders.at(-1).parked = {
-          model: piece.model, colour, nose: { u: -Math.sin(piece.yaw), s: Math.cos(piece.yaw) },
-          profile: parkedProfile(piece.model), height: parkedProfile(piece.model).height, base: ROAD_LEVEL,
-          get ready() { return items.every(item => item.render?.mesh); },
-          get hidden() { return items.every(item => item.render?.hidden); },
-          hide(hidden = true) { for (const item of items) hideItem(item, hidden); },
-        };
+      else if (piece.kind === 'parked') this.parkedCar(piece.model, x, s, piece.yaw, PARKED_PAINTS[piece.colour % PARKED_PAINTS.length], ROAD_LEVEL, itemFrame(piece.s, piece.u, piece.yaw));
+      else if (piece.kind === 'bandstand') { this.prop('bandstand', x, s, piece.yaw); this.bandstand(x, s, piece.yaw); }
+      // A ball on a park's lawn, to knock about or dribble on foot
+      else if (piece.kind === 'ball' && !this.distant) {
+        const item = this.item('venue-beach-ball', beachBall(), this.materials.props, [x, PAVEMENT_LEVEL, -s]);
+        this.post(x, s, BEACH_BALL);
+        this.knockable([item], [{ kind: 'ball', geometry: beachBall() }]);
       }
-      else if (piece.kind === 'bandstand') { this.prop('bandstand', x, s, piece.yaw); this.post(x, s, 5.4); }
       else if (piece.kind === 'rim') this.post(x, s, piece.radius);
       // A public lawn's fringe (see placeLawnFringe), up to a budget a cell
       else if (piece.kind === 'grass' && !this.distant && Math.floor(++tufts * keep) > Math.floor((tufts - 1) * keep)) {
@@ -696,7 +741,7 @@ export class CityChunk {
     if (this.distant) return;
     const random = seededRandom(this.plan.seed + 912);
     for (const block of this.world.blocksByChunk.get(this.index) ?? []) {
-      const count = block.perimeter > 140 ? 3 : 2, walkers = [];
+      const count = block.walkers ?? (block.perimeter > 140 ? 3 : 2), walkers = [];
       // (residents dress for their district)
       const middle = block.points.reduce((sum, p) => ({ x: sum.x + p.x / block.points.length, y: sum.y + p.y / block.points.length }), { x: 0, y: 0 });
       const district = cityStyleDistrict(middle.y, middle.x);
@@ -844,6 +889,29 @@ export class CityChunk {
   }
 }
 
+// The stretch of a walk from `from` to `to` meters along it
+function sliceWalk(walk, from, to) {
+  const out = [];
+  let travelled = 0;
+  for (let i = 1; i < walk.length; i++) {
+    const a = walk[i - 1], b = walk[i], length = Math.hypot(b.x - a.x, b.y - a.y);
+    const at = d => ({ x: a.x + (b.x - a.x) * (d - travelled) / length, y: a.y + (b.y - a.y) * (d - travelled) / length });
+    if (length > 1e-6 && travelled + length >= from && travelled <= to) {
+      if (!out.length) out.push(at(Math.max(from, travelled)));
+      out.push(at(Math.min(to, travelled + length)));
+    }
+    travelled += length;
+  }
+  return out;
+}
+// A walk's points moved `shift` meters to the right of the way it runs
+function keepRight(walk, shift) {
+  return walk.map((p, i) => {
+    const a = walk[Math.max(0, i - 1)], b = walk[Math.min(walk.length - 1, i + 1)], length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    return { x: p.x + (b.y - a.y) / length * shift, y: p.y - (b.x - a.x) / length * shift };
+  });
+}
+
 export class CitydriverWorld {
   constructor(scene) {
     this.scene = scene; this.chunks = new Map(); this.origin = 0; this.center = null; this.radius = 0;
@@ -855,6 +923,8 @@ export class CitydriverWorld {
     this.animationFrustum = new THREE.Frustum(); this.animationMatrix = new THREE.Matrix4(); this.animationSphere = new THREE.Sphere();
     this.prepareLots(); this.bridges = findBridges(); this.placeFurniture();
     this.harbour = new HarbourBoats(scene, this.materials);
+    this.fountainJets = new FountainJets(scene, this.materials.props);
+    this.ducks = new Ducks(scene, this.materials.props);
     this.busStops = new BusStops(scene, this.materials.residents, this.peopleAlert, this.shelters, this.nav);
     this.staticGroup = new THREE.Group(); this.staticGroup.name = 'citydriver-static'; this.staticGroup.matrixAutoUpdate = false; this.staticGroup.updateMatrixWorld = settledMatrixWorld;
     scene.add(this.staticGroup);
@@ -898,6 +968,39 @@ export class CitydriverWorld {
       if (!this.blocksByChunk.has(key)) this.blocksByChunk.set(key, []);
       this.blocksByChunk.get(key).push({ index: SQUARE_LOOPS + entry.index, points, cumulative, perimeter: cumulative[points.length] });
     }
+    // and out along the walks of the parks and squares and back, keeping to
+    // their right, a stretch of up to about 90 m at a time so each stretch's
+    // people stay in a chunk or two: one or two to a stretch (the big park
+    // had nobody in it, its loop spanning too many chunks to cull)
+    const STROLL_LOOPS = 2e5;
+    const stroll = (walk, index) => {
+      const length = walk.reduce((sum, p, i) => i ? sum + Math.hypot(p.x - walk[i - 1].x, p.y - walk[i - 1].y) : 0, 0);
+      if (length < 14) return;
+      const stretches = Math.max(1, Math.round(length / 90)), step = length / stretches;
+      for (let k = 0; k < stretches; k++) {
+        const part = sliceWalk(walk, k * step, (k + 1) * step);
+        if (part.length < 2) continue;
+        const points = [...keepRight(part, .6), ...keepRight(part.slice().reverse(), .6)], cumulative = [0];
+        for (let i = 0; i < points.length; i++) { const a = points[i], b = points[(i + 1) % points.length]; cumulative.push(cumulative[i] + Math.hypot(b.x - a.x, b.y - a.y)); }
+        const middle = part[Math.floor(part.length / 2)], key = cityCell(middle.y, middle.x).key;
+        if (!this.blocksByChunk.has(key)) this.blocksByChunk.set(key, []);
+        this.blocksByChunk.get(key).push({ index: STROLL_LOOPS + index * 16 + k, points, cumulative, perimeter: cumulative[points.length], walkers: step > 45 ? 2 : 1 });
+      }
+    };
+    // (a park's walk runs on across the pavement to the middle of the street
+    // at its gate: only the stretch on its lawn is walked, a meter in)
+    const lawns = cityParks().filter(entry => !entry.park.square && entry.park.lawn.length >= 3).map(entry => entry.park.lawn);
+    const onLawn = walk => {
+      const lawn = lawns.find(ring => walk.some(p => insidePolygon(p, ring)));
+      if (!lawn) return [];
+      const length = walk.reduce((sum, p, i) => i ? sum + Math.hypot(p.x - walk[i - 1].x, p.y - walk[i - 1].y) : 0, 0), inside = d => insidePolygon(sliceWalk(walk, d, d)[0] ?? walk[0], lawn);
+      let from = 0, to = length;
+      while (from < length && !inside(from)) from += .5;
+      while (to > from && !inside(to)) to -= .5;
+      return to - from > 2 ? sliceWalk(walk, from + 1, to - 1) : [];
+    };
+    CITY.roads.forEach((road, index) => { if (road.kind === 'path') stroll(onLawn(road.points), index); });
+    for (const entry of cityParks()) if (entry.park.square) entry.walks.forEach((walk, k) => { if (walk.length === 2) stroll(walk, CITY.roads.length + entry.index * 8 + k); });
     CITY.lots.forEach((polygon, index) => {
       const centre = averagePoint(polygon), area = calcPolygonArea(polygon), cell = cityCell(centre.y, centre.x);
       const lot = { polygon, index, block: CITY.lotBlocks?.[index] ?? -1, edges: CITY.lotEdges?.[index] ?? null, depth: CITY.lotDepths?.[index] ?? 0, centre, area, seed: Math.floor(randomAt(Math.round(centre.x), Math.round(centre.y) + 7102, CITY.seed) * 0xffffffff) >>> 0 };
@@ -1152,6 +1255,8 @@ export class CitydriverWorld {
   animate(time, signalTime = time, camera = null, contacts = null) {
     this.materials.water.userData.time.value = time;
     this.harbour.update(time, camera);
+    this.fountainJets.update(time, this.chunks.values(), camera, this.origin);
+    this.ducks.update(time, camera, this.origin);
     this.busStops.animate(time, contacts);
     if (camera) {
       camera.updateMatrixWorld();
@@ -1171,19 +1276,19 @@ export class CitydriverWorld {
     }
   }
   warmupObjects() {
-    return Object.entries(this.materials).filter(([key]) => key !== 'residents').map(([key, material]) => {
+    return [...Object.entries(this.materials).filter(([key]) => key !== 'residents').map(([key, material]) => {
       if (key.startsWith('merged-') || key === 'ground' || key === 'water') return new THREE.Mesh(warmupMergedGeometry, material);
       const mesh = new THREE.InstancedMesh(boxGeometry, material, 1);
       mesh.setColorAt(0, tint.setRGB(1, 1, 1));
       return mesh;
-    });
+    }), ...this.fountainJets.warmupObjects(), ...this.ducks.warmupObjects()];
   }
   dispose() {
     for (const chunk of this.chunks.values()) chunk.dispose(); this.chunks.clear(); this.pending = [];
     for (const chunk of this.spare.values()) chunk.dispose(); this.spare.clear();
     this.building?.dispose(); this.building = null; this.prefetching?.dispose(); this.prefetching = null;
     for (const chunk of this.distant.values()) chunk.dispose(); this.distant.clear(); this.distantPending = [];
-    this.distantGroup.removeFromParent(); this.harbour.dispose(); this.busStops.dispose();
+    this.distantGroup.removeFromParent(); this.harbour.dispose(); this.fountainJets.dispose(); this.ducks.dispose(); this.busStops.dispose();
     for (const mesh of this.staticGroup.children) if (!mesh.isInstancedMesh) mesh.geometry.dispose(); else mesh.dispose();
     this.staticGroup.removeFromParent();
     for (const material of Object.values(this.materials)) { material.map?.dispose(); material.dispose(); }

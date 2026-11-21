@@ -9,6 +9,12 @@ const storage = () => { try { return globalThis.localStorage ?? null; } catch { 
 const clamp01 = value => Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0));
 // How long after getting in or out (s) the engine takes its slower fade
 const SWAP = 1.2;
+// The sirens (see EmergencyGear): the middle of their pitch and how far it
+// swings either way (Hz), how many swings a second, and the swing's shape
+const SIRENS = {
+  wail: { pitch: 950, depth: 420, rate: .3, swing: 'triangle' },
+  hilo: { pitch: 700, depth: 100, rate: .9, swing: 'square' },
+};
 
 // One lazy graph for the entire visit. Sources and event voices are bounded;
 // all transitions use the audio clock, and silent contexts sleep after fading.
@@ -202,6 +208,13 @@ export class DriveAudio {
     // Grinding along a wall or a car lasts as long as the contact does
     const scrape = Math.min(1, Math.max(0, ((Number(telemetry.scrape) || 0) - 1.5) / 12));
     layer(g.scrape, scrape * .06, .03); set(g.scrape.frequency, 1150 + scrape * 900, .05);
+    // An emergency vehicle's siren, while Boost is held
+    const siren = SIRENS[scene?.siren];
+    if (siren) {
+      if (g.sirenSwing.type !== siren.swing) g.sirenSwing.type = siren.swing;
+      set(g.sirenPitch, siren.pitch, .02); set(g.sirenDepth, siren.depth, .02); set(g.sirenSwing.frequency, siren.rate, .02);
+    }
+    layer(g.siren, siren ? .08 : 0, siren ? .05 : .2);
     this.effects(telemetry, state, now, scene);
     this.furniture(scene);
     this.director.update(this, state, now, scene);

@@ -11,7 +11,7 @@ import { insidePolygon, distanceToPolyline } from '../src/mapgen/polygon-util.js
 import { collideScenery, sightLine } from '../src/collision.js';
 import { CityTraffic } from '../src/city-traffic.js';
 import { DrivingController } from '../src/vehicle.js';
-import { citydriverRoute, nearestLanePose, PAVEMENT_LEVEL } from '../src/world/city-route.js';
+import { citydriverRoute, nearestLanePose, PAVEMENT_LEVEL, surfaceAt } from '../src/world/city-route.js';
 import { ThirdPersonCamera } from '../src/third-person-camera.js';
 import { PlayerFog } from '../src/player-fog.js';
 import { DemolitionRun } from '../src/demolition-run.js';
@@ -405,9 +405,12 @@ test('the chase camera stays out of the buildings whichever way the car faces', 
   try {
     const start = journeyStart();
     world.update(start.s, start.u); while (world.pending.length) world.update(start.s, start.u);
-    // (not a jump's ramp or mound, whose top is a `shape` the camera passes over)
-    const buildings = [...world.chunks.values()].flatMap(c => c.features.colliders.filter(s => s.top !== undefined && !s.shape));
-    assert.ok(buildings.length > 100 && buildings.every(b => b.corners && b.top > PAVEMENT_LEVEL + 3), 'every building has its roof height');
+    // (not a jump's ramp or mound, whose top is a `shape` the camera passes
+    // over, nor a step or a stand someone on foot climbs, which it looks over)
+    const tops = [...world.chunks.values()].flatMap(c => c.features.colliders.filter(s => s.top !== undefined && !s.shape));
+    assert.ok(tops.every(b => b.corners), 'everything with a top has its outline');
+    const buildings = tops.filter(b => b.top > PAVEMENT_LEVEL + 3);
+    assert.ok(buildings.length > 100, 'every building has its roof height');
     const outline = b => b.corners.map(p => ({ x: p.x, y: p.z }));
     const sight = (from, to) => sightLine(world.chunks.values(), from, to, world.origin);
     let poses = 0, pulled = 0;
@@ -428,5 +431,14 @@ test('the chase camera stays out of the buildings whichever way the car faces', 
       }
     }
     assert.ok(poses > 200 && pulled > poses / 10, `${pulled} of ${poses} views pulled in`);
+  } finally { world.dispose(); }
+});
+
+test("strollers keep to the parks' and squares' walks, never out on a roadway", () => {
+  const world = new CitydriverWorld(new THREE.Scene());
+  try {
+    const loops = [...world.blocksByChunk.values()].flat().filter(loop => loop.index >= 2e5);
+    assert.ok(loops.length > 0, 'some walks are strolled');
+    for (const loop of loops) for (const p of loop.points) assert.notEqual(surfaceAt(p.y, p.x), 'road', `a stroll out at ${p.x.toFixed(1)}, ${p.y.toFixed(1)}`);
   } finally { world.dispose(); }
 });

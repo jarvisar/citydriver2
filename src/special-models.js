@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { stableShadowDepth } from './world/shadow-depth.js';
-import { bodyMaterial, lampGlow, markedBody, busGeometry, BUS_MODEL, BUS_AXLES, BUS_WHEEL } from './traffic-models.js';
+import { bodyMaterial, lampGlow, markedBody, busGeometry, BUS_MODEL, BUS_AXLES, BUS_WHEEL, TRAFFIC_MODELS } from './traffic-models.js';
 
 // The garage's oddballs: machines that share no bodywork with the road fleet
 // and are not meant to drive like it either. Like the coupe and the racer they
@@ -41,16 +41,41 @@ export const SPECIAL_SHAPES = {
     name: 'bus', width: BUS_MODEL.width, length: BUS_MODEL.length, eye: [-.62, 2.05, -4.95], chaseLift: 2.4,
     wheels: Object.fromEntries(['front', 'rear'].map((axle, k) => [axle, { radius: BUS_WHEEL.radius, width: BUS_WHEEL.width, x: BUS_MODEL.width / 2 - BUS_WHEEL.inset, z: BUS_AXLES[k] }])),
   },
+  // The emergency vehicles, which also stand parked at the fire station and
+  // the hospital (see PARKED_SPECIALS). `door` is how far ahead of the middle
+  // the driver gets in (m), and `seat` how high the seat is.
+  fireengine: {
+    name: 'fireengine', width: 2.5, length: 8.4, eye: [-.52, 2.45, -3.35], chaseLift: 2.2, door: 2.85, seat: 1.25,
+    wheels: { front: { radius: .55, width: .34, x: 1.06, z: -2.75 }, rear: { radius: .55, width: .56, x: .97, z: 2.3 } },
+  },
+  ambulance: {
+    name: 'ambulance', width: 2.3, length: 6.3, eye: [-.45, 1.85, -1.6], chaseLift: 1.2, door: 1.6, seat: .95,
+    wheels: { front: { radius: .42, width: .26, x: .95, z: -1.95 }, rear: { radius: .42, width: .44, x: .9, z: 1.75 } },
+  },
 };
+// Specials that stand parked about the city as the curb's cars do (see
+// CityChunk.parkedCar), to be knocked loose or borrowed on foot: the shape,
+// its weight in a blow (t), how hard its stand-in pulls away (see
+// CityTraffic) and its paint
+export const PARKED_SPECIALS = [
+  { name: 'fireengine', mass: 8, accel: 1.4, paint: '#c23a2e' },
+  { name: 'ambulance', mass: 3.2, accel: 2.2, paint: '#eceee8' },
+].map(({ name, ...more }) => {
+  const { width, length, door, seat } = SPECIAL_SHAPES[name];
+  return { name, width, length, door, seat, ...more };
+});
+// What a parked car of `name` is: one of the traffic's shapes or a parked special
+export const parkedSpec = name => TRAFFIC_MODELS.find(spec => spec.name === name) ?? PARKED_SPECIALS.find(spec => spec.name === name);
 
 const DARK = '#2b3434', CHROME = '#bfc4b9', GLASS = '#344e55', ENGINE = '#59625f', SEAT = '#3a4441', BED = '#414c4b';
 const SHOCK = '#d9a441', AMBER = '#e0a23a', CANVAS = '#e9e2cb', LEATHER = '#8a5a3a';
 
 // The same faceted kit the road cars and the racer are cut from: boxes, a box
 // with one end pulled in, sloped glass, and the odd tube. Paint takes the
-// garage color; everything in `details` carries its own.
+// garage color; everything in `details` carries its own, and so do an
+// emergency vehicle's two sets of beacons (see markedBody).
 function partsKit() {
-  const parts = { paint: [], details: [], headlights: [], taillights: [] };
+  const parts = { paint: [], details: [], headlights: [], taillights: [], beaconA: [], beaconB: [] };
   function add(geometry, location, category = 'paint', color) {
     geometry.deleteAttribute('uv');
     geometry.translate(...location);
@@ -296,6 +321,168 @@ const BUILDERS = {
     for (const [part, geometry] of Object.entries(busGeometry(BUS_MODEL, { wheels: false }))) parts[part].push(geometry);
   },
 
+  // A cab-forward pumper after the fire station's old engine: a crew cab of
+  // sloped glass under a white roof, roll-up lockers down the body, the
+  // ladder on its rack over the hose bed, chrome at both ends, and beacons
+  // on the cab's roof, in its nose and at the body's top corners.
+  fireengine(kit) {
+    const { box, glass, tube } = kit;
+    const LOCKER = '#c3c7bf', WHITE = '#efebde', LADDER = '#d9dcd4', HOSE = '#d6c7a2', VALVE = '#c23a2e';
+    const beacon = (side, size, at) => box(size, at, side < 0 ? 'beaconA' : 'beaconB', side < 0 ? '#e01e16' : '#e8e6dc');
+    // Rails and axles
+    for (const side of [-1, 1]) box([.2, .28, 7.6], [side * .42, .69, .05], 'details', DARK);
+    box([1.9, .14, .14], [0, .55, -2.75], 'details', DARK);
+    box([1.5, .16, .16], [0, .55, 2.3], 'details', DARK);
+    box([.4, .3, .3], [0, .55, 2.3], 'details', ENGINE);
+    // The cab's lower body, round the front wheels' arches
+    box([2.44, .8, 2.55], [0, 1.6, -2.825]);
+    box([2.44, .7, .63], [0, .85, -3.785]);
+    box([2.44, .7, .48], [0, .85, -1.79]);
+    // The crew cab: glass all round, its back solid where the body meets it,
+    // pillars at the windscreen's corners and middle, and posts between the doors
+    glass([2.3, .85, 2.3], [0, 2.425, -2.95], .28);
+    box([2.36, .92, .25], [0, 2.46, -1.675]);
+    box([2.22, .12, 2.36], [0, 2.91, -2.73], 'details', WHITE);
+    for (const x of [-1.115, 0, 1.115]) box([x ? .09 : .06, .9, x ? .09 : .07], [x, 2.425, -3.96], 'paint', undefined, .318);
+    // The grille, the lamps in chrome either side of it, a white band over
+    // them all, and the bumper
+    box([1.3, .6, .05], [0, 1.47, -4.12], 'details', CHROME);
+    box([1.16, .48, .03], [0, 1.47, -4.155], 'details', DARK);
+    for (const y of [1.34, 1.47, 1.6]) box([1.14, .035, .03], [0, y, -4.175], 'details', CHROME);
+    box([2.44, .1, .03], [0, 1.87, -4.115], 'details', WHITE);
+    box([2.46, .28, .18], [0, .64, -4.17], 'details', CHROME);
+    // The light bar on the cab, a white lamp between its beacons, and air horns behind it
+    box([1.7, .08, .3], [0, 3.01, -3.55], 'details', DARK);
+    box([.36, .12, .26], [0, 3.11, -3.55], 'details', '#e8e6dc');
+    // The body: lockers between the cab and the back wheels, over them and
+    // behind them, all to the same top
+    box([2.44, 2.2, 3.13], [0, 1.65, .015]);
+    box([2.44, 1.55, 1.44], [0, 1.975, 2.3]);
+    box([2.44, 2.2, 1.03], [0, 1.65, 3.535]);
+    // The ladder on its rack, over the hose bed
+    box([1.6, .14, 1.5], [0, 2.82, 3.15], 'details', HOSE);
+    for (let z = -1.15; z < 3.95; z += .4) box([.94, .035, .035], [0, 3, z], 'details', LADDER);
+    // The roll-up doors at the back, the tail lamps, and a step under them
+    box([1.5, 1.7, .03], [0, 1.6, 4.065], 'details', LOCKER);
+    for (let y = 1.05; y < 2.4; y += .35) box([1.5, .02, .02], [0, y, 4.087], 'details', DARK);
+    box([.75, .05, .02], [0, .87, 4.087], 'details', CHROME);
+    box([2.3, .1, .22], [0, .55, 4.11], 'details', CHROME);
+    for (const side of [-1, 1]) {
+      const x = side * 1.235, out = side * 1.256;
+      // Pillars between the doors, handles, a white band along the cab and
+      // the body, and a dark step behind the front wheel
+      for (const z of [-3.25, -2.4]) box([.08, .85, .1], [side * 1.12, 2.425, z]);
+      box([.03, .1, 2.55], [x, 1.87, -2.825], 'details', WHITE);
+      box([.03, .1, 5.6], [x, 2.61, 1.25], 'details', WHITE);
+      for (const z of [-2.55, -1.95]) box([.03, .04, .18], [x, 1.66, z], 'details', CHROME);
+      box([.02, .3, .4], [side * 1.23, .85, -1.79], 'details', DARK);
+      // Lamps, and beacons beside the grille
+      box([.42, .3, .03], [side * .92, 1.4, -4.11], 'details', CHROME);
+      box([.34, .22, .04], [side * .92, 1.4, -4.125], 'headlights');
+      beacon(side, [.3, .12, .04], [side * .92, 1.66, -4.12]);
+      // West Coast mirrors on two arms, glass to the back
+      box([.05, .4, .16], [side * 1.265, 2.38, -3.78], 'details', CHROME);
+      box([.03, .34, .02], [side * 1.265, 2.38, -3.69], 'details', GLASS);
+      for (const y of [2.24, 2.52]) box([.14, .03, .03], [side * 1.18, y, -3.78], 'details', CHROME);
+      for (const x of [.36, .64]) beacon(side, [.26, .14, .28], [side * x, 3.12, -3.55]);
+      tube(.05, .36, [side * .8, 3.02, -3.05], 'z', CHROME);
+      // The pump panel behind the cab: gauges and valves
+      box([.03, 1.5, .6], [x, 1.65, -1.2], 'details', CHROME);
+      for (const z of [-1.38, -1.2, -1.02]) box([.02, .12, .12], [out, 2.05, z], 'details', DARK);
+      for (const z of [-1.32, -1.08]) box([.02, .08, .14], [out, 1.45, z], 'details', VALVE);
+      // Roll-up locker doors between the wheels, over the back ones and behind them
+      for (const [z, length, low, high] of [[-.3, 1.1, .7, 2.45], [.95, 1.1, .7, 2.45], [2.3, 1.3, 1.35, 2.5], [3.53, .9, .7, 2.45]]) {
+        box([.03, high - low, length], [x, (low + high) / 2, z], 'details', LOCKER);
+        for (let y = low + .3; y < high - .1; y += .35) box([.02, .02, length], [out, y, z], 'details', DARK);
+        box([.02, .05, length * .5], [out, low + .12, z], 'details', CHROME);
+      }
+      // Rails along the top, the ladder's rails on their posts
+      box([.05, .08, 5.5], [side * 1.17, 2.79, 1.25], 'details', CHROME);
+      box([.06, .1, 5.3], [side * .5, 3, 1.35], 'details', LADDER);
+      for (const z of [-1.1, 3.8]) box([.06, .2, .06], [side * .5, 2.85, z], 'details', DARK);
+      // Dark liners inside the arches, and mud flaps behind the back wheels
+      box([.06, .7, 1.44], [side * .82, .85, -2.75], 'details', DARK);
+      box([.06, .65, 1.44], [side * .63, .875, 2.3], 'details', DARK);
+      box([.5, .42, .03], [side * .97, .41, 3.06], 'details', DARK);
+      // At the back: tail lamps and indicators in chrome (red on red was lost);
+      // beacons on the body's top corners, seen from the side and behind
+      box([.28, .7, .02], [side, 1.27, 4.06], 'details', CHROME);
+      box([.2, .44, .04], [side, 1.15, 4.07], 'taillights');
+      box([.2, .14, .04], [side, 1.48, 4.07], 'details', AMBER);
+      for (const z of [-1.42, 3.88]) beacon(side, [.26, .26, .26], [side, 2.88, z]);
+    }
+  },
+
+  // A box ambulance on a van's cab: white, with a red stripe and a cross on
+  // each side, a side door at the curb, two doors at the back, and beacons
+  // at the box's corners and in the grille.
+  ambulance(kit) {
+    const { box, glass } = kit, RED = '#c9362f';
+    const beacon = (side, size, at) => box(size, at, side < 0 ? 'beaconA' : 'beaconB', side < 0 ? '#e01e16' : '#1f56e0');
+    for (const side of [-1, 1]) box([.16, .2, 5.6], [side * .38, .55, .1], 'details', DARK);
+    // The cab: a short bonnet falling to the grille, its body round the front
+    // wheels' arches, sloped glass and a roof up to the box
+    block(kit, [-3.05, -3.05, 1.08, 1.08, .92, 1.16], [-2.2, -2.2, 1.08, 1.08, .92, 1.3]);
+    box([2.16, .38, 1.15], [0, 1.11, -1.625]);
+    box([2.16, .47, .52], [0, .685, -2.79]);
+    box([2.16, .47, .32], [0, .685, -1.21]);
+    glass([2, .75, 1.15], [0, 1.675, -1.625], .3);
+    box([1.96, .1, .9], [0, 2.1, -1.5]);
+    // The grille, its lamps and beacons either side, and the bumper
+    box([1, .36, .04], [0, .88, -3.07], 'details', CHROME);
+    box([.88, .26, .02], [0, .88, -3.095], 'details', DARK);
+    box([.86, .03, .02], [0, .88, -3.11], 'details', CHROME);
+    box([2.14, .22, .16], [0, .52, -3.1], 'details', CHROME);
+    // The box, its floor over the back wheels' arches, under a roof cap and
+    // the air conditioning
+    box([2.26, 2.25, 2.25], [0, 1.625, .075]);
+    box([2.26, 1.83, 1.1], [0, 1.835, 1.75]);
+    box([2.26, 2.25, .75], [0, 1.625, 2.675]);
+    box([2.18, .06, 4.06], [0, 2.78, 1]);
+    box([.9, .22, .8], [0, 2.92, 2.2], 'details', '#d8dcd6');
+    // Its front over the cab: a red band and a white lamp between the beacons
+    box([2.26, .1, .02], [0, 2.4, -1.06], 'details', RED);
+    box([.9, .14, .05], [0, 2.6, -1.075], 'details', '#e8e6dc');
+    // The curb side's door, its window and handle; a window opposite
+    for (const z of [-.8, .2]) box([.02, 1.75, .03], [1.14, 1.5, z], 'details', DARK);
+    box([.02, .45, .6], [1.14, 2.05, -.3], 'details', GLASS);
+    box([.03, .04, .14], [1.16, 1.75, .05], 'details', CHROME);
+    box([.02, .5, .8], [-1.14, 2.05, -.3], 'details', GLASS);
+    // The back doors, their windows and handles, a red band between the
+    // lamps, and the step
+    box([.03, 2, .03], [0, 1.6, 3.065], 'details', DARK);
+    box([1.6, .22, .02], [0, 1.45, 3.06], 'details', RED);
+    box([2, .1, .18], [0, .5, 3.12], 'details', DARK);
+    for (const side of [-1, 1]) {
+      const x = side * 1.145;
+      box([.08, .8, .08], [side * .97, 1.675, -2.05], 'paint', undefined, .38);
+      box([.03, .12, 2], [side * 1.095, 1.04, -2.05], 'details', RED);
+      box([.03, .04, .16], [side * 1.095, 1.2, -1.45], 'details', CHROME);
+      box([.3, .18, .04], [side * .72, .96, -3.07], 'headlights');
+      beacon(side, [.24, .08, .04], [side * .72, .8, -3.07]);
+      box([.05, .34, .16], [side * 1.17, 1.62, -1.95], 'details', CHROME);
+      box([.03, .28, .02], [side * 1.17, 1.62, -1.86], 'details', GLASS);
+      for (const y of [1.5, 1.74]) box([.14, .03, .03], [side * 1.08, y, -1.95], 'details', CHROME);
+      // The stripes down the box, and a cross over the back wheel: its
+      // upright and two arms, no piece over another
+      box([.03, .24, 4.1], [x, 1.45, 1], 'details', RED);
+      box([.03, .08, 4.1], [x, 2.47, 1], 'details', RED);
+      box([.02, .6, .2], [side * 1.14, 2, 1.75], 'details', RED);
+      for (const dz of [-.2, .2]) box([.02, .2, .2], [side * 1.14, 2, 1.75 + dz], 'details', RED);
+      // Beacons at the box's corners, front and back, on its face and round its sides
+      for (const z of [-1.08, 3.08]) beacon(side, [.28, .2, .06], [side * .93, 2.6, z]);
+      for (const z of [-.85, 2.85]) beacon(side, [.05, .2, .26], [side * 1.155, 2.63, z]);
+      box([.66, .5, .02], [side * .45, 2.15, 3.06], 'details', GLASS);
+      box([.12, .04, .03], [side * .2, 1.75, 3.065], 'details', CHROME);
+      box([.16, .5, .04], [side, 1, 3.07], 'taillights');
+      box([.16, .14, .04], [side, 1.35, 3.07], 'details', AMBER);
+      // Dark liners in the arches, mud flaps behind the back wheels
+      box([.06, .47, 1.16], [side * .78, .685, -1.95], 'details', DARK);
+      box([.06, .42, 1.1], [side * .64, .71, 1.75], 'details', DARK);
+      box([.44, .36, .03], [side * .9, .38, 2.4], 'details', DARK);
+    }
+  },
+
   // A bubble of glass on a roller skate, with the weekend's luggage on top.
   micro(kit) {
     const { box } = kit;
@@ -352,9 +539,17 @@ function block(kit, front, rear, category = 'paint', color) {
   geometry.computeVertexNormals();
 }
 
+// The kit's parts, each merged into one (a car without beacons has none)
+function mergedParts(kit) {
+  const parts = Object.fromEntries(Object.entries(kit.parts).filter(([, geometries]) => geometries.length).map(([key, geometries]) => [key, mergeGeometries(geometries)]));
+  for (const geometries of Object.values(kit.parts)) for (const geometry of geometries) geometry.dispose();
+  return parts;
+}
+
 // A special as the traffic draws it, in one (see createTrafficModels): its
-// four parts with the wheels fixed on as trim, which never turn. The
-// demolition truck drives about in the traffic.
+// parts with the wheels fixed on as trim, which never turn. The demolition
+// truck drives about in the traffic, and the emergency vehicles' stand-ins
+// are knocked about in it (see PARKED_SPECIALS).
 export function specialGeometry(shape) {
   const kit = partsKit();
   BUILDERS[shape.name](kit);
@@ -366,9 +561,7 @@ export function specialGeometry(shape) {
     const hub = new THREE.CircleGeometry(radius * .48, 8); hub.rotateY(side * Math.PI / 2);
     kit.parts.details.push(tinted(hub, [side * (x + width / 2 + .006), radius, z], CHROME));
   }
-  const parts = Object.fromEntries(Object.entries(kit.parts).map(([key, geometries]) => [key, mergeGeometries(geometries)]));
-  for (const geometries of Object.values(kit.parts)) for (const geometry of geometries) geometry.dispose();
-  return parts;
+  return mergedParts(kit);
 }
 function tinted(geometry, location, color) {
   geometry.deleteAttribute('uv');
@@ -382,12 +575,11 @@ export function createSpecialCar(entry) {
   const shape = entry.shape, kit = partsKit();
   BUILDERS[shape.name](kit);
   const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: .74, flatShading: true, ...extra });
-  // One draw for the body (see markedBody)
-  const head = lampGlow('#e9cc84', .24), tail = lampGlow('#b8220d', .1);
-  const paint = bodyMaterial(entry.paint, { head: head.uniform, tail: tail.uniform });
+  // One draw for the body (see markedBody), its beacons dark until lit (see flash in vehicle.js)
+  const head = lampGlow('#e9cc84', .24), tail = lampGlow('#b8220d', .1), beacons = { value: new THREE.Vector2() };
+  const paint = bodyMaterial(entry.paint, { head: head.uniform, tail: tail.uniform, beacons });
   const tireMaterial = mat('#2b3434', { roughness: .9 }), hubMaterial = mat(CHROME);
-  const shells = Object.fromEntries(Object.entries(kit.parts).map(([key, geometries]) => [key, mergeGeometries(geometries)]));
-  for (const geometries of Object.values(kit.parts)) for (const geometry of geometries) geometry.dispose();
+  const shells = mergedParts(kit), flashes = Boolean(shells.beaconA || shells.beaconB);
   const shellGeometry = markedBody(shells, { head: '#fff5cf', tail: '#8e3328' });
 
   const car = new THREE.Group(); car.name = `car-${shape.name}`;
@@ -409,7 +601,7 @@ export function createSpecialCar(entry) {
   }
   car.traverse(stableShadowDepth);
   return {
-    car, body, wheels,
+    car, body, wheels, beacons: flashes ? beacons.value : null,
     nightLights: [{ material: head.material, day: .24, night: 2.2 }, { material: tail.material, day: .1, night: 2.5 }],
     // A chosen car keeps its own paint and kit.
     applyTrim() {},

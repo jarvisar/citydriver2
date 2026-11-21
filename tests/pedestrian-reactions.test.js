@@ -413,3 +413,11 @@ test('loose furniture flung at someone knocks them over, and so does someone alr
   assert.ok(other.body, 'they go over too');
   assert.deepEqual(thrown, ['person']);
 });
+
+test('a ball rolling or flying into someone never knocks them over', () => {
+  const contacts = new PedestrianContacts();
+  const body = { kind: { kick: true, mass: .006 }, p: new THREE.Vector3(), v: new THREE.Vector3(40, 3, 0), w: new THREE.Vector3(0, 0, 100), q: new THREE.Quaternion(), shape: { radius: .38, points: new Float32Array(3) } };
+  const before = contacts.flying ?? 0;
+  contacts.addPiece(body);
+  assert.equal(contacts.flying ?? 0, before, 'not counted among the pieces in flight');
+});

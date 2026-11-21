@@ -300,6 +300,8 @@ export class PedestrianContacts {
   }
   // A loose piece, if it is moving fast enough to knock someone over
   addPiece(body) {
+    // (a ball bounces off people: it is a game to them, not a blow)
+    if (body.kind.kick) return;
     const { p, v, w, q, shape } = body, fastest = Math.hypot(v.x, v.y, v.z) + Math.hypot(w.x, w.y, w.z) * shape.radius;
     if (fastest < FLUNG || fastest * body.kind.mass < HEFT) return;
     const piece = this.pieces[this.flying] ?? (this.pieces[this.flying] = { body: null, points: new Float32Array(shape.points.length), count: 0, hit: -1 });

@@ -48,6 +48,7 @@ import { TaxiView } from './taxi-view.js';
 import { DemolitionRun, DEMOLITION_CAR, DEMOLITION_PAINT } from './demolition-run.js';
 import { DemolitionView } from './demolition-view.js';
 import { DriftEffects } from './drift-effects.js';
+import { EmergencyGear } from './emergency.js';
 import { StuntChain } from './stunt-chain.js';
 import { JumpBook, starText, STAR_PAY } from './jump-book.js';
 import { setResidentWindow } from './world/resident.js';
@@ -301,6 +302,8 @@ async function boot() {
     const demolition = new DemolitionRun(taxiStorage), demolitionView = new DemolitionView(scene, taxiStorage);
     // A drift's smoke, sparks and tire marks, and the flames of a turbo or the boost (see drift.js)
     const driftEffects = new DriftEffects(scene);
+    // An emergency vehicle's beacons and siren, while the player drives one
+    const emergency = new EmergencyGear();
     // Whether free drive's stunts count: not under autodrive, which would
     // earn for nobody
     const freeStunts = () => started && gameMode === 'free' && !autodrive.enabled;
@@ -1168,6 +1171,18 @@ async function boot() {
           () => free() && !vehicle.pilot && !working() && !jobHints[job], () => { jobHints[job] = true; try { localStorage.setItem(jobHintKey, JSON.stringify(jobHints)); } catch { /* Told for this visit. */ } });
       }
     }
+    // In a fire engine or an ambulance, told once: the siren is on Boost (see
+    // EmergencyGear). Sounding it first is as good as being told.
+    let sirenHinted = false;
+    try { sirenHinted = localStorage.getItem('citydriver-siren-hint') === 'shown'; } catch { /* Storage is optional. */ }
+    const toldSiren = () => { sirenHinted = true; try { localStorage.setItem('citydriver-siren-hint', 'shown'); } catch { /* Told for this visit. */ } };
+    const inEmergency = () => free() && !vehicle.walker && Boolean(carEntry(vehicle.carId).emergency) && !sirenHinted;
+    function hintSiren() {
+      if (!inEmergency()) return;
+      if (emergency.siren) { toldSiren(); return; }
+      const button = { keys: 'Shift', pad: 'A', vr: 'the right grip', touch: 'Boost' }[inputDevice()];
+      hint(`Hold ${button} for the siren · traffic pulls over`, inEmergency, toldSiren);
+    }
     // (closing it goes back to whatever opened it: the pause screen's row, or the results' button)
     let garageReturnFocus = null;
     function openCars() {
@@ -1733,6 +1748,9 @@ async function boot() {
       // (a test drive's time is up: the car stops, or lands itself)
       if (testDrive.over && inTestCar()) state = vehicle.pilot ? TEST_LAND : TEST_STOP;
       vehicle.update(dt, state);
+      // (the siren is on Boost, and the traffic gives way to it)
+      emergency.update(dt, vehicle, Boolean(state.boost)); hintSiren();
+      traffic.siren = Boolean(emergency.siren);
       if (started) updateControlHelp(vehicle.speed);
       // (a flying machine's stunts and landings)
       if (vehicle.pilot) {
@@ -1745,7 +1763,9 @@ async function boot() {
       if (vehicle.audioTelemetry.crashSerial !== crashesFelt) { crashesFelt = vehicle.audioTelemetry.crashSerial; rumble(.8, .6, .2); }
       // Furniture the player hits may be knocked flying, and a parked car
       // knocked loose while there is traffic to take it; on foot, nothing is
-      collideScenery(vehicle, world.chunks, dt, vehicle.walker ? null : (collider, contact) => collider.prop ? props.hit(collider, contact, vehicle) : traffic.enabled && traffic.wake(collider));
+      // but a ball, which rolls off ahead of them
+      collideScenery(vehicle, world.chunks, dt, vehicle.walker ? (collider, contact) => props.kick(collider, contact, vehicle)
+        : (collider, contact) => collider.prop ? props.hit(collider, contact, vehicle) : traffic.enabled && traffic.wake(collider));
       // (working as a cab, on standby or in a shift, the other cabs keep off the road, and the same for the truck)
       traffic.offDuty = taxi.waiting || taxi.running ? 'taxi' : demolition.waiting || demolition.running ? 'demolition' : null;
       traffic.update(dt, vehicle, world.chunks);
@@ -1959,7 +1979,7 @@ async function boot() {
       comfort.update(rendering.camera, vy === null ? vehicle.speed : Math.hypot(vehicle.speed, vy), running ? dt : 0, vr.active && running && started);
       soundScene.interior = rendering.viewLabel === 'First-person view' && !vehicle.walker;
       soundScene.lightning = weather.flash; soundScene.rain = weather.state.rain; soundScene.wetness = weather.state.wetness;
-      soundScene.snow = weather.state.snow; soundScene.night = weather.state.stars;
+      soundScene.snow = weather.state.snow; soundScene.night = weather.state.stars; soundScene.siren = paused ? null : emergency.siren;
       // Where the car is, for the soundscape (twice a second, and only with sound on)
       if (audio.enabled) {
         soundScene.deck = waterAt(vehicle.s, vehicle.u) && surfaceAt(vehicle.s, vehicle.u) === 'road';
@@ -2035,7 +2055,7 @@ async function boot() {
     if (import.meta.env.DEV && emulate !== null) (await import('./xr-emulator.js')).installXREmulator(emulate);
     void vr.detect();
     // Development-only inspection surface for automated driving and streaming checks.
-    if (import.meta.env.DEV) window.__citydriver = { seed: SEED, city: CITY, nav: navGraph(), lanePose, roadAt, nearestLanePose, vehicle, onFoot, pigeons, traffic, props, nightLighting, weather, autodrive, audio, graphics, vr, vrStatus, currentMenuModel, stunts, keepDriving, endRun, cityGuide, taxi, taxiView, beginTaxi, beginFree, demolition, demolitionView, beginDemolition, testDrive, jetTrial, startTestDrive, buyCar, get gameMode() { return gameMode; }, world, rendering, input, action,
+    if (import.meta.env.DEV) window.__citydriver = { seed: SEED, city: CITY, nav: navGraph(), lanePose, roadAt, nearestLanePose, vehicle, onFoot, pigeons, traffic, props, nightLighting, weather, autodrive, audio, graphics, vr, vrStatus, currentMenuModel, stunts, emergency, keepDriving, endRun, cityGuide, taxi, taxiView, beginTaxi, beginFree, demolition, demolitionView, beginDemolition, testDrive, jetTrial, startTestDrive, buyCar, get gameMode() { return gameMode; }, world, rendering, input, action,
       // (review kits stage any car through this, so it hands the car over first, as the garage once did)
       chooseCar: id => { if (CARS[id]) taxi.fleet.owned.add(id); chooseCar(id); }, applyPaint, get carId() { return carId; }, get paint() { return paint; }, get journey() { return journey; }, get changingJourney() { return changingJourney; }, get paused() { return paused; }, get started() { return started; } };
   } catch (error) { console.error('Could not start Citydriver:', error); $('#loading').classList.add('loaded'); $('#error p').textContent = startupErrorMessage(error); $('#error').hidden = false; $('#error button').focus(); }

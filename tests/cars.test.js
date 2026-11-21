@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { CARS, CAR_IDS, GARAGE_IDS, DEFAULT_CAR, ROUTE_PAINT, DRAG, carMeters, carStats } from '../src/cars.js';
+import { CARS, CAR_IDS, GARAGE_IDS, GARAGE_PRICES, DEFAULT_CAR, ROUTE_PAINT, DRAG, carMeters, carStats, garageGroup } from '../src/cars.js';
 import { carArt } from '../src/car-art.js';
 import { createCar, DrivingController } from '../src/vehicle.js';
 import { TRAFFIC_MODELS } from '../src/traffic-models.js';
@@ -62,7 +62,7 @@ test('every car builds a solid, steerable model', () => {
 // The chooser-only cars are the ones allowed to break the tourer's mold: the
 // racers by being quicker, the specials by being lopsided.
 const RACERS = ['sports', 'exotic', 'formula'];
-const SPECIALS = ['buggy', 'monster', 'hotrod', 'rig', 'micro', 'bus'];
+const SPECIALS = ['buggy', 'monster', 'hotrod', 'rig', 'micro', 'bus', 'fireengine', 'ambulance'];
 const TAXIS = CAR_IDS.filter(id => CARS[id].taxi);
 const CHOOSER_ONLY = [...RACERS, ...SPECIALS, ...TAXIS];
 
@@ -321,6 +321,30 @@ test('the demolition truck is the Truck in orange, found in the traffic and neve
   assert.equal(truck.name, 'Demolition truck'); assert.equal(truck.job, 'demolition');
   assert.equal(truck.shape, CARS.rig.shape); assert.deepEqual(carStats('demolition'), carStats('rig')); assert.equal(truck.mass, CARS.rig.mass);
   assert.ok(!GARAGE_IDS.includes('demolition') && !CAR_IDS.includes('demolition'));
+});
+
+test('the fire engine and the ambulance are sold as specials, heavy and slow, with beacons only they have', () => {
+  const fire = carStats('fireengine'), ambulance = carStats('ambulance'), rig = carStats('rig'), bus = carStats('bus');
+  for (const id of ['fireengine', 'ambulance']) {
+    assert.ok(GARAGE_IDS.includes(id) && CAR_IDS.includes(id) && garageGroup(id) === 'special', `${id} is in the garage's specials`);
+    assert.ok(CARS[id].emergency && ['wail', 'hilo'].includes(CARS[id].siren));
+  }
+  assert.equal(GARAGE_PRICES.fireengine, 22000); assert.equal(GARAGE_PRICES.ambulance, 9000);
+  // The engine is as heavy as the truck and the bus, and between them away and
+  // to stop; the ambulance is lighter and quicker
+  assert.ok(CARS.fireengine.mass >= CARS.rig.mass && CARS.ambulance.mass < CARS.fireengine.mass);
+  assert.ok(fire.acceleration > rig.acceleration && fire.acceleration < bus.acceleration && fire.braking > rig.braking && fire.braking < bus.braking);
+  assert.ok(ambulance.acceleration > fire.acceleration && ambulance.topSpeed > fire.topSpeed && ambulance.turnRadius < fire.turnRadius);
+  // Its beacons are part of its body, dark until flashed; no other car has them
+  const car = new DrivingController(straightRoute, {}, 'fireengine'), truck = new DrivingController(straightRoute, {}, 'rig');
+  try {
+    let meshes = 0;
+    car.car.traverse(object => { if (object.isMesh) meshes++; });
+    assert.equal(meshes, 1 + car.wheels.length * 2, 'one draw for the body, beacons included');
+    assert.deepEqual(car.actor.motion.beacons.toArray(), [0, 0]);
+    car.flash(1, 2); assert.deepEqual(car.actor.motion.beacons.toArray(), [1, 2]);
+    assert.ok(!truck.actor.motion.beacons); truck.flash(1, 2);
+  } finally { car.disposeModel(); truck.disposeModel(); }
 });
 
 test('the racers and specials stay in the chooser, and traffic keeps its own five shapes', () => {

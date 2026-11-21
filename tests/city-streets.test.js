@@ -152,7 +152,7 @@ test('curbside fittings stand on the lamps\' line, clear of the rest and of the 
   const fittings = ['hydrant', 'post-box', 'cabinet', 'news-boxes', 'bike-rack'], placed = furniture.filter(piece => fittings.includes(piece.kind));
   for (const kind of fittings) assert.ok(placed.some(piece => piece.kind === kind), `${kind} placed`);
   // (last, so every other piece stands where it did before they came)
-  assert.ok(furniture.findIndex(piece => fittings.includes(piece.kind)) > furniture.findLastIndex(piece => !fittings.includes(piece.kind) && piece.kind !== 'grass' && piece.kind !== 'jump'), 'placed last');
+  assert.ok(furniture.findIndex(piece => fittings.includes(piece.kind)) > furniture.findLastIndex(piece => !fittings.includes(piece.kind) && !['grass', 'jump', 'ball'].includes(piece.kind)), 'placed last');
   const kerbs = CITY.blocks.map(block => [...block.kerb, block.kerb[0]]);
   const shelters = furniture.filter(piece => piece.kind === 'shelter'), others = furniture.filter(piece => !['grass', 'rim', 'railing', 'parked', 'boat', 'mooring'].includes(piece.kind));
   for (const piece of placed) {

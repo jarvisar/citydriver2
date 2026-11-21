@@ -51,10 +51,12 @@ The cars that turn up in traffic are cheapest, since you can borrow them on foot
 | Delivery Van | $4,500 | 9 min |
 | Micro | $5,000 | 10 min |
 | Buggy | $8,000 | 16 min |
+| Ambulance | $9,000 | 18 min |
 | GT Taxi | $10,000 | 20 min |
 | GT | $12,000 | 24 min |
 | Hot Rod | $15,000 | 30 min |
 | City Bus | $18,000 | 36 min |
+| Fire Engine | $22,000 | 44 min |
 | Truck | $25,000 | 50 min |
 | Monster Truck | $30,000 | 1 h |
 | Formula Taxi | $40,000 | 1.3 h |
@@ -64,7 +66,7 @@ The cars that turn up in traffic are cheapest, since you can borrow them on foot
 | Helicopter | $90,000 | 3 h |
 | Plane | $140,000 | 4.7 h |
 
-Everything together is $579,000, about 19 hours of average play. The prices are in `GARAGE_PRICES` in `src/cars.js`.
+Everything together is $610,000, about 20 hours of average play. The prices are in `GARAGE_PRICES` in `src/cars.js`.
 
 ## Using the Garage
 
@@ -90,6 +92,7 @@ Saves from before this kept only cabs, since the garage lent every other car out
 
 - Places and jump stars pay again after a reload. Re-finding a city is still slower money than a shift, so I left it.
 - Traffic cars can be borrowed on foot for free. That's why those cars are the cheapest.
+- The fire engine and the ambulance parked at fire stations and hospitals can be borrowed for free too, but they are priced like the other specials.
 - There's nothing to spend on once the garage is full.
 - Progress is saved in the browser. If it can't save (storage blocked or full), the garage and pause screen say "Progress not saved", and anything earned lasts until the page is closed.
 - Two tabs open at once share one save, so neither undoes the other's purchases. If saving fails in one of them, the next save that works can still overwrite the other tab's changes.

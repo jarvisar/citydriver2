@@ -31,21 +31,28 @@ Street furniture is paid for when it comes loose:
 
 | Item | Price |
 | --- | --- |
-| Litter bin | $250 |
+| Ball | $60 |
 | Cafe chair | $120 |
+| Sun lounger | $150 |
+| Litter bin | $250 |
 | News stand | $300 |
 | Cafe table | $350 |
 | Bike rack | $400 |
 | Street sign | $450 |
+| Tennis net | $600 |
 | Post box | $900 |
 | Bench | $1,100 |
 | Park lantern | $1,400 |
 | Utility box | $1,600 |
 | Fire hydrant | $2,200 |
 | Market stall | $2,400 |
+| Flagpole | $2,600 |
+| Basketball hoop | $2,800 |
 | Lamp post | $3,200 |
+| Poster column | $3,400 |
 | Tree | $4,500 |
 | Traffic light | $6,500 |
+| Ticket booth | $7,500 |
 | Bus shelter | $9,000 |
 | Signal gantry | $18,000 |
 

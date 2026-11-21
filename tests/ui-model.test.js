@@ -86,7 +86,7 @@ test('garage selection uses car and paint state, and preserves paint-first heads
   assert.deepEqual(calls, ['taxi', DEFAULT_PAINT]);
   const s = state({ mode: 'free', chooser: 'garage' }), model = menuModel(s, menuControls(s, actions([])), { garage });
   assert.equal(model.items[0].group, 'Paint'); assert.equal(model.items[0].swatch, '#123456');
-  assert.match(model.subtitle, /\$0 · 3 of 21 owned/);
+  assert.match(model.subtitle, /\$0 · 3 of 23 owned/);
   assert.equal(model.items.find(item => item.id === 'jetpack')?.label, 'Jetpack', 'the gear after the cars');
   assert.ok(!garage.paints.some(item => item.id === 'rainbow'), 'no rainbow before the code');
   assert.ok(garage.paints.filter(item => item.id !== DEFAULT_PAINT).every(item => item.disabled), 'no color without the money for it');

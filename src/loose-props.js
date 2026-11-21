@@ -45,6 +45,19 @@ const KINDS = {
   cabinet: { mass: .12, firm: 3, topples: true, lift: .25, bounce: .2, sound: 'metal', bits: 'litter' },
   'news-boxes': { mass: .06, firm: 0, lift: .4, bounce: .3, sound: 'bin', bits: 'litter' },
   'bike-rack': { mass: .06, firm: 2, lift: .3, bounce: .25, sound: 'light' },
+  // A venue's own (see venue-props.js): a club's poster column, a cinema's
+  // ticket booth, a court's hoop and net, a civic hall's flags, a pool's loungers
+  column: { mass: .3, firm: 5, topples: true, lift: .2, bounce: .15, sound: 'bin', bits: 'litter', spill: true },
+  booth: { mass: .45, firm: 6, lift: .2, bounce: .15, sound: 'wood', bits: 'glass' },
+  hoop: { mass: .16, firm: 4, topples: true, lift: .25, bounce: .2, sound: 'metal', bits: 'glass' },
+  net: { mass: .03, firm: 0, lift: .35, bounce: .25, sound: 'light' },
+  flag: { mass: .14, firm: 4, topples: true, lift: .25, bounce: .2, sound: 'metal' },
+  lounger: { mass: .015, firm: 0, lift: .45, bounce: .3, sound: 'light' },
+  // A ball on a court or a lawn: a car sends it flying, and someone on foot
+  // walking into it dribbles it on (see kick). It bounces, and rolls on far
+  // (`spin` and `roll` wear down its turn and its speed on the ground, a
+  // second at a time, instead of SPIN and ROLL)
+  ball: { mass: .006, firm: 0, lift: .7, bounce: .62, sound: 'light', spin: .25, roll: .22, kick: true, round: true },
   // A pedestrian a car meets (see person): scooped off their feet, they
   // tumble, land and slide to a stop, then get up (see PedestrianContacts)
   person: { mass: .07, firm: 0, lift: .45, bounce: .1, sound: 'thud' },
@@ -86,11 +99,18 @@ const FELT = 1.5;
 const TOPPLE = .1, TOPPLE_LEAST = .9, SLIDE = .1, OUTWARD = .6;
 // A piece flung off a bumper is swept this much aside, and pops up at most this fast (m/s)
 const ASIDE = .5, POP = 3.5;
+// A ball comes off a bumper this many times as fast, and up at this share of the blow, to at most BOUNCE_UP m/s
+const KICK = 1.5, LOFT = .3, BOUNCE_UP = 7;
+// and no faster than this along the ground (m/s): faster, it would pass
+// through a railing between steps
+const BALL_MOST = 24;
+// and leaves someone on foot who walks into it this many times as fast as they go
+const DRIBBLE = 1.4;
 // The air slows a flying piece this much a second, and each hard landing
 // scuffs off this share of its speed along the ground
 const AIR = .3, SCUFF = .2;
-// and rolling on the ground takes this much a second off it
-const ROLL = 1;
+// and rolling on the ground takes this much a second off it, and off its turn
+const ROLL = 1, SPIN = 2.5;
 // A post meets a car as a body of its weight (see impact.js): a little bounce, some scrape
 const PROP_SURFACE = { bounce: .2, friction: .4 };
 // A loose piece looks again for what stands near it once it has moved this far (m)
@@ -303,16 +323,22 @@ function raisedLevel(raised, x, y, z) {
   spot.x = x; spot.z = z;
   for (const solid of raised) {
     if (!insideConvex(spot, solid.corners)) continue;
-    const top = shapeHeight(solid.shape, spot);
+    const top = solid.shape ? shapeHeight(solid.shape, spot) : solid.top;
     if (top <= y + .5 && !(top <= ground)) ground = top;
   }
   return ground;
 }
-// A ramp or a mound is no wall to a point on it or above it
+// A ledge: a step, a platform, a stand or a plinth, low enough to be ground
+// to what lands on it (see raisedLevel), as a ramp is. A building's roof is not.
+const LEDGE = 2.5;
+const ledge = solid => solid.top !== undefined && solid.corners && !solid.pitch && solid.top < PAVEMENT_LEVEL + LEDGE;
+// A ramp, a mound or a ledge is no wall to a point on it or above it
 function over(solid, x, y, z) {
-  if (!solid.shape) return false;
-  spot.x = x; spot.z = z;
-  return y >= shapeHeight(solid.shape, spot) - .05;
+  if (solid.shape) {
+    spot.x = x; spot.z = z;
+    return y >= shapeHeight(solid.shape, spot) - .05;
+  }
+  return ledge(solid) && y >= solid.top - .05;
 }
 
 // How far a point (x, z) stands inside a collider, and the way out of it:
@@ -382,6 +408,9 @@ function impulse(body, at, blow) {
   body.w.add(turnBy(body, t1.crossVectors(at, blow), t1)).clampLength(0, SPIN_MOST);
 }
 const velocityAt = (body, at, out) => out.crossVectors(body.w, at).add(body.v);
+// A ball given the turn of rolling along the ground at its speed, so it
+// lands rolling rather than sliding until the ground has turned it
+const rolling = body => body.w.set(body.v.z / body.shape.radius, body.w.y, -body.v.x / body.shape.radius);
 // How deep a point (x, y, z) is inside a car's body (0 or less outside it):
 // its footprint, from CLEARANCE over the road (or its `floor`) up to its
 // height there along its length (its `profile`, see carProfile, else its
@@ -617,7 +646,7 @@ export class LooseProps {
   // comes loose, the piece the car met takes the blow, and the blow the car
   // takes back is returned. The rest of it (a cafe's other chairs) waits for
   // the car to reach them.
-  knock(collider, contact, car) {
+  knock(collider, contact, car, quiet = false) {
     const prop = collider.prop;
     if (!prop?.ready || collider.woken) return null;
     const closing = -(car.vx * contact.x + car.vz * contact.z), piece = prop.pieces[0].kind, type = KINDS[piece];
@@ -629,7 +658,7 @@ export class LooseProps {
     if (kind.bits && (!kind.topples || kind.spill)) this.bits.burst(kind.bits, hit.p.x, hit.p.y, hit.p.z, hit.v.x * .4, hit.v.z * .4);
     if (piece === 'hydrant') this.spout(collider.x, collider.z);
     this.sound(kind.sound, closing, point.x, point.z);
-    this.onSmash?.(prop.pieces.map(each => each.kind), { x: point.x, y: car.y ?? hit.p.y, z: point.z });
+    if (!quiet) this.onSmash?.(prop.pieces.map(each => each.kind), { x: point.x, y: car.y ?? hit.p.y, z: point.z });
     return blow ?? { x: 0, z: 0, spin: 0, closing };
   }
   // Flung off the bumper, a piece is swept a little aside out of the car's
@@ -646,6 +675,11 @@ export class LooseProps {
     r.y = Math.min(car.y + BUMPER, hit.p.y) - hit.p.y;
     const blow = this.blow(hit, car, r, nx, nz, hit.kind.lift);
     if (blow) { this.tumble(hit, nx, nz, blow.closing); hit.v.y = Math.min(hit.v.y, POP); }
+    // (a ball is meant to go: it leaves faster than it was hit, and up)
+    if (blow && hit.kind.kick) {
+      const flat = Math.hypot(hit.v.x, hit.v.z), scale = Math.min(KICK, BALL_MOST / Math.max(flat, 1e-6));
+      hit.v.x *= scale; hit.v.z *= scale; hit.v.y = Math.min(Math.max(hit.v.y, blow.closing * LOFT), BOUNCE_UP); rolling(hit);
+    }
     return blow;
   }
   // A pedestrian (`geometry` drawn by `matrix`, in the world) that `car` (as
@@ -692,6 +726,13 @@ export class LooseProps {
     const blow = this.knock(collider, contact, this.carOf(player));
     if (blow) player.strike(blow.x, blow.z, blow.spin, Math.hypot(blow.x, blow.z) * FELT);
     return Boolean(blow);
+  }
+  // Someone on foot walking into a ball (see KINDS' `kick`): it rolls off
+  // ahead of them, and nothing else standing comes loose to them. It earns
+  // nothing, as a smash would.
+  kick(collider, contact, player) {
+    if (!collider.prop || !KINDS[collider.prop.pieces[0].kind]?.kick) return false;
+    return Boolean(this.knock(collider, contact, this.carOf(player), true));
   }
   // A loose piece as a car, where its point (x, y, z) meets someone (see
   // PedestrianContacts): headed the way that point is going, as fast, and
@@ -941,6 +982,15 @@ export class LooseProps {
       }
     }
     const blow = roof ? this.blow(body, car, r, nx, nz, 1, SLICK) : this.blow(body, car, r, nx, nz, .3);
+    // (a ball met on foot is kicked on ahead of them, a little faster than
+    // they go, so they catch it up and kick it again: they dribble it)
+    // (the way they are going, not the way it was met: off center, it went aside and was lost)
+    if (round && body.kind.kick) {
+      const speed = Math.hypot(car.vx, car.vz), dx = car.vx / (speed || 1), dz = car.vz / (speed || 1), gone = body.v.x * dx + body.v.z * dz;
+      if (speed > .5 && dx * nx + dz * nz > .3 && gone < speed * DRIBBLE) {
+        body.v.x = dx * speed * DRIBBLE; body.v.z = dz * speed * DRIBBLE; body.v.y = Math.max(body.v.y, .8); rolling(body);
+      }
+    }
     if (!blow) return share < 1 ? { x: 0, z: 0, spin: 0, closing: 0, px, pz } : null;
     blow.px = px; blow.pz = pz;
     return blow;
@@ -1034,9 +1084,9 @@ export class LooseProps {
     // piece is lying on the ground (see meet).
     const resting = body.grounded || body.supported;
     body.supported = false;
-    w.multiplyScalar(Math.exp(-dt * (resting ? 2.5 : .2)));
+    w.multiplyScalar(Math.exp(-dt * (resting ? body.kind.spin ?? SPIN : .2)));
     if (!resting) v.multiplyScalar(Math.exp(-dt * AIR));
-    else { const roll = Math.exp(-dt * ROLL); v.x *= roll; v.z *= roll; }
+    else { const roll = Math.exp(-dt * (body.kind.roll ?? ROLL)); v.x *= roll; v.z *= roll; }
     body.awake += dt; body.clatter = Math.max(0, body.clatter - dt);
     // Nearly still on the ground, it stops. It is judged by how far it has
     // gone lately rather than how fast it is going: a piece rocking on a curb
@@ -1055,6 +1105,7 @@ export class LooseProps {
   // Each point that has gone into the ground is lifted out of it and takes a
   // blow there: a bounce, and friction against its slide
   land(body) {
+    if (body.kind.round) { this.roll(body); return; }
     const { p, q, shape } = body, points = shape.points, ground = body.ground;
     let deepest = 0, hardest = 0;
     body.grounded = false;
@@ -1090,8 +1141,26 @@ export class LooseProps {
     if (hardest > 3 && !body.clatter) { body.clatter = .25; this.sound(body.kind.sound, hardest * .6, at.x, at.z); }
     if (hardest > 3 && body.kind.topples && body.kind.bits && !body.shed) { body.shed = true; this.bits.burst(body.kind.bits, at.x, at.y, at.z, body.v.x * .3, body.v.z * .3); }
   }
+  // A ball meets the ground at the one point under its middle, so it rolls
+  // smoothly rather than tipping from point to point of its outline
+  roll(body) {
+    const { p } = body, radius = body.shape.radius, raised = body.near?.raised, bottom = p.y - radius;
+    body.grounded = false;
+    const depth = (raised?.length ? raisedLevel(raised, p.x, bottom, p.z) : level(p.x, p.z)) - bottom;
+    if (!(depth > 0 && depth < 1)) return;
+    body.grounded = true; p.y += depth;
+    r.set(0, -radius, 0); velocityAt(body, r, pv);
+    if (pv.y >= 0) return;
+    const hard = -pv.y;
+    J.set(0, -(1 + (hard > REST ? body.kind.bounce : 0)) * pv.y / give(body, r, UP), 0);
+    slip.set(pv.x, 0, pv.z);
+    const slide = slip.length();
+    if (slide > 1e-4) { slip.divideScalar(slide); J.addScaledVector(slip, -Math.min(slide / give(body, r, slip), GRIP * J.y)); }
+    impulse(body, r, J);
+    if (hard > 3 && !body.clatter) { body.clatter = .25; this.sound(body.kind.sound, hard * .6, p.x, p.z); }
+  }
   // What stands near a piece, gathered again once it has moved a couple of
-  // meters, and the ramps and mounds among it, which are ground to it (see
+  // meters, and the ramps, mounds and ledges among it, which are ground to it (see
   // raisedLevel) as well as walls where it is below their tops
   gather(body, chunks) {
     const p = body.p;
@@ -1104,7 +1173,7 @@ export class LooseProps {
       for (const solid of chunk.features.colliders) {
         if (Math.abs(solid.x - p.x) >= reach + solid.reach || Math.abs(solid.z - p.z) >= reach + solid.reach) continue;
         list.push(solid);
-        if (solid.shape) { raised.push(solid); top = Math.max(top, solid.top); }
+        if (solid.shape || ledge(solid)) { raised.push(solid); top = Math.max(top, solid.top); }
       }
     }
     body.near = { x: p.x, z: p.z, list, raised, top };

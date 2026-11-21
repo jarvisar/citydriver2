@@ -52,18 +52,20 @@ export const PRICES = {
   bin: 250, chair: 120, table: 350, sign: 450, bench: 1100, lantern: 1400, stall: 2400,
   lamp: 3200, tree: 4500, signal: 6500, shelter: 9000, mast: 18000,
   'news-boxes': 300, 'bike-rack': 400, 'post-box': 900, cabinet: 1600, hydrant: 2200,
+  ball: 60, lounger: 150, net: 600, flag: 2600, hoop: 2800, column: 3400, booth: 7500,
 };
 export const PIECE_NAMES = {
   bin: 'Litter bin', chair: 'Cafe chair', table: 'Cafe table', sign: 'Street sign', bench: 'Bench', lantern: 'Park lantern',
   stall: 'Market stall', lamp: 'Lamp post', tree: 'Tree', signal: 'Traffic light', shelter: 'Bus shelter', mast: 'Signal gantry',
   'news-boxes': 'News stand', 'bike-rack': 'Bike rack', 'post-box': 'Post box', cabinet: 'Utility box', hydrant: 'Fire hydrant',
+  ball: 'Ball', lounger: 'Sun lounger', net: 'Tennis net', flag: 'Flagpole', hoop: 'Basketball hoop', column: 'Poster column', booth: 'Ticket booth',
 };
 // Cars by model: what it costs to write one off. A parked car pays
 // PARKED_SHARE of that: they stand in rows, and a truck plowing a row of
 // them earned most of every big run's score (1.3M of 1.6M in one bot run).
-export const CAR_PRICES = { hatchback: 14000, sedan: 19000, taxi: 19000, wagon: 21000, pickup: 26000, van: 29000, demolition: 38000, bus: 45000 };
+export const CAR_PRICES = { hatchback: 14000, sedan: 19000, taxi: 19000, wagon: 21000, pickup: 26000, van: 29000, ambulance: 34000, demolition: 38000, fireengine: 42000, bus: 45000 };
 export const PARKED_SHARE = .5;
-const CAR_NAMES = { hatchback: 'Hatchback', sedan: 'Sedan', taxi: 'Cab', wagon: 'Estate', pickup: 'Pickup', van: 'Van', demolition: 'Truck', bus: 'Bus' };
+const CAR_NAMES = { hatchback: 'Hatchback', sedan: 'Sedan', taxi: 'Cab', wagon: 'Estate', pickup: 'Pickup', van: 'Van', ambulance: 'Ambulance', demolition: 'Truck', fireengine: 'Fire engine', bus: 'Bus' };
 const CAR_PRICE = 18000;
 // A blow closing at WRECK_SPEED (m/s) writes a car off at once; slower ones
 // dent it by the square of their speed, so it pays to hit hard. Under

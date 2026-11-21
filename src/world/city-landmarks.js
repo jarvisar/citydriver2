@@ -4,7 +4,7 @@ import { PAVEMENT_LEVEL as G } from './city-route.js';
 import { edgeFacade, edgeWindows, shopAwning, cornice, convexHull, exitDistance } from './city-building-parts.js';
 import { landmarkSite, venueFootprint } from './landmark-site.js';
 import { discoverySignFor, signCore } from './city-signs.js';
-import { round, clock, fireEngine } from './city-detail-assets.js';
+import { round, clock } from './city-detail-assets.js';
 import { Parts } from './city-assets.js';
 import { roofWedge, vaultGeometry, vaultRibs } from './city-roofs.js';
 import { basinRim, basinWater } from './city-public-space-geometry.js';
@@ -16,6 +16,8 @@ import { buildMonument } from './city-monuments.js';
 import { BED_COLOURS } from './city-parks.js';
 import { nightLit } from './city-glass.js';
 import { planGrounds, buildGrounds } from './landmark-grounds.js';
+import { basketballHoop, tennisNet, flagpole, basketball, BASKETBALL } from './venue-props.js';
+import { parkedSpec } from '../special-models.js';
 import { intersection, region, solids, union } from '../mapgen/booleans.js';
 import { offsetPolygon, calcPolygonArea, insidePolygon, distanceToPolyline } from '../mapgen/polygon-util.js';
 
@@ -100,6 +102,24 @@ export function buildLandmark(c, lot, place) {
   // The building's record, collision and the venue's name across its front
   const record = height => c.features.buildings.push({ x: c.east + cx, s: c.start + cs, area: W * D, height, type: `landmark-${place.type}`, floors: Math.round(height / 3.6), roofType: 'flat', wall });
   const solidBody = (ring, top) => c.polygonSolid(convexHull(ring).map(p => [p.x, p.y]), top);
+  // A collider w by d at (u, v) in the site's axes; with a `top`, a step or
+  // a ledge someone on foot can climb onto
+  const block = (u, v, w, d, top) => {
+    const p = at(u, v);
+    c.rigid(p.x, p.s, () => { const solid = c.solid(p.x, p.s, w, d); if (solid && top !== undefined) solid.top = top; }, itemFrame(c.start + p.s, c.east + p.x, along));
+  };
+  // A piece a car can knock over (see venue-props.js and LooseProps), its
+  // collider made by `collider` at the point; `key` is its batch, one to a model
+  const loose = (key, kind, geometry, u, v, y, yaw, collider) => {
+    // (never a structure, though the venue is: see addWalkerAlert)
+    const p = at(u, v), item = c.item(key, geometry, c.materials.props, [p.x, y, -p.s], [1, 1, 1], '#ffffff', yaw, 0, false);
+    collider(p);
+    c.knockable?.([item], [{ kind, geometry }]);
+  };
+  // What the building's own collider covers, where that is not the site's
+  // whole rectangle (a club's courts are open ground, a glasshouse stands
+  // back from its site's front)
+  let footprint = null;
   // The name board, as big as fits between `bottom` and `top` and no wider
   // than `widthMax` (or than `fits` allows, for one on a gable), its board
   // mounted a hand's width proud of the wall at `wall`. The patch of wall
@@ -284,24 +304,29 @@ export function buildLandmark(c, lot, place) {
         const bed = at(side * (court / 2 + 2), front - setback / 2);
         if (!insidePolygon({ x: bed.x, y: bed.s }, lotLocal)) continue;
         if (plinthAt?.side !== side) buildMonument(c, { kind: 'bed', u: c.east + bed.x, s: c.start + bed.s, yaw: along + Math.PI / 2, w: Math.min(setback - 1.5, 9), d: 2.2, colour: BED_COLOURS[(place.variant + (side > 0 ? 1 : 0)) % BED_COLOURS.length] }, bed.x, bed.s);
-        // and a flag either side of the way in
-        const pole = at(side * (court / 2 - .8), front - setback + 1.2);
-        round(c, pole.x, G + 4.5, pole.s, .16, 9, .16, '#d9d6cc');
-        box(side * (court / 2 - .8) + .75 * side, G + 8.1, front - setback + 1.2, 1.4, .9, .05, colour);
-        c.post(pole.x, pole.s, .2);
+        // and a flag either side of the way in, flying outward
+        loose(`venue-flag-${colour}`, 'flag', flagpole(colour), side * (court / 2 - .8), front - setback + 1.2, G + .07, along + (side > 0 ? 0 : Math.PI), p => c.post(p.x, p.s, .3));
       }
     }
   };
   const forecourtSign = () => plinthSign(plinthAt.u, plinthAt.into);
   // (each step down to the ground: the top one, reaching back past the one
   // below it to the landing, hung ten centimeters over the forecourt there)
-  const steps = (w, into) => { for (let k = 0; k < 3; k++) box(0, G + (.2 + k * .3) / 2, into - 1.6 + k * .5, w + 2 - k * .6, .2 + k * .3, 1.2, TRIM); };
+  // (each a step up on foot; to a car the second riser is a wall, met by its
+  // nose before its wheels are up the first)
+  const steps = (w, into) => {
+    for (let k = 0; k < 3; k++) {
+      box(0, G + (.2 + k * .3) / 2, into - 1.6 + k * .5, w + 2 - k * .6, .2 + k * .3, 1.2, TRIM);
+      block(0, into - 1.6 + k * .5, w + 2 - k * .6, 1.2, G + .2 + k * .3);
+    }
+  };
   const portico = (w, height, depth = 3.6) => {
     // Paired columns leave a central opening; the steps meet a landing all
     // the way back to the door rather than ending in a drop behind them.
     const count = Math.max(4, Math.round(w / 6.4) * 2), spacing = w / count;
     box(0, G + .4, front - depth / 2, w + .8, .8, depth, TRIM);
-    for (let k = 0; k < count; k++) { const p = at(-w / 2 + (k + .5) * spacing, front - depth / 2); round(c, p.x, G + height / 2, p.s, .9, height, .9, TRIM); }
+    block(0, front - depth / 2, w + .8, depth, G + .8);
+    for (let k = 0; k < count; k++) { const p = at(-w / 2 + (k + .5) * spacing, front - depth / 2); round(c, p.x, G + height / 2, p.s, .9, height, .9, TRIM); c.post(p.x, p.s, .45); }
     box(0, G + height + .6, front - depth / 2 + .2, w + 1, 1.2, depth + .6, TRIM);
     // A pediment of two wedges meeting at the middle
     for (const side of [-1, 1]) {
@@ -376,8 +401,13 @@ export function buildLandmark(c, lot, place) {
       entrance(0, front, 3.8, 3.35);
       // A canopy over the ambulance entrance and a red cross on the front
       box(0, G + 4, front - 2.1, Math.min(14, W * .6), .4, 4.2, TRIM);
-      for (const side of [-1, 1]) { const p = at(side * Math.min(6.5, W * .28), front - 3.8); round(c, p.x, G + 2, p.s, .4, 4, .4, TRIM); }
+      for (const side of [-1, 1]) { const p = at(side * Math.min(6.5, W * .28), front - 3.8); round(c, p.x, G + 2, p.s, .4, 4, .4, TRIM); c.post(p.x, p.s, .25); }
       box(0, G + H - 3.2, front - .15, 4.2, 1.2, .3, '#c9463d'); box(0, G + H - 3.2, front - .15, 1.2, 4.2, .3, '#c9463d');
+      // The ambulance under the canopy, a meter clear of the doors and inside
+      // its posts, its nose to the doors and its driver's side to the street
+      // (see CityChunk.parkedCar: it can be knocked loose or taken)
+      const ambulance = parkedSpec('ambulance'), stand = at(1.9 + 1.1 + ambulance.length / 2, front - .9 - ambulance.width / 2);
+      c.parkedCar('ambulance', stand.x, stand.s, Math.atan2(ny, nx), ambulance.paint, G + .1);
       keepClear(front, 2.5, G + H - 5.7, G + H - .7);
       // (the name above the canopy, clear of it from across the street)
       nameBoard(G + 5.8, G + 9.4, W * .6);
@@ -388,7 +418,7 @@ export function buildLandmark(c, lot, place) {
       // A tiled arcade across the front, turquoise piers under a terracotta band
       const bays = Math.max(3, Math.round(porch / 3.4));
       entrance(bays % 2 ? 0 : porch / bays / 2, front, Math.min(2.5, porch / bays - 1.1));
-      for (let k = 0; k <= bays; k++) box(-porch / 2 + k * porch / bays, G + 2.1, front - 1.4, .8, 4.2, .8, '#4aa3a0');
+      for (let k = 0; k <= bays; k++) { box(-porch / 2 + k * porch / bays, G + 2.1, front - 1.4, .8, 4.2, .8, '#4aa3a0'); block(-porch / 2 + k * porch / bays, front - 1.4, .8, .8); }
       box(0, G + 4.6, front - 1.4, porch + .8, .8, 1.2, '#c07a55');
       box(0, G + 5.05, front - 1.4, porch + 1.2, .12, 1.4, TRIM);
       for (let k = 0; k < bays; k++) box(-porch / 2 + (k + .5) * porch / bays, G + .06, front - 1.4, porch / bays - .8, .12, 1.8, '#7fc1bd');
@@ -547,6 +577,7 @@ export function buildLandmark(c, lot, place) {
     top = G + H;
   } else if (kind === 'observatory') {
     const H = 6, body = localRing(W, D, D * .1), radius = Math.min(W, D) * .3;
+    footprint = body;
     bodies.prism(body, G, G + H, STONE);
     cornice(bodies, body, G + H, TRIM, '#8d9a92', STONE, .6, []);
     windows(body, G + .8, 1);
@@ -561,12 +592,16 @@ export function buildLandmark(c, lot, place) {
     // tennis on green with a net across, or basketball on blue with a hoop at
     // each end, each lined in white
     const depth = Math.max(7, D * .32), house = localRing(W, depth, D / 2 - depth / 2), H = 5;
+    footprint = house;
     bodies.prism(house, G, G + H, '#e7dcc4');
     cornice(bodies, house, G + H, TRIM, '#8d9a92', '#e7dcc4', .6, []);
     windows(house, G + .6, 1);
     const length = D - depth - 2, middle = -depth / 2 - .5, count = Math.max(1, Math.floor((W - 2) / 15)), unit = (W - 2) / count;
     const flat = (w, d, into, u, y, height, tint) => c.polygon(localRing(w, d, into, u).map(p => [p.x, p.y]), y, height, tint);
     flat(W - 2, length, middle, 0, G + .09, .06, '#b76a4f');
+    // (the courts are ground over the street's height: what lands on them,
+    // or drives onto them, stands at their top, not 11 cm into them)
+    block(0, middle, W - 2, length, G + .11);
     for (let k = 0; k < count; k++) {
       const u = -(W - 2) / 2 + (k + .5) * unit, tennis = (k + place.variant) % 2 === 0, w = unit - 3, d = length - 4;
       flat(w, d, middle, u, G + .11, .04, tennis ? '#5d9a73' : '#4f7fa6');
@@ -576,12 +611,12 @@ export function buildLandmark(c, lot, place) {
         flat(.14, d, middle, u + end * (w / 2 - .07), G + .14, .02, '#f1eee4');
       }
       flat(w, .14, middle, u, G + .14, .02, '#f1eee4');
-      if (tennis) {
-        box(u, G + .5, middle, w + .8, .9, .05, '#e8e3d2');
-        for (const side of [-1, 1]) { const p = at(u + side * (w / 2 + .4), middle); round(c, p.x, G + .55, p.s, .1, 1.1, .1, '#3d4246'); c.post(p.x, p.s, .12); }
-      } else for (const end of [-1, 1]) {
-        const p = at(u, middle + end * (d / 2 + .4));
-        round(c, p.x, G + 1.6, p.s, .16, 3.2, .16, '#e8e3d2'); box(u, G + 3.1, middle + end * (d / 2 - .1), 1.4, .9, .08, '#f4f1e8'); c.post(p.x, p.s, .2);
+      // (a net and its posts come away together; a hoop's board faces the court)
+      if (tennis) loose(`venue-net-${w.toFixed(1)}`, 'net', tennisNet(w), u, middle, G + .11, along, p => c.rigid(p.x, p.s, () => c.solid(p.x, p.s, w + 1, .16), itemFrame(c.start + p.s, c.east + p.x, along)));
+      else {
+        for (const end of [-1, 1]) loose('venue-hoop', 'hoop', basketballHoop(), u, middle + end * (d / 2 + .4), G + .09, along + (end > 0 ? 0 : Math.PI), p => c.post(p.x, p.s, .22));
+        // (and the ball, left by the center circle)
+        loose('venue-basketball', 'ball', basketball(), u + 1.2, middle - .8, G + .11, along, p => c.post(p.x, p.s, BASKETBALL));
       }
     }
     nameBoard(G + 1.9, G + H - .5, W * .5, D / 2 - depth);
@@ -592,8 +627,8 @@ export function buildLandmark(c, lot, place) {
     bodies.prism(body, G, G + H, wall);
     cornice(bodies, body, G + H, TRIM, '#7e7a74', wall, .8, []);
     windows(body, G + 5, 1, 'brick');
-    // The heritage engine stands out on the forecourt where there is room,
-    // and otherwise backs out of an open bay, its cab to the street
+    // Where the forecourt is shallow, a bay stands open, its engine out on
+    // the apron (below)
     const doors = Math.max(2, Math.min(3, Math.floor(W / 7))), open = setback >= 4 ? -1 : Math.floor(doors / 2);
     for (let k = 0; k < doors; k++) {
       const u = (k - (doors - 1) / 2) * W / (doors + .5);
@@ -603,12 +638,14 @@ export function buildLandmark(c, lot, place) {
       box(u, G + 3.25, front - .28, 3.7, .65, .06, nightLit('#375563', 2), 'glass');
       if (!c.distant) for (const height of [1.2, 2.2]) box(u, G + height, front - .28, 4.2, .06, .06, '#a26b59');
     }
-    const engine = open < 0 ? { u: 0, v: front - 3.2, yaw: faceYaw(tx, ty), w: 6.8, d: 3.1 } : { u: (open - (doors - 1) / 2) * W / (doors + .5), v: front - 1.4, yaw: faceYaw(nx, ny), w: 3.1, d: 6.8 };
-    if (!c.distant) {
-      const q = at(engine.u, engine.v);
-      c.item('detail-fire-engine', fireEngine, c.materials.props, [q.x, G + .07, -q.s], [.55, .55, .55], '#ffffff', engine.yaw);
-      c.rigid(q.x, q.s, () => c.solid(q.x, q.s, engine.w, engine.d), itemFrame(c.start + q.s, c.east + q.x, along));
-    }
+    // The engine stands along the front on the apron, before the open bay
+    // if there is one, clear of the staff door, its driver's side to the
+    // street. It can be knocked loose or taken (see CityChunk.parkedCar), so
+    // none of it may stand in the building: it would be shoved out when
+    // woken. Nose out of its bay at full size, it reached across the pavement.
+    const engine = parkedSpec('fireengine'), bay = open < 0 ? 0 : (open - (doors - 1) / 2) * W / (doors + .5);
+    const stand = at(Math.min(bay, W / 2 - 1.1 - 1.1 - engine.length / 2), front - 1.3 - engine.width / 2);
+    c.parkedCar('fireengine', stand.x, stand.s, Math.atan2(ny, nx), engine.paint, G + .1);
     entrance(W / 2 - 1.1, front, 1.2, 2.6);
     // The hose tower
     const p = at(W / 2 - 2.5, D / 2 - 2.5);
@@ -618,6 +655,7 @@ export function buildLandmark(c, lot, place) {
     top = G + 17.6;
   } else if (kind === 'diner') {
     const H = 5, body = localRing(W * .9, Math.min(D, 18), -D / 2 + Math.min(D, 18) / 2);
+    footprint = body;
     bodies.prism(body, G, G + H, wall);
     cornice(bodies, body, G + H, '#f5eee0', '#e2a3b5', wall, .6, []);
     box(0, G + 2.1, -D / 2 - .15, W * .7, 2.4, .2, nightLit(GLASS, 0), 'glass');
@@ -640,6 +678,7 @@ export function buildLandmark(c, lot, place) {
     top = middle + radius * 1.42;
   } else if (kind === 'glasshouse') {
     const H = 7, body = localRing(W * .8, D * .7);
+    footprint = body;
     bodies.prism(body, G, G + 1, STONE);
     bodies.prism(offsetPolygon(body, -.3), G + 1, G + H, GLASS);
     vault(W * .8, Math.min(W * .25, 6), D * .7, G + H, '#8fb9b5', c.materials.glass, '#8fb9b5');
@@ -670,6 +709,6 @@ export function buildLandmark(c, lot, place) {
   }
   drawWindows();
   record(top - G);
-  solidBody(localRing(W, D), top);
+  solidBody(footprint ?? localRing(W, D), top);
   return true;
 }

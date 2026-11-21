@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import { PAVEMENT_LEVEL as G } from './city-route.js';
-import { cityAssets, parkedCars, Parts } from './city-assets.js';
+import { cityAssets, PARKED_PAINTS } from './city-assets.js';
 import { buildHedge, round } from './city-detail-assets.js';
 import { buildMonument } from './city-monuments.js';
 import { basinRim, basinWater } from './city-public-space-geometry.js';
 import { STALL_COLOURS, BED_COLOURS } from './city-parks.js';
 import { itemFrame } from './city-layout-render.js';
 import { tram, carriage, GAUGE, TRAM_LENGTH, CARRIAGE_LENGTH } from './city-rail.js';
+import { posterColumn, ticketBooth, BOOTH_WINDOW, sunLounger, beachBall, BEACH_BALL } from './venue-props.js';
 
 // What a venue's grounds hold besides its forecourt and trees, so that each
 // reads as what it is rather than a building in a park: a works' paved yard
@@ -20,8 +21,8 @@ import { tram, carriage, GAUGE, TRAM_LENGTH, CARRIAGE_LENGTH } from './city-rail
 // draw what the detailed building draws.
 export const GROUNDS = {
   station: { cover: '#c9bfa9', edge: true, features: ['platforms', 'bikes'] },
-  depot: { cover: '#b9b4a8', edge: true, features: ['tracks', 'siding'] },
-  market: { cover: '#cbbd9e', edge: true, features: ['stalls'] },
+  depot: { cover: '#b9b4a8', edge: true, features: ['tracks', 'siding', 'loading'] },
+  market: { cover: '#cbbd9e', edge: true, features: ['stalls', 'loading'] },
   farmersmarket: { cover: '#cbbd9e', edge: true, features: ['stalls'] },
   cityhall: { edge: true, features: ['fountains'] },
   museum: { features: ['sculptures'] },
@@ -157,35 +158,39 @@ export function planGrounds(g) {
       for (const [u, v] of [[side * (g.court / 2 - 1.1), g.front - g.setback - 2.6], [side * (g.court / 2 - 1.1), g.front - 2.2]]) {
         if (g.onLot(u, v - 1.2) && g.onLot(u, v + 1.2)) { features.push({ kind: 'postbox', u, v, w: 1, d: 1 }); break; }
       }
+    } else if (kind === 'loading') {
+      // Its own vans and pickups parked out in the yard, noses to the street
+      add('loading', spot(8.5, 6, ['back', 'left', 'right']) ?? spot(4.5, 6, ['back', 'left', 'right']));
     } else if (kind === 'yard') {
       add('yard', spot(12, 10, ['back', 'left', 'right']) ?? spot(8, 9, ['back', 'left', 'right']));
     }
+  }
+  // Then what any public place has: lanterns down both sides of a long way
+  // in, benches facing it between them with a bin by each, and a bench out
+  // on the grounds either side of the building looking over them, each where
+  // it is free (after the features, which come first), so the grounds read
+  // as somewhere people go. The trees keep clear of them.
+  const near = { ...building, w: g.W + 1, d: g.D + 1 };
+  const room = r => !overlaps(r, [near, ...held], .4) && fits(r);
+  const furnish = (kind, r, extra = {}) => { if (!room(r)) return false; held.push(r); features.push({ kind, ...r, ...extra }); return true; };
+  if (g.setback >= 5) {
+    const end = g.front - g.setback - 2.5, pairs = Math.max(1, Math.floor((g.setback + 2) / 8));
+    for (let k = 0; k < pairs; k++) for (const side of [-1, 1]) {
+      const v = g.front - 2.5 - k * 8;
+      if (v < end) continue;
+      furnish('lantern', { u: side * (g.court / 2 + .7), v, w: .8, d: .8 });
+      if (v - 4 > end && furnish('seat', { u: side * (g.court / 2 + 1.3), v: v - 4, w: .9, d: 2.2 }, { side: -side })) furnish('bin', { u: side * (g.court / 2 + 1.1), v: v - 5.8, w: .7, d: .7 });
+    }
+  }
+  for (const side of [-1, 1]) for (const v of [0, -g.D / 4, g.D / 4]) {
+    if (furnish('seat', { u: side * (g.W / 2 + 3.2), v, w: .9, d: 2.2 }, { side })) { furnish('bin', { u: side * (g.W / 2 + 3.1), v: v + 1.9, w: .7, d: .7 }); break; }
   }
   // (a venue on a lot where the district has no lawns is paved to its edges, trees in pits)
   return { cover: programme.cover ?? (g.paved ? '#c9bfa9' : null), edge: Boolean(programme.edge || g.paved), features, held };
 }
 
-// The ticket booth's round roof, and an armillary sphere's rings: two
-// upright, turned, and one lying flat
-const booth = new THREE.SphereGeometry(1, 10, 4, 0, Math.PI * 2, 0, Math.PI / 2);
+// An armillary sphere's rings: two upright, turned, and one lying flat
 const upright = new THREE.TorusGeometry(1, .06, 4, 18), flat = new THREE.TorusGeometry(1, .06, 4, 18).rotateX(Math.PI / 2);
-// A poster column: a green drum under a domed cap, pasted round with bills
-const BILLS = ['#d9534f', '#f0c05a', '#3f7cac', '#ece4cf', '#7a5a9a', '#e07b39', '#2f8f83', '#1f2528'];
-let posterColumn = null;
-const posters = () => posterColumn ??= (() => {
-  const p = new Parts(), green = '#2f4a3c';
-  p.cylinder([0, .15, 0], .64, .68, .3, green, 12);
-  p.cylinder([0, 1.6, 0], .55, .55, 2.6, green, 12);
-  for (let k = 0; k < 8; k++) {
-    const a = (k + .5) / 8 * Math.PI * 2;
-    p.box([Math.sin(a) * .56, 1.05, Math.cos(a) * .56], [.38, .9, .03], BILLS[(k * 3) % BILLS.length], [0, a, 0]);
-    p.box([Math.sin(a) * .56, 2.12, Math.cos(a) * .56], [.38, 1.02, .03], BILLS[(k * 5 + 2) % BILLS.length], [0, a, 0]);
-  }
-  p.cylinder([0, 3, 0], .7, .6, .2, green, 12);
-  p.cone([0, 3.35, 0], .62, .5, green, 12);
-  p.cylinder([0, 3.7, 0], .05, .05, .3, '#c9a34a', 6);
-  return p.finish();
-})();
 
 // Build what planGrounds laid out, near detail only (bar the platforms'
 // canopy and train, which are big enough to see across the city)
@@ -193,7 +198,11 @@ export function buildGrounds(g, plan) {
   const { c, at, box } = g;
   const slab = (w, d, v, u, y, colour) => c.polygon(g.localRing(w, d, v, u).map(p => [p.x, p.y]), y, .05, colour);
   const monument = (piece, u, v) => { const p = at(u, v); buildMonument(c, { u: c.east + p.x, s: c.start + p.s, ...piece }, p.x, p.s); };
-  const hold = (u, v, w, d) => { const p = at(u, v); c.rigid(p.x, p.s, () => c.solid(p.x, p.s, w, d), itemFrame(c.start + p.s, c.east + p.x, g.along)); };
+  // (with a `top`, something someone on foot can climb onto: see Walker.floorAt)
+  const hold = (u, v, w, d, top) => {
+    const p = at(u, v);
+    c.rigid(p.x, p.s, () => { const solid = c.solid(p.x, p.s, w, d); if (solid && top !== undefined) solid.top = top; }, itemFrame(c.start + p.s, c.east + p.x, g.along));
+  };
   const stock = (key, geometry, u, v, yaw = g.facing) => { const p = at(u, v); c.item(key, geometry, c.materials.props, [p.x, G + .23, -p.s], [1, 1, 1], '#ffffff', yaw); };
   // Rails along v, or along u
   const rails = (u, v, length, across = false) => {
@@ -211,6 +220,15 @@ export function buildGrounds(g, plan) {
   };
   // (a bench's length is along its own z: a quarter turn lays it along the street)
   const bench = (u, v, y) => fitting('bench', u, v, g.along + Math.PI / 2, y, () => hold(u, v, 2, .7));
+  // One of the grounds' own pieces (see venue-props.js), knocked loose the
+  // same way: `collider` makes its collider at the point, and `items` go
+  // with it (a lit pane). `key` is its batch, one to a model.
+  const loose = (key, kind, geometry, u, v, yaw, y, collider, items = []) => {
+    // (never a structure: see addWalkerAlert)
+    const p = at(u, v), item = c.item(key, geometry, c.materials.props, [p.x, y, -p.s], [1, 1, 1], '#ffffff', yaw, 0, false);
+    collider(p);
+    c.knockable?.([item, ...items], [{ kind, geometry }]);
+  };
   for (const f of plan.features) {
     const { u, v, w, d } = f;
     if (f.kind === 'platforms') { platforms(g, f, { slab, hold, stock, rails }); continue; }
@@ -220,6 +238,7 @@ export function buildGrounds(g, plan) {
       slab(3.6, d, v, u, SLAB_TOP, BALLAST);
       rails(u, v, d - .4);
       box(u, G + .55, v + d / 2 - .45, 2.1, .9, .5, BUFFER);
+      hold(u, v + d / 2 - .45, 2.1, .5, G + 1);
       stock(`rail-tram-${f.paint}`, tram(f.paint), u, v - .6);
       hold(u, v - .6, 2.6, TRAM_LENGTH);
     } else if (f.kind === 'stall') monument({ kind: 'stall', colour: f.colour, yaw: g.facing }, u, v);
@@ -233,6 +252,7 @@ export function buildGrounds(g, plan) {
       round(c, p.x, G + 1.75, p.s, 1.5, .18, 1.5, '#cfc5ad');
       round(c, p.x, G + 2.1, p.s, .36, .6, .36, '#d9d1bf');
       c.post(p.x, p.s, r);
+      c.fountain?.(p.x, p.s, G + 2.4, 1.1, [[.75, G + 1.84, r * .62, G + .62]]);
     } else if (f.kind === 'sculpture') {
       box(u, G + .45, v, 2.2, .9, 2.2, '#d9d1bf');
       const p = at(u, v);
@@ -242,9 +262,12 @@ export function buildGrounds(g, plan) {
       // side, paths crossing it, beds in its quarters and benches
       slab(w - 1.6, 1.8, v, u, SLAB_TOP, PATH); slab(1.8, d - 1.6, v, u, SLAB_TOP, PATH);
       const hedge = (hu, hv, length, alongU) => { const p = at(hu, hv); buildHedge(c.bodies, p.x, LAWN_TOP, p.s, alongU ? length : .8, 1.1, alongU ? .8 : length, '#4f7a45', g.along); };
+      // (the hedges are walls, as a front garden's are)
       for (const side of [-1, 1]) for (const half of [-1, 1]) {
         hedge(u + half * (w / 4 + .6), v + side * d / 2, w / 2 - 2.4, true);
+        hold(u + half * (w / 4 + .6), v + side * d / 2, w / 2 - 2.4, .8);
         hedge(u + side * w / 2, v + half * (d / 4 + .6), d / 2 - 2.4, false);
+        hold(u + side * w / 2, v + half * (d / 4 + .6), .8, d / 2 - 2.4);
       }
       for (const [du, dv] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
         monument({ kind: 'bed', yaw: g.along, w: Math.max(2.4, w / 2 - 4.2), d: Math.min(2, d / 2 - 2.8), colour: BED_COLOURS[(du + 2 * dv + 3 + g.variant) % BED_COLOURS.length] }, u + du * w / 4, v + dv * d / 4);
@@ -255,6 +278,8 @@ export function buildGrounds(g, plan) {
         c.item('basin-rim', basinRim, c.materials.solid, [p.x, G + .3, -p.s], [1.4, .6, 1.4], '#d7ccb3');
         c.item('basin-water', basinWater, c.materials.glass, [p.x, G + .46, -p.s], [1.3, 1, 1.3], '#4f93a0');
         c.post(p.x, p.s, 1.4);
+        // (a bubbler in the middle of the pool)
+        c.fountain?.(p.x, p.s, G + .46, .5, []);
       }
     } else if (f.kind === 'pools') {
       // A tiled terrace, a long pool with a coping round it and loungers
@@ -263,7 +288,14 @@ export function buildGrounds(g, plan) {
       box(u, G + .22, pv, pw + .7, .24, pd + .7, '#f0e9d8');
       box(u, G + .3, pv, pw, .1, pd, '#4fb6b2', 'glass');
       hold(u, pv, pw + .7, pd + .7);
-      if (long) for (let k = 0; k < 4; k++) box(u - pw / 2 + (k + .5) * pw / 4, G + .35, v + d / 2 - 1.8, .7, .26, 1.9, '#f7f3ea');
+      // (loungers along the far side, backs to the lot's edge)
+      if (long) for (let k = 0; k < 4; k++) {
+        const lu = u - pw / 2 + (k + .5) * pw / 4, lv = v + d / 2 - 1.8;
+        loose('venue-lounger', 'lounger', sunLounger(), lu, lv, g.along, SLAB_TOP, () => hold(lu, lv, .7, 1.9));
+      }
+      // (and a beach ball left by the pool's end)
+      const bu = u + pw / 2 + .9, bv = pv - pd / 2 - .9;
+      if (bu < u + w / 2 - .5 && bv > v - d / 2 + .5) loose('venue-beach-ball', 'ball', beachBall(), bu, bv, 0, SLAB_TOP, p => c.post(p.x, p.s, BEACH_BALL));
     } else if (f.kind === 'stars') {
       // A round garden: beds laid like a compass's points round an
       // armillary sphere on a stone column
@@ -279,39 +311,49 @@ export function buildGrounds(g, plan) {
       c.post(p.x, p.s, .6);
     } else if (f.kind === 'stand') {
       // Three rows of seats stepping up away from the courts
-      for (let k = 0; k < 3; k++) box(u + f.side * (k * 1.1 - 1.1), G + .25 + k * .35, v, 1.1, .5 + k * .7, d, k % 2 ? '#c9c2b0' : '#b3aa98');
-      hold(u, v, w, d);
+      // (each row one someone on foot can climb to)
+      for (let k = 0; k < 3; k++) {
+        box(u + f.side * (k * 1.1 - 1.1), G + .25 + k * .35, v, 1.1, .5 + k * .7, d, k % 2 ? '#c9c2b0' : '#b3aa98');
+        hold(u + f.side * (k * 1.1 - 1.1), v, 1.1, d, G + .5 + k * .7);
+      }
     } else if (f.kind === 'bikes') {
       for (const k of [-1, 1]) fitting('bike-rack', u + k * 1.5, v, g.along, PAVED_TOP, () => hold(u + k * 1.5, v, .8, 1.3));
     } else if (f.kind === 'booth') {
-      // A little ticket booth with a round roof and a lit window to the street
-      box(u, G + 1.2, v, 1.8, 2.4, 1.8, '#b6604f');
-      box(u, G + 1.55, v - .92, 1.1, .8, .06, '#f2d27a', 'lit');
-      const p = at(u, v);
-      c.item('booth-roof', booth, c.materials.solid, [p.x, G + 2.4, -p.s], [1.25, .6, 1.25], '#2c2c34');
-      hold(u, v, 1.9, 1.9);
+      // A little ticket booth with a round roof and a window to the street,
+      // lit after dark by a pane that goes dark if the booth is knocked over
+      const q = at(u, v - BOOTH_WINDOW.z), pane = c.box(q.x, G + .05 + BOOTH_WINDOW.y, q.s, BOOTH_WINDOW.w, BOOTH_WINDOW.h, .04, '#f2d27a', 'lit', g.along);
+      loose('venue-booth', 'booth', ticketBooth(), u, v, g.along, G + .05, () => hold(u, v, 1.95, 1.95), [pane]);
     } else if (f.kind === 'posters') {
-      const p = at(u, v);
-      c.item('poster-column', posters(), c.materials.props, [p.x, LAWN_TOP, -p.s], [1, 1, 1], '#ffffff', g.facing);
-      c.post(p.x, p.s, .66);
+      loose('venue-posters', 'column', posterColumn(), u, v, g.facing, LAWN_TOP, p => c.post(p.x, p.s, .66));
     } else if (f.kind === 'stage') {
       // A courtyard stage: a low platform, a back wall, a roof, tables before it
       slab(w, d, v, u, SLAB_TOP, '#b9ad97');
       box(u, G + .4, v + d / 2 - 1.8, w - 3, .6, 3.2, '#3b3548');
       box(u, G + 2.4, v + d / 2 - .3, w - 3, 4, .3, '#4b4f72');
       box(u, G + 4.5, v + d / 2 - 1.8, w - 2.4, .2, 3.8, '#2c2c34');
-      hold(u, v + d / 2 - 1.8, w - 3, 3.2);
+      hold(u, v + d / 2 - 1.8, w - 3, 3.2, G + .7);
+      hold(u, v + d / 2 - .3, w - 3, .3);
       for (const k of [-1, 1]) monument({ kind: 'cafe', colour: STALL_COLOURS[(k + 2 + g.variant) % STALL_COLOURS.length], yaw: g.along }, u + k * 2.2, v - d / 2 + 1.8);
-    } else if (f.kind === 'postbox') {
+    } else if (f.kind === 'lantern') fitting('lantern', u, v, 0, LAWN_TOP, p => c.post(p.x, p.s, .2));
+    // (a bench looks the way `side` points along the street: its back is to local +x)
+    else if (f.kind === 'seat') fitting('bench', u, v, g.along + (f.side > 0 ? Math.PI : 0), LAWN_TOP, () => hold(u, v, .7, 2));
+    else if (f.kind === 'bin') fitting('bin', u, v, 0, LAWN_TOP, p => c.post(p.x, p.s, .36));
+    else if (f.kind === 'postbox') {
       fitting('post-box', u, v, g.facing, PAVED_TOP, p => c.post(p.x, p.s, .3));
+    } else if (f.kind === 'loading') {
+      // (parked as any car is: knocked loose by a car, or driven off on foot)
+      const models = g.type === 'depot' ? ['pickup', 'van'] : ['van', 'pickup'], pairs = w >= 8 ? [-1, 1] : [0];
+      pairs.forEach((k, i) => {
+        const p = at(u + k * w / 4, v), paint = g.type === 'depot' ? TRAMS[g.variant % TRAMS.length] : PARKED_PAINTS[(g.variant * 3 + i * 5) % PARKED_PAINTS.length];
+        c.parkedCar?.(models[i], p.x, p.s, g.facing + Math.PI, paint, LAWN_TOP);
+      });
     } else if (f.kind === 'yard') {
       // A parcel yard, paved, with the post's red vans in it
       slab(w, d, v, u, SLAB_TOP, '#bdb7aa');
+      // (parked as any van is: a car can knock one loose, and someone on foot drive it off)
       for (const k of w >= 10 ? [-1, 1] : [0]) {
         const p = at(u + k * w / 4, v);
-        c.item('parked-paint-van', parkedCars.van.paint, c.materials.solid, [p.x, SLAB_TOP, -p.s], [1, 1, 1], POST_RED, g.facing);
-        c.item('parked-trim-van', parkedCars.van.trim, c.materials.props, [p.x, SLAB_TOP, -p.s], [1, 1, 1], '#ffffff', g.facing);
-        hold(u + k * w / 4, v, 2.2, 5.3);
+        c.parkedCar?.('van', p.x, p.s, g.facing, POST_RED, SLAB_TOP);
       }
     }
   }
@@ -337,17 +379,23 @@ function platforms(g, f, { slab, hold, stock, rails }) {
     const [u, v] = P(0, b);
     rails(u, v, long - .6, across);
     // (buffers where the tracks end: at the far end beside the shed, both ends behind it)
-    for (const end of across ? [-1, 1] : [1]) piece(end * (long / 2 - .45), b, G + .55, .5, .9, 2.1, BUFFER);
+    for (const end of across ? [-1, 1] : [1]) {
+      piece(end * (long / 2 - .45), b, G + .55, .5, .9, 2.1, BUFFER);
+      const [hu, hv] = P(end * (long / 2 - .45), b);
+      hold(hu, hv, across ? .5 : 2.1, across ? 2.1 : .5, G + 1);
+    }
   }
   const posts = Math.max(2, Math.round(length / 9));
   for (let k = 0; k <= posts; k++) {
     const [u, v] = P(-length / 2 + 1 + k * (length - 2) / posts, deck), p = at(u, v);
     round(c, p.x, G + 2.9, p.s, .16, 4, .16, '#3d4246');
+    c.post(p.x, p.s, .1);
   }
   const canopy = single ? 4.6 : 6.2, shift = single ? -toward * .5 : 0;
   piece(0, deck + shift, G + 5.05, length, .22, canopy, '#62958b');
   piece(0, deck + shift, G + 4.88, length - .4, .12, canopy - .6, '#dcd6c6');
-  { const [u, v] = P(0, deck); hold(u, v, across ? length : 4.4, across ? 4.4 : length); }
+  // (a platform someone on foot can climb onto, and walk along)
+  { const [u, v] = P(0, deck); hold(u, v, across ? length : 3.6, across ? 3.6 : length, G + .95); }
   // The train at the face nearer the building, from the platform's street end
   const track = single ? faces[0] : toward * 3.5, step = CARRIAGE_LENGTH + .6;
   const count = Math.min(3, Math.floor((length - 1) / step)), start = across ? -count * step / 2 : -length / 2 + .8;

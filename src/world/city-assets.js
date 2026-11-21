@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { vehicleGeometry, TRAFFIC_MODELS, WHEEL } from '../traffic-models.js';
+import { specialGeometry, SPECIAL_SHAPES, PARKED_SPECIALS } from '../special-models.js';
 import { compactGeometry } from './compact-geometry.js';
 
 // Small merged, flat-shaded street furniture with its colors baked into
@@ -616,5 +617,15 @@ function parkedCar(spec) {
   paint.computeBoundingSphere(); trim.computeBoundingSphere();
   return { paint, trim };
 }
-export const parkedCars = Object.fromEntries(TRAFFIC_MODELS.map(spec => [spec.name, parkedCar(spec)]));
+// A parked special (see PARKED_SPECIALS), from the same parts as its stand-in:
+// its beacons and lamps unlit, its tires fixed on
+function parkedSpecial(spec) {
+  const { paint, details, headlights, taillights, beaconA, beaconB } = specialGeometry(SPECIAL_SHAPES[spec.name]);
+  const lit = [tint(headlights, '#d8d4c2'), tint(taillights, '#8a3a30'), ...[beaconA, beaconB].filter(Boolean)];
+  const trim = mergeGeometries([details, ...lit]);
+  for (const g of [details, ...lit]) g.dispose();
+  paint.computeBoundingSphere(); trim.computeBoundingSphere();
+  return { paint, trim };
+}
+export const parkedCars = Object.fromEntries([...TRAFFIC_MODELS.map(spec => [spec.name, parkedCar(spec)]), ...PARKED_SPECIALS.map(spec => [spec.name, parkedSpecial(spec)])]);
 export const PARKED_PAINTS = ['#c9bda3', '#dedbd1', '#4f7086', '#7a8b84', '#9c4a41', '#b8944a', '#4f585e', '#a9b4b9', '#6a6078', '#3b6f6d', '#2e3236'];

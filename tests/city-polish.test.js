@@ -372,7 +372,7 @@ test('every enclosed venue has a doorway and vehicle bays open onto a paved apro
       box(x, y, s, w, h, d, colour, kind) { boxes.push({ x, y, s, w, h, d, colour, kind }); },
       polygon(points, y, depth, colour) { if (colour === '#c9bfa9') paving.push(points.map(([x, y]) => ({ x, y }))); }, polygonSolid() {},
       item(key, geometry, material, p, scale, colour) { if (key === 'distant-glass') boxes.push({ x: p[0], y: p[1], s: -p[2], w: scale[0], h: scale[1], colour, kind: 'glass' }); },
-      tree() {}, post() {}, signFace() {}, standingSign() {}, solid() {}, rigid(x, s, fn) { fn(); } };
+      tree() {}, post() {}, signFace() {}, standingSign() {}, solid() {}, rigid(x, s, fn) { fn(); }, parkedCar() {} };
     buildLandmark(c, { polygon: place.polygon, seed: 123 }, place);
     const site = place.footprint, D = site.depth, edge = [...place.polygon, place.polygon[0]];
     // Follow the actual approach to the edge of an irregular site. A fitted

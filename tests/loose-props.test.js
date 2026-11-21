@@ -9,6 +9,7 @@ import { LooseProps, overlap, pieceInCar } from '../src/loose-props.js';
 import { cityAssets, looseTree } from '../src/world/city-assets.js';
 import { cityWalker } from '../src/world/city-walkers.js';
 import { DemolitionRun, PRICES } from '../src/demolition-run.js';
+import { posterColumn, ticketBooth, basketballHoop, tennisNet, flagpole, sunLounger, beachBall, BEACH_BALL } from '../src/world/venue-props.js';
 
 // One city for every test here, built round the start
 let city = null;
@@ -304,7 +305,9 @@ test('buildings stand firm, and trees and shelters do against someone on foot; l
   const kinds = new Set(loose.map(c => c.prop.pieces[0].kind));
   for (const kind of ['lamp', 'lantern', 'sign', 'bin', 'bench', 'tree', 'hydrant']) assert.ok(kinds.has(kind), `${kind} can be knocked loose`);
   const fittings = ['hydrant', 'post-box', 'cabinet', 'news-boxes', 'bike-rack'];
-  for (const kind of kinds) assert.ok(['lamp', 'lantern', 'signal', 'mast', 'sign', 'bin', 'bench', 'table', 'stall', 'tree', 'shelter', ...fittings].includes(kind), `nothing else: ${kind}`);
+  // (and a venue's own: see venue-props.js)
+  const venues = ['column', 'booth', 'hoop', 'net', 'flag', 'lounger', 'ball'];
+  for (const kind of kinds) assert.ok(['lamp', 'lantern', 'signal', 'mast', 'sign', 'bin', 'bench', 'table', 'chair', 'stall', 'tree', 'shelter', ...fittings, ...venues].includes(kind), `nothing else: ${kind}`);
   let trees = 0;
   for (const chunk of world().world.chunks.values()) for (const tree of chunk.features.trees ?? []) {
     const at = { x: chunk.east + tree.x, z: -(chunk.start + tree.s) }, post = all.find(c => c.reach === .28 && Math.hypot(c.x - at.x, c.z - at.z) < .01);
@@ -333,6 +336,55 @@ test('buildings stand firm, and trees and shelters do against someone on foot; l
     }
     vehicle.disposeModel();
   }
+});
+
+test("a venue's own pieces stand firm against a nudge, come loose to a car at speed, and lie on the ground", () => {
+  const { scene, world: built, start } = world();
+  const pieces = { column: posterColumn(), booth: ticketBooth(), hoop: basketballHoop(), net: tennisNet(9.4), flag: flagpole('#c9463d'), lounger: sunLounger() };
+  const player = new DrivingController(citydriverRoute, start, 'taxi');
+  try {
+    player.toggleFreeDriving(); player.update(0, {});
+    // (each out in the middle of the start's wide street, ahead of the car)
+    const x = start.u + Math.sin(start.heading) * 12, z = -(start.s + Math.cos(start.heading) * 12), y = ROAD_LEVEL;
+    for (const [kind, geometry] of Object.entries(pieces)) {
+      assert.ok(PRICES[kind] > 0, `${kind} has a price`);
+      const props = new LooseProps(scene, built.materials.props);
+      const collider = { prop: { pieces: [{ kind, geometry }], ready: true, matrix: m => m.makeTranslation(x, y, z), hide() {} }, x, z };
+      const dx = Math.sin(start.heading), dz = -Math.cos(start.heading), contact = { x: -dx, z: -dz, depth: .05, point: { x: x - dx * .4, z: z - dz * .4 } };
+      const car = speed => ({ x: x - dx * 2.6, z: z - dz * 2.6, y, height: 1.5, heading: start.heading, halfWidth: .9, halfLength: 2.3, vx: dx * speed, vz: dz * speed, spin: 0, mass: 2.2 });
+      if (['column', 'booth', 'hoop', 'flag'].includes(kind)) assert.ok(!props.knock(collider, contact, car(1.5)), `a ${kind} stands a nudge`);
+      assert.ok(props.knock(collider, contact, car(15)), `a ${kind} comes loose at 15 m/s`);
+      for (let i = 0; i < 120 * 8 && collider.prop.bodies.some(b => !b.asleep); i++) props.update(1 / 120, player, null, built.chunks);
+      assert.ok(collider.prop.bodies.every(b => b.asleep), `a ${kind} settles`);
+      assert.ok(collider.prop.bodies.every(aboveGround), `a ${kind} lies on the ground`);
+      props.reset(); props.dispose();
+    }
+  } finally { player.disposeModel(); }
+});
+
+test('a ball a car hits flies off ahead, bounces and rolls a long way, turning as it rolls', () => {
+  const { scene, world: built, start } = world();
+  const player = new DrivingController(citydriverRoute, start, 'taxi'), props = new LooseProps(scene, built.materials.props);
+  try {
+    player.toggleFreeDriving(); player.update(0, {});
+    const dx = Math.sin(start.heading), dz = -Math.cos(start.heading), x = start.u + dx * 12, z = -(start.s + Math.cos(start.heading) * 12);
+    const collider = { prop: { pieces: [{ kind: 'ball', geometry: beachBall() }], ready: true, matrix: m => m.makeTranslation(x, ROAD_LEVEL, z), hide() {} }, x, z };
+    const car = { x: x - dx * 2.6, z: z - dz * 2.6, y: ROAD_LEVEL, height: 1.5, heading: start.heading, halfWidth: .9, halfLength: 2.3, vx: dx * 10, vz: dz * 10, spin: 0, mass: 2.2 };
+    assert.ok(props.knock(collider, { x: -dx, z: -dz, depth: .05, point: { x: x - dx * BEACH_BALL, z: z - dz * BEACH_BALL } }, car));
+    const ball = collider.prop.bodies[0], from = ball.p.clone();
+    assert.ok(Math.hypot(ball.v.x, ball.v.z) > 12 && ball.v.y > 1, 'it leaves faster than the car and up');
+    let rolling = 0;
+    for (let i = 0; i < 120 * 4; i++) {
+      props.update(1 / 120, player, null, built.chunks);
+      const speed = Math.hypot(ball.v.x, ball.v.z);
+      if (ball.grounded && speed > 1 && Math.abs(ball.w.length() * BEACH_BALL / speed - 1) < .1) rolling++;
+    }
+    assert.ok(ball.p.distanceTo(from) > 20, `it went ${ball.p.distanceTo(from).toFixed(1)} m in 4 s`);
+    assert.ok(rolling > 120, `it rolled, not slid (${rolling} steps)`);
+    // (its bottom on the ground under its middle: by a curb it may lean over the curb's edge)
+    const surface = surfaceAt(-ball.p.z, ball.p.x), ground = surface === 'pavement' ? PAVEMENT_LEVEL : ROAD_LEVEL;
+    assert.ok(surface === 'water' || Math.abs(ball.p.y - BEACH_BALL - ground) < .08, `on the ground (${(ball.p.y - BEACH_BALL - ground).toFixed(2)} m over it, ${surface})`);
+  } finally { props.reset(); props.dispose(); player.disposeModel(); }
 });
 
 test('a cafe table and its four chairs come loose as five pieces, and settle apart', () => {

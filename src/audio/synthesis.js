@@ -145,6 +145,14 @@ export function createSoundGraph(ctx) {
   // combustion textures with separate RPM and load blends.
   const waves = { horn: periodic(hornPartials()), gull: periodic(new Float32Array([0, 1, .75, .55, .38, .24, .14, .08, .05])) };
   for (const name of ['hatchback', 'sedan', 'wagon', 'pickup', 'van', 'bus']) waves[name] = periodic(new Float32Array([0, ...ENGINES[name].harmonics]));
+  // An emergency vehicle's siren (see EmergencyGear): one tone, its pitch
+  // swung by a slow oscillator, smoothly for a wail and (a square swing)
+  // between two notes for a hi-lo
+  waves.siren = periodic(new Float32Array([0, 1, .32, .18, .09, .05]));
+  const sirenTone = oscillator('sine', 950, waves.siren), sirenSwing = oscillator('triangle', .3), sirenDepth = gain(0);
+  sirenDepth.connect(sirenTone.frequency);
+  const siren = layer(sirenTone, buses.engine, ['lowpass', 3200]);
+  siren.links.push([sirenSwing, sirenDepth]);
   const traffic = Array.from({ length: 4 }, () => {
     const pan = keep(ctx.createStereoPanner()); controlRate(pan.pan); pan.connect(buses.traffic);
     const engine = oscillator('sine', 60, waves.sedan);
@@ -226,6 +234,7 @@ export function createSoundGraph(ctx) {
     buses: Object.fromEntries(Object.entries(buses).map(([name, node]) => [name, node.gain])),
     combustion, intake, boost, reverse, road, rough, roughPulse: roughPulse.gain, roughMod, wind, scrape,
     bed, air, rain, traffic, waves, layers, event, silenceEvents, random,
+    siren, sirenPitch: sirenTone.frequency, sirenSwing, sirenDepth: sirenDepth.gain,
     setEngine(profile) { engineBank.setProfile(profile); },
     nodeCount: nodes.length + engineBank.nodeCount, sourceCount: sources.length + engineBank.sourceCount,
     dispose() {

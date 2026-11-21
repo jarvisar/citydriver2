@@ -374,11 +374,12 @@ export function busGeometry(spec = BUS_MODEL, { wheels = true } = {}) {
 
 // A car's body in one draw. Four draws a car were about a fifth of a headset's
 // frame, and the four materials only differed in color and glow. Each vertex is
-// marked [paint, lamp] for bodyMaterial (lamp 1 is a headlight, 2 a taillight).
-// Trim keeps its vertex colors and each lamp gets its own color.
-export function markedBody({ paint, details, headlights, taillights }, { head, tail }) {
+// marked [paint, lamp] for bodyMaterial (lamp 1 is a headlight, 2 a taillight,
+// 3 and 4 an emergency vehicle's two sets of beacons, which flash in turn).
+// Trim and beacons keep their vertex colors and each lamp gets its own color.
+export function markedBody({ paint, details, headlights, taillights, beaconA, beaconB }, { head, tail }) {
   // (a part may be missing, as on a wagon's roof load)
-  const marked = [[paint, 1, 0], [details, 0, 0], [headlights, 0, 1, head], [taillights, 0, 2, tail]].filter(([geometry]) => geometry).map(([geometry, painted, lamp, color]) => {
+  const marked = [[paint, 1, 0], [details, 0, 0], [headlights, 0, 1, head], [taillights, 0, 2, tail], [beaconA, 0, 3], [beaconB, 0, 4]].filter(([geometry]) => geometry).map(([geometry, painted, lamp, color]) => {
     const count = geometry.attributes.position.count;
     if (!geometry.attributes.color) {
       const tint = new THREE.Color(color ?? '#ffffff'), colors = new Float32Array(count * 3);
@@ -395,16 +396,18 @@ export function markedBody({ paint, details, headlights, taillights }, { head, t
   return body;
 }
 // Paints only the parts marked as paint, and lights the lamps from glow
-// ({ head, tail } uniforms, shared across the traffic fleet)
+// ({ head, tail } uniforms, shared across the traffic fleet). Beacons glow in
+// their own color by `glow.beacons` ([first set, second set]), dark without it.
+const DARK_BEACONS = { value: new THREE.Vector2() };
 export function bodyMaterial(color, glow, roughness = .74) {
   const material = new THREE.MeshStandardMaterial({ color, vertexColors: true, roughness, flatShading: true });
   material.customProgramCacheKey = () => 'citydriver-car-body';
   material.onBeforeCompile = shader => {
-    shader.uniforms.headGlow = glow.head; shader.uniforms.tailGlow = glow.tail;
+    shader.uniforms.headGlow = glow.head; shader.uniforms.tailGlow = glow.tail; shader.uniforms.beacons = glow.beacons ?? DARK_BEACONS;
     shader.vertexShader = `attribute vec2 part;\nvarying vec2 vPart;\n${shader.vertexShader}`.replace('#include <color_vertex>', '#include <color_vertex>\n\tvPart = part;');
-    shader.fragmentShader = `uniform vec3 headGlow;\nuniform vec3 tailGlow;\nvarying vec2 vPart;\n${shader.fragmentShader}`
+    shader.fragmentShader = `uniform vec3 headGlow;\nuniform vec3 tailGlow;\nuniform vec2 beacons;\nvarying vec2 vPart;\n${shader.fragmentShader}`
       .replace('#include <color_fragment>', 'diffuseColor.rgb = mix( vec3( 1.0 ), diffuseColor.rgb, vPart.x ) * vColor.rgb;')
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n\ttotalEmissiveRadiance += vPart.y > 1.5 ? tailGlow : vPart.y > .5 ? headGlow : vec3( 0.0 );');
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n\ttotalEmissiveRadiance += vPart.y > 2.5 ? vColor.rgb * ( vPart.y > 3.5 ? beacons.y : beacons.x ) : vPart.y > 1.5 ? tailGlow : vPart.y > .5 ? headGlow : vec3( 0.0 );');
   };
   return material;
 }

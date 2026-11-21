@@ -79,7 +79,7 @@ export const COLOURS = {
 const ASPHALT = '#ffffff';
 // A park pond's water, a little below its lawn and clear of the ground under
 // it however its waves move
-const POND_LEVEL = ROAD_LEVEL + .08;
+export const POND_LEVEL = ROAD_LEVEL + .08;
 
 // Points every `step` meters along a polyline, with the unit tangent
 export function alongPolyline(points, step, offset = 0) {
@@ -1556,6 +1556,19 @@ export function placeStreetFurniture(nav, bridges, add) {
         }
       }
     });
+  }
+  // A ball or two out on each park's lawn, toward its middle, to knock about
+  // (see `kick` in loose-props.js): placed by position, so nothing else moves
+  for (const entry of cityParks()) {
+    const lawn = entry.park.lawn;
+    if (entry.park.square || lawn.length < 3) continue;
+    const middle = averagePoint(lawn), bounds = polygonBounds(lawn), reach = Math.min(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY) * .35;
+    for (let k = 0, balls = 0; k < 40 && balls < 2; k++) {
+      const a = randomAt(entry.index, 7470 + k, CITY.seed) * Math.PI * 2, r = reach * Math.sqrt(randomAt(entry.index, 7510 + k, CITY.seed));
+      const x = middle.x + Math.cos(a) * r, y = middle.y + Math.sin(a) * r;
+      if (!insidePolygon({ x, y }, lawn) || inZone(x, y) || pathClear(x, y) < 3 || !parkClear(entry, x, y, 2)) continue;
+      if (put({ kind: 'ball', u: x, s: y }, 4)) balls++;
+    }
   }
   for (const site of cityJumps().sites) {
     place({ kind: 'jump', u: site.u, s: site.s, site });

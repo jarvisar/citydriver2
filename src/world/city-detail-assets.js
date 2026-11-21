@@ -30,7 +30,7 @@ export function buildHedge(bodies, x, y, s, width, height, depth, colour, yaw) {
 
 // Shared, static templates: modest facets for recognizable silhouettes, with
 // trim baked into the same instance instead of separate meshes per detail.
-const cream = '#ede0bf', dark = '#354e58', metal = '#b9c2b7';
+const dark = '#354e58';
 const cylinder = new THREE.CylinderGeometry(1, 1, 1, 12);
 export const signalLens = new THREE.CircleGeometry(1, 12);
 
@@ -66,43 +66,3 @@ export const clockFace = clockGeometry();
 export function clock(c, x, y, s, diameter, yaw = 0) {
   c.item('detail-clock', clockFace, c.materials.clock, [x, y, -s], [diameter / 2, diameter / 2, 1], '#ffffff', yaw);
 }
-
-// Sloped cab glazing and ten-sided tires match the ordinary traffic fleet.
-function fireEngineGeometry() {
-  const p = new Parts(), red = '#b94f3e';
-  p.box([0, 1.05, 0], [4.7, .5, 11.6], dark);
-  p.box([0, 1.8, 0], [4.8, 1.35, 11.8], red);
-  p.box([0, 2.4, -3.65], [4.65, 1, 4.1], red);
-  const cab = new THREE.BoxGeometry(4.5, 1.3, 3.8), v = cab.attributes.position;
-  for (let i = 0; i < v.count; i++) if (v.getY(i) > 0) {
-    v.setX(i, v.getX(i) * .94);
-    v.setZ(i, v.getZ(i) + (v.getZ(i) < 0 ? .3 : -.08));
-  }
-  cab.computeVertexNormals(); p.add(cab, [0, 3.35, -3.65], '#45646b');
-  p.box([0, 4.07, -3.52], [4.4, .18, 3.55], cream);
-  p.box([0, 3.35, -5.45], [.12, 1.25, .2], red);
-  p.box([0, 2.75, 1.9], [4.7, .9, 7.6], red);
-  for (const side of [-1, 1]) {
-    p.box([side * 2.32, 3.35, -2.6], [.14, 1.4, .18], red);
-    p.box([side * 2.6, 3.25, -4.9], [.32, .48, .24], dark);
-    p.box([side * 2.41, 2.25, 0], [.05, .18, 11.5], cream);
-    for (const z of [-.65, 1.8, 4.25]) {
-      p.box([side * 2.39, 2.65, z], [.07, .9, 2.1], metal);
-      p.box([side * 2.44, 2.35, z], [.07, .08, .5], dark);
-    }
-    p.cylinder([side * 1.65, 1.75, -5.96], .26, .26, .12, '#f5deb0', 10, [Math.PI / 2, 0, 0]);
-    p.box([side * 1.95, 1.6, 5.96], [.35, .55, .1], '#d27755');
-    p.cylinder([side * 1.25, 4.35, -3.8], .25, .3, .4, '#df795b', 8);
-    for (const z of [-3.8, 3.8]) {
-      p.cylinder([side * 2.4, .8, z], .8, .8, .65, '#293437', 10, [0, 0, Math.PI / 2]);
-      p.cylinder([side * 2.4, .8, z], .4, .4, .69, metal, 8, [0, 0, Math.PI / 2]);
-    }
-    p.box([side * 1.25, 3.55, 1.8], [.16, .2, 7.5], metal);
-  }
-  for (let z = -1.4; z < 5.6; z += 1) p.box([0, 3.55, z], [2.5, .14, .14], metal);
-  p.box([0, 1.9, -5.97], [2.2, .7, .1], dark);
-  for (const y of [1.7, 1.95, 2.2]) p.box([0, y, -6.04], [2.1, .065, .07], metal);
-  for (const z of [-6, 6]) p.box([0, 1.03, z], [4.9, .28, .3], metal);
-  return p.finish();
-}
-export const fireEngine = fireEngineGeometry();

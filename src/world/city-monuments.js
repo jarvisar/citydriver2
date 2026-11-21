@@ -168,7 +168,8 @@ for (const form of [1, 2, 3]) template(`sculpture-${form}`, () => sculpture(form
 export function buildMonument(c, piece, x, s) {
   const yaw = piece.yaw ?? 0, ux = Math.cos(yaw), us = Math.sin(yaw);
   const at = (along, across) => [x + ux * along - us * across, s + us * along + ux * across];
-  const solid = (w, d) => c.rigid(x, s, () => c.solid(x, s, w, d), itemFrame(piece.s, piece.u, yaw));
+  // (with a `top`, a step or a ledge someone on foot can climb onto)
+  const solid = (w, d, top) => c.rigid(x, s, () => { const made = c.solid(x, s, w, d); if (made && top !== undefined) made.top = top; }, itemFrame(piece.s, piece.u, yaw));
   if (piece.kind === 'clocktower') {
     const H = piece.height ?? 17, shaft = 3.4, stage = 3.8;
     // Three steps up to a stone shaft, the clock stage, a cornice and a copper spire
@@ -182,7 +183,9 @@ export function buildMonument(c, piece, x, s) {
       const face = yaw + k * Math.PI / 2, q = [x + Math.sin(face) * (stage / 2 + .06), s - Math.cos(face) * (stage / 2 + .06)];
       clock(c, q[0], G + H - 2.2, q[1], stage * .72, face);
     }
-    c.post(x, s, 3.2);
+    // (its steps to sit on, and the shaft)
+    [7.4, 6.2, 5].forEach((w, k) => solid(w, w, G + .3 + k * .3));
+    solid(shaft + .2, shaft + .2);
     return true;
   }
   if (piece.kind === 'glasshouse') {
@@ -222,6 +225,8 @@ export function buildMonument(c, piece, x, s) {
   if (piece.kind === 'planter') {
     c.box(x, G + .35, s, 2.4, .7, 2.4, STONE, 'solid', yaw);
     c.box(x, G + .72, s, 2.1, .06, 2.1, '#5b4a3a', 'solid', yaw);
+    // (the stone box stands firm round its tree, a ledge to sit or stand on)
+    solid(2.4, 2.4, G + .75);
     c.tree(x, s, 6);
     return true;
   }
@@ -272,7 +277,9 @@ export function buildMonument(c, piece, x, s) {
   }
   if (piece.kind === 'kiosk') {
     c.item('kiosk', cityAssets.kiosk, c.materials.props, [x, G, -s], [1, 1, 1], '#ffffff', yaw, 0, true);
-    solid(4, 4.8);
+    // (its low base a step up to the hatch)
+    solid(4, 4.8, G + .28);
+    solid(3.4, 4.1);
     return true;
   }
   return false;
