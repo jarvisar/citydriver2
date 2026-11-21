@@ -6,6 +6,7 @@
     <meta name="theme-color" content="#20323d" />
     <meta name="description" content="Free 3D taxi driving game in your browser. Pick up passengers in a new generated island city every time, beat the clock and earn cash, or wreck the city in a demolition truck. Works on desktop, mobile and VR." />
     <title>Citydriver 2 - Free 3D Taxi Driving Game in Your Browser</title>
+    <meta name="author" content="Jarvizar" />
     <link rel="canonical" href="https://citydriver2.jarvisar.com/" />
     <!-- Link previews need absolute URLs, so these point at the live site -->
     <meta property="og:type" content="website" />
@@ -59,6 +60,7 @@
       <style>
         .loading { display: none; }
         noscript h1, noscript p { max-width: 640px; margin: 16px; color: #e9f0ef; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+        noscript a { color: inherit; }
       </style>
     </noscript>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -68,6 +70,37 @@
         "@type": "WebSite",
         "name": "Citydriver 2",
         "url": "https://citydriver2.jarvisar.com/"
+      }
+    </script>
+    <!-- The author matches jarvisar.com's and the other games and apps', so search engines read them as one maker's -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "VideoGame",
+        "name": "Citydriver 2",
+        "url": "https://citydriver2.jarvisar.com/",
+        "description": "Free 3D taxi driving game. Pick up passengers in a new generated island city every time, or wreck the city in a demolition truck.",
+        "image": "https://citydriver2.jarvisar.com/screenshots/desktop.jpg",
+        "genre": ["Driving"],
+        "gamePlatform": ["Web browser", "Windows", "macOS", "Linux"],
+        "playMode": "SinglePlayer",
+        "author": {
+          "@type": "Person",
+          "@id": "https://jarvisar.com/#person",
+          "name": "Adam Jarvis",
+          "alternateName": ["Jarvizar", "jarvisar"],
+          "url": "https://jarvisar.com/",
+          "sameAs": [
+            "https://github.com/jarvisar",
+            "https://www.linkedin.com/in/jarvisar",
+            "https://www.youtube.com/@Jarvizar",
+            "https://www.patreon.com/Jarvizar",
+            "https://makerworld.com/en/@jarvizar",
+            "https://www.printables.com/@jarvizar",
+            "https://www.thingiverse.com/jarvizar"
+          ]
+        },
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
       }
     </script>
     <!-- Cloudflare Web Analytics. Only on the live site, so local dev and the desktop app aren't counted -->
@@ -87,6 +120,7 @@
       <noscript>
         <h1>Citydriver 2</h1>
         <p>A free 3D taxi driving game built with Three.js. Every visit generates a new island city with a harbor, a river, parks and six districts. Pick up passengers and get them to their stop before time runs out, or wreck the city in a demolition truck. Citydriver 2 needs JavaScript and WebGL to run.</p>
+        <p><a href="https://jarvisar.com/">More games and apps by Jarvizar</a></p>
       </noscript>
       <canvas id="scene" aria-label="A generated low-poly island city. Drive with WASD or the arrow keys."></canvas>
       <div id="menu-view-fade" aria-hidden="true"></div>
