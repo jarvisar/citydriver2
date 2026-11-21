@@ -219,7 +219,29 @@ export function buildLandmark(c, lot, place) {
   // (a civic hall's beds either side of its forecourt, drawn below with its flags)
   const beds = civic && setback >= 5 ? [-1, 1].filter(side => onLot(side * (court / 2 + 2), front - setback / 2) && plinthAt?.side !== side) : [];
   const taken = beds.map(side => ({ u: side * (court / 2 + 2), v: front - setback / 2, w: 2.2, d: Math.min(setback - 1.5, 9) }));
-  const layout = { c, at, box, localRing, onLot, type: place.type, variant: place.variant, W, D, setback, front, court, plinth: plinthAt, doors, along, facing, taken, paved: Boolean(site.paved) };
+  // What stands over or before the front, which the grounds' pieces keep off
+  // (a poster column stood under a club's marquee, its finial in the canopy):
+  // a marquee's canopy and the hospital's (`over` the clearance under them,
+  // for what is lower), its ambulance, a portico and its steps (5.8 m out
+  // from the front), and the flags
+  const keep = [], stepsWide = kind === 'hall' && place.type !== 'hospital' && place.type !== 'bathhouse' ? Math.min(W * .62, 22) + 2 : 0;
+  // (the hospital's canopy reaches over its ambulance, which stands 3 m out from the middle)
+  const ambulance = parkedSpec('ambulance'), shelter = Math.min(W - 2, Math.max(Math.min(14, W * .6), 2 * (3.6 + ambulance.length)));
+  if (kind === 'marquee') keep.push({ u: 0, v: front - 2, w: Math.min(W * .8, 18), d: 4, over: 3.7 });
+  if (place.type === 'hospital') keep.push({ u: 0, v: front - 2.1, w: shelter, d: 4.2, over: 3.6 }, { u: 3 + ambulance.length / 2, v: front - .9 - ambulance.width / 2, w: ambulance.length, d: ambulance.width });
+  if (stepsWide) keep.push({ u: 0, v: front - 2.9, w: stepsWide, d: 5.8, steps: true });
+  // A civic hall's flags either side of the way in, near the street; where a
+  // portico's steps reach that far, beside them or else before them (none
+  // where neither leaves room by a bed or the name's plinth)
+  const flags = !(civic && setback >= 5) ? [] : [-1, 1].filter(side => onLot(side * (court / 2 + 2), front - setback / 2)).map(side => {
+    const v = front - setback + 1.2, by = [...taken, plinthAt && { u: plinthAt.u, v: plinthAt.into, w: 6.4, d: 1.6 }].filter(Boolean);
+    const spots = !stepsWide || v < front - 6.2 || court / 2 - .8 > stepsWide / 2 + .45 ? [[court / 2 - .8, v]] : [[stepsWide / 2 + .45, v], [court / 2 - .8, front - 6.2]];
+    const clear = ([u, fv]) => onLot(side * u, fv - .5) && !by.some(o => Math.abs(side * u - o.u) < (.7 + o.w) / 2 && Math.abs(fv - o.v) < (.7 + o.d) / 2);
+    const spot = spots.length === 1 ? spots[0] : spots.find(clear);
+    return spot && { side, u: side * spot[0], v: spot[1], w: .7, d: .7 };
+  }).filter(Boolean);
+  keep.push(...flags);
+  const layout = { c, at, box, localRing, onLot, type: place.type, variant: place.variant, W, D, setback, front, court, plinth: plinthAt, doors, along, facing, taken, keep, paved: Boolean(site.paved) };
   const plan = planGrounds(layout);
   // The grounds: the site laid to lawn (or paved, for a works, a station or a
   // market), the forecourt from the street to the door and a path round the
@@ -305,7 +327,8 @@ export function buildLandmark(c, lot, place) {
         if (!insidePolygon({ x: bed.x, y: bed.s }, lotLocal)) continue;
         if (plinthAt?.side !== side) buildMonument(c, { kind: 'bed', u: c.east + bed.x, s: c.start + bed.s, yaw: along + Math.PI / 2, w: Math.min(setback - 1.5, 9), d: 2.2, colour: BED_COLOURS[(place.variant + (side > 0 ? 1 : 0)) % BED_COLOURS.length] }, bed.x, bed.s);
         // and a flag either side of the way in, flying outward
-        loose(`venue-flag-${colour}`, 'flag', flagpole(colour), side * (court / 2 - .8), front - setback + 1.2, G + .07, along + (side > 0 ? 0 : Math.PI), p => c.post(p.x, p.s, .3));
+        const flag = flags.find(f => f.side === side);
+        if (flag) loose(`venue-flag-${colour}`, 'flag', flagpole(colour), flag.u, flag.v, G + .07, along + (side > 0 ? 0 : Math.PI), p => c.post(p.x, p.s, .3));
       }
     }
   };
@@ -382,6 +405,15 @@ export function buildLandmark(c, lot, place) {
     const p = at(u, v);
     c.box(p.x, base + height / 2, p.s, size, height, size, STONE, 'solid', along);
     c.box(p.x, base + height + .3, p.s, size + .6, .6, size + .6, TRIM, 'solid', along);
+    // (pilasters at its corners up to a band under the clocks)
+    if (!c.distant) {
+      const band = base + height - size * 1.05;
+      for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+        const q = at(u + a * (size / 2 - .2), v + b * (size / 2 - .2));
+        c.box(q.x, (base + band) / 2, q.s, .55, band - base, .55, TRIM, 'solid', along);
+      }
+      c.box(p.x, band + .15, p.s, size + .2, .3, size + .2, TRIM, 'solid', along);
+    }
     c.item('landmark-spire', spire, c.materials.solid, [p.x, base + height + .6 + 2.2, -p.s], [size * .78, 4.4, size * .78], COPPER, along + Math.PI / 4);
     if (!c.distant) for (let k = 0; k < 4; k++) {
       const yaw = facing + k * Math.PI / 2, q = { x: p.x + Math.sin(yaw) * (size / 2 + .06), s: p.s - Math.cos(yaw) * (size / 2 + .06) };
@@ -399,14 +431,25 @@ export function buildLandmark(c, lot, place) {
     const porch = Math.min(W * .62, 22);
     if (place.type === 'hospital') {
       entrance(0, front, 3.8, 3.35);
-      // A canopy over the ambulance entrance and a red cross on the front
-      box(0, G + 4, front - 2.1, Math.min(14, W * .6), .4, 4.2, TRIM);
-      for (const side of [-1, 1]) { const p = at(side * Math.min(6.5, W * .28), front - 3.8); round(c, p.x, G + 2, p.s, .4, 4, .4, TRIM); c.post(p.x, p.s, .25); }
+      // A canopy over the ambulance bay, a fascia round its open sides with
+      // a red band along it, on a post at each front corner, and a red cross
+      // on the front
+      box(0, G + 4.05, front - 2.1, shelter, .3, 4.2, '#d9d0bd');
+      box(0, G + 4.02, front - 4.15, shelter + .1, .66, .2, TRIM);
+      box(0, G + 4.02, front - 4.26, shelter + .02, .14, .02, '#c9463d');
+      for (const side of [-1, 1]) {
+        box(side * shelter / 2, G + 4.015, front - 2.05, .2, .63, 4.1, TRIM);
+        box(side * (shelter / 2 + .11), G + 4.02, front - 2.05, .02, .14, 4.1, '#c9463d');
+        const p = at(side * (shelter / 2 - .5), front - 3.8);
+        round(c, p.x, G + 1.95, p.s, .4, 3.9, .4, TRIM);
+        box(side * (shelter / 2 - .5), G + .15, front - 3.8, .6, .3, .6, '#cfc5ad');
+        c.post(p.x, p.s, .3);
+      }
       box(0, G + H - 3.2, front - .15, 4.2, 1.2, .3, '#c9463d'); box(0, G + H - 3.2, front - .15, 1.2, 4.2, .3, '#c9463d');
       // The ambulance under the canopy, a meter clear of the doors and inside
       // its posts, its nose to the doors and its driver's side to the street
       // (see CityChunk.parkedCar: it can be knocked loose or taken)
-      const ambulance = parkedSpec('ambulance'), stand = at(1.9 + 1.1 + ambulance.length / 2, front - .9 - ambulance.width / 2);
+      const stand = at(1.9 + 1.1 + ambulance.length / 2, front - .9 - ambulance.width / 2);
       c.parkedCar('ambulance', stand.x, stand.s, Math.atan2(ny, nx), ambulance.paint, G + .1);
       keepClear(front, 2.5, G + H - 5.7, G + H - .7);
       // (the name above the canopy, clear of it from across the street)

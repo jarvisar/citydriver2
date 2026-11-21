@@ -11,7 +11,7 @@ export function createEngineBuffer(ctx, profile, rpm, loaded, seed = 0xeca17) {
   let randomState = seed >>> 0;
   const random = () => { randomState ^= randomState << 13; randomState ^= randomState >>> 17; randomState ^= randomState << 5; return (randomState >>> 0) / 4294967296; };
   const cylinders = profile.cylinders;
-  const imbalance = cylinders === 16 ? [1, .94, .98, .92, .96, .99, .93, .97, .95, 1, .92, .98, .94, .97, .99, .96]
+  const imbalance = cylinders === 12 ? [1, .93, .97, .9, .98, .95, .99, .92, .96, .94, 1, .91]
     : cylinders === 8 ? [1, .68, .93, .8, .7, 1, .76, .92] : cylinders === 6 ? [1, .91, .96, .89, .98, .93] : [1, .84, .95, .89];
   const bodyHz = (loaded ? 105 : 145) / Math.sqrt(profile.body);
   const resonance = 2 * Math.cos(2 * Math.PI * bodyHz / rate) * Math.exp(-1 / (rate * .008));

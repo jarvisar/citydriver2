@@ -550,11 +550,13 @@ export class CityChunk {
     this.post(x, s, .28);
     this.knockable([trunk, crown], [{ kind: 'tree', get geometry() { return looseTree(index, colour); } }]);
   }
-  // A fountain's moving water (see FountainJets): its spout's top, how high
-  // its plume rises, and the arcs off its bowls' rims, all in the chunk
-  fountain(x, s, spout, plume, tiers) {
+  // A fountain's moving water (see FountainJets): { spout, plume, bowls,
+  // pool, ring }, its spout's top, how high its jet rises, each bowl that
+  // spills and its pool as [radius, water y], and how many jets arch in
+  // from the pool's edge
+  fountain(x, s, water) {
     if (this.distant) return;
-    (this.features.fountains ??= []).push({ x: this.east + x, z: -(this.start + s), spout, plume, tiers, phase: randomAt(Math.round(x * 10), Math.round(s * 10), 7451) * 6 });
+    (this.features.fountains ??= []).push({ x: this.east + x, z: -(this.start + s), ...water, phase: randomAt(Math.round(x * 10), Math.round(s * 10), 7451) * 6 });
   }
   // A bandstand's colliders (see bandstand in city-assets.js): its four
   // octagonal steps, each one up, its columns, and the rail between them
@@ -705,10 +707,10 @@ export class CityChunk {
         }
         round(this, x, top + .35, s, .24, .7, .24, stone);
         this.post(x, s, 3.5 * k);
-        // (its water in motion: see FountainJets)
-        const tiers = [[bowl, PAVEMENT_LEVEL + 2.1, 3.4 * k * .62, PAVEMENT_LEVEL + .62]];
-        if (k > 1.3) tiers.unshift([bowl / 2, PAVEMENT_LEVEL + 3.47, bowl * .8, PAVEMENT_LEVEL + 2.12]);
-        this.fountain(x, s, top + .7, .9 + .5 * k, tiers);
+        // (its water in motion, with jets arching in from the basin's edge: see FountainJets)
+        const bowls = [[bowl, PAVEMENT_LEVEL + 2.1]];
+        if (k > 1.3) bowls.unshift([bowl / 2, PAVEMENT_LEVEL + 3.47]);
+        this.fountain(x, s, { spout: top + .7, plume: .9 + .5 * k, bowls, pool: [3.2 * k - .05, PAVEMENT_LEVEL + .62], ring: k < 1.05 ? 6 : k < 1.5 ? 8 : 10 });
       }
       else if (piece.kind === 'lantern') { const lantern = this.prop('lantern', x, s); this.post(x, s, .2); this.knockable([lantern], [{ kind: 'lantern', geometry: cityAssets.lantern }]); }
       // A boat's hull in its own paint, like a parked car's shell, and the
@@ -750,6 +752,10 @@ export class CityChunk {
         direction: i % 2 ? -1 : 1, size: .9 + random() * .22, width: .92 + random() * .16, color: pick(WALKER_COLORS, random),
         appearance: walkerAppearance(this.plan.seed + block.index * 131 + i * 719, district),
       });
+      // (strollers out and back along a walk all keep to its right, spaced
+      // round their loop at one pace, so they pass on opposite sides: walking
+      // it backward, the second met the first head on and through)
+      if (block.walkers) walkers.forEach((walker, i) => Object.assign(walker, { direction: 1, speed: walkers[0].speed, phase: walkers[0].phase + i * block.perimeter / count }));
       pairWalkers(walkers, this.plan.seed + block.index);
       this.walkers.push(...walkers);
     }
@@ -923,7 +929,7 @@ export class CitydriverWorld {
     this.animationFrustum = new THREE.Frustum(); this.animationMatrix = new THREE.Matrix4(); this.animationSphere = new THREE.Sphere();
     this.prepareLots(); this.bridges = findBridges(); this.placeFurniture();
     this.harbour = new HarbourBoats(scene, this.materials);
-    this.fountainJets = new FountainJets(scene, this.materials.props);
+    this.fountainJets = new FountainJets(scene);
     this.ducks = new Ducks(scene, this.materials.props);
     this.busStops = new BusStops(scene, this.materials.residents, this.peopleAlert, this.shelters, this.nav);
     this.staticGroup = new THREE.Group(); this.staticGroup.name = 'citydriver-static'; this.staticGroup.matrixAutoUpdate = false; this.staticGroup.updateMatrixWorld = settledMatrixWorld;
@@ -978,7 +984,8 @@ export class CitydriverWorld {
       if (length < 14) return;
       const stretches = Math.max(1, Math.round(length / 90)), step = length / stretches;
       for (let k = 0; k < stretches; k++) {
-        const part = sliceWalk(walk, k * step, (k + 1) * step);
+        // (neighboring stretches turn back short of each other, not in one spot)
+        const part = sliceWalk(walk, k * step + (k ? .8 : 0), (k + 1) * step - (k < stretches - 1 ? .8 : 0));
         if (part.length < 2) continue;
         const points = [...keepRight(part, .6), ...keepRight(part.slice().reverse(), .6)], cumulative = [0];
         for (let i = 0; i < points.length; i++) { const a = points[i], b = points[(i + 1) % points.length]; cumulative.push(cumulative[i] + Math.hypot(b.x - a.x, b.y - a.y)); }
@@ -1230,6 +1237,7 @@ export class CitydriverWorld {
     // (and the signs and shop windows light up as the windows do)
     this.materials.signs.userData.glow.value = glow * glow * SIGN_GLOW;
     this.materials.glass.userData.shopGlow.value = glow * glow * SHOP_GLOW;
+    this.fountainJets?.setGlow(glow * glow);
   }
   // A demolition run warns of the residents, whose every knock is a fine:
   // they glow red, and show through anything but buildings when `ghosts`

@@ -40,6 +40,7 @@ export const GROUNDS = {
 // Paint for the rolling stock, by the place's variant
 const TRAMS = ['#c9463d', '#2f6b8a', '#d49a2e'], TRAINS = ['#6d2c34', '#2f5d4a', '#34507a'];
 const RAIL = '#5d6061', PATH = '#d2c7ae', BALLAST = '#8b857a', BUFFER = '#8a3b32', POST_RED = '#b8453a';
+const STAND_SEATS = '#3b6e96', RAILING = '#3d4246', COPING = '#e4dfd2';
 // The heights things stand at: the lawn, the forecourt's paving, a slab laid on either
 const LAWN_TOP = G + .05, PAVED_TOP = G + .07, SLAB_TOP = G + .1;
 
@@ -47,16 +48,21 @@ const LAWN_TOP = G + .05, PAVED_TOP = G + .07, SLAB_TOP = G + .1;
 // its own axes: u along the street and v into the site, the building W by D
 // centered on (0, 0), its front at v `front` and the forecourt `court` wide
 // from there out to the street. `taken` is what the builder puts on the
-// grounds itself (a civic hall's beds and flags). Returns the cover, whether
-// trees keep to the edge, the features and the rectangles they hold
-// ({ u, v, w, d }), which the trees keep clear of.
+// grounds itself (a civic hall's beds). `keep` is what stands over or before
+// its front that the features keep off but the trees need not (a marquee's
+// canopy, a portico's steps, the flags, a parked ambulance). Returns the
+// cover, whether trees keep to the edge, the features and the rectangles
+// they hold ({ u, v, w, d }), which the trees keep clear of.
 export function planGrounds(g) {
   const programme = GROUNDS[g.type] ?? {};
-  const held = [...g.taken ?? []], features = [];
+  const held = [...g.taken ?? []], keep = g.keep ?? [], features = [];
   const building = { u: 0, v: 0, w: g.W + 3, d: g.D + 3 };
   const forecourt = { u: 0, v: g.front - 40, w: g.court + 1, d: 80 - 1.5 };
   if (g.plinth) held.push({ u: g.plinth.u, v: g.plinth.into, w: 8, d: 3.4 });
-  const overlaps = (r, others = [building, forecourt, ...held], margin = 1) => others.some(o => Math.abs(r.u - o.u) < (r.w + o.w) / 2 + margin && Math.abs(r.v - o.v) < (r.d + o.d) / 2 + margin);
+  // (what the front keeps clear is kept clear by a little less: a piece may
+  // stand just beyond a canopy's edge, or under it if lower than its `over`)
+  const clash = (r, o, margin) => Math.abs(r.u - o.u) < (r.w + o.w) / 2 + margin && Math.abs(r.v - o.v) < (r.d + o.d) / 2 + margin;
+  const overlaps = (r, others = [building, forecourt, ...held], margin = 1) => others.some(o => clash(r, o, margin)) || keep.some(o => (r.tall ?? Infinity) > (o.over ?? 0) && clash(r, o, .3));
   // On the lot with a little to spare, tried every few meters along a long side
   const fits = r => {
     const w = r.w + 1.2, d = r.d + 1.2, nu = Math.max(2, Math.ceil(w / 6)), nv = Math.max(2, Math.ceil(d / 6));
@@ -80,9 +86,9 @@ export function planGrounds(g) {
     }
     return list;
   };
-  const spot = (w, d, zones, gap) => {
+  const spot = (w, d, zones, gap, tall) => {
     for (const zone of zones) for (const c of candidates(w, d, zone, gap)) {
-      const r = { ...c, w, d };
+      const r = { ...c, w, d, tall };
       // (a feature pressed up against the building may cover the path round it)
       if (gap < 2.5 ? !overlaps(r, [{ ...building, w: g.W, d: g.D }], gap / 2) && !overlaps(r, [forecourt, ...held]) && fits(r) : free(r)) { held.push(r); return r; }
     }
@@ -143,7 +149,8 @@ export function planGrounds(g) {
     } else if (kind === 'bikes') {
       add('bikes', spot(6, 2, ['front']));
     } else if (kind === 'booth') {
-      add('booth', spot(3.2, 3.2, ['front']) ?? spot(2.6, 2.6, ['front']));
+      // (it stands under a marquee's canopy, if need be)
+      add('booth', spot(3.2, 3.2, ['front'], undefined, 3.5) ?? spot(2.6, 2.6, ['front'], undefined, 3.5));
     } else if (kind === 'terrace') {
       for (let k = 0; k < 3; k++) add('cafe', spot(3.2, 3.2, ['front']) ?? spot(3.2, 3.2, ['left', 'right'], 1), { colour: STALL_COLOURS[(k + g.variant * 2) % STALL_COLOURS.length] });
     } else if (kind === 'posters') {
@@ -153,10 +160,15 @@ export function planGrounds(g) {
       add('stage', spot(9, 6, ['back', 'left', 'right']));
     } else if (kind === 'postbox') {
       // A pillar box at the forecourt's street corner, on the side away from
-      // the name's plinth (clear of the flags a deep forecourt has)
-      const side = g.plinth?.u > 0 ? -1 : 1;
-      for (const [u, v] of [[side * (g.court / 2 - 1.1), g.front - g.setback - 2.6], [side * (g.court / 2 - 1.1), g.front - 2.2]]) {
-        if (g.onLot(u, v - 1.2) && g.onLot(u, v + 1.2)) { features.push({ kind: 'postbox', u, v, w: 1, d: 1 }); break; }
+      // the name's plinth, or failing that by the door, before a portico's
+      // steps or beside them (never on them, nor by the flags). Up against a
+      // shallow forecourt the steps leave room only beside them, by the front.
+      const side = g.plinth?.u > 0 ? -1 : 1, edge = g.court / 2 - 1.1, steps = keep.find(o => o.steps), beside = steps ? steps.w / 2 + .9 - edge : 0;
+      const spots = [[0, g.front - g.setback - 2.6], [0, g.front - 2.2], [0, g.front - 6.6], [1, g.front - 5.2], [2, g.front - 5.2], [3, g.front - 5.2]];
+      if (steps) for (const out of [0, 1, 2]) spots.push([beside + out, g.front - 1.6], [beside + out, g.front - 3.2]);
+      for (const [out, v] of spots) {
+        const r = { u: side * (edge + out), v, w: 1, d: 1 };
+        if (g.onLot(r.u, v - 1.2) && g.onLot(r.u, v + 1.2) && !overlaps(r, held, .2)) { features.push({ kind: 'postbox', ...r }); break; }
       }
     } else if (kind === 'loading') {
       // Its own vans and pickups parked out in the yard, noses to the street
@@ -179,11 +191,12 @@ export function planGrounds(g) {
       const v = g.front - 2.5 - k * 8;
       if (v < end) continue;
       furnish('lantern', { u: side * (g.court / 2 + .7), v, w: .8, d: .8 });
-      if (v - 4 > end && furnish('seat', { u: side * (g.court / 2 + 1.3), v: v - 4, w: .9, d: 2.2 }, { side: -side })) furnish('bin', { u: side * (g.court / 2 + 1.1), v: v - 5.8, w: .7, d: .7 });
+      // (the bin a step past the bench's end: nearer, the two overlapped and it was never placed)
+      if (v - 4 > end && furnish('seat', { u: side * (g.court / 2 + 1.3), v: v - 4, w: .9, d: 2.2, tall: 1 }, { side: -side })) furnish('bin', { u: side * (g.court / 2 + 1.1), v: v - 5.95, w: .7, d: .7, tall: 1 });
     }
   }
   for (const side of [-1, 1]) for (const v of [0, -g.D / 4, g.D / 4]) {
-    if (furnish('seat', { u: side * (g.W / 2 + 3.2), v, w: .9, d: 2.2 }, { side })) { furnish('bin', { u: side * (g.W / 2 + 3.1), v: v + 1.9, w: .7, d: .7 }); break; }
+    if (furnish('seat', { u: side * (g.W / 2 + 3.2), v, w: .9, d: 2.2, tall: 1 }, { side })) { furnish('bin', { u: side * (g.W / 2 + 3.1), v: v + 1.9, w: .7, d: .7, tall: 1 }); break; }
   }
   // (a venue on a lot where the district has no lawns is paved to its edges, trees in pits)
   return { cover: programme.cover ?? (g.paved ? '#c9bfa9' : null), edge: Boolean(programme.edge || g.paved), features, held };
@@ -218,8 +231,9 @@ export function buildGrounds(g, plan) {
     collider(p);
     c.knockable?.([item], [{ kind, geometry: cityAssets[kind] }]);
   };
-  // (a bench's length is along its own z: a quarter turn lays it along the street)
-  const bench = (u, v, y) => fitting('bench', u, v, g.along + Math.PI / 2, y, () => hold(u, v, 2, .7));
+  // (a bench's length is along its own z: a quarter turn lays it along the
+  // street, its back, local +x, to +v for `back` 1 and to -v for -1)
+  const bench = (u, v, y, back) => fitting('bench', u, v, g.along + back * Math.PI / 2, y, () => hold(u, v, 2, .7));
   // One of the grounds' own pieces (see venue-props.js), knocked loose the
   // same way: `collider` makes its collider at the point, and `items` go
   // with it (a lit pane). `key` is its batch, one to a model.
@@ -231,7 +245,7 @@ export function buildGrounds(g, plan) {
   };
   for (const f of plan.features) {
     const { u, v, w, d } = f;
-    if (f.kind === 'platforms') { platforms(g, f, { slab, hold, stock, rails }); continue; }
+    if (f.kind === 'platforms') { platforms(g, f, { slab, hold, stock, rails, fitting }); continue; }
     if (c.distant) continue;
     if (f.kind === 'track') rails(u, v, d);
     else if (f.kind === 'siding') {
@@ -252,34 +266,39 @@ export function buildGrounds(g, plan) {
       round(c, p.x, G + 1.75, p.s, 1.5, .18, 1.5, '#cfc5ad');
       round(c, p.x, G + 2.1, p.s, .36, .6, .36, '#d9d1bf');
       c.post(p.x, p.s, r);
-      c.fountain?.(p.x, p.s, G + 2.4, 1.1, [[.75, G + 1.84, r * .62, G + .62]]);
+      c.fountain?.(p.x, p.s, { spout: G + 2.4, plume: 1.1, bowls: [[.75, G + 1.84]], pool: [r * .94 - .05, G + .62], ring: 6 });
     } else if (f.kind === 'sculpture') {
       box(u, G + .45, v, 2.2, .9, 2.2, '#d9d1bf');
       const p = at(u, v);
       buildMonument(c, { kind: 'sculpture', u: c.east + p.x, s: c.start + p.s, yaw: g.facing, form: f.form, size: .7 }, p.x, p.s);
     } else if (f.kind === 'reading' || f.kind === 'healing') {
       // A garden room: clipped hedges round it, open in the middle of each
-      // side, paths crossing it, beds in its quarters and benches
-      slab(w - 1.6, 1.8, v, u, SLAB_TOP, PATH); slab(1.8, d - 1.6, v, u, SLAB_TOP, PATH);
+      // side, paths crossing it out through the openings, beds in its
+      // quarters and benches
+      slab(w + .8, 1.8, v, u, SLAB_TOP, PATH); slab(1.8, d + .8, v, u, SLAB_TOP, PATH);
       const hedge = (hu, hv, length, alongU) => { const p = at(hu, hv); buildHedge(c.bodies, p.x, LAWN_TOP, p.s, alongU ? length : .8, 1.1, alongU ? .8 : length, '#4f7a45', g.along); };
-      // (the hedges are walls, as a front garden's are)
+      // (the hedges are walls, as a front garden's are; those along u run on
+      // over the corners and those along v stop against them, so the corners close)
       for (const side of [-1, 1]) for (const half of [-1, 1]) {
-        hedge(u + half * (w / 4 + .6), v + side * d / 2, w / 2 - 2.4, true);
-        hold(u + half * (w / 4 + .6), v + side * d / 2, w / 2 - 2.4, .8);
-        hedge(u + side * w / 2, v + half * (d / 4 + .6), d / 2 - 2.4, false);
-        hold(u + side * w / 2, v + half * (d / 4 + .6), .8, d / 2 - 2.4);
+        hedge(u + half * (w / 4 + 1.1), v + side * d / 2, w / 2 - 1.4, true);
+        hold(u + half * (w / 4 + 1.1), v + side * d / 2, w / 2 - 1.4, .8);
+        hedge(u + side * w / 2, v + half * (d / 4 + .7), d / 2 - 2.2, false);
+        hold(u + side * w / 2, v + half * (d / 4 + .7), .8, d / 2 - 2.2);
       }
+      // (each bed far enough from the path along u for a bench between them)
+      const bedD = Math.min(2, d / 2 - 2.8), bedV = Math.max(d / 4, 2 + bedD / 2);
       for (const [du, dv] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-        monument({ kind: 'bed', yaw: g.along, w: Math.max(2.4, w / 2 - 4.2), d: Math.min(2, d / 2 - 2.8), colour: BED_COLOURS[(du + 2 * dv + 3 + g.variant) % BED_COLOURS.length] }, u + du * w / 4, v + dv * d / 4);
+        monument({ kind: 'bed', yaw: g.along, w: Math.max(2.4, w / 2 - 4.2), d: bedD, colour: BED_COLOURS[(du + 2 * dv + 3 + g.variant) % BED_COLOURS.length] }, u + du * w / 4, v + dv * bedV);
       }
-      for (const side of [-1, 1]) bench(u + side * (w / 4), v + side * 1.9, LAWN_TOP);
+      // (facing the path, their backs to the beds)
+      for (const side of [-1, 1]) bench(u + side * (w / 4), v + side * 1.35, LAWN_TOP, side);
       if (f.kind === 'healing') {
         const p = at(u, v);
         c.item('basin-rim', basinRim, c.materials.solid, [p.x, G + .3, -p.s], [1.4, .6, 1.4], '#d7ccb3');
         c.item('basin-water', basinWater, c.materials.glass, [p.x, G + .46, -p.s], [1.3, 1, 1.3], '#4f93a0');
         c.post(p.x, p.s, 1.4);
         // (a bubbler in the middle of the pool)
-        c.fountain?.(p.x, p.s, G + .46, .5, []);
+        c.fountain?.(p.x, p.s, { spout: G + .46, plume: .5, bowls: [], pool: [1.25, G + .46] });
       }
     } else if (f.kind === 'pools') {
       // A tiled terrace, a long pool with a coping round it and loungers
@@ -310,12 +329,23 @@ export function buildGrounds(g, plan) {
       c.item('armillary-flat', flat, c.materials.solid, [p.x, G + 2.7, -p.s], [.85, .85, .85], '#b58a3a', g.along);
       c.post(p.x, p.s, .6);
     } else if (f.kind === 'stand') {
-      // Three rows of seats stepping up away from the courts
-      // (each row one someone on foot can climb to)
+      // Three rows of seats stepping up away from the courts: a bench of
+      // seats at the back of each tread, against the riser behind it, and a
+      // rail along the top row's back
+      // (each row and its seats one someone on foot can climb to)
       for (let k = 0; k < 3; k++) {
         box(u + f.side * (k * 1.1 - 1.1), G + .25 + k * .35, v, 1.1, .5 + k * .7, d, k % 2 ? '#c9c2b0' : '#b3aa98');
         hold(u + f.side * (k * 1.1 - 1.1), v, 1.1, d, G + .5 + k * .7);
+        const seat = u + f.side * (k * 1.1 - .775), top = G + .5 + k * .7;
+        box(seat, top + .2, v, .45, .4, d - .4, STAND_SEATS);
+        box(seat - f.side * .2, top + .41, v, .07, .02, d - .4, '#e8e3d2');
+        hold(seat, v, .45, d - .4, top + .4);
       }
+      const back = u + f.side * 1.62, posts = Math.max(2, Math.round(d / 2.5));
+      for (let k = 0; k <= posts; k++) box(back, G + 2.4, v - d / 2 + .1 + k * (d - .2) / posts, .06, 1, .06, RAILING);
+      box(back, G + 2.9, v, .07, .07, d - .1, RAILING);
+      box(back, G + 2.4, v, .04, .04, d - .1, RAILING);
+      { const p = at(back, v); c.rigid(p.x, p.s, () => { const rail = c.solid(p.x, p.s, .12, d); if (rail) { rail.base = G + 1.9; rail.height = 1; } }, itemFrame(c.start + p.s, c.east + p.x, g.along)); }
     } else if (f.kind === 'bikes') {
       for (const k of [-1, 1]) fitting('bike-rack', u + k * 1.5, v, g.along, PAVED_TOP, () => hold(u + k * 1.5, v, .8, 1.3));
     } else if (f.kind === 'booth') {
@@ -364,7 +394,7 @@ export function buildGrounds(g, plan) {
 // standing at the face nearer the building. Laid along v beside the shed, or
 // along u (`across`) behind it. In its own terms `a` runs along the tracks
 // and `b` across them.
-function platforms(g, f, { slab, hold, stock, rails }) {
+function platforms(g, f, { slab, hold, stock, rails, fitting }) {
   const { c, at, box } = g, across = f.across;
   const long = across ? f.w : f.d, wide = across ? f.d : f.w, length = long - 2;
   const P = (a, b) => across ? [f.u + a, f.v + b] : [f.u + b, f.v + a];
@@ -374,7 +404,12 @@ function platforms(g, f, { slab, hold, stock, rails }) {
   const single = f.tracks === 1, deck = single ? toward * 1.5 : 0, faces = single ? [-toward * 1.8] : [-3.5, 3.5];
   slab(across ? long : wide - .4, across ? wide - .4 : long, f.v, f.u, SLAB_TOP, BALLAST);
   piece(0, deck, G + .5, length, .9, 3.6, '#bdb6a6');
-  for (const edge of single ? [-toward] : [-1, 1]) piece(0, deck + edge * 1.72, G + .955, length, .02, .16, '#e3c65a');
+  // Along each face a pale coping just proud of the deck and over its edge,
+  // and the yellow line a step in from it
+  for (const edge of single ? [-toward] : [-1, 1]) {
+    if (!c.distant) piece(0, deck + edge * 1.71, G + .965, length + .1, .03, .28, COPING);
+    piece(0, deck + edge * 1.3, G + .955, length, .02, .1, '#e3c65a');
+  }
   for (const b of faces) {
     const [u, v] = P(0, b);
     rails(u, v, long - .6, across);
@@ -390,6 +425,15 @@ function platforms(g, f, { slab, hold, stock, rails }) {
     const [u, v] = P(-length / 2 + 1 + k * (length - 2) / posts, deck), p = at(u, v);
     round(c, p.x, G + 2.9, p.s, .16, 4, .16, '#3d4246');
     c.post(p.x, p.s, .1);
+    // Benches in every other bay, facing the tracks: back to back on an
+    // island, backs to the far edge beside a single track
+    if (k % 2 === 0) continue;
+    const middle = -length / 2 + 1 + (k - .5) * (length - 2) / posts;
+    for (const side of single ? [toward] : [-1, 1]) {
+      // (a bench's back, its local +x, to +b at a quarter turn less across)
+      const [bu, bv] = P(middle, deck + side * (single ? .9 : .45)), back = single ? side : -side;
+      fitting('bench', bu, bv, g.along + (across ? Math.PI / 2 : 0) + (back > 0 ? 0 : Math.PI), G + .95, () => hold(bu, bv, across ? 2 : .7, across ? .7 : 2));
+    }
   }
   const canopy = single ? 4.6 : 6.2, shift = single ? -toward * .5 : 0;
   piece(0, deck + shift, G + 5.05, length, .22, canopy, '#62958b');

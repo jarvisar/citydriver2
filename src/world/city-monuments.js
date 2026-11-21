@@ -176,6 +176,20 @@ export function buildMonument(c, piece, x, s) {
     [7.4, 6.2, 5].forEach((w, k) => c.box(x, G + .15 + k * .3, s, w, .3, w, k % 2 ? TRIM : STONE, 'solid', yaw));
     c.box(x, G + .9 + (H - 5.2) / 2, s, shaft, H - 5.2, shaft, STONE, 'solid', yaw);
     c.box(x, G + H - 4.3, s, shaft + .5, .4, shaft + .5, TRIM, 'solid', yaw);
+    // The shaft on a plinth, framed by pilasters at its corners, with a band
+    // two thirds up and a slit window in each face
+    if (!c.distant) {
+      c.box(x, G + 1.5, s, shaft + .3, 1.2, shaft + .3, TRIM, 'solid', yaw);
+      for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+        const [px, ps] = at(a * (shaft / 2 - .19), b * (shaft / 2 - .19));
+        c.box(px, G + 2.1 + (H - 6.6) / 2, ps, .5, H - 6.6, .5, TRIM, 'solid', yaw);
+      }
+      c.box(x, G + 2.1 + (H - 6.6) * .66, s, shaft + .16, .3, shaft + .16, TRIM, 'solid', yaw);
+      for (let k = 0; k < 4; k++) {
+        const face = k * Math.PI / 2, [wx, ws] = at(Math.cos(face) * (shaft / 2 + .02), Math.sin(face) * (shaft / 2 + .02));
+        c.box(wx, G + 2.1 + (H - 6.6) * .38, ws, k % 2 ? .4 : .06, 1.8, k % 2 ? .06 : .4, '#3a3f45', 'solid', yaw);
+      }
+    }
     c.box(x, G + H - 2.2, s, stage, 3.8, stage, STONE, 'solid', yaw);
     c.box(x, G + H - .15, s, stage + .7, .5, stage + .7, TRIM, 'solid', yaw);
     c.item('landmark-spire', spire, c.materials.solid, [x, G + H + 2.1, -s], [stage * .78, 4.4, stage * .78], COPPER, yaw + Math.PI / 4);
@@ -185,7 +199,7 @@ export function buildMonument(c, piece, x, s) {
     }
     // (its steps to sit on, and the shaft)
     [7.4, 6.2, 5].forEach((w, k) => solid(w, w, G + .3 + k * .3));
-    solid(shaft + .2, shaft + .2);
+    solid(shaft + .3, shaft + .3);
     return true;
   }
   if (piece.kind === 'glasshouse') {

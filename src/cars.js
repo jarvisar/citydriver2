@@ -99,11 +99,11 @@ export const CARS = {
     stats: { topSpeed: 31.9, acceleration: 12.7, braking: 18.8, grip: .9, offRoad: 19.7 },
   },
   sports: {
-    name: 'GT', kind: 'built', paint: '#b8232f', shape: SPORTS_MODEL,
+    name: 'GT', kind: 'built', paint: '#2d5f9e', shape: SPORTS_MODEL,
     stats: { topSpeed: 38.9, acceleration: 17.3, braking: 23, grip: 1.14, offRoad: 23.7 },
   },
   exotic: {
-    name: 'Exotic', kind: 'built', paint: '#407394', shape: EXOTIC_MODEL,
+    name: 'Exotic', kind: 'built', paint: '#c8201e', shape: EXOTIC_MODEL,
     stats: { topSpeed: 44.3, acceleration: 19.5, braking: 23, grip: 1.22, offRoad: 23.7 },
   },
   // Light, short and on knobbly tires: it barely notices the tarmac ending.

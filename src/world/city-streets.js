@@ -446,8 +446,10 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
   // wall stops just under it and has no coping, rather than standing across it).
   // Elsewhere a stone coping runs along its top: a low curb on the promenade,
   // overhanging the wall a little, solid on every side
+  // (darker where the water wets it, so the wall reads as a quay's)
   for (const run of CITY.walls) for (const { points, road } of shoreStretches(run)) {
-    walls.wall(points, road === true ? ROAD_LEVEL - .03 : PAVEMENT_LEVEL, WATER_LEVEL - 1.6, '#9b9789');
+    walls.wall(points, road === true ? ROAD_LEVEL - .03 : PAVEMENT_LEVEL, WATER_LEVEL + .75, '#9b9789');
+    walls.wall(points, WATER_LEVEL + .75, WATER_LEVEL - 1.6, '#6c6f63');
     // (not a scrap of coping on a meter or two of shore left between roads)
     if (road || polylineLength(points) < 2) continue;
     const top = PAVEMENT_LEVEL + .2, outer = offsetPolyline(points, -.05), inner = offsetPolyline(points, .55);
@@ -509,7 +511,8 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
   }
   // Piers, each with a cap under the deck (see bridgePiers)
   for (const { outline } of bridgePiers()) {
-    walls.prism(outline, WATER_LEVEL - 3, DECK_BOTTOM + .05, COLOURS.pier);
+    walls.prism(outline, WATER_LEVEL + .75, DECK_BOTTOM + .05, COLOURS.pier);
+    walls.prism(outline, WATER_LEVEL - 3, WATER_LEVEL + .75, '#6c6f63');
     const cap = offsetPolygon(outline, .15);
     if (cap.length < 3) continue;
     walls.prism(cap, DECK_BOTTOM - .35, DECK_BOTTOM, COLOURS.pier);

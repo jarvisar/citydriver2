@@ -309,6 +309,16 @@ function kiosk() {
   p.box([-1.78, 2.66, 0], [.14, .36, 3.1], '#d1c5ac');
   for (const z of [-.7, -.2, .3]) p.cylinder([-1.88, 1.19, z], .085, .065, .18, '#dad4bf', 6);
   p.box([0, 1.3, -2.025], [1, 2.3, .05], '#394f50');
+  // Boards at the corners, two posters on the back wall and a window in the
+  // end opposite the door (these walls were blank)
+  for (const x of [-1.6, 1.6]) for (const z of [-2, 2]) p.box([x, 1.59, z], [.14, 2.62, .14], '#d1c5ac');
+  for (const [z, colour] of [[-.85, '#c9463d'], [.85, '#e8b64a']]) {
+    p.box([1.615, 1.65, z], [.03, 1.3, 1.2], '#d1c5ac');
+    p.box([1.635, 1.65, z], [.03, 1.12, 1.02], colour);
+  }
+  p.box([0, 1.85, 2.015], [1.3, .9, .03], '#283f46');
+  p.box([0, 2.34, 2.035], [1.5, .1, .07], '#d1c5ac');
+  p.box([0, 1.36, 2.06], [1.5, .07, .14], '#d1c5ac');
   return p.finish();
 }
 

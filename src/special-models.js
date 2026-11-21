@@ -341,7 +341,8 @@ const BUILDERS = {
     // The crew cab: glass all round, its back solid where the body meets it,
     // pillars at the windscreen's corners and middle, and posts between the doors
     glass([2.3, .85, 2.3], [0, 2.425, -2.95], .28);
-    box([2.36, .92, .25], [0, 2.46, -1.675]);
+    // (up to the roof's underside: to its top, the two backs shared a plane over the body)
+    box([2.36, .85, .25], [0, 2.425, -1.675]);
     box([2.22, .12, 2.36], [0, 2.91, -2.73], 'details', WHITE);
     for (const x of [-1.115, 0, 1.115]) box([x ? .09 : .06, .9, x ? .09 : .07], [x, 2.425, -3.96], 'paint', undefined, .318);
     // The grille, the lamps in chrome either side of it, a white band over
@@ -403,7 +404,7 @@ const BUILDERS = {
       // Dark liners inside the arches, and mud flaps behind the back wheels
       box([.06, .7, 1.44], [side * .82, .85, -2.75], 'details', DARK);
       box([.06, .65, 1.44], [side * .63, .875, 2.3], 'details', DARK);
-      box([.5, .42, .03], [side * .97, .41, 3.06], 'details', DARK);
+      box([.48, .42, .03], [side * .96, .41, 3.06], 'details', DARK);
       // At the back: tail lamps and indicators in chrome (red on red was lost);
       // beacons on the body's top corners, seen from the side and behind
       box([.28, .7, .02], [side, 1.27, 4.06], 'details', CHROME);

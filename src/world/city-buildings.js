@@ -659,7 +659,22 @@ function hipRoof(c, b, bodies, ring, top, solid) {
   bodies.slope(quad[s1], y0, quad[(s1 + 1) % 4], y0, ridge[1], y1, colour);
   bodies.slope(quad[l0], y0, quad[(l0 + 1) % 4], y0, ridge[1], y1, colour); bodies.slope(quad[l0], y0, ridge[1], y1, ridge[0], y1, colour);
   bodies.slope(quad[l1], y0, quad[(l1 + 1) % 4], y0, ridge[0], y1, colour); bodies.slope(quad[l1], y0, ridge[0], y1, ridge[1], y1, colour);
-  c.box(ridge[0].x + (ridge[1].x - ridge[0].x) * .3, y1 - .3, ridge[0].y + (ridge[1].y - ridge[0].y) * .3, .9, 1.7, .9, '#8c6a5a');
+  // (square to the ridge: left square to the world it stood askew on most houses)
+  const x = ridge[0].x + (ridge[1].x - ridge[0].x) * .3, s = ridge[0].y + (ridge[1].y - ridge[0].y) * .3, along = Math.atan2(ridge[1].y - ridge[0].y, ridge[1].x - ridge[0].x);
+  c.box(x, y1 - .3, s, .9, 1.7, .9, '#8c6a5a', 'solid', along);
+  c.box(x, y1 + .61, s, 1.06, .12, 1.06, '#6f5a4e', 'solid', along);
+  chimneyPots(c, bodies, x, s, y1 + .67, along, .9);
+}
+// A pair of round pots on a chimney stack's cap at `top`, `length` along it
+function chimneyPots(c, bodies, x, s, top, yaw, length) {
+  if (c.distant) return;
+  const ux = Math.cos(yaw), uy = Math.sin(yaw);
+  for (const side of [-1, 1]) {
+    const px = x + ux * side * length * .25, ps = s + uy * side * length * .25;
+    const ring = Array.from({ length: 6 }, (_, k) => ({ x: px + Math.cos(yaw + k * Math.PI / 3) * .12, y: ps + Math.sin(yaw + k * Math.PI / 3) * .12 }));
+    bodies.prism(ring, top - .02, top + .42, '#a8674f');
+    bodies.polygon(ring, top + .42, '#3b322e');
+  }
 }
 
 // The front of a building that stands back behind a garden: a paved path
@@ -802,6 +817,8 @@ function gableRoof(c, b, bodies, ring, top, random, solid) {
     const x = g.x + ux * sign * .55, y = g.y + uy * sign * .55, height = 1.1 + random() * .7;
     c.box(x, y1 + height / 2 - .5, y, .8, height + 1, 1.5, '#8a6353', 'solid', yaw);
     c.box(x, y1 + height + .02, y, 1, .14, 1.7, '#6f5a4e', 'solid', yaw);
+    // (the stack is .8 along the ridge and 1.5 across it: its pots stand across)
+    chimneyPots(c, bodies, x, y, y1 + height + .09, yaw + Math.PI / 2, 1.5);
   }
 }
 
@@ -847,19 +864,31 @@ function roofDetails(c, b, deck, top, random, holes = [], keep = []) {
     const made = c.polygonSolid([[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([s, t]) => [p.x + cos * s * w / 2 - sin * t * d / 2, p.y + sin * s * w / 2 + cos * t * d / 2]), top + h);
     if (made) made.clutter = true;
   };
-  // A plant unit with its fan deck on top
+  // A plant unit with its fan deck on top, two fans in their shrouds
   const plant = size => {
     const p = spot(size * 1.15, size);
     if (!p) return;
     box(p, .3 + size * .33, size * 1.15, size * .66, size, '#919b9b'); box(p, .365 + size * .66, size * 1.15 + .1, .13, size + .1, '#58656d');
+    const deck = top + .43 + size * .66;
+    for (const side of [-1, 1]) {
+      const x = p.x + ux * side * size * .29, s = p.y + uy * side * size * .29;
+      const ring = Array.from({ length: 8 }, (_, k) => ({ x: x + Math.cos(k * Math.PI / 4) * size * .25, y: s + Math.sin(k * Math.PI / 4) * size * .25 }));
+      c.bodies.prism(ring, deck - .02, deck + .12, '#7d898b'); c.bodies.polygon(ring, deck + .12, '#2b3336');
+    }
     solid(p, size * 1.15 + .1, size + .1, .43 + size * .66);
+  };
+  // A door in the long side of a stair head or lift overrun `d` deep, at
+  // one end, on the roof deck (.18 over `top`: see cornice)
+  const door = (p, w, d) => {
+    box(p, 1.21, 1.1, 2.06, .05, '#c9c1b0', 'solid', w * .3, d / 2 + .015);
+    box(p, 1.16, .9, 1.96, .05, '#4a5456', 'solid', w * .3, d / 2 + .035);
   };
   const trim = b.type === 'office' ? '#b8cccd' : '#d6c9b1';
   if (COMMERCIAL.has(b.type) || b.floors >= 8) {
     // A lift overrun, and the offices' plant
     if (b.area > 260 && random() < .8) {
       const p = spot(4.4, 3.4);
-      if (p) { box(p, 1.5, 4.4, 3, 3.4, b.type === 'office' ? '#9fb1b3' : b.wall); box(p, 3.06, 4.7, .12, 3.7, trim); solid(p, 4.7, 3.7, 3.12); }
+      if (p) { box(p, 1.5, 4.4, 3, 3.4, b.type === 'office' ? '#9fb1b3' : b.wall); box(p, 3.06, 4.7, .12, 3.7, trim); door(p, 4.4, 3.4); solid(p, 4.7, 3.7, 3.12); }
     }
     for (let i = integer(random, 1, b.area > 600 ? 4 : b.area > 300 ? 3 : 2); i > 0; i--) plant(1.4 + random() * 1.2);
     return;
@@ -881,7 +910,7 @@ function roofDetails(c, b, deck, top, random, holes = [], keep = []) {
   // the older districts, and now and then a water tank or a roof garden
   if (b.area > 110 && random() < .6) {
     const p = spot(3.2, 2.4);
-    if (p) { box(p, 1.25, 3.2, 2.5, 2.4, b.wall); box(p, 2.56, 3.5, .12, 2.7, trim); solid(p, 3.5, 2.7, 2.62); }
+    if (p) { box(p, 1.25, 3.2, 2.5, 2.4, b.wall); box(p, 2.56, 3.5, .12, 2.7, trim); door(p, 3.2, 2.4); solid(p, 3.5, 2.7, 2.62); }
   }
   if (b.district !== 'Midtown' && b.type !== 'loft') {
     for (let i = integer(random, 0, 2); i > 0; i--) {
@@ -892,6 +921,7 @@ function roofDetails(c, b, deck, top, random, holes = [], keep = []) {
       if (clear.some(hole => insidePolygon(p, hole)) || keep.some(strip => insidePolygon(p, strip)) || placed.some(o => Math.hypot(o.x - p.x, o.y - p.y) < o.r + 1)) continue;
       const along = Math.atan2(p1.y - p0.y, p1.x - p0.x), height = 1.2 + random() * .8;
       c.box(p.x, top + height / 2, p.y, 1.5, height, .75, '#8a6353', 'solid', along); c.box(p.x, top + height + .07, p.y, 1.7, .14, .95, '#6f5a4e', 'solid', along);
+      chimneyPots(c, c.bodies, p.x, p.y, top + height + .14, along, 1.5);
       solid(p, 1.7, .95, height + .14, along);
     }
   }

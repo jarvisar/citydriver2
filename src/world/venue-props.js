@@ -25,69 +25,101 @@ export const posterColumn = () => made('posters', () => {
   return p.finish();
 });
 
-// A cinema's ticket booth: a little kiosk under a round roof, its window to
-// local +z (lit after dark by a pane of its own, see buildGrounds)
-export const BOOTH_WINDOW = { y: 1.55, z: .93, w: 1.1, h: .8 };
+// A cinema's ticket booth: a little kiosk under a round roof, paneled below
+// a counter and glazed above it on three sides between corner posts, its
+// front window to local +z (lit after dark by a pane of its own set into it,
+// see buildGrounds)
+export const BOOTH_WINDOW = { y: 1.8, z: .82, w: 1.36, h: 1.16 };
 export const ticketBooth = () => made('booth', () => {
-  const p = new Parts(), red = '#b6604f', dark = '#2c2c34';
+  const p = new Parts(), red = '#b6604f', dark = '#2c2c34', cream = '#e8dcc2', glass = '#34505a';
   p.box([0, .12, 0], [1.95, .24, 1.95], '#8d8478');
-  p.box([0, 1.32, 0], [1.8, 2.16, 1.8], red);
-  p.box([0, 1.55, .9], [1.1, .8, .02], '#d9b864');
-  p.box([0, 1.12, .93], [1.3, .08, .12], '#e8dcc2');
-  for (const x of [-.62, .62]) p.box([x, 1.55, .91], [.1, .95, .04], '#e8dcc2');
-  p.box([0, 2.42, 0], [1.98, .12, 1.98], '#e8dcc2');
+  p.box([0, .68, 0], [1.8, .88, 1.8], red);
+  p.box([0, 1.16, 0], [1.9, .08, 1.9], cream);
+  // (the posts stand proud of the glass, the back is solid)
+  for (const x of [-.8, .8]) for (const z of [-.8, .8]) p.box([x, 1.8, z], [.2, 1.2, .2], red);
+  p.box([0, 1.8, -.8], [1.4, 1.2, .2], red);
+  p.box([0, 1.8, .78], [1.4, 1.2, .04], glass);
+  for (const x of [-.78, .78]) p.box([x, 1.8, 0], [.04, 1.2, 1.4], glass);
+  p.box([0, 1.225, .99], [1.2, .05, .2], cream);
+  p.box([0, 2.52, 0], [1.98, .24, 1.98], cream);
+  p.box([0, 2.385, 0], [1.84, .03, 1.84], '#c9a34a');
   const roof = new THREE.SphereGeometry(1, 10, 4, 0, Math.PI * 2, 0, Math.PI / 2);
   roof.scale(1.25, .6, 1.25);
-  p.add(roof, [0, 2.45, 0], dark);
-  p.cylinder([0, 3.15, 0], .06, .06, .2, '#c9a34a', 6);
+  p.add(roof, [0, 2.64, 0], dark);
+  // (closed underneath: the open dome showed the sky through its eaves from below)
+  p.add(new THREE.CircleGeometry(1.25, 10), [0, 2.64, 0], dark, [Math.PI / 2, 0, 0]);
+  p.cylinder([0, 3.34, 0], .06, .06, .2, '#c9a34a', 6);
   return p.finish();
 });
 
 // A basketball hoop: a pole, an arm out to the backboard over the court
-// (local +z) and an orange rim under it
+// (local +z), the target square on the board's court side, and an orange
+// rim on a bracket under it
 export const basketballHoop = () => made('hoop', () => {
-  const p = new Parts();
+  const p = new Parts(), red = '#c9463d';
   p.cylinder([0, .1, 0], .2, .24, .2, IRON, 8);
   p.cylinder([0, 1.65, 0], .08, .09, 3.1, '#e8e3d2', 8);
   p.beam([0, 3, 0], [0, 3.1, .45], .05, '#e8e3d2', 5);
   p.box([0, 3.1, .5], [1.4, .9, .06], '#f4f1e8');
-  p.box([0, 3, .47], [.5, .36, .02], '#c9463d');
-  p.box([0, 3, .48], [.42, .28, .02], '#f4f1e8');
-  p.add(new THREE.TorusGeometry(.23, .025, 4, 12), [0, 2.8, .78], '#e07b39', [Math.PI / 2, 0, 0]);
+  // (an outline of bars standing just off the board, not a square laid over it)
+  for (const y of [2.8425, 3.1575]) p.box([0, y, .54], [.5, .045, .018], red);
+  for (const x of [-.2275, .2275]) p.box([x, 3, .54], [.045, .27, .018], red);
+  p.box([0, 2.8, .6], [.16, .04, .14], IRON);
+  p.add(new THREE.TorusGeometry(.23, .025, 4, 12), [0, 2.8, .9], '#e07b39', [Math.PI / 2, 0, 0]);
   return p.finish();
 });
 
-// A tennis net `width` across the court (local x), on a post at each end
+// Each vertex of a geometry moved by `move(x, y, z)`, returning [x, y, z]
+function bend(geometry, move) {
+  const position = geometry.attributes.position;
+  for (let i = 0; i < position.count; i++) position.setXYZ(i, ...move(position.getX(i), position.getY(i), position.getZ(i)));
+  return geometry;
+}
+
+// A tennis net `width` across the court (local x), on a post at each end:
+// its cable sagging from the posts to the strap at the middle under a white
+// headband, the mesh hanging in shallow folds, and a winder on one post
 export const tennisNet = width => made(`net-${width.toFixed(1)}`, () => {
-  const p = new Parts();
+  const p = new Parts(), half = width / 2 + .4, cable = x => 1.05 - .15 * (1 - Math.abs(x) / half);
   for (const side of [-1, 1]) {
-    p.cylinder([side * (width / 2 + .4), .55, 0], .05, .06, 1.1, IRON, 6);
-    p.box([side * (width / 2 + .4), .03, 0], [.24, .06, .24], IRON);
+    p.cylinder([side * half, .55, 0], .05, .06, 1.1, IRON, 6);
+    p.cylinder([side * half, 1.12, 0], .07, .07, .04, IRON, 6);
+    p.box([side * half, .03, 0], [.24, .06, .24], IRON);
   }
-  p.box([0, .5, 0], [width + .8, .82, .03], '#3a4044');
-  p.box([0, .95, 0], [width + .8, .08, .05], '#f1eee4');
-  p.box([0, .5, 0], [.06, .9, .05], '#f1eee4');
+  p.box([half + .08, .8, 0], [.1, .1, .06], IRON);
+  const folds = 2 * Math.round(half / .55);
+  p.add(bend(new THREE.BoxGeometry(half * 2, 1, .02, folds, 1, 1), (x, y, z) => [x, y > 0 ? cable(x) - .03 : .07, z + (Math.round((x + half) / (half * 2) * folds) % 2 ? .025 : -.025)]), [0, 0, 0], '#363d41');
+  p.add(bend(new THREE.BoxGeometry(half * 2, .07, .08, 2, 1, 1), (x, y, z) => [x, cable(x) + y, z]), [0, 0, 0], '#f1eee4');
+  p.box([0, .48, 0], [.06, .84, .09], '#f1eee4');
+  p.box([0, .015, 0], [.14, .03, .14], IRON);
   return p.finish();
 });
 
-// A flagpole in a stone socket, its flag out along local +x in the venue's color
+// A flagpole in a stone socket, its flag out along local +x in the venue's
+// color, rippling and drooping a little toward its fly
 export const flagpole = colour => made(`flag-${colour}`, () => {
   const p = new Parts();
   p.cylinder([0, .2, 0], .3, .36, .4, '#d7ccb3', 8);
   p.cylinder([0, 4.6, 0], .06, .08, 8.8, '#d9d6cc', 6);
   p.cylinder([0, 9.05, 0], .12, .12, .14, '#c9a34a', 6);
-  p.box([.78, 8.1, 0], [1.4, .9, .05], colour);
+  p.add(bend(new THREE.BoxGeometry(1.4, .9, .04, 4, 1, 1), (x, y, z) => {
+    const t = (x + .7) / 1.4;
+    return [x, y - .1 * t * t, z + .13 * t * Math.sin(t * Math.PI * 1.6)];
+  }), [.78, 8.1, 0], colour);
   p.box([.08, 8.1, 0], [.06, .94, .07], '#d9d6cc');
   return p.finish();
 });
 
-// A pool's sun lounger: a white frame on four legs, its back raised at local -z
+// A pool's sun lounger: a white frame on four legs, its back raised at local
+// -z off the frame, propped on two struts, and cushions on the seat and back
 export const sunLounger = () => made('lounger', () => {
-  const p = new Parts();
+  const p = new Parts(), tilt = [.55, 0, 0];
   for (const x of [-.3, .3]) for (const z of [-.75, .75]) p.box([x, .13, z], [.06, .26, .06], '#c9c3b5');
-  p.box([0, .3, .25], [.7, .08, 1.3], WHITE);
-  p.box([0, .52, -.62], [.7, .08, .72], WHITE, [.55, 0, 0]);
-  p.box([0, .36, .25], [.62, .05, 1.2], '#4fb6b2');
+  p.box([0, .3, 0], [.7, .08, 1.9], WHITE);
+  p.box([0, .568, -.577], [.7, .08, .72], WHITE, tilt);
+  for (const x of [-.28, .28]) p.box([x, .485, -.75], [.04, .29, .04], '#c9c3b5');
+  p.box([0, .365, .3], [.62, .05, 1.1], '#4fb6b2');
+  p.box([0, .623, -.543], [.62, .05, .62], '#4fb6b2', tilt);
   return p.finish();
 });
 

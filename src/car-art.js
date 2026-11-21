@@ -2,7 +2,7 @@ import { carEntry } from './cars.js';
 import { bodyProfile, heightAt, WHEEL, BUS_DOORS } from './traffic-models.js';
 import { taxiChequers } from './car-models.js';
 import { PLANE_PROFILE } from './plane-model.js';
-import { EXOTIC_DARK, EXOTIC_TRIM, EXOTIC_BODY, EXOTIC_BOTTOM, EXOTIC_ROOF, EXOTIC_WINDOW, EXOTIC_SWEEP, EXOTIC_WING } from './exotic-model.js';
+import { EXOTIC_STATIONS, EXOTIC_BOTTOM, EXOTIC_WINDOW, EXOTIC_SCOOP } from './exotic-model.js';
 
 // A side profile drawn from the same numbers the model is built from, so each
 // card shows the car the player will actually be driving.
@@ -90,26 +90,24 @@ function builtCarParts(entry) {
 
 function exoticParts() {
   const { slab, shape2d, disc, shadow, px, py, size } = pen();
-  const top = EXOTIC_BODY.map(([z, , crown, centre]) => [z, Math.max(crown, centre + .018)]), wing = EXOTIC_WING;
+  // (side on, the highest point of each station's section: a fender, the canopy or a haunch)
+  const top = EXOTIC_STATIONS.map(s => [s.z, Math.max(s.top, s.middle, ...s.row.map(([, y]) => y))]);
   const line = (points, width, color) => `<polyline points="${points.map(([z, y]) => `${px(z)},${py(y)}`).join(' ')}" fill="none" stroke="${color}" stroke-width="${size(width)}" stroke-linejoin="bevel"/>`;
   return [
     shadow(2.4),
     shape2d([...top, ...[...EXOTIC_BOTTOM].reverse()], PAINT),
-    shape2d([...top.filter(([z]) => z >= .28), ...[...EXOTIC_BOTTOM].reverse().filter(([z]) => z >= .28), [.28, .2]], EXOTIC_DARK),
-    shape2d([...EXOTIC_ROOF, [1.82, 1.02], [-.92, 1.02]], EXOTIC_DARK),
-    shape2d([...EXOTIC_ROOF.slice(0, 3), [.28, 1.501], [.28, 1.02], [-.92, 1.02]], PAINT),
     shape2d(EXOTIC_WINDOW, '#253436'),
-    line([[.245, 1.06], [.12, 1.425]], .043, EXOTIC_DARK),
-    line(EXOTIC_SWEEP, .065, EXOTIC_TRIM),
+    shape2d(EXOTIC_SCOOP, CARBON),
+    line([[-1.03, .97], [-1, .62], [-.9, .3]], .02, '#2a3236'),
+    line([[.16, .95], [.2, .62], [.12, .3]], .02, '#2a3236'),
     slab(-.76, .77, .19, .29, CARBON, 0),
-    slab(-2.27, -2.05, .13, .235, CARBON, 0),
-    slab(-2.13, -2.05, .627, .76, '#ffeec2', 0),
-    slab(2.08, 2.14, .738, .818, '#c4483a', 0),
-    slab(2.02, 2.24, .13, .235, CARBON, 0),
-    slab(wing.z - .065, wing.z + .065, wing.foot, wing.y, CARBON, 0),
-    slab(wing.z - wing.depth / 2, wing.z + wing.depth / 2, wing.y - wing.height / 2, wing.y + wing.height / 2, EXOTIC_DARK, 0),
+    // The headlamp up the fender's front, the splitter, the tail lamp and the diffuser
+    shape2d([[-2.2, .66], [-2.16, .74], [-1.79, .99], [-1.86, .9]], '#ffeec2'),
+    slab(-2.31, -1.98, .13, .235, CARBON, 0),
+    slab(2.18, 2.24, .67, .8, '#c4483a', 0),
+    slab(1.98, 2.28, .13, .42, CARBON, 0),
     ...[-1.35, 1.35].map(z => disc(z, WHEEL.radius, WHEEL.radius, TIRE) + disc(z, WHEEL.radius, WHEEL.hubRadius, HUB)),
-    slab(-.9025, -.6775, 1.0375, 1.1725, PAINT, 1),
+    slab(-.88, -.68, 1.0, 1.1, PAINT, 1),
   ];
 }
 
