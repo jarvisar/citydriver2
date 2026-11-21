@@ -1,4 +1,5 @@
 import { carEntry } from './cars.js';
+import { modeled } from './vehicle-scale.js';
 import { bodyProfile, heightAt, WHEEL, BUS_DOORS } from './traffic-models.js';
 import { taxiChequers } from './car-models.js';
 import { PLANE_PROFILE } from './plane-model.js';
@@ -29,8 +30,9 @@ function pen({ drop = 0, scale = SCALE, ground = GROUND } = {}) {
   };
 }
 
+// (each portrait is drawn from its shape as modeled, whatever size it is built)
 export function carArt(id) {
-  const entry = carEntry(id);
+  const built = carEntry(id), entry = { ...built, shape: modeled(built.shape) };
   const parts = entry.kind === 'formula' ? formulaParts(entry) : entry.kind === 'special' ? SPECIAL_ART[entry.shape.name](entry.shape)
     : entry.kind === 'helicopter' ? helicopterParts(entry.shape) : entry.kind === 'plane' ? planeParts()
       : entry.kind === 'classic' ? classicParts(entry) : entry.shape.name === 'exotic' ? exoticParts() : builtCarParts(entry);

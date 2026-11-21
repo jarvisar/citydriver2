@@ -137,6 +137,8 @@ const CLEAR = 2.9;  // two paths closer than this, center to center, share road
 const LOOK = 70;  // how far ahead of a junction a driver starts to think about it
 const YIELD_SPEED = 5;  // how fast a driver giving way crosses its line, m/s
 const PATIENCE = 10;  // seconds at a stop or give-way line before the traffic lets a driver out (half on a green light)
+// How far ahead of the player's car, along the way it points, drivers look before pulling out (m)
+const PLAYER_AHEAD = 110;
 
 export class JunctionTraffic {
   constructor(nav = navGraph()) {
@@ -225,7 +227,7 @@ export class JunctionTraffic {
     this.conflicts.set(key, hit);
     return hit;
   }
-  // Two drivers coming from one approach in its two lanes (a boulevard's):
+  // Two drivers coming from one approach in its two lanes (a boulevard's or an avenue's):
   // one turning across the other's lane meets it, as a car turning left
   // from the curb lane meets one going straight on by the median. (A
   // driver's `lane` is its offset right of the center line; the autodrive
@@ -360,10 +362,13 @@ export class JunctionTraffic {
     return true;
   }
   // The player's car on this movement's path, or heading onto it within the
-  // next couple of seconds
+  // next three seconds, as far as PLAYER_AHEAD. (It was 40 m at most, under a
+  // second for a fast car: a driver pulled out across a street the player
+  // was coming down flat out, and a quarter of all the player's collisions
+  // were with cars crossing in front of them.)
   playerIn(movement, player) {
-    const b = movement.bounds, reach = Math.min(40, Math.max(0, player.speed ?? 0) * 2.5), hx = Math.sin(player.heading), hy = Math.cos(player.heading);
-    for (let d = 0; d <= reach; d += 2) {
+    const b = movement.bounds, reach = Math.min(PLAYER_AHEAD, Math.max(0, player.speed ?? 0) * 3), hx = Math.sin(player.heading), hy = Math.cos(player.heading);
+    for (let d = 0; d <= reach; d += reach > 40 ? 3 : 2) {
       const x = player.u + hx * d, y = player.s + hy * d;
       if (x < b.minX - 3.5 || x > b.maxX + 3.5 || y < b.minY - 3.5 || y > b.maxY + 3.5) continue;
       for (const p of movement.points) if (Math.hypot(p.x - x, p.y - y) < 3.5) return true;

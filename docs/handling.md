@@ -35,7 +35,7 @@ Sparks, smoke and tire marks come off the back wheels while drifting. A turbo sh
 
 ## Turning Radius
 
-Side streets are 13 m wide, avenues 18 m and boulevards 24 m. The full-lock radius blends the car's low-speed lock with a grip limit of `speed² / cornering`, where `cornering` is `32 × grip` m/s² (`turningRadius` in `src/handling.js`). The blend follows whichever limit is tighter without a sudden change between them. Loose ground reduces grip, and braking into a corner gives a little extra.
+Side streets are 12 m wide, avenues 17 m and boulevards 23 m. The full-lock radius blends the car's low-speed lock with a grip limit of `speed² / cornering`, where `cornering` is `32 × grip` m/s² (`turningRadius` in `src/handling.js`). The blend follows whichever limit is tighter without a sudden change between them. Loose ground reduces grip, and braking into a corner gives a little extra.
 
 Each car has its own low-speed radius as well as its grip: 3.2 m for the Micro, 3.6 m for the Formula cars and 5.4 m for the truck. The Formula cars have the most grip (2.25 for the Formula and 2.2 for the Formula Taxi, compared to the Taxi's 1.4). Cars only drift when you hold Drift.
 

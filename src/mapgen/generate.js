@@ -13,7 +13,7 @@ import { filletPolyline, closeLoop, ringRoad, clipInside, weldEnds, circuses, cl
 import { frontageLots, throughLots, chamferAcute } from './lots.js';
 import { islandOutline, landAndWater, seaSideOf, roadFootprints } from './shore.js';
 import { insetPolygon, difference, solids } from './booleans.js';
-import { CLASS_PROFILES, PROFILES, assignProfiles } from './road-hierarchy.js';
+import { CLASS_PROFILES, PROFILES, RESERVE, reserved, assignProfiles } from './road-hierarchy.js';
 import { parkLayout, deepestPoint } from './park-paths.js';
 import { infillStreets } from './infill.js';
 import GridStorage from './grid-storage.js';
@@ -26,7 +26,10 @@ import GridStorage from './grid-storage.js';
 // Road widths are the game's street profiles (see road-hierarchy.js); the
 // generator needs them for setbacks, and the world draws them.
 export const ROAD_PROFILES = CLASS_PROFILES;
-export const SIDEWALK = 4.2;
+export const SIDEWALK = 4.7;
+// From the edge of a road's reserve to its lot line: the pavement the lots
+// were laid out behind, before it took its share of the road (see RESERVE)
+const LOT_SETBACK = SIDEWALK - RESERVE;
 // How round each class of road bends, at most, in meters
 const BEND_RADIUS = { main: 80, major: 60, minor: 35, path: 14 };
 
@@ -54,7 +57,7 @@ export const DEFAULT_OPTIONS = {
   // The city is an island whose edge is a harbor all round: the shore is a
   // quay wall `quay` beyond the curb of the ring road and of the coast road,
   // and the sea runs on to the edge of the world.
-  shore: { quay: 6, sea: 2400 },
+  shore: { quay: 6.5, sea: 2400 },
   // Every dead end reaches the next street or is cut back to its last junction:
   // a road that stops inside a block would run under its pavement and lots
   network: { stub: 18, reach: 150, keepOver: Infinity },
@@ -269,7 +272,7 @@ export function* generateCityStages(options = {}) {
 
   const minorParams = { ...o.minor }, majorParams = { ...minorParams, ...o.major }, mainParams = { ...minorParams, ...o.main };
   // (two reaches of a river no nearer than both their bank roads need)
-  const waterParams = { riverApart: 2 * (o.water.riverSize + PROFILES.riverbank.halfWidth), ...minorParams, ...o.water };
+  const waterParams = { riverApart: 2 * (o.water.riverSize + reserved(PROFILES.riverbank)), ...minorParams, ...o.water };
   const integrator = new RK4Integrator(field, minorParams);
   const water = new WaterGenerator(integrator, origin, dimensions, waterParams, field, random);
   if (o.coast) water.createCoast();
@@ -388,7 +391,7 @@ export function* generateCityStages(options = {}) {
   let circusList;
   ({ roads: roadList, circuses: circusList } = circuses(roadList, { canPlace: p => field.onLand(p) && insideRing(p) && !field.inParks(p) }));
   // Trim overshoots, carry dead ends on to the next street, drop orphans
-  roadList = cleanNetwork(roadList, { ...o.network, halfWidthOf: kind => (ROAD_PROFILES[kind] ?? ROAD_PROFILES.minor).halfWidth,
+  roadList = cleanNetwork(roadList, { ...o.network, halfWidthOf: kind => reserved(ROAD_PROFILES[kind] ?? ROAD_PROFILES.minor),
     canCross: (p, road) => field.onLand(p) && insideRing(p) && (road.kind === 'path') === field.inParks(p) });
   // Streets stopping on a road a few meters apart meet it in one place, or one gives way
   roadList = spreadJunctions(roadList);
@@ -429,10 +432,10 @@ export function* generateCityStages(options = {}) {
   // across the lawn to a plaza or a pond (see park-paths.js)
   const streetIndex = new RoadIndex(roadList);
   const parkLayouts = bigParks.map(polygon => parkLayout(polygon, {
-    sidewalk: SIDEWALK, random, pathHalfWidth: PROFILES.path.halfWidth,
-    halfWidthAt: (a, b) => streetIndex.nearest((a.x + b.x) / 2, (a.y + b.y) / 2, 30)?.road.profile.halfWidth ?? PROFILES.avenue.halfWidth,
+    sidewalk: LOT_SETBACK, random, pathHalfWidth: PROFILES.path.halfWidth,
+    halfWidthAt: (a, b) => reserved(streetIndex.nearest((a.x + b.x) / 2, (a.y + b.y) / 2, 30)?.road.profile ?? PROFILES.avenue),
     streetAt: p => { const hit = streetIndex.nearest(p.x, p.y, 40); return hit && { x: hit.x, y: hit.y, road: hit.road }; },
-    junctionNear: (p, road, reach) => Boolean(streetIndex.nearest(p.x, p.y, reach + 14, (segment, distance) => segment.road !== road && distance - segment.road.profile.halfWidth < reach ? 0 : Infinity)),
+    junctionNear: (p, road, reach) => Boolean(streetIndex.nearest(p.x, p.y, reach + 14, (segment, distance) => segment.road !== road && distance - reserved(segment.road.profile) < reach ? 0 : Infinity)),
   }));
   for (const layout of parkLayouts) for (const points of layout.paths) roadList.push({ kind: 'path', points, profile: PROFILES.path });
   lap('network');
@@ -444,13 +447,10 @@ export function* generateCityStages(options = {}) {
   const lotGraph = new Graph(streamlines, minorParams.dstep, true);
   // Each block edge is set back by the width of the road it actually runs
   // along, which the graph knows; the nearest road is only a fallback.
-  const edgeWidths = new Map();
-  const nearestHalfWidth = (a, b) => {
-    const nearest = roadIndex.nearest((a.x + b.x) / 2, (a.y + b.y) / 2, 30);
-    return nearest ? nearest.road.profile.halfWidth : ROAD_PROFILES.minor.halfWidth;
-  };
-  const halfWidthAt = (a, b) => edgeWidths.get(a)?.get(b) ?? nearestHalfWidth(a, b);
-  const finder = new PolygonFinder(lotGraph.nodes, { maxLength: o.lots.maxLength, shrinkSpacing: (a, b) => halfWidthAt(a, b) + SIDEWALK }, field);
+  const edgeProfiles = new Map();
+  const nearestProfile = (a, b) => roadIndex.nearest((a.x + b.x) / 2, (a.y + b.y) / 2, 30)?.road.profile ?? ROAD_PROFILES.minor;
+  const profileAt = (a, b) => edgeProfiles.get(a)?.get(b) ?? nearestProfile(a, b);
+  const finder = new PolygonFinder(lotGraph.nodes, { maxLength: o.lots.maxLength, shrinkSpacing: (a, b) => reserved(profileAt(a, b)) + LOT_SETBACK }, field);
   finder.findPolygons();
   const blockRoads = finder.polygons.map((polygon, f) => {
     const nodes = finder.faceNodes[f], n = polygon.length, roads = [];
@@ -458,18 +458,16 @@ export function* generateCityStages(options = {}) {
       const road = lotGraph.edgeRoads.get(Graph.edgeKey(nodes[i], nodes[(i + 1) % n])) ?? -1;
       roads.push(road);
       if (road < 0) continue;
-      const a = polygon[i], b = polygon[(i + 1) % n], w = roadList[road].profile.halfWidth;
-      if (!edgeWidths.has(a)) edgeWidths.set(a, new Map());
-      if (!edgeWidths.has(b)) edgeWidths.set(b, new Map());
-      edgeWidths.get(a).set(b, w); edgeWidths.get(b).set(a, w);
+      const a = polygon[i], b = polygon[(i + 1) % n], profile = roadList[road].profile;
+      if (!edgeProfiles.has(a)) edgeProfiles.set(a, new Map());
+      if (!edgeProfiles.has(b)) edgeProfiles.set(b, new Map());
+      edgeProfiles.get(a).set(b, profile); edgeProfiles.get(b).set(a, profile);
     }
     return roads;
   });
   // A block: its face between the road centerlines, the curb line, and the
   // inner edge of its pavement, which is where its lots begin.
-  const blocks = finder.polygons.map((polygon, i) => ({ polygon, roads: blockRoads[i], sidewalk: insetPolygon(polygon, (a, b) => -halfWidthAt(a, b)), inner: [], yard: [] }));
-  // How far a point stands outside the nearest carriageway (negative: on it)
-  const clearOfRoads = p => { const hit = roadIndex.nearest(p.x, p.y, 25, carriagewayScore); return hit ? hit.score : Infinity; };
+  const blocks = finder.polygons.map((polygon, i) => ({ polygon, roads: blockRoads[i], sidewalk: insetPolygon(polygon, (a, b) => -profileAt(a, b).halfWidth), inner: [], yard: [] }));
   // Where two roads meet at a shallow angle, or a road runs on a few meters
   // past a junction, a block's curb line can reach onto a carriageway, and
   // where a wide road carries on round a bend as a narrower one the corner of
@@ -477,7 +475,7 @@ export function* generateCityStages(options = {}) {
   // carriageways are cut out of the block, which keeps the rest of it; only a
   // sliver with little left, or a road through its middle, is left as verge.
   // (the corners of each road end where another road carries on from it)
-  const joints = endJoints(roadList), ends = [];
+  const ends = [];
   for (const road of roadList) {
     const points = road.points, n = points.length;
     if (road.kind === 'path' || n < 2 || points[0].distanceTo(points[n - 1]) < 1e-6) continue;
@@ -486,27 +484,55 @@ export function* generateCityStages(options = {}) {
       if (length >= 1) ends.push({ road, end, tx: (end.x - before.x) / length, ty: (end.y - before.y) / length });
     }
   }
-  const endCorners = ends.filter(a => ends.some(b => b.road !== a.road && b.end.distanceTo(a.end) < .5)).flatMap(({ road, end, tx, ty }) => {
-    const w = road.profile.halfWidth - 1;
-    return [-1, 1].map(side => new Vector(end.x - tx * .5 - ty * side * w, end.y - ty * .5 + tx * side * w));
-  });
-  const poked = polygon => {
-    const b = polygonBounds(polygon);
-    return endCorners.some(p => p.x > b.minX && p.x < b.maxX && p.y > b.minY && p.y < b.maxY && insidePolygon(p, polygon) && clearOfRoads(p) < -.75);
+  const meeting = ends.filter(a => ends.some(b => b.road !== a.road && b.end.distanceTo(a.end) < .5));
+  // A line round a block fitted to the carriageways, each widthOf(road) to a
+  // side: left as it is, cut clear of them, or [] where too little is left
+  const fitter = widthOf => {
+    const score = carriagewayScorer(widthOf), joints = endJoints(roadList, widthOf), widest = Math.max(...roadList.map(widthOf));
+    // How far a point stands outside the nearest carriageway (negative: on it)
+    const clearOfRoads = p => { const hit = roadIndex.nearest(p.x, p.y, 25, score); return hit ? hit.score : Infinity; };
+    const endCorners = meeting.flatMap(({ road, end, tx, ty }) => {
+      const w = widthOf(road) - 1;
+      return [-1, 1].map(side => new Vector(end.x - tx * .5 - ty * side * w, end.y - ty * .5 + tx * side * w));
+    });
+    // (on a carriageway by more than a graze, which only a segment within
+    // its width can say: asked of every corner of every block's line)
+    const onRoad = p => {
+      let on = false;
+      roadIndex.each(p.x, p.y, widest, (segment, distance, t) => { if (!on && score(segment, distance, t, p.x, p.y) < -.75) on = true; });
+      return on;
+    };
+    const poked = polygon => {
+      const b = polygonBounds(polygon);
+      return endCorners.some(p => p.x > b.minX && p.x < b.maxX && p.y > b.minY && p.y < b.maxY && insidePolygon(p, polygon) && onRoad(p));
+    };
+    const clear = polygon => !polygon.some(onRoad);
+    const fit = line => {
+      if (!line.length) return line;
+      const reaches = !clear(line);
+      if (!reaches && !poked(line)) return line;
+      // Cut round the joints if that leaves a clean line; failing that one
+      // that reaches onto a road is cut without them, and one only poked is kept
+      let kept = clearOfCarriageways(line, roadIndex, widthOf, joints);
+      if (!(kept && clear(kept) && !poked(kept))) kept = reaches ? clearOfCarriageways(line, roadIndex, widthOf) : line;
+      return kept === line || (kept && clear(kept)) ? kept : [];
+    };
+    return { fit, joints, clearOfRoads };
   };
-  const clear = polygon => polygon.every(p => clearOfRoads(p) >= -.75);
-  for (const block of blocks) {
-    if (!block.sidewalk.length) continue;
-    const reaches = !clear(block.sidewalk);
-    if (!reaches && !poked(block.sidewalk)) continue;
-    // Cut round the joints if that leaves a clean curb; failing that a block
-    // that reaches onto a road is cut without them, and one only poked keeps its line
-    let kept = clearOfCarriageways(block.sidewalk, roadIndex, joints);
-    if (!(kept && clear(kept) && !poked(kept))) kept = reaches ? clearOfCarriageways(block.sidewalk, roadIndex) : block.sidewalk;
-    if (kept === block.sidewalk) continue;
-    if (kept && clear(kept)) { block.sidewalk = kept; block.repaired = true; }
-    else { block.sidewalk = []; block.broken = true; }
-  }
+  // The lots are measured from each road's reserve (see RESERVE), so a block
+  // is whole, cut or broken as its reserve line says, and its curb, fitted to
+  // the carriageways as drawn, only follows: a curb that will not fit where
+  // the reserve line did stands on that
+  const drawn = fitter(road => road.profile.halfWidth), laid = fitter(road => reserved(road.profile)), joints = drawn.joints, clearOfRoads = laid.clearOfRoads;
+  const reserveLines = blocks.map(block => {
+    const line = insetPolygon(block.polygon, (a, b) => -reserved(profileAt(a, b))), kept = laid.fit(line);
+    if (line.length && !kept.length) { block.sidewalk = []; block.broken = true; return null; }
+    const kerb = drawn.fit(block.sidewalk);
+    block.sidewalk = kerb.length ? kerb : kept;
+    if (kept === line) return null;
+    block.repaired = true;
+    return kept;
+  });
   // Land and water for the whole world, from the ring road's promenade, the
   // coast road's and the river's channel. The city stands on its blocks and
   // its roads with their promenades: bare land on the shore past them (where
@@ -552,8 +578,8 @@ export function* generateCityStages(options = {}) {
       : { depth: 22, frontage: [14, 21], corner: [10, 15], minArea: o.lots.minArea };
   finder.shrunkPolygons.forEach((shrunk, index) => {
     const block = blocks[index];
-    // A repaired block steps in from the curb it was left with
-    if (block.repaired) shrunk = insetPolygon(block.sidewalk, -SIDEWALK);
+    // A repaired block steps in from the line it was left with
+    if (block.repaired) shrunk = insetPolygon(reserveLines[index], -LOT_SETBACK);
     const inner = shrunk.length >= 3 ? chamferAcute(shrunk) : shrunk;
     block.inner = block.broken ? [] : inner;
     if (block.inner.length < 3 || block.park) return;
@@ -569,7 +595,7 @@ export function* generateCityStages(options = {}) {
     // (A block cut across keeps only the lots on its streets: any in its
     // middle, which a big winding block can leave, are its yard)
     const pieces = (result?.lots ?? throughLots(inner, style.minArea, random).filter(lot => lot.edges.includes('street')))
-      .filter(lot => lot.polygon.every(p => clearOfRoads(p) > SIDEWALK * .7));
+      .filter(lot => lot.polygon.every(p => clearOfRoads(p) > LOT_SETBACK * .7));
     for (const lot of pieces) { lots.push(lot.polygon); lotBlocks.push(index); lotEdges.push(lot.edges); lotDepths.push(lot.depth ?? 0); }
   });
   lap('lots');
@@ -590,7 +616,7 @@ export function* generateCityStages(options = {}) {
     coastline: water.coastline, coastLine, sea: water.seaPolygon, river: water.riverPolygon, riverStreamline: water.riverStreamline, riverCentre: water.riverCentre ?? null,
     riverWidth: waterParams.riverSize - waterParams.riverBankSize, shore,
     hasCoast: water.hasCoast, hasRiver: water.hasRiver,
-    parks: parks.map(park => park.polygon), parkInfo: parks, parkLayouts, blocks, lots, lotBlocks, lotEdges, lotDepths, nav, field, joints,
+    parks: parks.map(park => park.polygon), parkInfo: parks, parkLayouts, blocks, lots, lotBlocks, lotEdges, lotDepths, nav, field, joints, reserveJoints: laid.joints,
     districts: neighbourhoods, neighbourhoodAt, districtAt, downtownDistance,
     sampleDirection: (x, y) => field.samplePoint(new Vector(x, y)).getMajor(),
     timings,
@@ -601,40 +627,44 @@ export function* generateCityStages(options = {}) {
 // across the road's own ends, as the carriageway is drawn: beyond the end of
 // a road is not on it, however its last few meters bend, nor is the few
 // centimeters a road is carried past the one it meets. (x, y) is the point.
-const carriagewaySpans = new WeakMap();
-export function carriagewayScore(segment, distance, t, x, y) {
-  const road = segment.road;
-  let span = carriagewaySpans.get(road);
-  if (!span) {
-    // The segments within a couple of meters of either end are its overshoot
-    const points = road.points, n = points.length;
-    let first = 0, last = n - 2, run = 0;
-    while (first < last && (run += points[first].distanceTo(points[first + 1])) < 2) first++;
-    run = 0;
-    while (last > first && (run += points[last].distanceTo(points[last + 1])) < 2) last--;
-    // Each end, square across the road, and which segments are near enough to it to reach past it
-    const along = [0];
-    for (let i = 1; i < n; i++) along.push(along[i - 1] + points[i].distanceTo(points[i - 1]));
-    const closed = points[0].distanceTo(points[n - 1]) < 1e-6, reach = road.profile.halfWidth * 2;
-    const end = (at, towards) => { const d = points[at].clone().sub(points[towards]), l = d.length() || 1; return { x: points[at].x, y: points[at].y, dx: d.x / l, dy: d.y / l }; };
-    span = { first, last, along, closed, reach, start: end(first, first + 1), end: end(last + 1, last) };
-    carriagewaySpans.set(road, span);
-  }
-  if (segment.index < span.first || segment.index > span.last) return Infinity;
-  if ((t <= 0 && segment.index === span.first) || (t >= 1 && segment.index === span.last)) return Infinity;
-  if (x !== undefined && !span.closed) {
-    const { along, start, end, reach } = span;
-    if (along[segment.index] - along[span.first] < reach && (x - start.x) * start.dx + (y - start.y) * start.dy > 0) return Infinity;
-    if (along[span.last + 1] - along[segment.index + 1] < reach && (x - end.x) * end.dx + (y - end.y) * end.dy > 0) return Infinity;
-  }
-  return distance - road.profile.halfWidth;
+// widthOf(road) is the carriageway's half width.
+export function carriagewayScorer(widthOf) {
+  const spans = new WeakMap();
+  return (segment, distance, t, x, y) => {
+    const road = segment.road;
+    let span = spans.get(road);
+    if (!span) {
+      // The segments within a couple of meters of either end are its overshoot
+      const points = road.points, n = points.length;
+      let first = 0, last = n - 2, run = 0;
+      while (first < last && (run += points[first].distanceTo(points[first + 1])) < 2) first++;
+      run = 0;
+      while (last > first && (run += points[last].distanceTo(points[last + 1])) < 2) last--;
+      // Each end, square across the road, and which segments are near enough to it to reach past it
+      const along = [0];
+      for (let i = 1; i < n; i++) along.push(along[i - 1] + points[i].distanceTo(points[i - 1]));
+      const closed = points[0].distanceTo(points[n - 1]) < 1e-6, width = widthOf(road), reach = width * 2;
+      const end = (at, towards) => { const d = points[at].clone().sub(points[towards]), l = d.length() || 1; return { x: points[at].x, y: points[at].y, dx: d.x / l, dy: d.y / l }; };
+      span = { first, last, along, closed, reach, width, start: end(first, first + 1), end: end(last + 1, last) };
+      spans.set(road, span);
+    }
+    if (segment.index < span.first || segment.index > span.last) return Infinity;
+    if ((t <= 0 && segment.index === span.first) || (t >= 1 && segment.index === span.last)) return Infinity;
+    if (x !== undefined && !span.closed) {
+      const { along, start, end, reach } = span;
+      if (along[segment.index] - along[span.first] < reach && (x - start.x) * start.dx + (y - start.y) * start.dy > 0) return Infinity;
+      if (along[span.last + 1] - along[segment.index + 1] < reach && (x - end.x) * end.dx + (y - end.y) * end.dy > 0) return Infinity;
+    }
+    return distance - span.width;
+  };
 }
+export const carriagewayScore = carriagewayScorer(road => road.profile.halfWidth);
 
 // A curb line less every carriageway that reaches onto it, and the joints
 // where one road carries on as another: the biggest piece left, if it keeps
 // most of the block and no road runs through its middle. The carriageways are
 // cut a little narrow, so a curb that only grazes one keeps its line.
-function clearOfCarriageways(polygon, roadIndex, joints = [], graze = .3) {
+function clearOfCarriageways(polygon, roadIndex, widthOf, joints = [], graze = .3) {
   const b = polygonBounds(polygon), margin = 30, near = new Map();
   roadIndex.each((b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2, Math.hypot(b.maxX - b.minX, b.maxY - b.minY) / 2 + margin, segment => {
     if (segment.road.kind === 'path') return;
@@ -646,7 +676,7 @@ function clearOfCarriageways(polygon, roadIndex, joints = [], graze = .3) {
     // Each run of the road's segments near the block, as one carriageway
     const sorted = [...indices].sort((p, q) => p - q);
     let run = [];
-    const flush = () => { if (run.length) cuts.push(bufferPolyline(road.points.slice(run[0], run[run.length - 1] + 2), road.profile.halfWidth - graze)); run = []; };
+    const flush = () => { if (run.length) cuts.push(bufferPolyline(road.points.slice(run[0], run[run.length - 1] + 2), widthOf(road) - graze)); run = []; };
     for (const i of sorted) { if (run.length && i !== run[run.length - 1] + 1) flush(); run.push(i); }
     flush();
   }

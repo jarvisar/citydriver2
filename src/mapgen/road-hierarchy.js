@@ -12,22 +12,39 @@
 // junction: 4 the boulevards and the parkway, 3 the avenues, 2 the
 // collectors, 1 the local streets, 0 the old town's lanes), centre (its
 // center line: 'double', 'dashed' or none), halfWidth, lane (the center of
-// the lane traffic keeps to, right of the center line), speed, median (half
-// its width; 0 for none) and, for a street with parking, the half width of
-// the carriageway outside the parking bays.
+// the lane traffic keeps to, right of the center line: the curb lane, where
+// there are two), speed, median (half its width; 0 for none), divider (the
+// line between its two lanes each way, where it has them: the other lane is
+// midway between that and the median or center line), edge (a line painted
+// along each side) and, for a street with parking, the half width of the
+// carriageway outside the parking bays.
+// Lanes are sized for cars about 1.6 m wide: a little over 4 m where there
+// are two each way, and on a street with one each way the two keep far
+// enough apart (about 4 m between opposing cars) for a third to pass down
+// the middle, with two meters between a car in its lane and one in a bay.
 export const PROFILES = Object.freeze({
-  boulevard: Object.freeze({ kind: 'boulevard', rank: 4, halfWidth: 12, lane: 7.2, speed: 20, median: 2.2, divider: 5.6, trees: true }),
-  parkway: Object.freeze({ kind: 'boulevard', rank: 4, halfWidth: 11, lane: 6.3, speed: 18, median: 1.5, divider: 4.7, trees: false }),
-  avenue: Object.freeze({ kind: 'avenue', rank: 3, centre: 'double', halfWidth: 9, lane: 3, speed: 16, median: 0 }),
-  riverbank: Object.freeze({ kind: 'avenue', rank: 3, centre: 'double', halfWidth: 8, lane: 3, speed: 14, median: 0 }),
-  collector: Object.freeze({ kind: 'collector', rank: 2, centre: 'dashed', halfWidth: 7.2, lane: 2.8, speed: 13, median: 0 }),
+  boulevard: Object.freeze({ kind: 'boulevard', rank: 4, halfWidth: 11.5, lane: 8.7, speed: 22, median: 2.2, divider: 6.6, edge: 10.9, trees: true }),
+  parkway: Object.freeze({ kind: 'boulevard', rank: 4, halfWidth: 10.5, lane: 7.9, speed: 20, median: 1.5, divider: 5.8, edge: 9.9, trees: false }),
+  avenue: Object.freeze({ kind: 'avenue', rank: 3, centre: 'double', halfWidth: 8.5, lane: 6.4, speed: 18, median: 0, divider: 4.25 }),
+  riverbank: Object.freeze({ kind: 'avenue', rank: 3, centre: 'double', halfWidth: 7.5, lane: 3.2, speed: 16, median: 0, edge: 5.7 }),
+  collector: Object.freeze({ kind: 'collector', rank: 2, centre: 'dashed', halfWidth: 6.7, lane: 3.1, speed: 15, median: 0 }),
   // (a collector through a district that parks on its streets)
-  bayCollector: Object.freeze({ kind: 'collector', rank: 2, centre: 'dashed', halfWidth: 8.6, lane: 3, speed: 12, median: 0, parking: 6.2 }),
-  side: Object.freeze({ kind: 'side', rank: 1, halfWidth: 6.5, lane: 2.7, speed: 10, median: 0 }),
-  lane: Object.freeze({ kind: 'side', rank: 0, halfWidth: 5.2, lane: 2.2, speed: 8, median: 0, narrow: true }),
-  parking: Object.freeze({ kind: 'side', rank: 1, halfWidth: 7.8, lane: 2.8, speed: 10, median: 0, parking: 5.4 }),
+  bayCollector: Object.freeze({ kind: 'collector', rank: 2, centre: 'dashed', halfWidth: 8.1, lane: 3, speed: 14, median: 0, parking: 5.9 }),
+  side: Object.freeze({ kind: 'side', rank: 1, halfWidth: 6, lane: 3, speed: 12, median: 0 }),
+  lane: Object.freeze({ kind: 'side', rank: 0, halfWidth: 4.7, lane: 2.3, speed: 10, median: 0, narrow: true }),
+  parking: Object.freeze({ kind: 'side', rank: 1, halfWidth: 7.3, lane: 2.6, speed: 12, median: 0, parking: 5.1 }),
   path: Object.freeze({ kind: 'path', rank: -1, halfWidth: 3.6, lane: 1.6, speed: 8, median: 0 }),
 });
+// Every street has given half a meter each side to its pavement since the
+// cities were laid out. (A whole meter was tried: it read well from above,
+// but gave back the room the smaller cars had won, and a driver wandering
+// in their lane hit parked cars and lamps as often as before.) The network,
+// the shore and the lots are still laid out as they were, for carriageways
+// this much wider each side than the ones drawn (a park's walk is as it
+// was): so the curbs moved, and no road, block or lot. Whatever spaces
+// roads or cuts land goes by a road's reserve.
+export const RESERVE = .5;
+export const reserved = profile => profile.kind === 'path' ? profile.halfWidth : profile.halfWidth + RESERVE;
 // The profile each class of road takes unless something says otherwise
 export const CLASS_PROFILES = Object.freeze({
   main: PROFILES.boulevard, major: PROFILES.avenue, ring: PROFILES.parkway, coast: PROFILES.avenue,

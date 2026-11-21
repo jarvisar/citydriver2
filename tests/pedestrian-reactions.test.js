@@ -4,10 +4,12 @@ import * as THREE from 'three';
 import { PedestrianContacts, PEDESTRIAN_EASE as EASE, PEDESTRIAN_LIE, PEDESTRIAN_RISE, PEDESTRIAN_MEET, PEDESTRIAN_REJOIN_AHEAD,
   walkedAt, paceAt, setStride, standing, hurrying, nearestOnLoop, rejoinWalk, stopWalkers, regroupWalkers, lookYaw,
   applyHop, PEDESTRIAN_HOP as HOP, PEDESTRIAN_HOP_HEIGHT as HOP_HEIGHT, PEDESTRIAN_PIVOT as PIVOT } from '../src/world/pedestrian-reactions.js';
-import { TaxiView } from '../src/taxi-view.js';
+import { TaxiView, fareSpots } from '../src/taxi-view.js';
+import { WalkSpace } from '../src/world/city-walks.js';
+import { CITY } from '../src/world/city.js';
 import { LooseProps } from '../src/loose-props.js';
 import { CitydriverWorld } from '../src/world/citydriver-world.js';
-import { journeyStart, roadAt, ROAD_LEVEL } from '../src/world/city-route.js';
+import { journeyStart, roadAt, surfaceAt, ROAD_LEVEL, PAVEMENT_LEVEL } from '../src/world/city-route.js';
 
 const close = (a, b, epsilon = 1e-8) => assert.ok(Math.abs(a - b) < epsilon, `${a} ≈ ${b}`);
 const car = (x = 0, z = 0, heading = 0) => ({ groundedPosition: new THREE.Vector3(x, 24.2, z),
@@ -420,4 +422,173 @@ test('a ball rolling or flying into someone never knocks them over', () => {
   const before = contacts.flying ?? 0;
   contacts.addPiece(body);
   assert.equal(contacts.flying ?? 0, before, 'not counted among the pieces in flight');
+});
+
+// A straight stretch of a block's walk, on the pavement: where it starts
+// (world x, z), the way along it and the way across to the curb
+const pavement = (() => {
+  let found = null;
+  return () => {
+    if (found) return found;
+    const walks = new WalkSpace();
+    for (let index = 0; index < CITY.blocks.length && !found; index++) {
+      const loop = walks.block(index);
+      if (!loop) continue;
+      const n = loop.points.length;
+      for (let i = 0; i < n && !found; i++) {
+        const a = loop.points[i], b = loop.points[(i + 1) % n], length = Math.hypot(b.x - a.x, b.y - a.y);
+        if (length > 30) found = { x: a.x, z: -a.y, ux: (b.x - a.x) / length, uz: -(b.y - a.y) / length, out: { x: (b.y - a.y) / length, z: (b.x - a.x) / length } };
+      }
+    }
+    return found;
+  };
+})();
+// Someone walking a straight stretch at 1.5 m/s for `seconds`, as they are drawn each frame
+function stroll(contacts, { player, props = null, seconds = 14, each = () => {} }) {
+  const { x, z, ux, uz } = pavement(), person = {}, matrix = new THREE.Matrix4(), frame = new THREE.Matrix4(), frames = [];
+  for (let time = 0; time < seconds; time += 1 / 60) {
+    each(time);
+    contacts.update(player, null, time, props);
+    const along = time * 1.5, hx = x + ux * along, hz = z + uz * along;
+    matrix.makeTranslation(hx, PAVEMENT_LEVEL, hz);
+    const away = contacts.person(person, matrix, frame, .28, time);
+    frames.push({ time, x: matrix.elements[12], z: matrix.elements[14], aside: Math.hypot(matrix.elements[12] - hx, matrix.elements[14] - hz), away });
+  }
+  return { person, frames };
+}
+
+test('someone walking steps round a car at rest on the pavement and back onto their walk, and round what lies there', () => {
+  const { x, z, ux, uz } = pavement(), cx = x + ux * 10, cz = z + uz * 10;
+  // (the player's car left square across the walk, ten meters on)
+  const parked = { groundedPosition: new THREE.Vector3(cx, PAVEMENT_LEVEL, cz), spec: { width: 2, length: 4.4 }, heading: Math.atan2(-uz, -ux), speed: 0, generation: 0 };
+  const knocked = [], props = () => ({ bodies: [], lying: () => [], person() { knocked.push(1); return { body: null, blow: null }; } });
+  const inCar = f => { const dx = f.x - cx, dz = f.z - cz, along = dx * ux + dz * uz, across = dz * ux - dx * uz; return Math.abs(along) < 1 + .25 && Math.abs(across) < 2.2 + .25; };
+  const { frames, person } = stroll(new PedestrianContacts(), { player: parked, props: props() });
+  assert.equal(knocked.length, 0, 'a car at rest knocks nobody over');
+  assert.ok(!frames.some(inCar), 'never in it');
+  const most = Math.max(...frames.map(f => f.aside));
+  assert.ok(most > 2.2 && most < 3.2, `round its end (${most.toFixed(2)} m aside)`);
+  assert.ok(frames.at(-1).aside < 1e-6 && !person.aside, 'and back on their walk');
+  for (let i = 1; i < frames.length; i++) assert.ok(Math.abs(frames[i].aside - frames[i - 1].aside) < .05, `no faster aside than a step (${i})`);
+  // Driving off while they are beside it, it leaves them to walk back
+  const leaving = { ...parked, groundedPosition: parked.groundedPosition.clone() };
+  const gone = stroll(new PedestrianContacts(), { player: leaving, props: props(), each: time => { if (time > 6) leaving.groundedPosition.set(1e4, PAVEMENT_LEVEL, 1e4); } });
+  assert.ok(gone.frames.find(f => f.time > 5.9).aside > 1.5 && gone.frames.at(-1).aside < 1e-6);
+  for (let i = 1; i < gone.frames.length; i++) assert.ok(Math.abs(gone.frames[i].aside - gone.frames[i - 1].aside) < .05);
+  // A heavy piece lying across the walk (see LooseProps.lying), and nothing at all
+  const post = { u: cx, s: -cz, reach: 1, discs: new Float32Array([cx, -cz, cx + ux * .6, -(cz + uz * .6), cx - ux * .6, -(cz - uz * .6)]), count: 3, person: false, mass: .3 };
+  const far = { groundedPosition: new THREE.Vector3(1e4, 0, 1e4), spec: { width: 2, length: 4.4 }, heading: 0, speed: 0, generation: 0 };
+  const lying = stroll(new PedestrianContacts(), { player: far, props: { bodies: [], lying: () => [post] } });
+  for (const f of lying.frames) for (let k = 0; k < 3; k++) assert.ok(Math.hypot(f.x - post.discs[k * 2], f.z + post.discs[k * 2 + 1]) > .5, 'clear of it');
+  assert.ok(Math.max(...lying.frames.map(f => f.aside)) > .5 && lying.frames.at(-1).aside < 1e-6);
+  assert.ok(stroll(new PedestrianContacts(), { player: far, seconds: 3 }).frames.every(f => f.aside === 0), 'nothing in the way, no step aside');
+});
+
+// A cell's worth of colliders, as the world gives them to the contacts
+const sceneryOf = (...colliders) => new Map([['0,0', { collisionBounds: { minX: -1e6, maxX: 1e6, minZ: -1e6, maxZ: 1e6 }, features: { colliders } }]]);
+const wall = (x, z, ux, uz, half = 3, thick = .15) => {
+  const corners = [[-half, -thick], [half, -thick], [half, thick], [-half, thick]].map(([a, c]) => ({ x: x + ux * a - uz * c, z: z + uz * a + ux * c }));
+  return { x, z, reach: Math.hypot(half, thick), corners };
+};
+
+test('someone shoved on foot is pushed no further than a wall or the curb, and stops the player instead', () => {
+  const { x, z, ux, uz, out } = pavement();
+  // (the player walking into them at 1.2 m/s, as far as they are let)
+  const push = (toward, scenery, off = 0) => {
+    const contacts = new PedestrianContacts(), person = {}, matrix = new THREE.Matrix4(), frame = new THREE.Matrix4(), held = [];
+    const hx = x + ux * 8 + out.x * off, hz = z + uz * 8 + out.z * off, player = { walker: { brush(nx, nz, over) { if (over > 0) held.push(over); } }, groundedPosition: new THREE.Vector3(hx - toward.x * .5, PAVEMENT_LEVEL, hz - toward.z * .5), spec: { radius: .3 }, velocity: { x: toward.x * 1.2, z: toward.z * 1.2 }, heading: 0 };
+    contacts.scenery = scenery;
+    let most = 0, moved = 0;
+    for (let time = 0; time < 4; time += 1 / 60) {
+      const p = player.groundedPosition, before = held.length;
+      contacts.update(player, null, time, null);
+      matrix.makeTranslation(hx, PAVEMENT_LEVEL, hz);
+      contacts.person(person, matrix, frame, .28, time);
+      // (held by them, the player gets no further)
+      if (held.length === before) { p.x += toward.x * 1.2 / 60; p.z += toward.z * 1.2 / 60; }
+      most = Math.max(most, (matrix.elements[12] - hx) * toward.x + (matrix.elements[14] - hz) * toward.z);
+      moved = Math.max(moved, Math.hypot(matrix.elements[12] - hx, matrix.elements[14] - hz));
+      assert.equal(surfaceAt(-matrix.elements[14], matrix.elements[12]), 'pavement');
+    }
+    return { most, moved, held };
+  };
+  const inward = { x: -out.x, z: -out.z }, free = push(inward, sceneryOf());
+  assert.ok(free.moved > .5 && !free.held.length, `with room, they give way (${free.moved.toFixed(2)} m), back and aside`);
+  // (a wall along their walk, its face .75 m to the block's side of them)
+  const hx = x + ux * 8, hz = z + uz * 8, behind = wall(hx + inward.x * .9, hz + inward.z * .9, ux, uz);
+  const walled = push(inward, sceneryOf(behind));
+  assert.ok(walled.most < .9 - .15 - .28 + .02 && walled.moved > .3, `no further than a wall (${walled.most.toFixed(2)} m), and aside along it`);
+  // (walls either side of them too: nowhere to go, and the player is stopped)
+  const pocket = push(inward, sceneryOf(behind, wall(hx + ux * .8, hz + uz * .8, inward.x, inward.z, 1), wall(hx - ux * .8, hz - uz * .8, inward.x, inward.z, 1)));
+  assert.ok(pocket.most < .49 && pocket.moved < .6 && pocket.held.length > 0, `boxed in they stop (${pocket.moved.toFixed(2)} m) and so does the player`);
+  // (half a meter from the curb, with nowhere to step aside: no further than its edge)
+  let edge = 0;
+  while (edge < 12 && surfaceAt(-(hz + out.z * edge), hx + out.x * edge) === 'pavement') edge += .05;
+  const sides = [wall(hx + out.x * (edge - .5) + ux * .8, hz + out.z * (edge - .5) + uz * .8, out.x, out.z, 1), wall(hx + out.x * (edge - .5) - ux * .8, hz + out.z * (edge - .5) - uz * .8, out.x, out.z, 1)];
+  const kerbed = push(out, sceneryOf(...sides), edge - .5);
+  assert.ok(edge > 2 && edge < 6 && kerbed.held.length > 0 && kerbed.most < .5, `stopped at the curb, ${kerbed.most.toFixed(2)} m out`);
+});
+
+test('a dive lands where there is room to stand, and the walk back goes round what is in the way', () => {
+  const { x, z, ux, uz, out } = pavement(), contacts = new PedestrianContacts(), hx = x + ux * 8, hz = z + uz * 8;
+  const inward = { x: -out.x, z: -out.z }, dive = (scenery, far = 1) => {
+    const way = { x: inward.x * far, z: inward.z * far, ox: out.x * 1.2, oz: out.z * 1.2 };
+    contacts.scenery = scenery; contacts.landing(way, hx, hz, .28);
+    return way;
+  };
+  const open = dive(sceneryOf());
+  assert.ok(Math.abs(Math.hypot(open.x, open.z) - 1) < 1e-9, 'the way asked for, with room');
+  const turned = dive(sceneryOf(wall(hx + inward.x * .9, hz + inward.z * .9, ux, uz)));
+  assert.ok(turned.x * out.x + turned.z * out.z > 1.1, 'the other way from a wall');
+  // (walls both sides: as far as is clear, which may be nowhere)
+  const boxed = dive(sceneryOf(wall(hx + inward.x * .9, hz + inward.z * .9, ux, uz), wall(hx + out.x * .9, hz + out.z * .9, ux, uz)));
+  assert.ok(Math.hypot(boxed.x, boxed.z) <= .5 + 1e-9, `no further than the wall (${Math.hypot(boxed.x, boxed.z).toFixed(2)} m)`);
+  // Walking back from the road to their walk with a wall across the straight way
+  const from = { x: hx + out.x * 5, z: hz + out.z * 5 }, across = wall(hx + out.x * 2.5, hz + out.z * 2.5, ux, uz, 2);
+  contacts.scenery = sceneryOf();
+  assert.equal(contacts.detour(from.x, from.z, hx, hz), null, 'straight back when nothing is in the way');
+  contacts.scenery = sceneryOf(across);
+  const via = contacts.detour(from.x, from.z, hx, hz);
+  assert.ok(via && contacts.walkable(from.x, from.z, via.x, via.z, .25, false) && contacts.walkable(via.x, via.z, hx, hz, .25, false), 'round its end');
+  assert.ok(!contacts.walkable(from.x, from.z, hx, hz, .25, false));
+  // and drawn walking that way: up from where they lie, to the turn, and home
+  const person = { rise: { at: 0, from: { p: new THREE.Vector3(from.x, PAVEMENT_LEVEL, from.z), q: new THREE.Quaternion() }, x: from.x, z: from.z } };
+  const matrix = new THREE.Matrix4(), frame = new THREE.Matrix4(), path = [];
+  for (let time = 0; time < 12; time += 1 / 60) {
+    matrix.makeTranslation(hx, PAVEMENT_LEVEL, hz);
+    if (!contacts.away(person, matrix, frame, time)) break;
+    path.push({ x: matrix.elements[12], z: matrix.elements[14] });
+  }
+  assert.ok(path.length > 60 && !person.back && !person.rise, 'home again');
+  for (const p of path) assert.ok(contacts.standable(p.x, p.z, .2, false), 'never in the wall');
+  for (let i = 1; i < path.length; i++) assert.ok(Math.hypot(path[i].x - path[i - 1].x, path[i].z - path[i - 1].z) < .08, 'no jumps');
+});
+
+test('a waiting party stands on the pavement clear of the furniture, the bus stops and the walks, and the stop stays where it was', () => {
+  const world = new CitydriverWorld(new THREE.Scene());
+  try {
+    let stops = 0, moved = 0;
+    for (const edge of world.nav.edges) {
+      if (edge.kind === 'path' || edge.length < 60 || stops >= 250) continue;
+      const pose = world.nav.pose(edge, edge.length / 2, 1, edge.profile.lane), stop = { ...pose }, h = pose.heading;
+      if (surfaceAt(pose.s - Math.sin(h) * (edge.profile.halfWidth - edge.profile.lane + 2), pose.u + Math.cos(h) * (edge.profile.halfWidth - edge.profile.lane + 2)) !== 'pavement') continue;
+      stops++;
+      for (const count of [1, 4]) {
+        const old = fareSpots(stop, edge.profile, count), spots = fareSpots(stop, edge.profile, count, world.walks);
+        assert.equal(spots.length, count);
+        // (without the world they stand as they always did: 2 m in from the curb, in a line)
+        old.forEach((spot, i) => { close(spot.x, edge.profile.halfWidth - edge.profile.lane + 2); close(spot.z, (i - (count - 1) / 2) * 1.35); });
+        if (spots.some((spot, i) => Math.abs(spot.z - old[i].z) > .01)) moved++;
+        spots.forEach((spot, i) => {
+          const u = pose.u + spot.x * Math.cos(h) - spot.z * Math.sin(h), s = pose.s - spot.x * Math.sin(h) - spot.z * Math.cos(h);
+          assert.equal(surfaceAt(s, u), 'pavement', `a fare at ${u.toFixed(1)}, ${s.toFixed(1)}`);
+          assert.ok(world.walks.free(u, s, .3), `a fare in something at ${u.toFixed(1)}, ${s.toFixed(1)}`);
+          assert.ok(Math.hypot(spot.x, spot.z) < 12, 'still at their stop');
+          for (let k = 0; k < i; k++) assert.ok(Math.hypot(spot.x - spots[k].x, spot.z - spots[k].z) > .85, 'apart');
+        });
+      }
+      assert.deepEqual(stop, { ...pose }, 'the stop itself is untouched');
+    }
+    assert.ok(stops > 100 && moved > 0 && moved < stops, `${moved} of ${stops * 2} parties moved along`);
+  } finally { world.dispose(); }
 });

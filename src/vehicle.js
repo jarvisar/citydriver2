@@ -12,7 +12,8 @@ import { createHelicopter, Helicopter } from './helicopter.js';
 import { createPlane } from './plane-model.js';
 import { Plane } from './plane.js';
 import { createWalkerModel, Walker, WALKER_SPEC, WALKER_STATS } from './walker.js';
-import { collisionImpulse, footprintMass, heft, leadingPoint, rock, rockFrom, SCENERY_SURFACE } from './impact.js';
+import { collisionImpulse, heft, leadingPoint, rock, rockFrom, SCENERY_SURFACE } from './impact.js';
+import { modeled, scaleOf, sizeModel } from './vehicle-scale.js';
 import { steerCurve, steeringResponse, turnRate, corneringLoad, travelHeading } from './handling.js';
 import { carProfile, tailPipes } from './car-profile.js';
 import { RAINBOW_PAINT } from './car-paint.js';
@@ -237,13 +238,17 @@ export function createClassicCar(entry = carEntry(DEFAULT_CAR)) {
   return { car, body, wheels, nightLights, applyTrim, paintCar, disposeModel };
 }
 
+// A car is built as it is modeled, then stood in the scene at its shape's
+// size (see vehicle-scale.js): its root is in the street's meters, and its
+// body and wheels, inside, in the model's.
 export function createCar(id = DEFAULT_CAR) {
   const entry = carEntry(id);
-  if (entry.kind === 'formula') return createFormulaCar(entry);
-  if (entry.kind === 'special') return createSpecialCar(entry);
-  if (entry.kind === 'helicopter') return createHelicopter(entry);
-  if (entry.kind === 'plane') return createPlane(entry);
-  return entry.kind === 'classic' ? createClassicCar(entry) : createShapeCar(entry);
+  const model = entry.kind === 'formula' ? createFormulaCar(entry)
+    : entry.kind === 'special' ? createSpecialCar(entry)
+      : entry.kind === 'helicopter' ? createHelicopter(entry)
+        : entry.kind === 'plane' ? createPlane(entry)
+          : entry.kind === 'classic' ? createClassicCar(entry) : createShapeCar(entry);
+  return sizeModel(model, scaleOf(entry.shape));
 }
 // Every machine the player drives or flies knocks over trees and bus shelters (see LooseProps)
 const BREAKS = ['tree', 'shelter'];
@@ -343,11 +348,14 @@ export class ActorMotion {
     const entry = carEntry(carId);
     const Pilot = PILOTS[entry.kind];
     this.pilot = Pilot && this.rotors ? new Pilot(this, this.rotors) : null; this.walker = null; this.airborne = false;
-    const { width, length, cabin, cabinZ, cabinY = 1.22, drop = 0, eye, chaseLift = 0, door, seat, exit } = entry.shape;
+    // (the shape in the street's meters, and the model's own for what is inside it)
+    const { width, length, chaseLift = 0, door, seat, exit } = entry.shape;
+    const { cabin, cabinZ, cabinY = 1.22, drop = 0, eye } = modeled(entry.shape);
+    const scale = this.modelScale = carId === WALKER_SPEC.name ? 1 : scaleOf(entry.shape);
     // (only a car on its wheels: a flying machine and someone on foot keep their own height)
     const wheeled = !this.pilot && carId !== WALKER_SPEC.name;
     this.carAir = wheeled ? this.carAir ?? new CarAir(this) : null;
-    this.carAir?.fit(model.wheels, width, length);
+    this.carAir?.fit(model.wheels, width, length, scale);
     this.drift = wheeled ? this.drift ?? new Drift(this) : null;
     this.drift?.reset();
     this.bodyBase = model.body?.position.y ?? 0;
@@ -355,17 +363,21 @@ export class ActorMotion {
     // Traffic-shaped cabins slope back by .24 m at the top of the glass, and a
     // car that is not cut from a road-car cabin says where its driver sits.
     const glassSlope = entry.kind === 'classic' ? 0 : .24 * .7;
-    this.car.userData.driverEye = eye
+    this.car.userData.driverEye = (eye
       ? new THREE.Vector3(...eye)
-      : new THREE.Vector3(0, cabinY + cabin[1] * .7 - drop, cabinZ - cabin[2] / 2 + glassSlope - .18);
+      : new THREE.Vector3(0, cabinY + cabin[1] * .7 - drop, cabinZ - cabin[2] / 2 + glassSlope - .18)).multiplyScalar(scale);
     this.car.userData.chaseLift = chaseLift;
+    // The cameras stand nearer a car built smaller than it is modeled, most
+    // of the way in proportion: it keeps its place in the frame, and the
+    // street round it looks the size it is.
+    if (scale !== 1) this.car.userData.chaseScale = this.car.userData.overheadScale = .1 + .9 * scale;
     // (its shape along its length, for loose pieces to meet: see carProfile)
     const profile = carProfile(model.car, length);
     // (and for someone getting in and out, where its door is, meters ahead of
     // its middle, how high its seat, and where to step down: see OnFoot)
     // (and where its boost flames come out, the same for every car of a kind)
     const tail = wheeled ? TAILS.get(carId) ?? TAILS.set(carId, tailPipes(model.body)).get(carId) : null;
-    this.spec = this.drivingSpec = { name: carId, width, length, height: profile.height, profile, tail, mass: entry.mass ?? footprintMass(width, length), breaks: BREAKS, door, seat, exit };
+    this.spec = this.drivingSpec = { name: carId, width, length, height: profile.height, profile, tail, mass: entry.mass ?? entry.shape.mass, breaks: BREAKS, door, seat, exit };
     this.stats = carStats(carId);
     this.setLights(Number(this.night)); this.setAppearance(this.journeyId); this.setPaint(paint);
     Object.assign(model.car.userData, this.car.userData);
@@ -550,7 +562,7 @@ export class ActorMotion {
     this.body.rotation.x = THREE.MathUtils.lerp(a.bodyPitch, b.bodyPitch, t);
     this.body.rotation.z = THREE.MathUtils.lerp(a.bodyRoll, b.bodyRoll, t);
     // (riding up on its springs in the air, squatting into a landing)
-    if (this.carAir) this.body.position.y = this.bodyBase + THREE.MathUtils.lerp(a.bodyLift, b.bodyLift, t);
+    if (this.carAir) this.body.position.y = this.bodyBase + THREE.MathUtils.lerp(a.bodyLift, b.bodyLift, t) / this.modelScale;
     const steer = THREE.MathUtils.lerp(a.steer, b.steer, t);
     const spin = THREE.MathUtils.lerp(a.wheelSpin, b.wheelSpin, t);
     for (const w of this.wheels) {
@@ -743,7 +755,7 @@ export class ActorMotion {
     this.bodyRoll = THREE.MathUtils.damp(this.bodyRoll, aloft ? 0 : -clamp(yaw * this.speed * .0042, -LEAN, LEAN), 11, dt);
     this.bodyPitch = THREE.MathUtils.damp(this.bodyPitch, aloft ? 0 : -clamp(acceleration, -15, 12) * .0034, 7, dt);
     this.bodyLift = this.lift;
-    this.wheelSpin -= step / .48;
+    this.wheelSpin -= step / (.48 * this.modelScale);
     // The chase camera widens and drops back once the car is really moving.
     // Nothing below two fifths of its top speed, everything by the time the
     // needle is against the stop. Once the car moves, a camera the mouse
@@ -879,7 +891,7 @@ export class PlayerController {
 // and review tools. Forwarding on the prototype avoids a Proxy in hot loops.
 const PLAYER_FIELDS = ['air', 'airborne', 'aloft', 'arcade', 'audioTelemetry', 'body', 'bodyLift', 'bodyPitch', 'bodyRoll', 'boosting', 'canopy', 'car', 'carAir', 'carId', 'currentPose', 'distance', 'figure', 'sinking', 'vy', 'y',
   'drift', 'driftAmount', 'driftDirection', 'driftMode', 'drifting', 'freeDriving', 'groundedPosition', 'heading', 'jetpack', 'jolt', 'journeyId', 'knock',
-  'load', 'lost', 'model', 'night', 'nightLights', 'paintColor', 'pilot', 'pitch', 'previousPose', 'props', 'pushing', 'rainbowColor',
+  'load', 'lost', 'model', 'modelScale', 'night', 'nightLights', 'paintColor', 'pilot', 'pitch', 'previousPose', 'props', 'pushing', 'rainbowColor',
   'rainbowHue', 'reverseDelay', 'roll', 'rotors', 'route', 's', 'scenery', 'slideHeading', 'slip', 'spec', 'speed', 'stats', 'steer', 'traffic', 'trauma', 'u',
   'velocity', 'walker', 'weight', 'wheels', 'wheelSpin', 'yawRate'];
 for (const name of PLAYER_FIELDS) Object.defineProperty(PlayerController.prototype, name, {

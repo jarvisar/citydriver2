@@ -22,7 +22,7 @@ import { insidePolygon, distanceToPolyline, polygonBounds, calcPolygonArea } fro
 
 // A loading ramp: its width, the slope's run and rise, how much steeper it
 // gets toward its lip, and the level top beyond it
-const LOADING = { width: 3.2, run: 6.5, rise: 1.3, curve: .35, flat: 1.6 };
+const LOADING = { width: 2.8, run: 6.5, rise: 1.3, curve: .35, flat: 1.6 };
 // How much straight curb it wants behind it (a run at it) and ahead (to come
 // down on), how far from either end of its street, and from the next one
 const RUN_IN = 34, LAND = 30, END = 26, SPACING = 240, LOADING_MOST = 5;
@@ -101,7 +101,7 @@ function loadingRamps(nav) {
     if (!profile.parking || edge.kind === 'path' || edge.length < 2 * END + RUN_IN + length + LAND) continue;
     const middle = nav.pose(edge, edge.length / 2, 1, 0);
     if (cityStyleDistrict(middle.s, middle.u) !== 'Warehouse district') continue;
-    // (in the bay, its outer edge at the curb)
+    // (in the bay and a little over its line, its outer edge at the curb)
     const across = profile.halfWidth - LOADING.width / 2;
     // Its foot `a` along the edge, the traffic on its side (`side`) going the
     // way the edge runs or against it: a run at it behind, room to land ahead
@@ -110,7 +110,7 @@ function loadingRamps(nav) {
       if (lo < END || hi > edge.length - END || !straight(nav, edge, lo, hi)) continue;
       const p = nav.pose(edge, a, 1, 0), u = p.u + p.ty * side * across, s = p.s - p.tx * side * across;
       const ju = p.tx * side, js = p.ty * side, d = a;
-      const keep = strip(u - ju * RUN_IN, s - js * RUN_IN, ju, js, RUN_IN + length + LAND, 3.4);
+      const keep = strip(u - ju * RUN_IN, s - js * RUN_IN, ju, js, RUN_IN + length + LAND, LOADING.width + .2);
       const clear = point => !entrances.some(e => Math.hypot(e.u - point.x, e.s - point.y) < 22)
         && !gates.some(g => Math.hypot(g.x - point.x, g.y - point.y) < 16)
         && !mouths.some(m => Math.hypot(m.mouth.x - point.x, m.mouth.y - point.y) < m.width / 2 + 9)

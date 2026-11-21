@@ -45,8 +45,11 @@ export function* buildGrassFringeSteps(c) {
     // outward edges cannot expand it, and silently loses the clearance margin.
     if (polygon.length >= 3) obstacles.push({ polygon, margin });
   };
+  let hull = null;
   for (const collider of c.features.colliders) {
-    if (collider.corners) protect(collider.corners.map(p => [p.x, -p.z]));
+    // (a footprint in pieces, one after another: its whole outline once, hollows and all, as when it was one collider)
+    if (collider.hull) { if (collider.hull !== hull) protect(hull = collider.hull); }
+    else if (collider.corners) protect(collider.corners.map(p => [p.x, -p.z]));
     else protect([[collider.x - collider.reach, -collider.z - collider.reach], [collider.x + collider.reach, -collider.z - collider.reach],
       [collider.x + collider.reach, -collider.z + collider.reach], [collider.x - collider.reach, -collider.z + collider.reach]]);
   }

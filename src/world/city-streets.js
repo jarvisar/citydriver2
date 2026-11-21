@@ -16,6 +16,7 @@ import { yardParking, yardDrive, YARD_BAY, PARKED_MODELS } from './city-yards.js
 import { BUS_ROADS } from '../traffic-models.js';
 import { difference, solids } from '../mapgen/booleans.js';
 import { cityJumps, inJumpZone, onJumpQuay } from './city-jumps.js';
+import { reserved } from '../mapgen/road-hierarchy.js';
 import { simplify } from '../mapgen/simplify.js';
 
 // The streets as the city draws and furnishes them. Everything here is laid
@@ -26,6 +27,9 @@ import { simplify } from '../mapgen/simplify.js';
 // lamp or tree only ever stands on a pavement.
 
 const LAMP_SPACING = 27;
+// A signal hangs from a mast arm over a road at least this wide to a side
+// (the avenues and wider, the bank roads and a collector with parking)
+const MAST_ROAD = 7;
 // The old town's and the garden quarter's own streets are lit by lanterns on
 // short posts, closer together, where a tall street lamp would stand over the
 // houses; their avenues and every busier road keep the tall lamps
@@ -50,6 +54,11 @@ const PARK_TREES = { share: 1, spacing: 19, scale: [7.2, 9.6] };
 // would swallow or hide: a lamp's column and the head on its arm, a sign or
 // signal a driver has to see, and a bus shelter's roof
 const TREE_CROWN = .5;
+// How far in from the curb each line of pavement furniture stands (m). The
+// pavement is 4.7 m: its furniture keeps to the curb's half, far enough in
+// that a car with a wheel over the curb misses it, and people walk the
+// other half, along the buildings (see WalkSpace in city-walks.js).
+export const KERBSIDE = { lamp: 1, lantern: 1.1, fitting: .95, tree: 2.1, shelter: 1.9 };
 const CROWN_CLEAR = { lamp: .5, 'median-lamp': .5, 'street-lantern': .3, stop: 1.2, yield: 1.2, signal: 1.2, sign: 2, 'parking-sign': .4, shelter: 2.4 };
 // The share of street corners with a litter bin by the crossing, as busy as
 // each district's pavements are
@@ -65,8 +74,11 @@ const FITTINGS = [
   { kind: 'bike-rack', every: 160, share: .35, room: 2.2, districts: BUSY },
   { kind: 'news-boxes', every: 170, share: .35, room: 2, districts: new Set(['Midtown', 'Market district', 'Civic quarter']) },
 ];
-// A parking bay's length along the curb
-export const PARKING_BAY = 6.5;
+// A parking bay's length along the curb (its width is the profile's: 2.2 m),
+// and the share of bays with a car in them: bays this short are a sixth more
+// to a street than the 6.5 m ones were, and the city has as many parked cars
+export const PARKING_BAY = 5.6;
+const BAYS_TAKEN = .345;
 export const COLOURS = {
   road: '#666c70', marking: '#d8bd80', line: '#d7d8c9', stripe: '#deddd0', stop: '#e1dfce',
   pavement: '#acafa8', kerb: '#9a9d98', lawn: '#79a05a', median: '#779757', medianKerb: '#c3bfab',
@@ -115,12 +127,6 @@ function pointAlong(points, distance) {
 }
 const polylineLength = points => points.slice(1).reduce((sum, p, i) => sum + Math.hypot(p.x - points[i].x, p.y - points[i].y), 0);
 
-// How far a road's carriageway reaches from its center line on one side at
-// a point: to its curb, or where a bridge's footway takes the edge of the road
-function kerbReach(p, nx, ny, halfWidth) {
-  for (let d = Math.max(0, halfWidth - 3.2); d < halfWidth; d += .1) if (CITY.pavement.find(p.x + nx * d, p.y + ny * d)?.kind === 'bridge') return d;
-  return halfWidth;
-}
 // Where a street's own markings may run: from beyond the crosswalk at one end
 // to beyond the crosswalk at the other.
 function markedSpan(edge, geometry) {
@@ -204,9 +210,8 @@ export function cityCrosswalks(nav) {
       if (arm.link || !approach.crosswalk) continue;
       const near = approachPoint(nav, edge, node, arm.clear + .2), far = approachPoint(nav, edge, node, arm.clear + CROSSWALK);
       const at = (p, across) => ({ x: p.x + p.rx * across, y: p.y + p.ry * across });
-      // (across the carriageway, curb to curb: on a bridge, footway to footway)
-      const middle = { x: (near.x + far.x) / 2, y: (near.y + far.y) / 2 };
-      const left = -kerbReach(middle, -near.rx, -near.ry, halfWidth) + .8, right = kerbReach(middle, near.rx, near.ry, halfWidth) - .5;
+      // (across the carriageway, curb to curb)
+      const left = -halfWidth + .8, right = halfWidth - .5;
       all.push({ node, edge, near, far, halfWidth, left, right, rank: CONTROL_RANK[approach.kind] ?? 0, outline: [at(near, left), at(near, right), at(far, right), at(far, left)] });
     }
   }
@@ -262,7 +267,10 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
   for (const piece of CITY.land) ground.polygon(piece.outer, ROAD_LEVEL - .06, COLOURS.land, null, true, piece.holes);
   // Carriageways, and the corners the rounded curbs hand back to them
   const parkPaths = CITY.roads.filter(road => road.kind === 'path');
-  for (const road of CITY.roads) if (road.kind !== 'path') roads.ribbon(road.points, road.profile.halfWidth, ROAD_LEVEL, ASPHALT);
+  // (the asphalt runs out to the road's reserve, under its curbs: a block
+  // whose curb will not fit the carriageway as drawn stands on the reserve
+  // line, and the strip between showed as bare ground)
+  for (const road of CITY.roads) if (road.kind !== 'path') roads.ribbon(road.points, reserved(road.profile), ROAD_LEVEL, ASPHALT);
   for (const patch of CITY.cornerPatches) roads.polygon(patch, ROAD_LEVEL, ASPHALT);
   roadFittings(roads, nav, geometry);
   // Markings along each street between its junctions: lanes down a
@@ -280,13 +288,14 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
     const profile = edge.profile, [from, to] = markedSpan(edge, geometry);
     if (to - from < 4) continue;
     const span = slicePolyline(edge.points, from, to);
-    if (profile.kind === 'boulevard') {
-      // Two lanes each way either side of the median, and a line along each edge
-      for (const side of [-1, 1]) {
-        dashed(offsetPolyline(span, side * profile.divider), 9, 4.5, .11, COLOURS.line, 2);
-        markings.ribbon(offsetPolyline(span, side * (profile.halfWidth - .6)), .12, ROAD_LEVEL + .012, COLOURS.line);
-      }
-    } else if (profile.centre === 'double') for (const side of [-1, 1]) markings.ribbon(offsetPolyline(span, side * .16), .11, ROAD_LEVEL + .012, COLOURS.marking);
+    // Two lanes each way (a boulevard's either side of its median, an
+    // avenue's either side of its center line) have a dashed line between
+    // them, and a road with room outside its lanes a line along each edge
+    for (const side of [-1, 1]) {
+      if (profile.divider) dashed(offsetPolyline(span, side * profile.divider), 9, 4.5, .11, COLOURS.line, 2);
+      if (profile.edge) markings.ribbon(offsetPolyline(span, side * profile.edge), .12, ROAD_LEVEL + .012, COLOURS.line);
+    }
+    if (profile.centre === 'double') for (const side of [-1, 1]) markings.ribbon(offsetPolyline(span, side * .16), .11, ROAD_LEVEL + .012, COLOURS.marking);
     else if (profile.centre === 'dashed') dashed(span, 9, 3.5, .12, COLOURS.marking, 2.5);
     if (profile.parking) {
       // Parking bays along both curbs: a line along their outside, and a tick between bays
@@ -335,9 +344,8 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
       const arm = shape.approaches.get(edge), halfWidth = edge.profile.halfWidth;
       if (arm.link || approach.kind === 'priority') continue;
       const at = (p, across) => ({ x: p.x + p.rx * across, y: p.y + p.ry * across });
-      // (to the curb, or on a bridge to its footway)
-      const at0 = approachPoint(nav, edge, node, stopLineDistance(arm.clear)), kerb = kerbReach(at0, at0.rx, at0.ry, halfWidth);
-      const inner = edge.profile.median ? edge.profile.median + .2 : .25, outer = Math.min(kerb, halfWidth - (edge.profile.parking ? halfWidth - edge.profile.parking : 0)) - (edge.profile.parking ? .2 : .4);
+      // (the teeth to the curb, or the line of the parking bays)
+      const inner = edge.profile.median ? edge.profile.median + .2 : .25, outer = edge.profile.parking ? edge.profile.parking - .2 : halfWidth - .4;
       if (approach.kind === 'yield') {
         // A row of teeth across the lane, pointing at the driver who gives way
         const base = approachPoint(nav, edge, node, stopLineDistance(arm.clear) - .3), tip = approachPoint(nav, edge, node, stopLineDistance(arm.clear) + .6);
@@ -347,7 +355,7 @@ export function buildStreetSurfaces({ ground, roads, paths, water, walls }, nav,
         continue;
       }
       const line = approachPoint(nav, edge, node, stopLineDistance(arm.clear) - .2), back = approachPoint(nav, edge, node, stopLineDistance(arm.clear) + .25);
-      const stop = [at(line, inner), at(line, kerb - .4), at(back, kerb - .4), at(back, inner)];
+      const stop = [at(line, inner), at(line, halfWidth - .4), at(back, halfWidth - .4), at(back, inner)];
       if (!onCrosswalk(stop)) markings.polygon(stop, ROAD_LEVEL + .014, COLOURS.stop);
     }
   }
@@ -567,7 +575,7 @@ function roadFittings(roads, nav, geometry) {
     }
     // (down a lane's middle, where the wheels straddle them, and a side
     // street's unmarked middle too)
-    const lanes = profile.kind === 'boulevard' ? [(profile.median + profile.divider) / 2, profile.lane] : profile.centre ? [profile.lane] : [0, profile.lane];
+    const lanes = profile.divider ? [(profile.median + profile.divider) / 2, profile.lane] : profile.centre ? [profile.lane] : [0, profile.lane];
     for (const p of alongPolyline(span, 41, 12 + randomAt(salt, 7431, CITY.seed) * 20)) {
       const pick = randomAt(salt + Math.round(p.distance), 7432, CITY.seed);
       if (p.distance > length - 6 || pick > .62) continue;
@@ -1123,15 +1131,13 @@ export function placeStreetFurniture(nav, bridges, add) {
       const arm = shape.approaches.get(edge);
       for (const back of [0, 2.5, 5]) {
         const p = approachPoint(nav, edge, node, stopLineDistance(arm.clear) + .9 + back);
-        // (on a bridge, the middle of its footway)
-        const kerb = kerbReach(p, p.rx, p.ry, edge.profile.halfWidth), reach = kerb < edge.profile.halfWidth ? (kerb + edge.profile.halfWidth) / 2 : edge.profile.halfWidth + 1.1, u = p.x + p.rx * reach, y = p.y + p.ry * reach;
+        const reach = edge.profile.halfWidth + 1.1, u = p.x + p.rx * reach, y = p.y + p.ry * reach;
         if (waterAt(y, u)) continue;
         const yaw = faceYaw(p.tx, p.ty);
         // On a wide road the signal hangs over the lanes from a mast arm, a
         // head above each lane the approach's traffic can take
-        const lanes = edge.profile.divider ? [(edge.profile.median + edge.profile.divider) / 2, (edge.profile.divider + edge.profile.halfWidth - .6) / 2]
-          : [edge.profile.halfWidth / 2 - .5];
-        const mast = edge.profile.halfWidth >= 8 ? lanes.map(lane => reach - lane) : null;
+        const lanes = edge.profile.divider ? [(edge.profile.median + edge.profile.divider) / 2, edge.profile.lane] : [edge.profile.lane];
+        const mast = edge.profile.halfWidth >= MAST_ROAD ? lanes.map(lane => reach - lane) : null;
         if (put(approach.kind === 'signal' ? { kind: 'signal', u, s: y, yaw, axis: approach.axis, mast } : { kind: approach.kind === 'yield' ? 'yield' : 'stop', u, s: y, yaw }, 1)) break;
       }
     }
@@ -1190,7 +1196,7 @@ export function placeStreetFurniture(nav, bridges, add) {
     let sinceShelter = 120 + randomAt(block?.index ?? 0, 7404, CITY.seed) * 120;
     for (const p of alongPolyline(loop, 30, 15)) {
       sinceShelter += 30;
-      const nx = -p.ty, ny = p.tx, x = p.x + nx * 1.7, y = p.y + ny * 1.7;
+      const nx = -p.ty, ny = p.tx, x = p.x + nx * KERBSIDE.shelter, y = p.y + ny * KERBSIDE.shelter;
       const road = CITY.roadIndex.nearest(p.x, p.y, 16);
       if (sinceShelter < 240 || !road || !BUS_ROADS.has(road.road.kind) || inZone(x, y) || islands.has(block?.index) || onDropOff(x, y)) continue;
       if (!put({ kind: 'shelter', u: x, s: y, yaw: alongYaw(nx, ny) }, 6)) continue;
@@ -1200,12 +1206,12 @@ export function placeStreetFurniture(nav, bridges, add) {
     }
     const lanterns = block && LANTERN_DISTRICTS.has(block.style), local = p => (CITY.roadIndex.nearest(p.x, p.y, 16)?.road.profile.rank ?? 9) <= 1;
     for (const p of alongPolyline(loop, LAMP_SPACING, lampStart)) {
-      const nx = -p.ty, ny = p.tx, x = p.x + nx * .7, y = p.y + ny * .7;
+      const nx = -p.ty, ny = p.tx, x = p.x + nx * KERBSIDE.lamp, y = p.y + ny * KERBSIDE.lamp;
       if (inZone(x, y) || (lanterns && local(p))) continue;
       put({ kind: 'lamp', u: x, s: y, yaw: alongYaw(nx, ny) }, 4);
     }
     if (lanterns) for (const p of alongPolyline(loop, LANTERN_SPACING, lampStart)) {
-      const nx = -p.ty, ny = p.tx, x = p.x + nx * .8, y = p.y + ny * .8;
+      const nx = -p.ty, ny = p.tx, x = p.x + nx * KERBSIDE.lantern, y = p.y + ny * KERBSIDE.lantern;
       if (!inZone(x, y) && local(p)) put({ kind: 'lantern', street: true, u: x, s: y }, 4);
     }
     // A litter bin where people wait to cross: at the end of a street's
@@ -1233,14 +1239,14 @@ export function placeStreetFurniture(nav, bridges, add) {
     const [low, high] = planting.scale, line = block?.inner?.length >= 3 ? [...block.inner, block.inner[0]] : null;
     const roomAt = (x, y) => line ? distanceToPolyline({ x, y }, line) + setbackNear(block, { x, y }) : Infinity;
     for (const slot of alongPolyline(loop, planting.spacing, lampStart + planting.spacing / 2)) {
-      if (inZone(slot.x - slot.ty * 1.9, slot.y + slot.tx * 1.9) || CITY.roadIndex.nearest(slot.x, slot.y, 12)?.road.profile.narrow) continue;
+      if (inZone(slot.x - slot.ty * KERBSIDE.tree, slot.y + slot.tx * KERBSIDE.tree) || CITY.roadIndex.nearest(slot.x, slot.y, 12)?.road.profile.narrow) continue;
       // (the room at the slot says how big a tree could be; a spot a step
       // along is measured again only once nothing else stands in its way)
-      const room = roomAt(slot.x - slot.ty * 1.9, slot.y + slot.tx * 1.9);
+      const room = roomAt(slot.x - slot.ty * KERBSIDE.tree, slot.y + slot.tx * KERBSIDE.tree);
       for (const shift of [0, 1.5, -1.5, 3, -3, 4.5, -4.5]) {
         const p = shift ? pointAlong(loop, ((slot.distance + shift) % perimeter + perimeter) % perimeter) : slot;
         if (!p) continue;
-        const nx = -p.ty, ny = p.tx, x = p.x + nx * 1.9, y = p.y + ny * 1.9, grown = low + randomAt(Math.round(x), Math.round(y) + 31, CITY.seed) * (high - low);
+        const nx = -p.ty, ny = p.tx, x = p.x + nx * KERBSIDE.tree, y = p.y + ny * KERBSIDE.tree, grown = low + randomAt(Math.round(x), Math.round(y) + 31, CITY.seed) * (high - low);
         let scale = Math.min(grown, treeRoom(room));
         if (scale < 4.8 || !free(x, y, 3, 'tree', TREE_CROWN * scale)) continue;
         if (shift && (inZone(x, y) || (scale = Math.min(grown, treeRoom(roomAt(x, y)))) < 4.8)) continue;
@@ -1262,12 +1268,12 @@ export function placeStreetFurniture(nav, bridges, add) {
       else if (median.planted) put({ kind: 'tree', u: p.x, s: p.y, scale: 6.2 + randomAt(Math.round(p.x), Math.round(p.y) + 7405, CITY.seed) * 1.8, median: true }, 3);
     });
   }
-  // Lamps along a bridge's footways, facing each other across the deck,
-  // their arms over the road (the footway lies within the road's width, so it
-  // asks only that nothing else stands there)
+  // Lamps along a bridge's footways, facing each other across the deck, as
+  // far in from the curb as a street's and their arms over the road (over
+  // the water, so it asks only that nothing else stands there)
   for (const bridge of bridges) for (const footway of bridge.footways) {
     for (const p of alongPolyline(footway.line, LAMP_SPACING, footway.side > 0 ? 6 : 6 + LAMP_SPACING / 2)) {
-      const nx = -p.ty * footway.side, ny = p.tx * footway.side, x = p.x + nx * (footway.width / 2 - .9), y = p.y + ny * (footway.width / 2 - .9);
+      const nx = -p.ty * footway.side, ny = p.tx * footway.side, x = p.x - nx * (footway.width / 2 - .7), y = p.y - ny * (footway.width / 2 - .7);
       if (!free(x, y, 4, 'lamp') || inZone(x, y, true)) continue;
       remember(x, y, 'lamp');
       add({ kind: 'lamp', u: x, s: y, yaw: alongYaw(nx, ny), bridge: true });
@@ -1508,7 +1514,7 @@ export function placeStreetFurniture(nav, bridges, add) {
   for (const block of CITY.blocks) for (const bay of yardParking(block)) {
     if (bay.taken) add({ kind: 'parked', u: bay.x, s: bay.y, yaw: -bay.heading, model: bay.model, colour: bay.colour, yard: block.index });
   }
-  // Cars parked in two bays in five along a street with parking, clear of
+  // Cars parked in a share of the bays along a street with parking, clear of
   // the crosswalks, the park gates, bus stops and the venues' doors
   const entrances = cityPlaces().map(place => place.entrance);
   const openings = parkingGaps().index;
@@ -1518,11 +1524,11 @@ export function placeStreetFurniture(nav, bridges, add) {
     const [from, to] = markedSpan(edge, geometry);
     for (let d = from + PARKING_BAY; d + PARKING_BAY / 2 < to; d += PARKING_BAY) for (const side of [-1, 1]) {
       const salt = edge.id * 131 + Math.round(d) * 2 + (side > 0 ? 1 : 0);
-      if (randomAt(salt, 7406, CITY.seed) > .42) continue;
+      if (randomAt(salt, 7406, CITY.seed) > BAYS_TAKEN) continue;
       const p = nav.pose(edge, d, 1), across = (profile.parking + profile.halfWidth) / 2, own = CITY.roadIndex.nearest(p.u, p.s, 2)?.road;
       const x = p.u + p.ty * side * across, y = p.s - p.tx * side * across;
       if (waterAt(y, x) || entrances.some(e => Math.hypot(e.u - x, e.s - y) < 16)) continue;
-      if ([-2.6, 0, 2.6].some(along => openings.find(x + p.tx * along, y + p.ty * along))) continue;
+      if ([-.4, 0, .4].some(along => openings.find(x + p.tx * along * PARKING_BAY, y + p.ty * along * PARKING_BAY))) continue;
       // (where the lane's curve and the drawn road part a little, the car
       // must still be in the drawn road's bay, not over its curb)
       const kerbside = own && CITY.roadIndex.nearest(x, y, 12, segment => segment.road === own ? 0 : Infinity);
@@ -1553,7 +1559,7 @@ export function placeStreetFurniture(nav, bridges, add) {
         for (const shift of [0, 2, -2, 4, -4]) {
           const q = shift ? pointAlong(loop, ((p.distance + shift) % perimeter + perimeter) % perimeter) : p;
           if (!q) continue;
-          const nx = -q.ty, ny = q.tx, x = q.x + nx * .65, y = q.y + ny * .65;
+          const nx = -q.ty, ny = q.tx, x = q.x + nx * KERBSIDE.fitting, y = q.y + ny * KERBSIDE.fitting;
           if (inZone(x, y) || !free(x, y, 5, null, 0, 'shelter')) continue;
           if (put({ kind, u: x, s: y, yaw: alongYaw(nx, ny) }, room)) break;
         }

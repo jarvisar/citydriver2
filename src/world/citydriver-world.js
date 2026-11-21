@@ -1,12 +1,12 @@
 import * as THREE from 'three';
 import { CITY, cityCell, CITY_CELL, cityStyleDistrict } from './city.js';
-import { ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL, DECK_UNDERSIDE } from './city-route.js';
+import { ROAD_LEVEL, PAVEMENT_LEVEL, WATER_LEVEL, DECK_UNDERSIDE, surfaceAt } from './city-route.js';
 import { HarbourBoats } from './city-boats.js';
 import { FountainJets } from './fountain-jets.js';
 import { beachBall, BEACH_BALL } from './venue-props.js';
 import { Ducks } from './city-ducks.js';
 import { BusStops } from './bus-stops.js';
-import { cityAssets, cityTrees, CONIFER, looseTree, twinLamp, signalMastPiece, LANTERN_HEIGHT, SIGNAL_LENSES, MAST_HEIGHT, parkedCars, PARKED_PAINTS, boatModels } from './city-assets.js';
+import { cityAssets, cityTrees, CONIFER, looseTree, twinLamp, signalMastPiece, LANTERN_HEIGHT, SIGNAL_LENSES, LENS_RADIUS, LENS_OUT, SIGNAL_HEIGHT, MAST_HEIGHT, MAST_ARM, MAST_DROP, parkedCars, PARKED_PAINTS, boatModels } from './city-assets.js';
 import { parkedSpec } from '../special-models.js';
 import { carProfile } from '../car-profile.js';
 import { seededRandom, randomAt } from './route.js';
@@ -19,7 +19,7 @@ import { buildGrassFringeSteps, grassGeometry, MAX_LAWN_TUFTS } from './city-gra
 import { createWaterMaterial } from './city-water.js';
 import { createGlassMaterial } from './city-glass.js';
 import { Surface, setColor } from './surface.js';
-import { cityWalker, walkerFloat, WALKER_COLORS, createWalkerMaterial, createWalkerAlert, addWalkerAlert, walkerAppearance, setWalkerAppearance, setWalkerTurn, pairWalkers, offsetWalkerPose } from './city-life.js';
+import { cityWalker, walkerFloat, WALKER_COLORS, createWalkerMaterial, createWalkerAlert, addWalkerAlert, walkerAppearance, setWalkerAppearance, setWalkerTurn, pairWalkers, offsetWalkerPose, pairLag } from './city-life.js';
 import { walkedAt, paceAt, standing, rejoinWalk, stopWalkers, regroupWalkers, lookYaw, lean, glance, walkPose } from './pedestrian-reactions.js';
 import { stableShadowDepth } from './shadow-depth.js';
 import { navGraph } from './nav-graph.js';
@@ -28,9 +28,10 @@ import { signalLens, round } from './city-detail-assets.js';
 import { buildMonument } from './city-monuments.js';
 import { cityPlaces } from '../city-exploration.js';
 import { basinRim, basinWater } from './city-public-space-geometry.js';
-import { buildStreetSurfaces, placeStreetFurniture, findBridges, bridgePiers, PARAPET } from './city-streets.js';
+import { buildStreetSurfaces, placeStreetFurniture, findBridges, bridgePiers, PARAPET, KERBSIDE } from './city-streets.js';
 import { buildJump } from './city-jump-models.js';
 import { cityParks } from './city-parks.js';
+import { WalkSpace, SHELTER_BOX } from './city-walks.js';
 import { offsetPolygon, calcPolygonArea, averagePoint, insidePolygon } from '../mapgen/polygon-util.js';
 
 const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
@@ -39,7 +40,7 @@ const warmupMergedGeometry = new THREE.BufferGeometry();
 for (const name of ['position', 'normal', 'color']) warmupMergedGeometry.setAttribute(name, new THREE.BufferAttribute(new Float32Array(9), 3));
 const transform = new THREE.Object3D();
 const residentItem = { p: [0, 0, 0], scale: [1, 1, 1], yaw: 0, roll: 0 }, watching = { x: 0, z: 0, set(x, z) { this.x = x; this.z = z; return this; } };
-const residentFloat = {};
+const residentFloat = {}, GONE = new THREE.Matrix4().makeScale(0, 0, 0);
 // How far a resident can end up from their walk, shoved or knocked flying (m)
 const WALKERS_STRAY = 40;
 const tint = new THREE.Color();
@@ -120,7 +121,7 @@ const SMALL_CASTERS = new Set(['residents', 'lantern', 'bin', 'bollard', 'railin
 const smallCaster = key => SMALL_CASTERS.has(key) || key.startsWith('square-flowers-');
 const facadeTrim = ({ scale: [x, y, z] }) => Math.min(x, y, z) < .3 && Math.min(x, z) < .6;
 // A curbside fitting's collider: a post's radius, or a box across and along the curb
-const FITTINGS = { hydrant: [.2], 'post-box': [.3], cabinet: [.5, .9], 'news-boxes': [.5, 1.65], 'bike-rack': [.8, 1.3] };
+const FITTINGS = { hydrant: [.2], 'post-box': [.28], cabinet: [.5, .9], 'news-boxes': [.5, 1.65], 'bike-rack': [.8, 1.3] };
 function castFirst() {
   if (!this.userData.lowShadow) return;
   if (this.isInstancedMesh) { this.userData.drawn = this.count; this.count = Math.min(this.count, this.userData.shadowFrom); }
@@ -398,8 +399,10 @@ export class CityChunk {
     yield* buildCityBuildingSteps(this);
     yield;
     yield* this.furnitureSteps(); yield;
-    this.buildLife(); yield;
     this.mapFeatures(); yield;
+    // (the walks through this cell, round whatever its colliders show standing in them)
+    if (!this.distant) yield* this.world.walks.survey(this, this.world.walksByChunk.get(this.index) ?? []);
+    this.buildLife(); yield;
     yield* buildGrassFringeSteps(this); yield;
     yield* this.finishSteps();
     this.surfacePoints = null; this.surfaceLayers = null;
@@ -542,12 +545,13 @@ export class CityChunk {
     const random = seededRandom(Math.floor(randomAt(Math.round((this.east + x) * 10), Math.round((this.start + s) * 10), CITY.seed) * 0xffffffff));
     const drawn = random() < .28 ? 1 : 0, index = species === 'conifer' ? CONIFER : drawn, variant = cityTrees[index], p = [x, PAVEMENT_LEVEL, -s];
     const width = scale * (.82 + random() * .24), size = [width, scale, width], colour = pick(GREENS, random), yaw = random() * Math.PI * 2;
-    if (this.distant) this.box(x, PAVEMENT_LEVEL + scale * .24, s, width * .085, scale * .48, width * .085, '#625548', 'solid', yaw);
+    if (this.distant) this.box(x, PAVEMENT_LEVEL + scale * .24, s, width * variant.trunk * 1.8, scale * .48, width * variant.trunk * 1.8, '#625548', 'solid', yaw);
     const trunk = this.distant ? null : this.item(`tree-trunks-${index}`, variant.bark, this.materials.bark, p, size, '#ffffff', yaw);
     const crown = this.item(`tree-crowns-${index}`, variant.leaves, this.materials.leaves, p, size, colour, yaw);
     this.features.trees ??= [];
     this.features.trees.push({ x, s, scale });
-    this.post(x, s, .28);
+    // (its trunk as drawn, which grows with the tree)
+    this.post(x, s, width * variant.trunk);
     this.knockable([trunk, crown], [{ kind: 'tree', get geometry() { return looseTree(index, colour); } }]);
   }
   // A fountain's moving water (see FountainJets): { spout, plume, bowls,
@@ -603,11 +607,11 @@ export class CityChunk {
       // Posts, signs, bins, benches and mast signals can be knocked loose,
       // trees and shelters only by a car that breaks them (see LooseProps).
       // Railings stand firm
-      if (piece.kind === 'lamp') { const lamp = this.prop('lamp', x, s, piece.yaw); this.post(x, s, .25); this.knockable([lamp], [{ kind: 'lamp', geometry: cityAssets.lamp }]); }
+      if (piece.kind === 'lamp') { const lamp = this.prop('lamp', x, s, piece.yaw); this.post(x, s, .19); this.knockable([lamp], [{ kind: 'lamp', geometry: cityAssets.lamp }]); }
       // Two lamps back to back on one column, an arm over each carriageway
       else if (piece.kind === 'median-lamp') {
         const lamps = [piece.yaw, piece.yaw + Math.PI].map(yaw => this.prop('lamp', x, s, yaw));
-        this.post(x, s, .25); this.knockable(lamps, [{ kind: 'lamp', geometry: twinLamp }]);
+        this.post(x, s, .19); this.knockable(lamps, [{ kind: 'lamp', geometry: twinLamp }]);
       }
       else if (piece.kind === 'tree') {
         this.tree(x, s, piece.scale, piece.species);
@@ -625,7 +629,7 @@ export class CityChunk {
         this.rigid(x, s, () => this.solid(x, s, .7, 2), itemFrame(piece.s, piece.u, piece.yaw));
         this.knockable([bench], [{ kind: 'bench', geometry: cityAssets.bench }]);
       }
-      else if (piece.kind === 'bin') { const bin = this.prop('bin', x, s); this.post(x, s, .36); this.knockable([bin], [{ kind: 'bin', geometry: cityAssets.bin }]); }
+      else if (piece.kind === 'bin') { const bin = this.prop('bin', x, s); this.post(x, s, .29); this.knockable([bin], [{ kind: 'bin', geometry: cityAssets.bin }]); }
       else if (piece.kind === 'bollard') { this.prop('bollard', x, s); this.post(x, s, .16); }
       // The curbside fittings (see placeStreetFurniture), round or a box along the curb
       else if (FITTINGS[piece.kind]) {
@@ -645,13 +649,13 @@ export class CityChunk {
       }
       else if (piece.kind === 'sign') this.standingSign(discoverySignFor(piece.type, piece.variant), x, s, piece.yaw, piece.width ?? 4.2, piece.bottom ?? 1.9);
       else if (piece.kind === 'stop' || piece.kind === 'yield') {
-        const sign = this.prop(piece.kind, x, s, piece.yaw); this.post(x, s, .12);
+        const sign = this.prop(piece.kind, x, s, piece.yaw); this.post(x, s, .055);
         this.knockable([sign], [{ kind: 'sign', geometry: cityAssets[piece.kind] }]);
       }
       // A blue P on a post, read from along the street both ways (yaw lays
       // the panel across the pavement)
       else if (piece.kind === 'parking-sign') {
-        const sign = this.prop('parking-sign', x, s, piece.yaw); this.post(x, s, .1);
+        const sign = this.prop('parking-sign', x, s, piece.yaw); this.post(x, s, .045);
         this.knockable([sign], [{ kind: 'sign', geometry: cityAssets['parking-sign'] }]);
       }
       else if (piece.kind === 'signal') {
@@ -661,7 +665,7 @@ export class CityChunk {
           if (this.distant) return [];
           const hx = x - along * cos, hs = s - along * sin, indices = [], lenses = [];
           for (const dy of SIGNAL_LENSES) {
-            lenses.push(this.item('signal-lens', signalLens, this.materials.lens, [hx + sin * .215, PAVEMENT_LEVEL + height + dy, -hs + cos * .215], [.105, .105, 1], '#293538', yaw));
+            lenses.push(this.item('signal-lens', signalLens, this.materials.lens, [hx + sin * LENS_OUT, PAVEMENT_LEVEL + height + dy, -hs + cos * LENS_OUT], [LENS_RADIUS, LENS_RADIUS, 1], '#293538', yaw));
             indices.push(this.batches.get('signal-lens').items.length - 1);
           }
           this.features.signals.push({ axis: piece.axis, indices });
@@ -671,22 +675,23 @@ export class CityChunk {
           // A tall pole with its arm out over the lanes and a head above each,
           // which comes down all together, dark (see signalMastPiece)
           const length = Math.max(...piece.mast) + .6, mast = piece.mast, items = [this.prop('signal-mast', x, s, yaw)];
-          if (!this.distant) items.push(this.box(x - length / 2 * cos, PAVEMENT_LEVEL + MAST_HEIGHT - .2, s - length / 2 * sin, length, .2, .2, '#3d4246', 'solid', yaw));
+          if (!this.distant) items.push(this.box(x - length / 2 * cos, PAVEMENT_LEVEL + MAST_HEIGHT - .2, s - length / 2 * sin, length, MAST_ARM, MAST_ARM, '#3d4246', 'solid', yaw));
           for (const along of mast) {
-            if (!this.distant) items.push(this.item('signal-head', cityAssets['signal-head'], this.materials.props, [x - along * cos, PAVEMENT_LEVEL + MAST_HEIGHT - .95, -(s - along * sin)], [1, 1, 1], '#ffffff', yaw));
-            items.push(...head(along, MAST_HEIGHT - .95));
+            if (!this.distant) items.push(this.item('signal-head', cityAssets['signal-head'], this.materials.props, [x - along * cos, PAVEMENT_LEVEL + MAST_HEIGHT - MAST_DROP, -(s - along * sin)], [1, 1, 1], '#ffffff', yaw));
+            items.push(...head(along, MAST_HEIGHT - MAST_DROP));
           }
-          this.post(x, s, .3);
+          this.post(x, s, .21);
           this.knockable(items, [{ kind: 'mast', get geometry() { return signalMastPiece(mast); } }]);
         } else {
           // (a pedestal signal knocked down goes dark)
-          const pole = this.prop('signal', x, s, yaw); this.post(x, s, .15);
-          this.knockable([pole, ...head(0, 4.6)], [{ kind: 'signal', geometry: cityAssets.signal }]);
+          const pole = this.prop('signal', x, s, yaw); this.post(x, s, .08);
+          this.knockable([pole, ...head(0, SIGNAL_HEIGHT)], [{ kind: 'signal', geometry: cityAssets.signal }]);
         }
       }
       else if (piece.kind === 'shelter') {
         const shelter = this.prop('shelter', x, s, piece.yaw);
-        this.rigid(x, s, () => this.solid(x + .5, s, .6, 4), itemFrame(piece.s, piece.u, piece.yaw));
+        // (its back and its bench as one box: the bench had none, and people sat through it)
+        this.rigid(x, s, () => this.solid(x + SHELTER_BOX[2], s, SHELTER_BOX[0], SHELTER_BOX[1]), itemFrame(piece.s, piece.u, piece.yaw));
         this.knockable([shelter], [{ kind: 'shelter', geometry: cityAssets.shelter }]);
       }
       else if (piece.kind === 'fountain') {
@@ -739,29 +744,44 @@ export class CityChunk {
   }
   // Residents walk the pavement round their block; pairs stroll together.
   buildLife() {
-    this.walkers = [];
+    this.walkers = []; this.loops = [];
     if (this.distant) return;
     const random = seededRandom(this.plan.seed + 912);
     for (const block of this.world.blocksByChunk.get(this.index) ?? []) {
+      // (a block's walk is routed when first wanted: see WalkSpace)
+      const loop = block.resident ? this.world.walks.block(block.index) : block;
+      if (!loop) continue;
       const count = block.walkers ?? (block.perimeter > 140 ? 3 : 2), walkers = [];
       // (residents dress for their district)
-      const middle = block.points.reduce((sum, p) => ({ x: sum.x + p.x / block.points.length, y: sum.y + p.y / block.points.length }), { x: 0, y: 0 });
+      const middle = block.middle ?? loop.points.reduce((sum, p) => ({ x: sum.x + p.x / loop.points.length, y: sum.y + p.y / loop.points.length }), { x: 0, y: 0 });
       const district = cityStyleDistrict(middle.y, middle.x);
       for (let i = 0; i < count; i++) walkers.push({
-        loop: block, phase: random() * block.perimeter, speed: 1.1 + random() * 1.1, side: 0,
-        direction: i % 2 ? -1 : 1, size: .9 + random() * .22, width: .92 + random() * .16, color: pick(WALKER_COLORS, random),
+        loop, phase: random(), speed: 1.1 + random() * 1.1, side: 0,
+        direction: 1, size: .9 + random() * .22, width: .92 + random() * .16, color: pick(WALKER_COLORS, random),
         appearance: walkerAppearance(this.plan.seed + block.index * 131 + i * 719, district),
       });
-      // (strollers out and back along a walk all keep to its right, spaced
-      // round their loop at one pace, so they pass on opposite sides: walking
-      // it backward, the second met the first head on and through)
-      if (block.walkers) walkers.forEach((walker, i) => Object.assign(walker, { direction: 1, speed: walkers[0].speed, phase: walkers[0].phase + i * block.perimeter / count }));
       pairWalkers(walkers, this.plan.seed + block.index);
+      // (a pair's bobs stay out of step: each keeps their own draw's)
+      for (const walker of walkers) if (walker.floatPhase !== undefined) walker.floatPhase *= block.perimeter;
+      // Everyone on a loop goes round it the same way at the same pace, each
+      // pair or person on their own stretch of it: going both ways at paces
+      // of their own they met head on and overtook, through each other, on
+      // the one line. (Strollers out and back along a walk keep to its right.)
+      const units = walkers.filter(walker => !(walker.pairOffset > 0)), first = walkers[0].phase, pace = loop.pace ?? walkers[0].speed;
+      // (each a little off their mark, by their own draw, but for the strollers)
+      const marks = units.map((walker, k) => (first + (k + (block.walkers ? 0 : walker.phase * .5)) / units.length) * loop.perimeter);
+      walkers.forEach((walker, i) => {
+        walker.phase = marks[units.indexOf(walker.pairOffset > 0 ? walkers[i - 1] : walker)];
+        walker.direction = loop.direction ?? 1; walker.speed = pace;
+      });
+      // (who is on it, for the bus stops' riders to keep clear of: see BusStops)
+      (loop.people ??= new Set()).add(walkers); this.loops.push([loop, walkers]);
       this.walkers.push(...walkers);
     }
     for (const walker of this.walkers) {
       const pose = offsetWalkerPose(walkPose(walker, 0), walker);
-      const motion = walkerFloat(walker, 0, residentFloat), width = walker.size * walker.width;
+      // (nobody is drawn on a walk a building stands right across: see animate)
+      const motion = walkerFloat(walker, 0, residentFloat), width = walker.loop.blocked ? 0 : walker.size * walker.width;
       this.item('residents', cityWalker, this.materials.residents, [pose.x - this.east, PAVEMENT_LEVEL + motion.lift, -(pose.s - this.start)],
         [width, walker.size * motion.stretch, width], walker.color, pose.yaw, motion.roll);
       this.batches.get('residents').items.at(-1).appearance = walker.appearance;
@@ -777,7 +797,9 @@ export class CityChunk {
     const player = contacts?.player, watch = player ? watching.set(player.u - this.east, -player.s + this.start) : null;
     for (let i = 0; i < this.walkers.length; i++) {
       const walker = this.walkers[i], partner = walker.pairOffset ? this.walkers[i + (walker.pairOffset < 0 ? 1 : -1)] : null;
-      const pose = offsetWalkerPose(walkPose(walker, walkedAt(walker, time)), walker);
+      // (nobody walks a pavement a building stands right across: see WalkSpace)
+      if (walker.loop.blocked) { mesh.setMatrixAt(i, GONE); continue; }
+      const pose = offsetWalkerPose(walkPose(walker, walkedAt(walker, time) - pairLag(walker)), walker);
       const motion = walkerFloat(walker, time, residentFloat), width = walker.size * walker.width;
       const x = pose.x - this.east, z = -(pose.s - this.start), pace = paceAt(walker, time);
       // The slower they go, the less they bob; standing still, barely. Waiting
@@ -891,6 +913,8 @@ export class CityChunk {
   }
   dispose() {
     this.construction?.return(); this.construction = null;
+    for (const [loop, walkers] of this.loops ?? []) loop.people?.delete(walkers);
+    this.loops = null;
     this.group.removeFromParent(); for (const mesh of this.group.children) mesh.dispose();
   }
 }
@@ -927,11 +951,13 @@ export class CitydriverWorld {
     // Demolition's red residents, off until setPeopleAlert
     this.peopleAlert = createWalkerAlert();
     this.animationFrustum = new THREE.Frustum(); this.animationMatrix = new THREE.Matrix4(); this.animationSphere = new THREE.Sphere();
+    // Where people walk, and what stands on the pavements (see WalkSpace)
+    this.walks = new WalkSpace();
     this.prepareLots(); this.bridges = findBridges(); this.placeFurniture();
     this.harbour = new HarbourBoats(scene, this.materials);
     this.fountainJets = new FountainJets(scene);
     this.ducks = new Ducks(scene, this.materials.props);
-    this.busStops = new BusStops(scene, this.materials.residents, this.peopleAlert, this.shelters, this.nav);
+    this.busStops = new BusStops(scene, this.materials.residents, this.peopleAlert, this.shelters, this.nav, this.walks);
     this.staticGroup = new THREE.Group(); this.staticGroup.name = 'citydriver-static'; this.staticGroup.matrixAutoUpdate = false; this.staticGroup.updateMatrixWorld = settledMatrixWorld;
     scene.add(this.staticGroup);
     this.buildStatic(); this.staticGroup.updateMatrix();
@@ -949,19 +975,28 @@ export class CitydriverWorld {
   prepareLots() {
     // (a square's loop has an index of its own, past the blocks', for its walkers' looks)
     const SQUARE_LOOPS = 1e5;
-    this.lotsByChunk = new Map(); this.blocksByChunk = new Map();
-    // A walking loop just inside every block's curb
+    this.lotsByChunk = new Map(); this.blocksByChunk = new Map(); this.walksByChunk = new Map();
+    // People walk round every block big enough. Which blocks, how many
+    // people and whose chunk they are go by the block's curb, as they always
+    // have. The walk itself keeps to the lot line, clear of the furniture,
+    // and is routed when its chunk is built (see WalkSpace.block).
     CITY.blocks.forEach((block, index) => {
       if (block.kerb.length < 3) return;
+      // (the cells a block's pavement reaches into: each checks the walk against its own colliders)
+      const bounds = block.kerb.reduce((b, p) => [Math.min(b[0], p.x), Math.max(b[1], p.x), Math.min(b[2], p.y), Math.max(b[3], p.y)], [Infinity, -Infinity, Infinity, -Infinity]);
+      for (let ix = Math.floor(bounds[0] / CITY_CELL); ix <= Math.floor(bounds[1] / CITY_CELL); ix++) for (let iz = Math.floor(bounds[2] / CITY_CELL); iz <= Math.floor(bounds[3] / CITY_CELL); iz++) {
+        const cell = `${ix},${iz}`;
+        if (!this.walksByChunk.has(cell)) this.walksByChunk.set(cell, []);
+        this.walksByChunk.get(cell).push(index);
+      }
       const points = offsetPolygon(block.kerb, -1.5);
       if (points.length < 3) return;
-      const cumulative = [0];
-      for (let i = 0; i < points.length; i++) { const a = points[i], b = points[(i + 1) % points.length]; cumulative.push(cumulative[i] + Math.hypot(b.x - a.x, b.y - a.y)); }
-      const perimeter = cumulative[points.length];
+      let perimeter = 0;
+      for (let i = 0; i < points.length; i++) { const a = points[i], b = points[(i + 1) % points.length]; perimeter += Math.hypot(b.x - a.x, b.y - a.y); }
       if (perimeter < 70) return;
       const centre = averagePoint(points), key = cityCell(centre.y, centre.x).key;
       if (!this.blocksByChunk.has(key)) this.blocksByChunk.set(key, []);
-      this.blocksByChunk.get(key).push({ index, points, cumulative, perimeter });
+      this.blocksByChunk.get(key).push({ index, resident: true, perimeter, middle: centre });
     });
     // and round each square's paved circle, past its fountain, tower or
     // stalls (nobody ever went into the squares)
@@ -972,7 +1007,8 @@ export class CitydriverWorld {
       for (let i = 0; i < points.length; i++) { const a = points[i], b = points[(i + 1) % points.length]; cumulative.push(cumulative[i] + Math.hypot(b.x - a.x, b.y - a.y)); }
       const key = cityCell(entry.plaza.y, entry.plaza.x).key;
       if (!this.blocksByChunk.has(key)) this.blocksByChunk.set(key, []);
-      this.blocksByChunk.get(key).push({ index: SQUARE_LOOPS + entry.index, points, cumulative, perimeter: cumulative[points.length] });
+      // (one way round at one pace, as round a block)
+      this.blocksByChunk.get(key).push({ index: SQUARE_LOOPS + entry.index, points, cumulative, perimeter: cumulative[points.length], direction: randomAt(entry.index, 7743, CITY.seed) < .5 ? 1 : -1, pace: 1.2 + randomAt(entry.index, 7744, CITY.seed) * .6 });
     }
     // and out along the walks of the parks and squares and back, keeping to
     // their right, a stretch of up to about 90 m at a time so each stretch's
@@ -1028,13 +1064,36 @@ export class CitydriverWorld {
   // they fall in.
   placeFurniture() {
     this.furnitureByChunk = new Map(); this.shelters = [];
-    const add = piece => {
+    const signs = [], add = piece => {
       if (piece.kind === 'shelter') this.shelters.push(piece);
+      // (a parking sign's place is settled once everything else stands: see below)
+      if (piece.kind === 'parking-sign') signs.push(piece); else this.walks.add(piece);
       const key = cityCell(piece.s, piece.u).key;
       if (!this.furnitureByChunk.has(key)) this.furnitureByChunk.set(key, []);
       this.furnitureByChunk.get(key).push(piece);
     };
     placeStreetFurniture(this.nav, this.bridges, add);
+    // A driveway's parking sign is placed by the lot line, where people
+    // walk. It stands by the curb instead, on the lamps' line, wherever
+    // nothing else has taken that spot: straight out from where it was
+    // placed, so nothing else moves (everything was placed round its old
+    // place), and at any width of pavement.
+    for (const piece of signs) {
+      const nx = Math.cos(piece.yaw), ny = Math.sin(piece.yaw);
+      let out = 0;
+      while (out < 12 && surfaceAt(piece.s - ny * (out + .1), piece.u - nx * (out + .1)) === 'pavement') out += .1;
+      const u = piece.u - nx * (out - KERBSIDE.lamp), s = piece.s - ny * (out - KERBSIDE.lamp);
+      if (out > KERBSIDE.lamp + .9 && out < 12 && this.walks.clear(u, s, .1, .5)) {
+        const from = this.furnitureByChunk.get(cityCell(piece.s, piece.u).key), key = cityCell(s, u).key;
+        piece.u = u; piece.s = s;
+        if (this.furnitureByChunk.get(key) !== from) {
+          from.splice(from.indexOf(piece), 1);
+          if (!this.furnitureByChunk.has(key)) this.furnitureByChunk.set(key, []);
+          this.furnitureByChunk.get(key).push(piece);
+        }
+      }
+      this.walks.add(piece);
+    }
     // (and the bridges' piers, drawn with the streets, which only something
     // flying under a bridge can meet: see features.piers)
     for (const { outline } of bridgePiers()) { const centre = averagePoint(outline); add({ kind: 'pier', s: centre.y, u: centre.x, outline }); }
@@ -1265,6 +1324,8 @@ export class CitydriverWorld {
     this.harbour.update(time, camera);
     this.fountainJets.update(time, this.chunks.values(), camera, this.origin);
     this.ducks.update(time, camera, this.origin);
+    // (where people can stand, shoved, diving or walking back, and where the taxi's fares wait)
+    if (contacts) { contacts.scenery = this.chunks; contacts.space = this.walks; }
     this.busStops.animate(time, contacts);
     if (camera) {
       camera.updateMatrixWorld();

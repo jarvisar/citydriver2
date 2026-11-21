@@ -5,6 +5,10 @@ import { CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX } from './camera-preferences.js';
 // moment more as a turbo fires (see Drift), unless the player is `calm`
 // (prefers reduced motion)
 const RUSH_FOV = 1.09, TURBO_FOV = 1.06;
+// The lens's height in degrees on a screen wider than tall. It was 45: a long
+// lens stacks the buildings up behind the car and shows little to either
+// side, which made the streets look shorter and tighter than they are.
+const LENS = 50;
 // A building in the way pulls the camera in toward this height over the car
 // (a tall machine's lift on top), and it eases back out at this rate.
 const PIVOT = 1.8, OPEN_RATE = 2.5;
@@ -81,7 +85,10 @@ export class Handoff {
 
 export class ThirdPersonCamera {
   constructor() {
-    this.camera = new THREE.PerspectiveCamera(45, 1, .1, 1200);
+    this.camera = new THREE.PerspectiveCamera(LENS, 1, .1, 1200);
+    // The sun's shadows were budgeted for a 45 degree lens: this one is
+    // wider and nearer the car, so they end that much nearer (see fitSunShadow)
+    this.camera.userData.shadowReach = Math.tan(THREE.MathUtils.degToRad(45 / 2)) / Math.tan(THREE.MathUtils.degToRad(LENS / 2));
     this.initialized = false;
     this.heading = 0;
     this.headingVelocity = 0;
@@ -89,7 +96,7 @@ export class ThirdPersonCamera {
     this.height = 0;
     this.forward = new THREE.Vector3();
     this.target = new THREE.Vector3();
-    this.baseFov = 45;
+    this.baseFov = LENS;
     this.rush = 0; this.punch = 0; this.calm = false;
     this.dip = 0;
     // `sight(from, to)` answers how far from the car toward the camera the view
@@ -140,7 +147,7 @@ export class ThirdPersonCamera {
   resize(aspect) {
     this.camera.aspect = aspect;
     // Preserve enough horizontal room for the car on narrow phones.
-    this.baseFov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(Math.PI / 8) / Math.min(aspect, 1)));
+    this.baseFov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(LENS / 2)) / Math.min(aspect, 1)));
     // The sun's shadow is fitted to the lens, and has to cover
     // the frame the car will have at full speed rather than the narrower one it
     // has standing still, so say how wide this lens ever gets.

@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { bodyMaterial, bodyProfile, heightAt, lampGlow, markedBody, vehicleGeometry, wheelGeometry, WHEEL } from './traffic-models.js';
 import { stableShadowDepth } from './world/shadow-depth.js';
 import { exoticGeometry } from './exotic-model.js';
+import { modeled } from './vehicle-scale.js';
 
 // A taxi's checkers run along its doors in two rows of squares, clear of the
 // wheel arches and under the shoulder (heights before the shape's drop).
@@ -19,8 +20,8 @@ export function taxiChequers(shape) {
 // checkers, thin plates so the paint shows between them. The garage's cabs
 // and the traffic's share them.
 const SIGN = [.9, .3, .34];
-function cabTrim(shape, roof) {
-  const boxAt = (size, [x, y, z]) => new THREE.BoxGeometry(...size).translate(x, y, z);
+function cabTrim(built, roof) {
+  const shape = modeled(built), boxAt = (size, [x, y, z]) => new THREE.BoxGeometry(...size).translate(x, y, z);
   const signY = roof.y + .04 + SIGN[1] / 2;
   const { size, low, count, start } = taxiChequers(shape), drop = shape.drop ?? 0;
   const plates = [boxAt([SIGN[0] + .04, .04, SIGN[2] + .04], [0, roof.y + .02, roof.z])];

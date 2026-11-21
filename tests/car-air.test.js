@@ -200,7 +200,8 @@ test('a car come down on a parked car lands on its roof, not beside it, and the 
     for (let i = 0; i < 360; i++) { c.update(1 / 120, { forward: c.speed < 6 ? 1 : 0 }); collideScenery(c, c.scenery, 1 / 120); }
     assert.ok(c.s > 44 && Math.abs(c.y - GROUND) < .05, `off it at ${c.s.toFixed(1)}, ${(c.y - GROUND).toFixed(2)} m up`);
     // From the street it is a wall, as ever: no driving up onto it
-    c.s = 30; c.u = 0; c.update(0, {});
+    // (a short car drops from the roof onto the bonnet on its way off: that stomp is not this one)
+    c.drain(); c.s = 30; c.u = 0; c.update(0, {});
     const into = drive(c, 3, 8);
     assert.ok(c.s < 38 && !into.events.some(e => e.kind === 'stomp'), `stopped at ${c.s.toFixed(1)}`);
   } finally { c.disposeModel(); }

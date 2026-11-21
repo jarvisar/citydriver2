@@ -3,10 +3,15 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { CitydriverWorld, CityChunk } from '../src/world/citydriver-world.js';
 import { planLot } from '../src/world/city-buildings.js';
+import { convexPieces, convexHull } from '../src/world/colliders.js';
+import { union, difference, region } from '../src/mapgen/booleans.js';
 import { cityTrees } from '../src/world/city-assets.js';
 import { cityCell, CITY, CITY_CELL } from '../src/world/city.js';
 import { journeyStart, roadAt } from '../src/world/city-route.js';
 import { setResidentWindow } from '../src/world/resident.js';
+import { offsetWalkerPose, pairLag } from '../src/world/city-life.js';
+import { walkPose, nearestOnLoop } from '../src/world/pedestrian-reactions.js';
+import { WalkSpace, WALK_OUT, PAIR, BODY, CLOSE } from '../src/world/city-walks.js';
 import { insidePolygon, distanceToPolyline } from '../src/mapgen/polygon-util.js';
 import { collideScenery, sightLine } from '../src/collision.js';
 import { CityTraffic } from '../src/city-traffic.js';
@@ -440,5 +445,187 @@ test("strollers keep to the parks' and squares' walks, never out on a roadway", 
     const loops = [...world.blocksByChunk.values()].flat().filter(loop => loop.index >= 2e5);
     assert.ok(loops.length > 0, 'some walks are strolled');
     for (const loop of loops) for (const p of loop.points) assert.notEqual(surfaceAt(p.y, p.x), 'road', `a stroll out at ${p.x.toFixed(1)}, ${p.y.toFixed(1)}`);
+  } finally { world.dispose(); }
+});
+
+// How far (x, z) is from a collider (under 0 inside it)
+function offCollider(c, x, z) {
+  if (!c.corners) return Math.hypot(x - c.x, z - c.z) - c.reach;
+  const ring = c.corners.map(p => ({ x: p.x, y: p.z })), d = distanceToPolyline({ x, y: z }, [...ring, ring[0]]);
+  return insidePolygon({ x, y: z }, ring) ? -d : d;
+}
+
+test('people walk the clear band by the lot line: through no collider, never off the pavement, and all one way round at one pace', () => {
+  const world = new CitydriverWorld(new THREE.Scene());
+  try {
+    const start = journeyStart();
+    world.update(start.s, start.u);
+    while (world.pending.length) world.update(start.s, start.u);
+    // (what stands in the built cells, by 8 m cell: not roof plant, parked cars, ramps or flat steps)
+    const grid = new Map(), key = (ix, iz) => ix * 65536 + iz;
+    for (const chunk of world.chunks.values()) for (const c of chunk.features.colliders) {
+      if (c.clutter || c.parked || c.shape || c.top - PAVEMENT_LEVEL <= .3) continue;
+      for (let ix = Math.floor((c.x - c.reach - 1) / 8); ix <= Math.floor((c.x + c.reach + 1) / 8); ix++) for (let iz = Math.floor((c.z - c.reach - 1) / 8); iz <= Math.floor((c.z + c.reach + 1) / 8); iz++) {
+        if (!grid.has(key(ix, iz))) grid.set(key(ix, iz), []);
+        grid.get(key(ix, iz)).push(c);
+      }
+    }
+    const loops = new Map();
+    let samples = 0, pairs = 0;
+    for (const chunk of world.chunks.values()) for (const walker of chunk.walkers) {
+      // (a block's residents: the squares' and parks' strollers have their own test)
+      if (walker.loop.index >= 1e5 || walker.loop.blocked) continue;
+      if (!loops.has(walker.loop)) loops.set(walker.loop, []);
+      loops.get(walker.loop).push(walker);
+      if (walker.pairOffset) pairs++;
+      for (let d = 0; d < walker.loop.perimeter; d += .5) {
+        const pose = offsetWalkerPose(walkPose({ ...walker, phase: d }, 0), walker);
+        // (a walk runs on into cells not built here, whose colliders nobody has)
+        if (!world.chunks.has(cityCell(pose.s, pose.x).key)) continue;
+        samples++;
+        assert.equal(surfaceAt(pose.s, pose.x), 'pavement', `walking off the pavement at ${pose.x.toFixed(1)}, ${pose.s.toFixed(1)}`);
+        for (const c of grid.get(key(Math.floor(pose.x / 8), Math.floor(-pose.s / 8))) ?? []) {
+          const off = offCollider(c, pose.x, -pose.s);
+          assert.ok(off > .25 - .03, `walking ${off.toFixed(2)} m from a ${c.prop?.pieces[0].kind ?? (c.corners ? 'wall' : 'post')} at ${pose.x.toFixed(1)}, ${pose.s.toFixed(1)}`);
+        }
+      }
+    }
+    assert.ok(loops.size > 20 && samples > 5000 && pairs > 4, `${loops.size} walks, ${samples} places on them, ${pairs} people in pairs`);
+    for (const [loop, walkers] of loops) {
+      assert.ok(walkers.every(walker => walker.direction === loop.direction && walker.speed === loop.pace), 'one way round, at one pace');
+      // (each pair or person on their own stretch, so nobody walks through anybody)
+      const marks = walkers.filter(walker => !(walker.pairOffset > 0)).map(walker => walker.phase);
+      for (let i = 0; i < marks.length; i++) for (let k = 0; k < i; k++) {
+        const apart = Math.abs(marks[i] - marks[k] - Math.round((marks[i] - marks[k]) / loop.perimeter) * loop.perimeter);
+        assert.ok(apart > 5, `${apart.toFixed(1)} m apart on a walk of ${loop.perimeter.toFixed(0)} m`);
+      }
+      for (const walker of walkers) if (walker.pairOffset > 0) assert.equal(walker.phase, walkers[walkers.indexOf(walker) - 1].phase, 'a pair walks together');
+    }
+  } finally { world.dispose(); }
+});
+
+test('a walk keeps a fixed way out from the lot line, and routed again round something new it moves nobody along it', () => {
+  const walks = new WalkSpace();
+  let loop = null, at = 0, block = null;
+  for (let index = 0; index < CITY.blocks.length && !loop; index++) {
+    const each = walks.block(index), n = each?.points.length ?? 0;
+    for (let i = 0; i < n && !loop; i++) if (each.cumulative[i + 1] - each.cumulative[i] > 40) { loop = each; at = (each.cumulative[i] + each.cumulative[i + 1]) / 2; block = CITY.blocks[index]; }
+  }
+  assert.ok(loop, 'a walk with a long straight side');
+  // (with nothing on the pavement, WALK_OUT from the lot line all the way round, inside the curb)
+  const line = [...block.inner, block.inner[0]], curb = [...block.kerb, block.kerb[0]];
+  for (const p of loop.points) {
+    // (round a corner, within what the arc's chords, its samples and their thinning cut off it)
+    assert.ok(Math.abs(distanceToPolyline(p, line) - WALK_OUT) < .12 && !insidePolygon(p, block.inner), `${distanceToPolyline(p, line).toFixed(2)} m out from the lot line`);
+    assert.ok(insidePolygon(p, block.kerb) && distanceToPolyline(p, curb) > 1.5);
+  }
+  const pose = d => walkPose({ loop, phase: d, direction: 1 }, 0), before = [];
+  for (let d = 0; d < loop.perimeter; d += 1) before.push(pose(d));
+  // Something standing just to the wall's side of it: passed on the curb's side, a pair's width clear
+  const here = pose(at), ahead = pose(at + 1), out = { x: ahead.s - here.s, y: -(ahead.x - here.x) }, post = { x: here.x - out.x * .3, y: here.s - out.y * .3 };
+  const perimeter = loop.perimeter;
+  walks.obstacle(post.x, post.y, .2, { kind: 'post' });
+  walks.route(loop);
+  assert.equal(loop.perimeter, perimeter); assert.equal(loop.cumulative.at(-1), perimeter); assert.equal(loop.cumulative.length, loop.points.length + 1);
+  let bent = 0;
+  for (let d = 0, i = 0; d < perimeter; d += 1, i++) {
+    const now = pose(d), moved = Math.hypot(now.x - before[i].x, now.s - before[i].s), along = Math.abs(d - at);
+    // (elsewhere, where they were to within what thinning the line's points allows)
+    if (along > 8) assert.ok(moved < .041, `moved ${moved.toFixed(3)} m, ${along.toFixed(0)} m from it`);
+    else { bent = Math.max(bent, moved); assert.ok(moved < 1.6, 'aside, never along'); }
+    assert.ok(Math.hypot(now.x - post.x, now.s - post.y) > .2 + PAIR + BODY, 'clear of it for two abreast');
+  }
+  assert.ok(bent > .5 && !loop.tight && !loop.blocked, `bent ${bent.toFixed(2)} m round it`);
+  // (and whoever is knocked down beside it rejoins the walk where they are)
+  const beside = pose(at + .5);
+  assert.ok(Math.abs(nearestOnLoop(loop, beside.x, beside.s) - (at + .5)) < .05);
+  // With no room for two abreast a pair closes up, and with none at all nobody walks it
+  walks.obstacle(here.x + out.x * 1.45, here.s + out.y * 1.45, .2, { kind: 'post' });
+  walks.route(loop);
+  assert.ok(loop.tight && !loop.blocked, `squeezed by ${loop.squeeze.toFixed(2)} m`);
+  const pair = offsetWalkerPose(pose(0), { loop, pairOffset: PAIR }), middle = pose(0);
+  assert.ok(Math.abs(Math.hypot(pair.x - middle.x, pair.s - middle.s) - PAIR * CLOSE) < 1e-9, 'shoulder to shoulder');
+  walks.obstacle(here.x + out.x, here.s + out.y, .2, { kind: 'post' });
+  walks.route(loop);
+  assert.ok(loop.file && !loop.blocked && pairLag({ loop, pairOffset: PAIR }) > .5 && pairLag({ loop, pairOffset: -PAIR }) === 0, `squeezed by ${loop.squeeze.toFixed(2)} m: one behind the other`);
+  const behind = offsetWalkerPose(pose(0), { loop, pairOffset: PAIR });
+  assert.ok(Math.hypot(behind.x - middle.x, behind.s - middle.s) < 1e-9, 'in single file');
+  for (const k of [-.8, 0, .8, 1.6, 2.4]) walks.obstacle(here.x + out.x * k, here.s + out.y * k, .45, { kind: 'wall' });
+  walks.route(loop);
+  assert.ok(loop.blocked, 'a pavement blocked right across');
+});
+
+test("a bus shelter's collider takes in its bench, and the walk behind it is clear", () => {
+  const world = new CitydriverWorld(new THREE.Scene());
+  try {
+    const piece = world.shelters.find(each => CITY.pavement.find(each.u, each.s)?.kind === 'block'), cell = cityCell(piece.s, piece.u);
+    const chunk = new CityChunk(world, cell.ix, cell.iz, false, true);
+    chunk.buildUntil();
+    const collider = chunk.features.colliders.find(c => c.prop?.pieces[0].kind === 'shelter' && Math.hypot(c.x - piece.u, c.z + piece.s) < 1);
+    assert.ok(collider, 'the shelter is solid');
+    // (its seat, across the middle of it, and its glass back; not the pavement in front or behind)
+    const nx = Math.cos(piece.yaw), ny = Math.sin(piece.yaw), off = across => offCollider(collider, piece.u + nx * across, -(piece.s + ny * across));
+    assert.ok(off(0) < 0 && off(-.2) < 0 && off(.62) < 0, 'bench and back');
+    assert.ok(off(-.5) > 0 && off(1) > 0, 'open in front and behind');
+    const loop = world.walks.block(CITY.pavement.find(piece.u, piece.s).block);
+    for (let d = 0; d < loop.perimeter; d += .5) {
+      const p = walkPose({ loop, phase: d, direction: 1 }, 0);
+      if (Math.hypot(p.x - piece.u, p.s - piece.s) < 6) assert.ok(loop.blocked || offCollider(collider, p.x, -p.s) > .25, 'the walk passes behind it');
+    }
+    chunk.dispose();
+  } finally { world.dispose(); }
+});
+
+test("a building's colliders are the walls it is drawn with: no wall nobody can see across a wing's yard, and none left out", () => {
+  const world = new CitydriverWorld(new THREE.Scene());
+  try {
+    const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x), span = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
+    const area = points => Math.abs(points.reduce((sum, p, i) => sum + p.x * points[(i + 1) % points.length].y - points[(i + 1) % points.length].x * p.y, 0) / 2);
+    const areaOf = shapes => shapes.reduce((sum, shape) => sum + area(shape.outer) - shape.holes.reduce((holes, hole) => holes + area(hole), 0), 0);
+    let buildings = 0, cut = 0, most = 0, hulls = 0, unseen = 0;
+    for (const lots of world.lotsByChunk.values()) for (const lot of lots) {
+      const plan = planLot({ east: 0, start: 0 }, lot);
+      if (plan.kind !== 'building') continue;
+      const ring = plan.footprint, pieces = convexPieces(ring), at = `${ring[0].x.toFixed(0)},${ring[0].y.toFixed(0)}`;
+      buildings++; most = Math.max(most, pieces.length); hulls += area(convexHull(ring)) - area(ring);
+      if (pieces.length === 1) {
+        // Its hull, where that adds next to nothing: a dip no deeper than a sill, a notch nobody fits into
+        const extra = area(pieces[0].points) - area(ring);
+        assert.ok(extra < Math.max(.05 * area(ring), 1) && extra < 8, `a hull ${extra.toFixed(1)} m2 bigger than its building of ${area(ring).toFixed(0)} m2 at ${at}`);
+        unseen += extra;
+        continue;
+      }
+      cut++;
+      const solid = union(pieces.map(piece => piece.points)), phantom = areaOf(difference(region(solid), [ring])), bare = areaOf(difference([ring], region(solid)));
+      assert.ok(phantom < Math.max(.05 * area(ring), 1) && phantom < 8, `${phantom.toFixed(1)} m2 of collider outside the walls of a building of ${area(ring).toFixed(0)} m2 at ${at}`);
+      assert.ok(bare < .5, `${bare.toFixed(2)} m2 of the building at ${at} outside its collider`);
+      unseen += phantom;
+      // Every piece convex, and no seam ending at a corner the building has (see convexPieces)
+      const filled = p => pieces.reduce((sum, piece) => sum + piece.points.reduce((turn, q, i) => {
+        const n = piece.points.length, b = piece.points[(i + 1) % n], a = piece.points[(i + n - 1) % n];
+        if (span(q, p) < 1e-6) return turn + Math.abs(Math.atan2(cross(q, b, a), (b.x - q.x) * (a.x - q.x) + (b.y - q.y) * (a.y - q.y)));
+        const along = ((p.x - q.x) * (b.x - q.x) + (p.y - q.y) * (b.y - q.y)) / span(q, b) ** 2;
+        return span(b, p) > 1e-6 && along > 0 && along < 1 && Math.abs(cross(q, b, p)) / span(q, b) < 1e-6 ? turn + Math.PI : turn;
+      }, 0), 0);
+      for (const piece of pieces) piece.points.forEach((p, i) => {
+        const n = piece.points.length;
+        assert.ok(cross(piece.points[(i + n - 1) % n], p, piece.points[(i + 1) % n]) > -1e-6, `a piece that is not convex at ${at}`);
+        if (piece.seams[i] || piece.seams[(i + n - 1) % n]) assert.ok(filled(p) > Math.PI - 1e-3, `a seam ending at a corner of the building at ${at}`);
+      });
+    }
+    assert.ok(cut > 300 && most <= 12, `${cut} of ${buildings} buildings in pieces, ${most} at most`);
+    // (their hulls: over 30,000 m2 of the city walled off that is drawn open)
+    assert.ok(hulls > 10000 && unseen < hulls / 10, `${unseen.toFixed(0)} m2 of unseen wall left of ${hulls.toFixed(0)}`);
+    // and so they stand in the chunks: the pieces of one footprint one after another, knowing their seams and its hull
+    const start = journeyStart();
+    world.update(start.s, start.u); while (world.pending.length) world.update(start.s, start.u);
+    let seen = 0;
+    for (const chunk of world.chunks.values()) chunk.features.colliders.forEach((solid, i, all) => {
+      if (!solid.seams) { assert.equal(solid.hull, undefined); return; }
+      seen++;
+      assert.ok(solid.top !== undefined && solid.corners.length === solid.seams.length && solid.hull.length >= 3);
+      assert.ok(all[i - 1]?.hull === solid.hull || all[i + 1]?.hull === solid.hull, 'a piece stands beside the next piece of its footprint');
+    });
+    assert.ok(seen > 20, `${seen} pieces round the start`);
   } finally { world.dispose(); }
 });

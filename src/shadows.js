@@ -62,7 +62,10 @@ export function fitSunShadow(camera, sun, heightOrigin = 0, worldOrigin = 0, dis
     // Enclose the nearby chase frustum in a sphere. Its size depends only on
     // the widest the lens gets (it opens with speed), so steering, pitching
     // and speeding up cannot stretch the shadow texels.
-    const far = Math.min(distance, camera.far);
+    // (a lens that stands nearer its car and sees wider says how much nearer
+    // the shadows may end, `shadowReach`, so the map covers the ground it did
+    // and its texels stay their size)
+    const far = Math.min(distance * (camera.userData.shadowReach ?? 1), camera.far);
     const fov = Math.max(camera.userData.widestFov ?? 0, camera.getEffectiveFOV());
     const slope = Math.tan(THREE.MathUtils.degToRad(fov) / 2);
     const middle = Math.min(far, (camera.near + far) * (1 + slope * slope * (1 + camera.aspect * camera.aspect)) / 2);

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { cityWalker, walkerFloat, createWalkerMaterial, walkerAppearance, setWalkerAppearance, setWalkerTurn, taxiGroupAppearance } from './world/city-life.js';
-import { ROAD_LEVEL, PAVEMENT_LEVEL, roadAt } from './world/city-route.js';
+import { ROAD_LEVEL, PAVEMENT_LEVEL, roadAt, surfaceAt } from './world/city-route.js';
 import { profileOf } from './world/city.js';
 import { RATINGS } from './taxi-run.js';
 import { taxiResultModel } from './result-model.js';
@@ -14,6 +14,41 @@ import { $, hide, clock, OnceHints } from './hud-dom.js';
 
 const money = value => `$${Math.round(value ?? 0).toLocaleString('en-US')}`;
 const passengerFloat = {};
+// A party waits in a line along the curb, APART m between them, where a
+// stop's street says its curb is. Given `space` (the world's WalkSpace) they
+// keep clear of what stands there: the line slides along the curb or across
+// the pavement, in its curb-side band, to the first place where everyone is
+// on the pavement, clear of the furniture, of a bus stop's own riders and of
+// the walk the residents take (and, failing that, each stands where they
+// can). Only where they are drawn: the stop, its ring and its fare are as
+// they were. Returns each rider's place across (+x, the curb's side of the
+// stop) and along (z) the stop's own frame.
+const APART = 1.35, ALONG = [0, .8, -.8, 1.6, -1.6, 2.4, -2.4, 3.2, -3.2, 4, -4], ACROSS = [1, 1.5, .65, 2];
+export function fareSpots(stop, street, count, space = null) {
+  const edge = street.halfWidth - street.lane, line = (across, shift) => Array.from({ length: count }, (_, i) => ({ x: edge + across, z: shift + (i - (count - 1) / 2) * APART }));
+  if (!space) return line(2, 0);
+  const h = stop.heading ?? 0, cos = Math.cos(h), sin = Math.sin(h), u = p => stop.u + p.x * cos - p.z * sin, s = p => stop.s - p.x * sin - p.z * cos;
+  // (the pavement under them and a step toward the road: a curb's corner cuts in)
+  const free = p => surfaceAt(s(p), u(p)) === 'pavement' && surfaceAt(s(p) + .35 * sin, u(p) - .35 * cos) === 'pavement' && space.free(u(p), s(p), .32);
+  for (const shift of ALONG) for (const across of ACROSS) { const spots = line(across, shift); if (spots.every(free)) return spots; }
+  // (no room for the line: each as near their place in it as they can stand,
+  // the curb's band first, then anywhere in reach, where a stop has no
+  // pavement of its own beside it)
+  const spots = [], apart = p => spots.every(other => Math.hypot(other.x - p.x, other.z - p.z) > .9);
+  for (const home of line(2, 0)) {
+    let best = null;
+    search: for (const shift of ALONG) for (const across of ACROSS) {
+      const p = { x: edge + across, z: home.z + shift };
+      if (free(p) && apart(p)) { best = p; break search; }
+    }
+    for (let reach = 1.5; !best && reach < 10; reach += 1.5) for (let k = 0; k < 12 && !best; k++) {
+      const p = { x: home.x + Math.cos(k * Math.PI / 6) * reach, z: home.z + Math.sin(k * Math.PI / 6) * reach };
+      if (free(p) && apart(p)) best = p;
+    }
+    spots.push(best ?? home);
+  }
+  return spots;
+}
 const markerScale = 1.3;
 // Riders' meshes kept for reuse, of each party size: a pickup window holds
 // about sixty fares, half of them lone riders
@@ -212,7 +247,8 @@ export class TaxiView {
       group.add(person);
     }
     group.traverse(object => { object.userData.ambientOcclusion = false; });
-    return { group, stop, status, arrow, ring, beam, person, float: { phase: 0, speed: .2 }, reactions: null, shape, curb: street.halfWidth - street.lane + 2 };
+    // (where each rider stands: as the street says until the world is known, see fareSpots)
+    return { group, stop, status, arrow, ring, beam, person, float: { phase: 0, speed: .2 }, reactions: null, shape, street, spots: person ? fareSpots(stop, street, person.count) : null, placed: false };
   }
   // Kept for the next party of the same size. Each rider's look is set again
   // when it is taken, and their pose every frame.
@@ -237,16 +273,18 @@ export class TaxiView {
       const selected = run.status === 'driving' || marker.stop.id === run.boarding?.id;
       marker.group.position.set(marker.stop.u, 0, -marker.stop.s);
       if (marker.person) {
-        const { person, curb } = marker;
+        const { person } = marker;
+        if (!marker.placed && contacts?.space) { marker.spots = fareSpots(marker.stop, marker.street, person.count, contacts.space); marker.placed = true; }
         marker.group.updateMatrix();
         // (the taxi, where they stand, for them to watch it pull up)
         const taxi = this.watch.set(vehicle.u, 0, -vehicle.s).applyMatrix4(this.unplace.copy(marker.group.matrix).invert());
         for (let i = 0; i < person.count; i++) {
           const motion = walkerFloat(marker.float, time + i * .7, passengerFloat), reaction = marker.reactions[i];
-          const along = (i - (person.count - 1) / 2) * 1.35;
+          const curb = marker.spots[i].x, along = marker.spots[i].z;
           this.transform.position.set(curb, PAVEMENT_LEVEL + motion.lift, along);
           this.transform.rotation.set(0, lookYaw(reaction, Math.PI / 2, null, time), motion.roll);
-          this.transform.scale.set(1.25, 1.25 * motion.stretch, 1.25); this.transform.updateMatrix();
+          // (a little taller than most, to be picked out from the people walking past: a quarter taller again made them giants beside the cab)
+          this.transform.scale.set(1.1, 1.1 * motion.stretch, 1.1); this.transform.updateMatrix();
           // (a fare only jumps out of the way, and is still there to be picked up)
           contacts?.person(reaction, this.transform.matrix, marker.group.matrix, .35, time, null, true);
           reaction.drawn ??= { x: 0, z: 0 };

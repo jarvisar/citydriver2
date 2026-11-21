@@ -68,13 +68,14 @@ export class CarAir {
     this.reset();
   }
   // Where the wheels are on this model (see createCar): its outermost axles
-  // and track, or near enough from its footprint
-  fit(wheels, width, length) {
+  // and track, or near enough from its footprint. The model's own meters
+  // are `scale` of the street's.
+  fit(wheels, width, length, scale = 1) {
     let front = -Infinity, rear = Infinity, track = 0;
     for (const w of wheels ?? []) {
       const p = w.pivot?.position;
       if (!p) continue;
-      front = Math.max(front, -p.z); rear = Math.min(rear, -p.z); track = Math.max(track, Math.abs(p.x));
+      front = Math.max(front, -p.z * scale); rear = Math.min(rear, -p.z * scale); track = Math.max(track, Math.abs(p.x) * scale);
     }
     if (!(front > rear) || !track) { front = length * .33; rear = -length * .33; track = width * .42; }
     this.layout = [[front, -track], [front, track], [rear, -track], [rear, track], [0, 0]];

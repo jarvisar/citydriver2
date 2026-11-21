@@ -32,21 +32,23 @@ MapGenerator's output is a rough street network with loose ends wherever a strea
 
    | Profile | Rank | Where | Width | Lanes |
    | --- | ---: | --- | ---: | --- |
-   | Boulevard | 4 | main roads, promoted avenues | 24 m | two each way, planted median with trees and lamps |
-   | Parkway | 4 | ring road | 22 m | two each way, grass median |
-   | Avenue | 3 | major, coast | 18 m | one each way, double center line |
-   | Riverbank | 3 | bank roads | 16 m | one each way, double center line |
-   | Collector | 2 | long side streets between the avenues | 14.4 m (17.2 m with bays) | one each way, dashed center line |
-   | Parking street | 1 | garden quarter, warehouses, Midtown | 15.6 m | one each way, parking bays both sides |
-   | Side street | 1 | market and civic quarters | 13 m | one each way |
-   | Lane | 0 | old town | 10.4 m | one each way |
+   | Boulevard | 4 | main roads, promoted avenues | 23 m | two each way, planted median with trees and lamps |
+   | Parkway | 4 | ring road | 21 m | two each way, grass median |
+   | Avenue | 3 | major, coast | 17 m | two each way, double center line |
+   | Riverbank | 3 | bank roads | 15 m | one each way, double center line, edge lines |
+   | Collector | 2 | long side streets between the avenues | 13.4 m (16.2 m with bays) | one each way, dashed center line |
+   | Parking street | 1 | garden quarter, warehouses, Midtown | 14.6 m | one each way, parking bays both sides |
+   | Side street | 1 | market and civic quarters | 12 m | one each way |
+   | Lane | 0 | old town | 9.4 m | one each way |
    | Park walk | | parks | 7.2 m | |
+
+   Width is the carriageway, curb to curb. Pavements are 4.7 m and waterside promenades 6.5 m. Lanes are sized for cars about 1.6 m wide: a little over 4 m where there are two each way. Parking bays are 2.2 by 5.6 m. The network, the shore and the lots are laid out for carriageways half a meter wider each side than the ones drawn (`RESERVE`), which is what the roads were before each gave a meter to its pavements. Changing a carriageway's width therefore moves curbs and paint only, as long as its reserve stays the same.
 
 6. Shore (`shore.js`). The island's outline is the outer edge of the promenade outside the ring road. Land is that outline minus the harbor and the river's channel. Sharp points of land and tiny slivers of land or water are removed. The sea and river are everything that isn't land. These are polygon booleans in whole millimeters (`booleans.js`, using [Clipper](https://www.angusj.com/delphi/clipper.php)), so land, river and sea fit together exactly.
 
 7. Parks (`park-paths.js`). One big park (around 110,000 m²) is chosen before the minor roads are traced, so they stop at its edge. It gets gates on its streets, a loop walk just inside its edge, and walks from each gate to a round plaza in the middle, or around a pond in a big park. The walks connect to the streets and can be driven on. Six smaller squares are picked from the finished blocks, spread well apart, and each circus has a garden in the middle.
 
-8. Blocks. The faces of the cleaned-up road graph. Each edge is set back by the width of its road to give the curb line, and a pavement's width further in for the inner edge. Sharp corners are cut off as small plazas (`chamferAcute`).
+8. Blocks. The faces of the cleaned-up road graph. Each edge is set back by the width of its road to give the curb line, and by its road's reserve and the rest of the pavement for the inner edge. Sharp corners are cut off as small plazas (`chamferAcute`).
 
 9. Lots (`lots.js`). Each block gets a strip of lots one plot deep around its edge, all facing the street, with a shared yard behind. Corner lots wrap around their corners. Each lot edge is marked `street`, `side` or `rear`. Each district has its own lot sizes (`LOT_STYLES` in `src/world/city.js`): narrow and deep in the old town, wide in the warehouse district and downtown. Blocks too thin for a strip are cut across instead. Where a curb would overlap a carriageway, the carriageway is cut out of the block. Lots that come closer to a road than its pavement are dropped.
 
@@ -65,7 +67,7 @@ MapGenerator's output is a rough street network with loose ends wherever a strea
 
 `junction-geometry.js` works out where each road leaves a junction. The crosswalk starts there, the stop line and sign or signal stand behind it, and road markings stop short of it. A street shorter than 24 m between two junctions is treated as part of one bigger junction.
 
-Junction controls follow the street hierarchy (`junctionControls` in `city-junctions.js`). Traffic lights are used where two main roads cross, where a collector crosses a main road, and where two collectors cross downtown. Approaches 16 m or wider get lights on a mast arm. Otherwise the higher-ranked road has right of way and the others stop or give way. Where only local streets meet, it depends on the district: no markings in the old town, give-way signs in the garden quarter, stop signs in the warehouse district, and all-way stops downtown and in the market and civic quarters. Crosswalks are painted at every signal and stop line (`cityCrosswalks`).
+Junction controls follow the street hierarchy (`junctionControls` in `city-junctions.js`). Traffic lights are used where two main roads cross, where a collector crosses a main road, and where two collectors cross downtown. Approaches 14 m or wider get lights on a mast arm. Otherwise the higher-ranked road has right of way and the others stop or give way. Where only local streets meet, it depends on the district: no markings in the old town, give-way signs in the garden quarter, stop signs in the warehouse district, and all-way stops downtown and in the market and civic quarters. Crosswalks are painted at every signal and stop line (`cityCrosswalks`).
 
 `lane-paths.js` connects lanes through a junction with a circular arc, as wide as the junction allows while keeping clear of the curb. Cars pick their next turn when they enter a street and slow down to take each turn at about 2.8 m/s² of sideways acceleration. Autodrive follows the same curves.
 
@@ -73,7 +75,7 @@ Junction controls follow the street hierarchy (`junctionControls` in `city-junct
 
 `city-medians.js` lays out the raised medians on the boulevards and parkway. `city-parks.js` lays out each park's plaza or pond and gives each square a design: a botanical garden with a glasshouse, a market square with stalls, a clocktower, a sculpture garden, or a fountain with cafe tables. No design is used more than twice. A square too narrow for a circle becomes a linear garden with one walk down the middle. The pieces are in `city-monuments.js`.
 
-`city-streets.js` builds the static layer: roads, markings, medians, parking bays, crosswalks, stop lines, pavements, curbs, parks, squares, promenades, water, quay walls and bridges. Bridges get a raised footway where there's room. Blocks too small for any lot become planted islands (`city-islands.js`). It also places all of the street furniture once: signals, signs, lamps, street trees, bus shelters, bins, parked cars, car parks behind offices and warehouses (`city-yards.js`), railings, benches, and a sign at each destination's entrance. Fire hydrants, utility boxes, post boxes, bike racks and news stands go along the curbs last, so they never move anything else. Each district plants its streets differently, and the parks and garden quarter yards have stands of conifers. The roads get drain gratings along the gutters, manhole covers and the odd patch of mended asphalt. Trees are sized to fit between the curb and the buildings and kept clear of lamps, signs and shelters. Props are rotated with the helpers in `city-layout-render.js` (`faceYaw`, `alongYaw`, `itemFrame`).
+`city-streets.js` builds the static layer: roads, markings, medians, parking bays, crosswalks, stop lines, pavements, curbs, parks, squares, promenades, water, quay walls and bridges. Bridges get a raised footway outside each curb, so the road is as wide on a bridge as off it. Blocks too small for any lot become planted islands (`city-islands.js`). It also places all of the street furniture once: signals, signs, lamps, street trees, bus shelters, bins, parked cars, car parks behind offices and warehouses (`city-yards.js`), railings, benches, and a sign at each destination's entrance. Fire hydrants, utility boxes, post boxes, bike racks and news stands go along the curbs last, so they never move anything else. Each district plants its streets differently, and the parks and garden quarter yards have stands of conifers. The roads get drain gratings along the gutters, manhole covers and the odd patch of mended asphalt. Trees are sized to fit between the curb and the buildings and kept clear of lamps, signs and shelters. Props are rotated with the helpers in `city-layout-render.js` (`faceYaw`, `alongYaw`, `itemFrame`).
 
 Surfaces are stacked at different heights so no two different surfaces share a plane and flicker: the bare ground 6 cm below the road, markings 12 and 14 mm above it, pavements 12 cm up, and the ground inside blocks, yards and parks a centimeter or two above that. Anything raised has solid sides.
 

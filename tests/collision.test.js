@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { trafficContact, collideScenery, postContact, sightLine, cameraClearance } from '../src/collision.js';
+import { trafficContact, collideScenery, postContact, footprintContact, sightLine, cameraClearance } from '../src/collision.js';
 import { DrivingController } from '../src/vehicle.js';
 import { CHUNK_LENGTH } from '../src/world/route.js';
-import { solidBox, solidPost, solidSpan, solidModel } from '../src/world/colliders.js';
+import { solidBox, solidPost, solidSpan, solidModel, convexPieces, convexHull } from '../src/world/colliders.js';
 import { CARS, CAR_IDS } from '../src/cars.js';
 
 // A flat, straight road: x is u and z is -s, as in the traffic tests.
@@ -314,4 +314,221 @@ test('the chase camera sees up to 2.2 m short of a building below its roof, and 
   const chunk = { collisionBounds: { minX: -5, maxX: 5, minZ: -40, maxZ: -10 }, features: { colliders: [wedge] } };
   assert.equal(sightLine([chunk], { x: -10, y: 2, z: -7.5 }, { x: 10, y: 5, z: -7.5 }), 1);
   assert.ok(sightLine([chunk], { x: -10, y: 2, z: -12 }, { x: 10, y: 5, z: -12 }) < 1);
+});
+
+// A building's footprint as the colliders a chunk makes of it (see
+// footprintSolids, and CityChunk.mapFeatures): map points [x, s] round it,
+// whole or in its convex pieces, each piece knowing its seams with the next
+const mapped = (points, seams) => {
+  const corners = points.map(([x, s]) => ({ x, z: -s })), n = corners.length, x = corners.reduce((sum, p) => sum + p.x, 0) / n, z = corners.reduce((sum, p) => sum + p.z, 0) / n;
+  return { corners, x, z, reach: Math.max(...corners.map(p => Math.hypot(p.x - x, p.z - z))), heading: 0, top: 30, ...(seams ? { seams } : {}) };
+};
+const ringOf = points => points.map(([x, y]) => ({ x, y }));
+const inPieces = (ring, hull = convexHull(ringOf(ring)).map(p => [p.x, p.y])) => convexPieces(ringOf(ring)).map(piece => ({ ...mapped(piece.points.map(p => [p.x, p.y]), piece.seams), hull }));
+const asHull = ring => [mapped(convexHull(ringOf(ring)).map(p => [p.x, p.y]))];
+const turnedBy = (ring, angle) => ring.map(([x, y]) => [x * Math.cos(angle) - y * Math.sin(angle), x * Math.sin(angle) + y * Math.cos(angle)]);
+const cityOf = colliders => new Map([[0, { collisionBounds: { minX: -1e4, maxX: 1e4, minZ: -1e4, maxZ: 1e4 }, features: { colliders } }]]);
+const openRoute = { ...straightRoute, grid: true, laneAssist: false, bounds: () => [-1e9, 1e9] };
+// A car set down at (x, s) on the map, headed `way` (radians anticlockwise
+// from east) and driven on with `steer` held: where it went step by step, and
+// the most the scenery moved it in one
+function run(colliders, { x, s, way, speed, seconds = 3, steer = null, id = 'taxi' }) {
+  const car = new DrivingController(openRoute, { s }, id), chunks = cityOf(colliders), path = [];
+  try {
+    car.u = x; car.heading = Math.atan2(Math.cos(way), Math.sin(way)); car.speed = speed; car.update(0, {});
+    let moved = 0;
+    for (let i = 0; i < seconds * 120; i++) {
+      car.update(1 / 120, { forward: true, ...(steer ? { [steer]: true } : {}) });
+      const p = car.groundedPosition, bx = p.x, bz = p.z;
+      collideScenery(car, chunks, 1 / 120);
+      moved = Math.max(moved, Math.hypot(p.x - bx, p.z - bz));
+      path.push([p.x, p.z]);
+    }
+    return { path, moved, speed: car.speed, crashes: car.audioTelemetry.crashSerial, met: car.audioTelemetry.impactSerial, box: footprint(car) };
+  } finally { car.disposeModel(); }
+}
+const apart = (a, b) => a.path.reduce((most, p, i) => Math.max(most, Math.hypot(p[0] - b.path[i][0], p[1] - b.path[i][1])), 0);
+// An L of two wings 16 m deep and 40 m long, its yard in the crook beyond (16, 16)
+const ELL = [[0, 0], [40, 0], [40, 16], [16, 16], [16, 40], [0, 40]];
+
+test('a building with wings stands in convex pieces that fill its outline, and its hull where its hollows are not worth opening', () => {
+  const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x), span = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
+  const area = points => points.reduce((sum, p, i) => sum + p.x * points[(i + 1) % points.length].y - points[(i + 1) % points.length].x * p.y, 0) / 2;
+  const pieces = (ring, count, name) => {
+    const made = convexPieces(ringOf(ring));
+    assert.equal(made.length, count, name);
+    if (count === 1) {
+      assert.equal(made[0].seams, undefined, `${name}: one piece has no seams`);
+      assert.deepEqual(made[0].points, convexHull(ringOf(ring)), `${name}: its hull, as every building's collider once was`);
+      return made;
+    }
+    // How much of the turn round a point the pieces fill between them
+    const filled = p => made.reduce((sum, piece) => sum + piece.points.reduce((turn, q, i) => {
+      const n = piece.points.length, b = piece.points[(i + 1) % n], a = piece.points[(i + n - 1) % n];
+      if (span(q, p) < 1e-6) return turn + Math.abs(Math.atan2(cross(q, b, a), (b.x - q.x) * (a.x - q.x) + (b.y - q.y) * (a.y - q.y)));
+      // (a point along an edge has half a turn of that piece beside it)
+      const along = ((p.x - q.x) * (b.x - q.x) + (p.y - q.y) * (b.y - q.y)) / span(q, b) ** 2;
+      return span(b, p) > 1e-6 && along > 0 && along < 1 && Math.abs(cross(q, b, p)) / span(q, b) < 1e-6 ? turn + Math.PI : turn;
+    }, 0), 0);
+    for (const piece of made) {
+      const points = piece.points, n = points.length;
+      assert.ok(area(points) > 0 && piece.seams.length === n && piece.seams.some(Boolean) && !piece.seams.every(Boolean), `${name}: each piece has walls and a seam`);
+      points.forEach((p, i) => {
+        assert.ok(cross(points[(i + n - 1) % n], p, points[(i + 1) % n]) > -1e-9, `${name}: a piece is convex`);
+        // A seam ends part of the way along a wall, or at a corner that turns
+        // into the building: never at a corner the building has, where a car
+        // would need both of that corner's walls to be put out past it
+        if (piece.seams[i] || piece.seams[(i + n - 1) % n]) assert.ok(filled(p) > Math.PI - 1e-6, `${name}: a seam ends at a real corner (${p.x}, ${p.y})`);
+      });
+    }
+    return made;
+  };
+  const total = made => made.reduce((sum, piece) => sum + area(piece.points), 0);
+  pieces([[0, 0], [10, 0], [10, 10], [0, 10]], 1, 'a square');
+  assert.ok(Math.abs(total(pieces(ELL, 2, 'an L')) - 16 * 40 - 16 * 24) < 1e-9, 'the L and no more: its yard is open');
+  assert.equal(pieces(ELL.slice().reverse(), 2, 'an L given clockwise').length, 2);
+  assert.ok(Math.abs(total(pieces([[0, 0], [30, 0], [30, 30], [21, 30], [21, 12], [9, 12], [9, 30], [0, 30]], 3, 'a U')) - (900 - 12 * 18)) < 1e-9);
+  // A dip in a wall no deeper than its sills stand out is left closed, a deeper one opened
+  pieces([[0, 0], [20, 0], [20, 10], [12, 10], [10, 9.85], [8, 10], [0, 10]], 1, 'a wall with a dip of 15 cm');
+  assert.ok(Math.abs(total(pieces([[0, 0], [20, 0], [20, 10], [12, 10], [10, 9.5], [8, 10], [0, 10]], 2, 'a wall with a dip of half a meter')) - 199) < 1e-9);
+  // A slot nobody on foot fits into (they are .64 m across) stays closed, however deep
+  pieces([[0, 0], [20, 0], [20, 10], [10.4, 10], [10.4, 5], [9.6, 5], [9.6, 10], [0, 10]], 1, 'a slot 80 cm wide');
+  assert.ok(Math.abs(total(pieces([[0, 0], [20, 0], [20, 10], [10.8, 10], [10.8, 5], [9.2, 5], [9.2, 10], [0, 10]], 3, 'a slot 1.6 m wide')) - 192) < 1e-9);
+  // The inside of a curved front, a corner every 2 m: a few pieces, never more than 20 cm proud of it or 2 cm inside it
+  const front = Array.from({ length: 31 }, (_, k) => { const a = -Math.PI / 2 + (15 - k) * 2 / 70; return [70 * Math.cos(a), 70 + 70 * Math.sin(a)]; });
+  const curved = [[front.at(-1)[0], -14], [front[0][0], -14], ...front], made = pieces(curved, 8, 'a front round a curve');
+  assert.ok(total(made) >= area(ringOf(curved)) - 1e-9 && total(made) - area(ringOf(curved)) < .2 * 60, `${(total(made) - area(ringOf(curved))).toFixed(2)} m2 over its 60 m`);
+  for (const [x, y] of front) {
+    // (each corner of the front against the pieces' walls: how far outside them, or in)
+    const out = Math.min(...made.flatMap(piece => piece.points.map((a, i) => piece.seams[i] ? Infinity : Math.abs(cross(a, piece.points[(i + 1) % piece.points.length], { x, y })) / span(a, piece.points[(i + 1) % piece.points.length]))));
+    assert.ok(out < .2 + 1e-9, `a corner of the front ${out.toFixed(2)} m from the collider's wall`);
+  }
+});
+
+test('a car slides along a wall across the seam between two pieces of it exactly as along the wall whole', () => {
+  // A wall 100 m long facing west at x = 12, in one piece and cut in two: square across, and on a slant
+  const whole = [[12, 20], [20, 20], [20, 120], [12, 120]];
+  const cuts = {
+    square: [[[[12, 20], [20, 20], [20, 70], [12, 70]], [false, false, true, false]], [[[12, 70], [20, 70], [20, 120], [12, 120]], [true, false, false, false]]],
+    slant: [[[[12, 20], [20, 20], [20, 90], [12, 60]], [false, false, true, false]], [[[12, 60], [20, 90], [20, 120], [12, 120]], [true, false, false, false]]],
+  };
+  let met = 0, unmarked = 0;
+  for (const tilt of [0, .37]) for (const back of [false, true]) for (const degrees of [2, 5, 10, 20]) for (const speed of [6, 18, 32]) {
+    // Into the wall at a slant from 3 m off it, up the map or back down it, and held against it
+    const a = degrees * Math.PI / 180, [[x, s]] = turnedBy([[9, back ? 114 : 26]], tilt);
+    const drive = colliders => run(colliders, { x, s, way: (back ? -Math.PI / 2 + a : Math.PI / 2 - a) + tilt, speed, steer: back ? 'left' : 'right' });
+    const one = drive([mapped(turnedBy(whole, tilt))]);
+    met += one.met > 0;
+    for (const [name, halves] of Object.entries(cuts)) for (const order of [0, 1]) {
+      const two = halves.map(([points, seams]) => mapped(turnedBy(points, tilt), seams));
+      const cut = drive(order ? two.reverse() : two);
+      assert.ok(apart(one, cut) < 1e-9 && cut.crashes === one.crashes, `${name} cut, ${degrees} degrees at ${speed} m/s ${back ? 'back' : 'on'}, piece ${order} first: ${apart(one, cut).toFixed(3)} m apart, ${cut.crashes} crashes for ${one.crashes}`);
+      // (the same pieces not knowing their seams, each a building of its own: the seam is a wall end to catch on)
+      if (name === 'square' && !order) unmarked += apart(one, drive(two.map(({ seams, ...solid }) => solid))) > .01;
+    }
+  }
+  assert.equal(met, 48, 'every run met the wall');
+  assert.ok(unmarked > 5, `unmarked, the seam shows in ${unmarked} of 48 runs`);
+});
+
+test('cut into pieces any way, a convex building moves a car as it does whole', () => {
+  let state = 7;
+  const random = () => { state = (state + 0x6d2b79f5) >>> 0; let t = Math.imul(state ^ (state >>> 15), 1 | state); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  // A piece cut in two by a chord from part of the way along one of its edges to part of the way along another
+  const chop = piece => {
+    const n = piece.points.length, i = Math.floor(random() * n), other = Math.floor(random() * (n - 1)), [a, b] = [i, other >= i ? other + 1 : other].sort((p, q) => p - q);
+    const at = k => { const p = piece.points[k], q = piece.points[(k + 1) % n], t = .12 + random() * .76; return [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]; }, pa = at(a), pb = at(b);
+    return [
+      { points: [pa, ...piece.points.slice(a + 1, b + 1), pb], seams: [piece.seams[a], ...piece.seams.slice(a + 1, b), piece.seams[b], true] },
+      { points: [pb, ...piece.points.slice(b + 1), ...piece.points.slice(0, a + 1), pa], seams: [piece.seams[b], ...piece.seams.slice(b + 1), ...piece.seams.slice(0, a), piece.seams[a], true] },
+    ];
+  };
+  let met = 0, same = 0;
+  for (let k = 0; k < 80; k++) {
+    const corners = 4 + Math.floor(random() * 4), turn = random() * 6.28, rx = 8 + random() * 14, ry = 6 + random() * 10;
+    const outline = Array.from({ length: corners }, (_, i) => { const a = turn + (i + .15 + random() * .7) / corners * Math.PI * 2; return [Math.cos(a) * rx, Math.sin(a) * ry]; });
+    const list = [{ points: outline, seams: outline.map(() => false) }];
+    for (let c = 1 + Math.floor(random() * 3); c > 0; c--) { const at = Math.floor(random() * list.length); list.splice(at, 1, ...chop(list[at])); }
+    for (let i = list.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; }
+    // At it from somewhere round about, turning now and then
+    const from = random() * 6.28, far = 26 + random() * 8, id = ['taxi', 'micro', 'rig', 'formula', 'bus'][Math.floor(random() * 5)], steer = random() < .4 ? 'left' : random() < .6 ? 'right' : null;
+    const start = { x: Math.cos(from) * far, s: Math.sin(from) * far, way: from + Math.PI + (random() - .5) * .7, speed: 4 + random() * 30, steer, id, seconds: 3 };
+    const whole = run([mapped(outline)], start), cut = run(list.map(piece => mapped(piece.points, piece.seams)), start);
+    met += whole.met > 0; same += apart(whole, cut) < 1e-6;
+    assert.ok(apart(whole, cut) < .5 && whole.crashes === cut.crashes, `building ${k} in ${list.length} pieces, the ${id}: ${apart(whole, cut).toFixed(3)} m apart, ${cut.crashes} crashes for ${whole.crashes}`);
+  }
+  assert.ok(met > 25, `${met} of 80 met their building`);
+  // (a piece without the corner a car's nose is square to puts it out by the wall beside it, a fraction of a degree off: seldom)
+  assert.ok(same >= 78, `the very same path in ${same} of 80`);
+});
+
+test('the crook of an L is open to drive into, and its outer walls are as its hull had them', () => {
+  for (const tilt of [0, .41]) {
+    const ring = turnedBy(ELL, tilt), pieces = inPieces(ring), hull = asHull(ring);
+    assert.equal(pieces.length, 2);
+    // Along the two long outer walls, which the cut crosses or ends at, both ways: no different from the hull
+    for (const [from, to, side] of [[[-4, -2.2], [44, -2.2], 1], [[44, -2.2], [-4, -2.2], -1], [[-2.2, 44], [-2.2, -4], 1], [[-2.2, -4], [-2.2, 44], -1]]) for (const degrees of [3, 8, 20]) for (const speed of [8, 20, 32]) {
+      const [[x, s]] = turnedBy([from], tilt), along = Math.atan2(to[1] - from[1], to[0] - from[0]);
+      const start = { x, s, way: along + side * degrees * Math.PI / 180 + tilt, speed, steer: side > 0 ? 'left' : 'right', seconds: Math.min(1.6, 36 / speed) };
+      const one = run(hull, start);
+      for (const order of [0, 1]) {
+        const two = run(order ? [...pieces].reverse() : pieces, start);
+        assert.ok(one.met > 0 && apart(one, two) < 1e-9, `${degrees} degrees at ${speed} m/s from ${from}: ${apart(one, two).toFixed(3)} m apart`);
+      }
+    }
+    // Into the yard, at the inner corner and at each inner wall near it: it ends up at rest in the yard, against the walls and in neither
+    for (const degrees of [185, 205, 225, 245, 265]) for (const speed of [5, 15, 30]) for (const order of [0, 1]) {
+      const way = degrees * Math.PI / 180, [[x, s]] = turnedBy([[16 - 26 * Math.cos(way), 16 - 26 * Math.sin(way)]], tilt);
+      const end = run(order ? [...pieces].reverse() : pieces, { x, s, way: way + tilt, speed }), [[ex, es]] = turnedBy([end.path.at(-1)].map(([px, pz]) => [px, -pz]), -tilt);
+      assert.ok(ex > 16 && es > 16 && ex < 24 && es < 24, `${degrees} degrees at ${speed} m/s: it stops in the crook, at (${ex.toFixed(1)}, ${es.toFixed(1)})`);
+      assert.ok(Math.abs(end.speed) < 2 && end.met > 0, `at rest against the walls (${end.speed.toFixed(1)} m/s)`);
+      assert.ok(end.moved < .35, `no wall threw it (${end.moved.toFixed(2)} m in a step)`);
+      assert.ok(pieces.every(piece => !(footprintContact(end.box, piece)?.depth > .02)), 'and it is left in neither wall');
+      // (its hull, a wall from wing tip to wing tip, kept it out of the yard altogether)
+      if (!order) assert.ok(run(hull, { x, s, way: way + tilt, speed }).path.every(([px, pz]) => { const [[hx, hs]] = turnedBy([[px, -pz]], -tilt); return hx + hs > 56; }), 'the hull stood across the yard');
+    }
+  }
+});
+
+test('along the inside of a curved front a car scrapes on from wall to wall with no crash', () => {
+  const front = Array.from({ length: 31 }, (_, k) => { const a = -Math.PI / 2 + (15 - k) * 2 / 70; return [70 * Math.cos(a), 70 + 70 * Math.sin(a)]; });
+  const pieces = inPieces([[front.at(-1)[0], -14], [front[0][0], -14], ...front]);
+  assert.equal(pieces.length, 8);
+  for (const back of [false, true]) for (const degrees of [2, 5, 10]) for (const speed of [8, 20, 32]) for (const order of [0, 1]) {
+    // From 2 m off its western end heading east along it (or back from its eastern end), a little into it, and held against it
+    const x = back ? 24 : -24, s = 70 - Math.sqrt(70 * 70 - x * x) + 2.2, tangent = Math.asin(x / 70);
+    const end = run(order ? [...pieces].reverse() : pieces, { x, s, way: back ? Math.PI + tangent + degrees * Math.PI / 180 : tangent - degrees * Math.PI / 180, speed, steer: back ? 'left' : 'right', seconds: 2.5 });
+    assert.ok(end.met > 2 && end.crashes === 0, `${degrees} degrees at ${speed} m/s ${back ? 'back' : 'on'}: ${end.crashes} crashes`);
+    assert.ok(end.speed > speed * .8 && Math.abs(end.path.at(-1)[0] - x) > 25, `it kept going (${end.speed.toFixed(1)} m/s, ${Math.abs(end.path.at(-1)[0] - x).toFixed(0)} m on)`);
+    assert.ok(end.moved < .3, `no wall threw it (${end.moved.toFixed(2)} m in a step)`);
+  }
+});
+
+test('the chase camera sees across a yard its building does not fill, and not through the building', () => {
+  const pieces = inPieces(ELL), hull = asHull(ELL), chunk = colliders => [...cityOf(colliders).values()];
+  // From a car beyond the yard to a lens well inside it (map (38, 38) to (26, 26)), 10 m from either wing
+  const from = { x: 38, y: 2, z: -38 }, to = { x: 26, y: 5, z: -26 };
+  assert.ok(sightLine(chunk(hull), from, to) < 1, 'its hull filled the yard');
+  assert.equal(sightLine(chunk(pieces), from, to), 1);
+  assert.equal(cameraClearance(chunk(pieces), { x: 24, y: 5, z: -24 }), 1, 'room for the lens out in the yard');
+  assert.equal(cameraClearance(chunk(hull), { x: 24, y: 5, z: -24 }), .1);
+  assert.equal(cameraClearance(chunk(pieces), { x: 16.3, y: 5, z: -30 }), .1, 'and none against the wing');
+  // Through a wing, across the seam inside it, the building is as solid as its hull: in at the same wall
+  const street = { x: 8, y: 2, z: 6 }, beyond = { x: 8, y: 5, z: -50 };
+  assert.ok(Math.abs(sightLine(chunk(pieces), street, beyond) - sightLine(chunk(hull), street, beyond)) < 1e-9 && sightLine(chunk(pieces), street, beyond) < .1);
+  // and a lens over the seam on the roof is over one roof
+  assert.equal(cameraClearance(chunk(pieces), { x: 8, y: 29, z: -16 }), .1);
+  assert.equal(cameraClearance(chunk(pieces), { x: 8, y: 40, z: -16 }), 1);
+  // Following a car along a wall, past where two pieces of it meet: the
+  // line of sight is the whole wall's, however close the car keeps to it
+  // (each piece taken for a building of its own pulled the camera in at the seam)
+  const wall = [[12, 20], [20, 20], [20, 120], [12, 120]], whole = [mapped(wall)];
+  const two = [[[[12, 20], [20, 20], [20, 70], [12, 70]], [false, false, true, false]], [[[12, 70], [20, 70], [20, 120], [12, 120]], [true, false, false, false]]].map(([points, seams]) => ({ ...mapped(points, seams), hull: wall }));
+  let pulled = 0;
+  for (const off of [.3, 1, 1.5, 2.1, 2.3, 3, 6]) for (let s = 40; s < 100; s += .7) for (const back of [9, -9]) for (const slant of [0, 2, -2]) {
+    const car = { x: 12 - off, y: 2, z: -s }, lens = { x: 12 - off + slant, y: 5, z: -(s - back) }, sight = sightLine(chunk(whole), car, lens);
+    for (const list of [two, [...two].reverse()]) assert.ok(Math.abs(sightLine(chunk(list), car, lens) - sight) < 1e-9, `${off} m off the wall at s ${s.toFixed(1)}: ${sightLine(chunk(list), car, lens).toFixed(2)} for ${sight.toFixed(2)}`);
+    pulled += sightLine(chunk(two.map(({ hull, ...solid }) => solid)), car, lens) < sight - .1;
+  }
+  assert.ok(pulled > 20, `taken apart, the seam pulled the camera in on ${pulled} lines`);
 });

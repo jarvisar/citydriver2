@@ -8,16 +8,6 @@ const signGeometry = new THREE.PlaneGeometry(1, 1);
 const DOMESTIC_GLASS = ['#506971', '#405a65', '#617980'], OFFICE_GLASS = ['#638793', '#567783', '#71929b'];
 
 export const ccw = polygon => signedArea(polygon) < 0 ? polygon.slice().reverse() : polygon;
-// Andrew's monotone chain: the collision footprint has to be convex.
-export function convexHull(points) {
-  const sorted = points.slice().sort((a, b) => a.x - b.x || a.y - b.y);
-  if (sorted.length < 4) return sorted;
-  const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-  const lower = [], upper = [];
-  for (const p of sorted) { while (lower.length >= 2 && cross(lower.at(-2), lower.at(-1), p) <= 0) lower.pop(); lower.push(p); }
-  for (const p of sorted.reverse()) { while (upper.length >= 2 && cross(upper.at(-2), upper.at(-1), p) <= 0) upper.pop(); upper.push(p); }
-  return lower.slice(0, -1).concat(upper.slice(0, -1));
-}
 // The pieces of a rectangle on a wall ({x0, x1, y0, y1}) outside a zone
 function cutAround(pieces, z) {
   return pieces.flatMap(r => {

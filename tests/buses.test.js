@@ -4,12 +4,12 @@ import * as THREE from 'three';
 import { CityTraffic, lanesOf } from '../src/city-traffic.js';
 import { BUS_MODEL, BUS_ROADS, BUS_DOORS, TRAFFIC_MODELS } from '../src/traffic-models.js';
 import { OnFoot } from '../src/on-foot.js';
-import { BusStops } from '../src/world/bus-stops.js';
+import { BusStops, follow } from '../src/world/bus-stops.js';
 import { placeStreetFurniture, findBridges } from '../src/world/city-streets.js';
 import { navGraph } from '../src/world/nav-graph.js';
 import { citydriverRoute, journeyStart, roadAt, surfaceAt } from '../src/world/city-route.js';
 import { createWalkerMaterial, createWalkerAlert } from '../src/world/city-life.js';
-import { PedestrianContacts } from '../src/world/pedestrian-reactions.js';
+import { PedestrianContacts, walkPose } from '../src/world/pedestrian-reactions.js';
 
 // The shelters, gathered once for the file
 let shelters = null;
@@ -26,9 +26,10 @@ const watcher = (s, u) => ({ s, u, heading: 0, speed: 0, airborne: true, grounde
 
 // The bus on a stop's street `before` meters short of it at its own pace
 // (room to stop from a boulevard's), the rest of the traffic out of the
-// way, and whoever is to wait there
+// way, and whoever is to wait there. (The first stop on its street: the bus
+// looks no further than the next one.)
 function stage(waiting = 2, before = 90) {
-  const stops = busStops(), stop = stops.stops.find(each => each.along > before + 5);
+  const stops = busStops(), stop = stops.stops.find(each => each.along > before + 5 && stops.on(each.edge, each.direction)[0] === each);
   const player = watcher(stop.s + stop.ny * 8, stop.x + stop.nx * 8);
   const traffic = new CityTraffic(new THREE.Scene(), citydriverRoute, player.s, 'city', player.u);
   traffic.stops = stops;
@@ -100,7 +101,8 @@ test('the bus calls where someone waits: pulls in by the curb, lets them on and 
     assert.ok(off.pace > 0);
     assert.ok(back, 'it pulled out');
     assert.equal(back.lane, home, 'back in its lane');
-    assert.ok(back.speed > 3 && (back.edge !== stop.edge || back.along > stop.along + 5), `and on its way (${back.speed.toFixed(1)} m/s, ${(back.along - stop.along).toFixed(1)} m on)`);
+    // (its lane is a meter or so out from where it stood, so it is soon back in it)
+    assert.ok(back.speed > 3 && (back.edge !== stop.edge || back.along > stop.along + 2), `and on its way (${back.speed.toFixed(1)} m/s, ${(back.along - stop.along).toFixed(1)} m on)`);
     assert.equal(offRoad, 0);
   } finally { traffic.dispose(); }
 });
@@ -183,4 +185,79 @@ test('on foot, a bus is got into at its front door, and a car parked near one st
   // (one record is filled again for each car asked about: the bay must not keep the bus's door)
   const sedan = TRAFFIC_MODELS.find(model => model.name === 'sedan');
   assert.equal(feet.shapeOf({ bay }).along, sedan.length / 2 * .15);
+});
+
+test('riders wait clear of the bench, come and go round the ends of the shelter, and walk the pavement the way and at the pace its residents do', () => {
+  const stops = busStops(), { nav } = city();
+  let checked = 0;
+  for (const stop of stops.stops.slice(0, 60)) {
+    stops.time = 0;
+    const loop = stops.walk(stop);
+    if (!loop) continue;
+    // (across the shelter, +x into the block, and along it; its bench and back with a body's edge to spare)
+    const local = p => ({ x: (p.x - stop.x) * stop.nx + (p.s - stop.s) * stop.ny, z: (p.x - stop.x) * stop.tx + (p.s - stop.s) * stop.ty });
+    const inShelter = p => { const q = local(p); return Math.abs(q.z) < 2 + .2 && q.x > -.25 - .2 && q.x < .75 + .2; };
+    assert.equal(stop.spots.length, 5);
+    for (const spot of stop.spots) assert.ok(!inShelter(spot) && local(spot).x < -.5 && Math.abs(local(spot).z) < 1.5, 'waiting in front of the bench');
+    assert.ok(stop.gates.length > 0, 'a way round the shelter');
+    for (const gate of stop.gates) assert.ok(Math.abs(local(gate.front).z) > 2.4 && Math.abs(local(gate.back).z) > 2.2 && local(gate.front).x < -1 && local(gate.back).x > 1, 'past its end');
+    const state = stops.state(stop);
+    state.waiting.length = 0; state.most = 5; state.next = Infinity;
+    // Five walk up, one after another, each along the walk its own way and round the shelter to a spot
+    for (let k = 0; k < 5; k++) {
+      stops.time = k * 4;
+      stops.arrival(stop, state);
+      const rider = state.waiting[k], leg = rider.legs[0];
+      assert.ok(leg.loop === loop && leg.direction === loop.direction && leg.speed === loop.pace && leg.distance >= 15, 'up the walk as its people go');
+      for (let t = stops.time; rider.legs.length && t < stops.time + 90; t += .1) { follow(rider, t); assert.ok(!inShelter(rider), `through the shelter at ${local(rider).x.toFixed(2)}, ${local(rider).z.toFixed(2)}`); }
+      assert.ok(Math.hypot(rider.x - stop.spots[rider.spot].x, rider.s - stop.spots[rider.spot].s) < 1e-6, 'at their spot');
+    }
+    // (each joined the walk clear of the last: nobody falls in on top of anybody)
+    const marks = loop.riders.map(each => each.mark);
+    for (let i = 0; i < marks.length; i++) for (let k = 0; k < i; k++) assert.ok(Math.abs(marks[i] - marks[k] - Math.round((marks[i] - marks[k]) / loop.perimeter) * loop.perimeter) >= 2 - 1e-9, 'apart on the walk');
+    // The bus calls: they get on at the front door, two get off at the middle one and walk away
+    const pose = nav.pose(stop.edge, stop.along, stop.direction, stop.lane), bus = { heading: pose.heading, u: pose.u, s: pose.s, lane: stop.lane, service: {} };
+    stops.time = 200; state.alight = 2;
+    const waiting = [...state.waiting];
+    stops.arrive(stop, bus);
+    for (const rider of waiting) { for (let t = 200; !rider.gone && t < 240; t += .1) { follow(rider, t); assert.ok(!inShelter(rider), 'through the shelter to the door'); } assert.ok(rider.gone, 'on the bus'); }
+    assert.equal(stops.walking.length, 2);
+    for (const rider of stops.walking) {
+      const away = rider.legs.at(-1);
+      assert.ok(away.loop === loop && away.direction === loop.direction && away.speed === loop.pace && away.distance === Infinity, 'off round the block as its people go');
+      for (let t = 200; t < 235; t += .1) { follow(rider, t); assert.ok(rider.hidden || !inShelter(rider), 'through the shelter from the door'); }
+      assert.ok(rider.legs[0] === away && Math.hypot(rider.x - stop.x, rider.s - stop.s) > 8, 'walking away');
+    }
+    // Someone caught behind the shelter when the bus calls comes round its end
+    const late = stops.person(stop), back = walkPose({ loop, phase: stop.phase, direction: 1 }, 0);
+    Object.assign(late, { from: { x: back.x, s: back.s }, at: 300 });
+    state.waiting.push(late); stops.time = 300; state.alight = 0;
+    stops.arrive(stop, bus);
+    assert.ok(late.legs.length > 2, 'not straight through it');
+    for (let t = 300; !late.gone && t < 340; t += .1) { follow(late, t); assert.ok(!inShelter(late), 'round the shelter to the door'); }
+    assert.ok(late.gone);
+    stops.visits.length = 0; stops.walking.length = 0; stops.states.delete(stop); loop.riders.length = 0;
+    checked++;
+  }
+  assert.ok(checked > 30, `${checked} stops`);
+});
+
+test('a bus at a stop a step from its lane pulls out with a car queued behind it', () => {
+  const scene = stage(1), { traffic, bus, stop } = scene;
+  let queued = null, away = false;
+  try {
+    run(scene, 40, () => {
+      if (bus.service.state === 'wait' && !queued) {
+        // (a car stopped just behind it, in the lane the bus has not left)
+        queued = traffic.vehicles.find(car => !car.service && !car.duty);
+        Object.assign(queued, { edge: stop.edge, direction: stop.direction, along: bus.along - (bus.spec.length + queued.spec.length) / 2 - 2.3, next: null, turn: null, after: null, loose: null, recover: null, rock: null, dazed: 0, shoved: false, tries: 0, stranded: 0, stopWait: 0 });
+        traffic.settle(queued, stop.edge.profile.lane); queued.pace = .8; queued.cruiseSpeed = stop.edge.profile.speed * .8; queued.speed = 0;
+        traffic.choose(queued); traffic.pose(queued); queued.car.visible = true;
+      }
+      if (queued && (bus.edge !== stop.edge || bus.along > stop.along + 8)) { away = true; return false; }
+    });
+    assert.ok(queued, 'the bus called');
+    assert.ok(Math.abs(stop.lane - stop.edge.profile.lane) < 2.1, 'its stop is in its lane');
+    assert.ok(away, `the bus pulled out (${bus.service.state}, ${(bus.along - stop.along).toFixed(1)} m on)`);
+  } finally { traffic.dispose(); }
 });

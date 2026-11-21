@@ -18,7 +18,8 @@ test('every drop-off is a stretch of curbside lane through its entrance, on its 
     assert.ok(line.some(p => p.s === e.s && p.u === e.u), `${place.name}: the entrance is in its stretch`);
     const street = CITY.roadIndex.nearest(e.u, e.s, 12, (segment, distance) => segment.road.kind === 'path' ? Infinity : distance).road;
     for (const [i, p] of line.entries()) {
-      if (i) assert.ok(Math.hypot(p.s - line[i - 1].s, p.u - line[i - 1].u) < 2.2, `${place.name}: a gap in its stretch`);
+      // (2 m apart along the street's middle: a little more in the curb lane round the outside of a bend)
+      if (i) assert.ok(Math.hypot(p.s - line[i - 1].s, p.u - line[i - 1].u) < 2.5, `${place.name}: a gap in its stretch`);
       assert.ok(!waterAt(p.s, p.u), `${place.name}: its stretch runs onto a bridge`);
       const road = CITY.roadIndex.nearest(p.u, p.s, 12, (segment, distance) => segment.road.kind === 'path' ? Infinity : distance);
       assert.equal(road?.road, street, `${place.name}: its stretch leaves its street`);

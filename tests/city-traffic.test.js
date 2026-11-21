@@ -429,11 +429,13 @@ test('pushing another car goes only as hard as the tires grip: a truck shoves a 
 test('a car shoved into the one ahead knocks it on, and the two are kept apart', () => {
   const player = new DrivingController(citydriverRoute, journeyStart(), 'taxi');
   player.toggleFreeDriving();
-  const { traffic, edge, pinned: [behind, ahead] } = pinnedStreet(player, [[50, 8], [57, 8]]);
+  // (a car's length and a little over three meters between them)
+  const { traffic, edge, pinned: [behind, ahead] } = pinnedStreet(player, [[50, 8], [55.7, 8]]);
   try {
     const rail = traffic.nav.pose(edge, 50, 1, edge.profile.lane), h = rail.heading;
     // From behind and a little to one side, so the blow sets the first car turning
-    player.s = rail.s - Math.cos(h) * 14 + Math.sin(h) * 1.3; player.u = rail.u - Math.sin(h) * 14 - Math.cos(h) * 1.3; player.heading = player.slideHeading = h; player.speed = 30; player.update(0, {});
+    // (half a car's width over: less, and its corner only shoulders the car aside)
+    player.s = rail.s - Math.cos(h) * 14 + Math.sin(h) * .8; player.u = rail.u - Math.sin(h) * 14 - Math.cos(h) * .8; player.heading = player.slideHeading = h; player.speed = 30; player.update(0, {});
     const box = car => ({ x: car.position.x, z: car.position.z, heading: car.heading, halfWidth: car.spec.width / 2 - .05, halfLength: car.spec.length / 2 - .1 });
     let knocked = false;
     for (let i = 0; i < 120 * 4; i++) {
@@ -539,10 +541,11 @@ function headFor(traffic, car, straight) {
 
 test('a car left standing across the lane is waited behind, driven round once the oncoming lane is clear, and the driver goes back to its lane', () => {
   const start = journeyStart(), side = e => e.profile.kind === 'side' && !e.profile.parking && !e.profile.narrow;
-  const { traffic, edge, pinned: [wreck, follower, coming] } = pinnedStreet({ route: citydriverRoute, s: start.s, u: start.u }, [[80, 0], [30, 8], [0, 8, 'hatchback', undefined, -1]], side);
+  // (a pickup square across the lane, its nose at the center line: nothing smaller fills a side street's lane, and a car gets by a hatchback without leaving its own half)
+  const { traffic, edge, pinned: [wreck, follower, coming] } = pinnedStreet({ route: citydriverRoute, s: start.s, u: start.u }, [[80, 0, 'pickup', 2], [30, 8], [0, 8, 'hatchback', undefined, -1]], side);
   try {
     // A car knocked across its lane and left there, and another coming the other way, 85 m past it
-    Object.assign(wreck, { loose: { vx: 0, vz: 0, spin: 0 }, stranded: 1e9 }); wreck.heading += 1.3; traffic.pose(wreck);
+    Object.assign(wreck, { loose: { vx: 0, vz: 0, spin: 0 }, stranded: 1e9 }); wreck.heading += Math.PI / 2; traffic.pose(wreck);
     coming.along = Math.max(5, edge.length - 165); traffic.choose(coming); traffic.pose(coming);
     const watcher = onlooker(traffic, edge, 80), home = edge.profile.lane;
     let waited = 0, startedWith = null, widest = 0, passed = false;
@@ -567,7 +570,8 @@ test('a car left standing across the lane is waited behind, driven round once th
 test('traffic held up by the player stopped in the lane sounds the horn, then drives round them', () => {
   const player = new DrivingController(citydriverRoute, journeyStart(), 'taxi');
   player.toggleFreeDriving();
-  const { traffic, edge, pinned: [car] } = pinnedStreet(player, [[20, 8]]);
+  // (a street with one lane each way: with two, the driver just changes lane)
+  const { traffic, edge, pinned: [car] } = pinnedStreet(player, [[20, 8]], e => !e.profile.divider);
   try {
     const rail = traffic.nav.pose(edge, 75, 1, edge.profile.lane);
     player.s = rail.s; player.u = rail.u; player.heading = player.slideHeading = rail.heading; player.speed = 0; player.update(0, {});

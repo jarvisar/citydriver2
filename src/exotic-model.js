@@ -1,11 +1,13 @@
 import * as THREE from 'three';
+import { SLEEK_SCALE } from './vehicle-scale.js';
 
 // The Exotic: a low mid-engined coupe after the early-2000s Italian hypercars.
 // A pointed racing nose between two big intakes, fenders standing high over
 // the wheels with the headlamps swept up their tops, a narrow teardrop
 // canopy set down between them, scoops ahead of the rear wheels, a louvered
 // engine cover, a ducktail, and four round lamps in a black tail.
-export const EXOTIC_MODEL = { name: 'exotic', width: 2.06, length: 4.5, cabin: [1.3, .36, 1.9], cabinZ: -.2, eye: [0, 1.1, -.6] };
+// (as modeled, and built a little smaller: see vehicle-scale.js)
+export const EXOTIC_MODEL = { name: 'exotic', scale: SLEEK_SCALE, width: 2.06, length: 4.5, cabin: [1.3, .36, 1.9], cabinZ: -.2, eye: [0, 1.1, -.6] };
 const GLASS = '#19292c', CARBON = '#1d282f', MESH = '#141a1e', CHROME = '#bcc1b8', COVER = '#20282c', PAINT = '#ffffff';
 export const EXOTIC_CARBON = CARBON, EXOTIC_GLASS = GLASS;
 // Below the first height the sides tuck under; above the second they lean in

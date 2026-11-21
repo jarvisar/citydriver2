@@ -103,3 +103,20 @@ test('piers stand in the water, under a deck', () => {
     assert.ok(onDeck(p.x, p.y, 0), `a pier out from under its deck at ${p.x.toFixed(1)},${p.y.toFixed(1)}`);
   }
 });
+
+test('a bridge\'s footways run outside its curbs, so the road is as wide over the water as on land', () => {
+  let footways = 0;
+  for (const bridge of CITY.bridges) for (const footway of bridge.footways) {
+    footways++;
+    const half = bridge.road.profile.halfWidth, line = bridge.road.points;
+    for (const p of footway.polygon) {
+      const d = distanceToPolyline(p, line);
+      assert.ok(d > half - .15 && d < half + footway.width + .15, `a footway ${(d - half).toFixed(2)} m from its road's curb at ${p.x.toFixed(1)},${p.y.toFixed(1)}`);
+    }
+    // (and under its line the ground is its pavement: nothing drives on it.
+    // Its last few meters at each end may be the bank's own paving, the water
+    // mask being true to a cell, or a corner rounded off for the road there)
+    for (const p of footway.line.slice(6, -6)) assert.equal(CITY.pavement.find(p.x, p.y)?.kind, 'bridge', `no footway under its own line at ${p.x.toFixed(1)},${p.y.toFixed(1)}`);
+  }
+  assert.ok(footways > 0, 'the bridges have footways');
+});

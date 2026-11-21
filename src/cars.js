@@ -4,13 +4,16 @@ import { SPECIAL_SHAPES, PARKED_SPECIALS } from './special-models.js';
 import { HELICOPTER_SHAPE } from './helicopter.js';
 import { PLANE_SHAPE } from './plane-model.js';
 import { EXOTIC_MODEL } from './exotic-model.js';
+import { CAR_SCALE, modeled, sized } from './vehicle-scale.js';
 
-// The player's original car. Its collision box is the footprint the game has
-// always used; the extra fields only describe it for the chooser's artwork.
-export const CLASSIC_SHAPE = {
-  name: 'classic', width: 2, length: 3.92, cabin: [1.77, .81, 1.9], cabinZ: .12,
-  cabinY: 1.165, wheelRadius: .48, wheelZ: 1.195,
-};
+// The player's original car, as modeled (see vehicle-scale.js for the size it
+// is built). The extra fields only describe it for the chooser's artwork.
+// Its collision box takes in half of its arches' flare (the tub is 2.05 m
+// and the arches and tires reach 2.35): at 2 m its sides sank into walls.
+export const CLASSIC_SHAPE = sized({
+  name: 'classic', width: 2.12, length: 3.92, cabin: [1.77, .81, 1.9], cabinZ: .12,
+  cabinY: 1.165, wheelRadius: .48, wheelZ: 1.195, scale: CAR_SCALE,
+});
 
 const shape = name => TRAFFIC_MODELS.find(spec => spec.name === name);
 const parked = name => PARKED_SPECIALS.find(spec => spec.name === name);
@@ -47,7 +50,7 @@ export const CARS = {
   },
   taxiFormula: {
     name: 'Formula Taxi', mass: .95, kind: 'formula', taxi: true, paint: '#f5c42e',
-    shape: { ...FORMULA_SHAPE, name: 'taxi-formula', cabin: [1.12, .34, 1.1], eye: [-.28, .88, -.76] },
+    shape: sized({ ...FORMULA_SHAPE, name: 'taxi-formula', cabin: [1.12, .34, 1.1], eye: [-.28, .88, -.76] }),
     stats: { topSpeed: 59, acceleration: 51, braking: 36, grip: 2.2, offRoad: 32.9, turnRadius: 3.6 },
   },
   auto: {
@@ -103,33 +106,33 @@ export const CARS = {
     stats: { topSpeed: 38.9, acceleration: 17.3, braking: 23, grip: 1.14, offRoad: 23.7 },
   },
   exotic: {
-    name: 'Exotic', kind: 'built', paint: '#c8201e', shape: EXOTIC_MODEL,
+    name: 'Exotic', kind: 'built', paint: '#c8201e', shape: sized(EXOTIC_MODEL),
     stats: { topSpeed: 44.3, acceleration: 19.5, braking: 23, grip: 1.22, offRoad: 23.7 },
   },
   // Light, short and on knobbly tires: it barely notices the tarmac ending.
   buggy: {
-    name: 'Buggy', mass: .7, kind: 'special', paint: '#e2a23b', shape: SPECIAL_SHAPES.buggy,
+    name: 'Buggy', mass: .7, kind: 'special', paint: '#e2a23b', shape: sized(SPECIAL_SHAPES.buggy),
     stats: { topSpeed: 30.1, acceleration: 18.6, braking: 19, grip: 1.12, offRoad: 27.7 },
   },
   // Goes anywhere at the same unhurried pace, and leans on its tires to stop or turn.
   monster: {
-    name: 'Monster Truck', mass: 4.5, kind: 'special', paint: '#3f7fb5', shape: SPECIAL_SHAPES.monster,
+    name: 'Monster Truck', mass: 4.5, kind: 'special', paint: '#3f7fb5', shape: sized(SPECIAL_SHAPES.monster),
     stats: { topSpeed: 27.7, acceleration: 13.3, braking: 16.5, grip: .8, offRoad: 25.7 },
   },
   // All engine: quicker in a straight line than the coupe, and nowhere else.
   hotrod: {
-    name: 'Hot Rod', kind: 'special', paint: '#1f2326', shape: SPECIAL_SHAPES.hotrod,
+    name: 'Hot Rod', kind: 'special', paint: '#1f2326', shape: sized(SPECIAL_SHAPES.hotrod),
     stats: { topSpeed: 43.7, acceleration: 22.4, braking: 17, grip: .86, offRoad: 24.2 },
   },
   // Eight tonnes of tractor unit. It gets there, and it needs the room to stop.
   rig: {
-    name: 'Truck', mass: 8, kind: 'special', paint: '#a3312c', shape: SPECIAL_SHAPES.rig,
+    name: 'Truck', mass: 8, kind: 'special', paint: '#a3312c', shape: sized(SPECIAL_SHAPES.rig),
     stats: { topSpeed: 31.9, acceleration: 11, braking: 15.5, grip: .78, offRoad: 19.2, turnRadius: 5.4 },
   },
   // The city's bus, as heavy as the truck and bigger: it goes through what
   // the truck does, is nearly as slow away, and swings wide at a corner.
   bus: {
-    name: 'City Bus', mass: BUS_MODEL.mass, kind: 'special', paint: BUS_PAINT, shape: SPECIAL_SHAPES.bus,
+    name: 'City Bus', mass: BUS_MODEL.mass, kind: 'special', paint: BUS_PAINT, shape: sized(SPECIAL_SHAPES.bus),
     stats: { topSpeed: 29.5, acceleration: 11.8, braking: 16.2, grip: .8, offRoad: 18.9, turnRadius: 6.8 },
   },
   // The emergency vehicles (`emergency`): beacons that flash while they are
@@ -139,20 +142,20 @@ export const CARS = {
   // is as heavy as the truck and the bus, and between them away and to stop;
   // the ambulance is a loaded van.
   fireengine: {
-    name: 'Fire Engine', mass: parked('fireengine').mass, kind: 'special', emergency: true, siren: 'wail', paint: parked('fireengine').paint, shape: SPECIAL_SHAPES.fireengine,
+    name: 'Fire Engine', mass: parked('fireengine').mass, kind: 'special', emergency: true, siren: 'wail', paint: parked('fireengine').paint, shape: sized(SPECIAL_SHAPES.fireengine),
     stats: { topSpeed: 30.8, acceleration: 11.4, braking: 16, grip: .8, offRoad: 19.6, turnRadius: 6.2 },
   },
   ambulance: {
-    name: 'Ambulance', mass: parked('ambulance').mass, kind: 'special', emergency: true, siren: 'hilo', paint: parked('ambulance').paint, shape: SPECIAL_SHAPES.ambulance,
+    name: 'Ambulance', mass: parked('ambulance').mass, kind: 'special', emergency: true, siren: 'hilo', paint: parked('ambulance').paint, shape: sized(SPECIAL_SHAPES.ambulance),
     stats: { topSpeed: 33.5, acceleration: 13.2, braking: 18.6, grip: .9, offRoad: 21.5 },
   },
   // Out of breath by 57 mph, but it changes lanes like a thought.
   micro: {
-    name: 'Micro', kind: 'special', paint: '#8fcfc0', shape: SPECIAL_SHAPES.micro,
+    name: 'Micro', kind: 'special', paint: '#8fcfc0', shape: sized(SPECIAL_SHAPES.micro),
     stats: { topSpeed: 25.4, acceleration: 16.1, braking: 22, grip: 1.26, offRoad: 15.6, turnRadius: 3.2 },
   },
   formula: {
-    name: 'Formula', mass: .8, kind: 'formula', paint: '#d8452f', shape: FORMULA_SHAPE,
+    name: 'Formula', mass: .8, kind: 'formula', paint: '#d8452f', shape: sized(FORMULA_SHAPE),
     // 100 m/s ceiling; air drag balances full throttle near 79 m/s (177 mph).
     stats: { topSpeed: 100, acceleration: 60, braking: 30, grip: 2.25, offRoad: 20, turnRadius: 3.6 },
   },
@@ -160,7 +163,7 @@ export const CARS = {
   // it. Its stats set its top speed, its pull and how hard it can stop. It
   // weighs in heavy enough to keep going: a tree takes about a tenth of its speed.
   helicopter: {
-    name: 'Helicopter', mass: 4, kind: 'helicopter', flies: true, paint: '#c9362f', shape: HELICOPTER_SHAPE,
+    name: 'Helicopter', mass: 4, kind: 'helicopter', flies: true, paint: '#c9362f', shape: sized(HELICOPTER_SHAPE),
     stats: { topSpeed: 47, acceleration: 16.6, braking: 16, grip: 1.2, offRoad: 47 },
   },
   // A light plane on big soft tires (see plane.js): it needs a run at it to
@@ -168,7 +171,7 @@ export const CARS = {
   // weighed in heavier than it is, as the helicopter is, so a tree it flies
   // through only costs it a bite of its speed.
   plane: {
-    name: 'Plane', mass: 2.2, kind: 'plane', flies: true, paint: '#2f6fa8', shape: PLANE_SHAPE,
+    name: 'Plane', mass: 2.2, kind: 'plane', flies: true, paint: '#2f6fa8', shape: sized(PLANE_SHAPE),
     stats: { topSpeed: 66, acceleration: 15.4, braking: 14, grip: 1.1, offRoad: 66 },
   },
 };
@@ -235,8 +238,9 @@ export const DRAG = { rolling: .7, air: .0095 };
 // tail through, so a microcar turns inside a junction that a pickup fills.
 export function carStats(id) {
   const entry = carEntry(id);
+  // (by the length it is modeled at: a car built smaller handles as it did)
   const { topSpeed, acceleration, braking, grip, offRoad,
-    turnRadius = (3.55 + .26 * entry.shape.length) / Math.sqrt(grip) } = entry.stats;
+    turnRadius = (3.55 + .26 * modeled(entry.shape).length) / Math.sqrt(grip) } = entry.stats;
   return {
     topSpeed, acceleration, braking, grip, offRoad,
     // Full-lock radius in meters at city-corner speeds. Keep the heavy cars

@@ -190,8 +190,10 @@ test('a post landed on its lamp\'s arm rolls straight off it and lies still, not
   const props = new LooseProps(new THREE.Scene(), new THREE.MeshBasicMaterial()), start = journeyStart();
   const body = props.add({ kind: 'lamp', geometry: cityAssets.lamp }, new THREE.Matrix4());
   try {
-    body.q.set(-.2245, .0896, -.6817, .6905).normalize();
-    body.p.set(start.u, ROAD_LEVEL + .489, -start.s); body.v.set(-.022, -.164, .043); body.w.set(.135, -.014, .048);
+    // (six degrees round its own shaft from the pose it had then: there the
+    // slimmer lamp balances arm up, and this is as far off balance as it was)
+    body.q.set(-.2599, .0533, -.669, .6943).normalize();
+    body.p.set(start.u, ROAD_LEVEL + .473, -start.s); body.v.set(-.022, -.164, .043); body.w.set(.135, -.014, .048);
     body.rest.p.copy(body.p); body.rest.q.copy(body.q);
     let still = null;
     for (let i = 0; i < 120 * 4 && still === null; i++) { props.step(body, 1 / 120, null); if (body.asleep) still = i / 120; }
@@ -246,10 +248,11 @@ test('weight decides what a post costs: the light racer loses most, the truck ha
 });
 
 test('a bin is knocked flying with hardly a check to the car, and comes to rest on the ground', () => {
-  const bin = nearest('bin');
+  // (one with nothing standing for some way past it: the bin flies into whatever is)
+  const bin = nearest('bin', () => true, 9);
   assert.ok(bin, 'a bin near the start');
-  // (a bin rolled far on its side can take nearly five seconds to lie still)
-  const { props, car, before, after } = drive(bin, 'taxi', 18, 6, true);
+  // (a bin rolled far on its side can take seven seconds to lie still)
+  const { props, car, before, after } = drive(bin, 'taxi', 18, 9, true);
   try {
     const [body] = bin.prop.bodies;
     assert.ok((before - after) / before < .03, `the car lost ${before - after} m/s`);
@@ -310,7 +313,7 @@ test('buildings stand firm, and trees and shelters do against someone on foot; l
   for (const kind of kinds) assert.ok(['lamp', 'lantern', 'signal', 'mast', 'sign', 'bin', 'bench', 'table', 'chair', 'stall', 'tree', 'shelter', ...fittings, ...venues].includes(kind), `nothing else: ${kind}`);
   let trees = 0;
   for (const chunk of world().world.chunks.values()) for (const tree of chunk.features.trees ?? []) {
-    const at = { x: chunk.east + tree.x, z: -(chunk.start + tree.s) }, post = all.find(c => c.reach === .28 && Math.hypot(c.x - at.x, c.z - at.z) < .01);
+    const at = { x: chunk.east + tree.x, z: -(chunk.start + tree.s) }, post = all.find(c => !c.corners && c.heading === undefined && Math.hypot(c.x - at.x, c.z - at.z) < .01);
     if (post) { trees++; assert.equal(post.prop?.pieces[0].kind, 'tree'); }
   }
   assert.ok(trees > 50, `${trees} trees checked`);
@@ -367,7 +370,8 @@ test('a ball a car hits flies off ahead, bounces and rolls a long way, turning a
   const player = new DrivingController(citydriverRoute, start, 'taxi'), props = new LooseProps(scene, built.materials.props);
   try {
     player.toggleFreeDriving(); player.update(0, {});
-    const dx = Math.sin(start.heading), dz = -Math.cos(start.heading), x = start.u + dx * 12, z = -(start.s + Math.cos(start.heading) * 12);
+    // (12 m on, and 3 m in from the curb lane the drive starts in: beside the curb, its posts are in the ball's way)
+    const dx = Math.sin(start.heading), dz = -Math.cos(start.heading), x = start.u + dx * 12 - Math.cos(start.heading) * 3, z = -(start.s + Math.cos(start.heading) * 12 + Math.sin(start.heading) * 3);
     const collider = { prop: { pieces: [{ kind: 'ball', geometry: beachBall() }], ready: true, matrix: m => m.makeTranslation(x, ROAD_LEVEL, z), hide() {} }, x, z };
     const car = { x: x - dx * 2.6, z: z - dz * 2.6, y: ROAD_LEVEL, height: 1.5, heading: start.heading, halfWidth: .9, halfLength: 2.3, vx: dx * 10, vz: dz * 10, spin: 0, mass: 2.2 };
     assert.ok(props.knock(collider, { x: -dx, z: -dz, depth: .05, point: { x: x - dx * BEACH_BALL, z: z - dz * BEACH_BALL } }, car));
@@ -488,7 +492,7 @@ test('pieces that stood tangled, as a lamp in a tree\'s crown, are left to come 
   const props = new LooseProps(new THREE.Scene(), new THREE.MeshBasicMaterial()), start = journeyStart(), road = roadAt(start.s, start.u, 40);
   try {
     const tree = props.add({ kind: 'tree', geometry: looseTree(0, '#63924d') }, new THREE.Matrix4().makeTranslation(road.x, ROAD_LEVEL, -road.y));
-    const lamp = props.add({ kind: 'lamp', geometry: cityAssets.lamp }, new THREE.Matrix4().makeTranslation(road.x + .6, ROAD_LEVEL, -road.y));
+    const lamp = props.add({ kind: 'lamp', geometry: cityAssets.lamp }, new THREE.Matrix4().makeTranslation(road.x + .5, ROAD_LEVEL, -road.y));
     assert.ok(overlap(tree, lamp) > 0 && tree.tangled?.has(lamp), 'standing tangled');
     let fastest = 0;
     for (let i = 0; i < 60; i++) { props.update(1 / 120, alone); fastest = Math.max(fastest, lamp.v.length(), tree.v.length()); }
@@ -564,4 +568,35 @@ test('what lands on a moving car\'s roof slides off it rather than riding along'
       assert.ok(rode < 2 && post.p.y - g.y < .5, `${off} m off its middle: it rode ${rode.toFixed(2)} s, and lies ${(post.p.y - g.y).toFixed(2)} m over the road`);
     } finally { props.dispose(); car.disposeModel(); }
   }
+});
+
+test('a wall in two pieces is one wall to what is thrown at it: back off its face, never left in it, never along it across the seam', () => {
+  const props = new LooseProps(new THREE.Scene(), new THREE.MeshBasicMaterial()), { heading, fx, fz, ax, az, at, wall, chunks: of } = street();
+  // A building across the road 12 m on, in two pieces that meet in the middle of the road (see convexPieces)
+  const pieces = [{ ...wall(12, 20, -6, 0), seams: [false, true, false, false] }, { ...wall(12, 20, 0, 6), seams: [false, false, false, true] }], face = at(12, 0);
+  const point = new THREE.Vector3();
+  // How far its deepest point is past the wall's face, and where its middle is across the road
+  const into = body => Math.max(...Array.from({ length: body.shape.points.length / 3 }, (_, k) => { point.fromArray(body.shape.points, k * 3).applyQuaternion(body.q).add(body.p); return (point.x - face.x) * fx + (point.z - face.z) * fz; }));
+  const across = body => (body.p.x - face.x) * ax + (body.p.z - face.z) * az;
+  const turned = new THREE.Matrix4().makeRotationY(Math.PI / 2 - heading);
+  try {
+    for (const order of [0, 1]) for (const kind of ['bin', 'bench']) for (const drift of [-3, 0, 3]) {
+      const chunks = of(order ? [...pieces].reverse() : pieces), from = at(9, -drift * .25);
+      // Thrown at the seam, drifting across it either way as it comes
+      const body = props.add({ kind, geometry: cityAssets[kind] }, turned.clone().setPosition(from.x, ROAD_LEVEL + .3, from.z));
+      body.v.set(fx * 12 + ax * drift, 1, fz * 12 + az * drift);
+      let deepest = -Infinity;
+      for (let i = 0; i < 120 * 4; i++) { props.update(1 / 120, alone, null, chunks); deepest = Math.max(deepest, into(body)); }
+      assert.ok(deepest < .02, `the ${kind} was ${deepest.toFixed(2)} m into the wall`);
+      assert.ok(into(body) < .01 && body.asleep && !body.sunk, `and lies in front of it (${into(body).toFixed(2)} m, ${body.v.length().toFixed(2)} m/s)`);
+      props.remove(body);
+      // Set down part of the way into the wall beside the seam: put out through the face, and no further along the wall than it tumbles
+      const start = at(12 + .2, .15), set = props.add({ kind, geometry: cityAssets[kind] }, turned.clone().setPosition(start.x, ROAD_LEVEL, start.z)), was = across(set);
+      assert.ok(into(set) > .2);
+      for (let i = 0; i < 120 * 2; i++) props.update(1 / 120, alone, null, chunks);
+      assert.ok(into(set) < .01, `the ${kind} set in the wall is put out of it (${into(set).toFixed(2)} m)`);
+      assert.ok(Math.abs(across(set) - was) < 1, `through its face (${(across(set) - was).toFixed(2)} m along it)`);
+      props.remove(set);
+    }
+  } finally { props.dispose(); }
 });

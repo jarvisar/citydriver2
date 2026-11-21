@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import Vector from '../src/mapgen/vector.js';
 import { generateCityMap } from '../src/mapgen/generate.js';
-import { PROFILES } from '../src/mapgen/road-hierarchy.js';
+import { PROFILES, RESERVE, reserved } from '../src/mapgen/road-hierarchy.js';
 import { parkLayout } from '../src/mapgen/park-paths.js';
 import { RoadIndex } from '../src/mapgen/road-index.js';
 import { insidePolygon, segmentIntersection, distanceToPolyline } from '../src/mapgen/polygon-util.js';
@@ -66,4 +66,25 @@ test('a square park gets a gate on each side, a loop and walks to a plaza that m
       assert.ok(!hit || Math.hypot(hit.x - layout.plaza.x, hit.y - layout.plaza.y) < 20, 'walks cross on the lawn');
     }
   }
+});
+
+test('every profile\'s lanes fit its carriageway for cars 1.7 m wide, its bays are 2.2 m wide, and its reserve is a meter beyond each curb', () => {
+  const half = .85;
+  for (const [name, p] of Object.entries(PROFILES)) {
+    if (name === 'path') continue;
+    const lanes = p.divider ? [(p.median + p.divider) / 2, p.lane] : [p.lane];
+    // (clear of the median or the center line, of the lane beside it, and of the curb or the parking bays)
+    assert.ok(lanes[0] - half >= p.median + .3, `${name}: its lane by the middle`);
+    if (p.divider) assert.ok(lanes[0] + half <= p.divider - .3 && lanes[1] - half >= p.divider + .3, `${name}: its lanes either side of the line between them`);
+    assert.ok(lanes.at(-1) + half <= (p.parking ?? p.halfWidth) - .3, `${name}: its curb lane`);
+    if (p.parking) assert.ok(Math.abs(p.halfWidth - p.parking - 2.2) < 1e-9, `${name}: its bays`);
+    if (p.edge) assert.ok(p.edge > p.lane + half && p.edge < p.halfWidth, `${name}: its edge line`);
+    // (the lots are laid out from the reserve: see RESERVE)
+    assert.equal(reserved(p), p.halfWidth + RESERVE);
+  }
+  assert.equal(reserved(PROFILES.path), PROFILES.path.halfWidth, 'a park\'s walk is as wide as it was laid out');
+  // Two cars passing on a street with one lane each way leave room for a third between them
+  for (const name of ['side', 'collector', 'parking', 'bayCollector', 'riverbank']) assert.ok(2 * (PROFILES[name].lane - half) >= 3.4, `${name}: ${(2 * (PROFILES[name].lane - half)).toFixed(1)} m down the middle`);
+  // and the wide roads have two lanes each way
+  for (const name of ['boulevard', 'parkway', 'avenue']) assert.ok(PROFILES[name].divider > 0, name);
 });

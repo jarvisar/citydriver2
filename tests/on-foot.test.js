@@ -4,7 +4,8 @@ import * as THREE from 'three';
 import { DrivingController } from '../src/vehicle.js';
 import { WALKER_SPEC, walkingInput } from '../src/walker.js';
 import { OnFoot } from '../src/on-foot.js';
-import { circleContact, collideScenery, roofSurface, sightLine } from '../src/collision.js';
+import { circleContact, collideScenery, roofAt, roofSurface, roofUnder, sightLine, surfacesUnder } from '../src/collision.js';
+import { convexPieces, convexHull } from '../src/world/colliders.js';
 import { CityTraffic } from '../src/city-traffic.js';
 import { LooseProps } from '../src/loose-props.js';
 import { beachBall } from '../src/world/venue-props.js';
@@ -880,8 +881,10 @@ test('a car parked along the curb can be borrowed while there is traffic, and le
   const traffic = new CityTraffic(scene, vehicle.route, vehicle.s, 'city', vehicle.u), feet = new OnFoot(vehicle, traffic);
   try {
     feet.use();
-    // A bay five meters to the right of their car, the car in it facing the same way
-    const h = vehicle.heading, car = feet.parked, bay = parkedAt(car.s - Math.sin(h) * 5, car.u + Math.cos(h) * 5, h), home = traffic.bayPose(bay);
+    // A bay three meters to the left of their car (which is in the curb lane:
+    // five to its right was over the curb, and on a quay the water), the car
+    // in it facing the same way
+    const h = vehicle.heading, car = feet.parked, bay = parkedAt(car.s + Math.sin(h) * 3, car.u - Math.cos(h) * 3, h), home = traffic.bayPose(bay);
     vehicle.scenery = chunkOf(bay);
     vehicle.s = home.s + Math.sin(h) * 1.6; vehicle.u = home.u - Math.cos(h) * 1.6; vehicle.update(0, {});
     const offer = feet.offer();
@@ -1180,4 +1183,111 @@ test('come down in the water, they are fished out at the curb, and pitched roofs
   const hipped = { ...house, pitch: { ...house.pitch, from: { x: -3, z: 0 }, to: { x: 3, z: 0 }, gable: false } };
   assert.equal(roofSurface(hipped, { x: 5.5, z: 0 }), 32, 'and down its hipped end');
   assert.equal(roofSurface({ top: 20 }, { x: 0, z: 0 }), 20, 'a flat roof at its top');
+});
+
+// A building's footprint as the colliders a chunk makes of it (see
+// footprintSolids): map points [x, s] round it, a roof 30 m up, in one piece
+// or in its convex pieces with their seams
+const footprintOf = (points, seams) => {
+  const corners = points.map(([x, s]) => ({ x, z: -s })), n = corners.length, x = corners.reduce((sum, p) => sum + p.x, 0) / n, z = corners.reduce((sum, p) => sum + p.z, 0) / n;
+  return { corners, x, z, reach: Math.max(...corners.map(p => Math.hypot(p.x - x, p.z - z))), heading: 0, top: GROUND + 30, ...(seams ? { seams } : {}) };
+};
+const piecesOf = ring => convexPieces(ring.map(([x, y]) => ({ x, y }))).map(piece => ({ ...footprintOf(piece.points.map(p => [p.x, p.y]), piece.seams), hull: ring }));
+// A wall 100 m long facing east at u = -10, whole and cut in two at s = 80
+const longWall = [[-20, 30], [-10, 30], [-10, 130], [-20, 130]];
+const cutWall = () => [footprintOf([[-20, 30], [-10, 30], [-10, 80], [-20, 80]], [false, false, true, false]), footprintOf([[-20, 80], [-10, 80], [-10, 130], [-20, 130]], [true, false, false, false])];
+// An L of two wings 16 m deep, 40 m long, from (-60, 40): its yard is the crook beyond (-44, 56)
+const ell = [[0, 0], [40, 0], [40, 16], [16, 16], [16, 40], [0, 40]].map(([x, s]) => [x - 60, s + 40]);
+
+test('on foot a wall in pieces is one wall: they walk along it across the seam as along the wall whole, and its seams are no way into it or out', () => {
+  const stroll = (colliders, back, lean, sprint) => {
+    const chunks = chunkOf(...colliders), { vehicle } = onFoot({ s: back ? 98 : 62, u: -8, heading: 0 }), path = [];
+    try {
+      vehicle.scenery = chunks; vehicle.stepOut();
+      for (let i = 0; i < 120 * 9; i++) {
+        vehicle.update(step, { walk: { x: -Math.sin(lean), z: (back ? 1 : -1) * Math.cos(lean) }, sprint });
+        collideScenery(vehicle, chunks, step);
+        path.push([vehicle.groundedPosition.x, vehicle.groundedPosition.z]);
+      }
+      return path;
+    } finally { vehicle.disposeModel(); }
+  };
+  const apart = (a, b) => a.reduce((most, p, i) => Math.max(most, Math.hypot(p[0] - b[i][0], p[1] - b[i][1])), 0);
+  let unmarked = 0;
+  for (const back of [false, true]) for (const lean of [.05, .3, .9]) for (const sprint of [false, true]) {
+    const whole = stroll([footprintOf(longWall)], back, lean, sprint);
+    assert.ok(Math.abs(whole.at(-1)[0] + 10 - WALKER_SPEC.radius) < .01 && Math.abs(-whole.at(-1)[1] - (back ? 98 : 62)) > 20, `along the wall, against it, past where it is cut at s 80 (to ${whole.at(-1)[0].toFixed(2)}, ${(-whole.at(-1)[1]).toFixed(1)})`);
+    for (const order of [0, 1]) {
+      const pieces = order ? cutWall().reverse() : cutWall();
+      assert.ok(apart(whole, stroll(pieces, back, lean, sprint)) < 1e-9, `leaning ${lean} ${back ? 'south' : 'north'}, piece ${order} first: ${apart(whole, stroll(pieces, back, lean, sprint)).toFixed(4)} m apart`);
+      // (not knowing their seams, each piece's end is a corner to be nudged round)
+      unmarked += apart(whole, stroll(pieces.map(({ seams, ...solid }) => solid), back, lean, sprint)) > 1e-4;
+    }
+  }
+  assert.ok(unmarked >= 6, `unmarked, the seam shows in ${unmarked} of 24 walks`);
+  // Where they touch it, either side of the seam and on it: one wall, pushing straight out east
+  const [south, north] = cutWall(), r = WALKER_SPEC.radius;
+  for (const [s, touching] of [[79.9, [south]], [80.1, [north]], [80, [south, north]]]) for (const piece of [south, north]) {
+    const contact = circleContact({ x: -10 + r - .02, z: -s, radius: r }, piece);
+    if (touching.includes(piece)) assert.ok(contact.x === 1 && contact.z === 0 && Math.abs(contact.depth - .02) < 1e-9, `the wall at s ${s}`);
+    else assert.equal(contact, null, `past the piece's end at s ${s}, the next piece has the wall`);
+  }
+  // and from just inside it by the seam, the way out is the wall, not the seam 10 cm away
+  const inside = circleContact({ x: -10.4, z: -79.9, radius: r }, south);
+  assert.ok(inside.x === 1 && inside.z === 0 && Math.abs(inside.depth - (r + .4)) < 1e-9);
+  assert.equal(circleContact({ x: -15, z: -79.9, radius: r }, { ...south, seams: [true, true, true, true] }), null, 'a piece with no wall of its own leaves it to the others');
+});
+
+test('the yard in the crook of an L is open on foot, its corner two walls to stand against, and the roof over the seams is one roof', () => {
+  const pieces = piecesOf(ell), hull = footprintOf(convexHull(ell.map(([x, y]) => ({ x, y }))).map(p => [p.x, p.y])), r = WALKER_SPEC.radius;
+  assert.equal(pieces.length, 2);
+  // Out in the yard, 8 m from either wing: the hull was all round them there
+  const yard = { x: -36, z: -64, radius: r };
+  assert.ok(circleContact(yard, hull).depth > 5 && pieces.every(piece => circleContact(yard, piece) === null));
+  const chunks = chunkOf(...pieces), { vehicle } = onFoot({ s: 64, u: -36, heading: 0 });
+  try {
+    vehicle.scenery = chunks; vehicle.stepOut();
+    // South-west into the corner, at a run, and on pushing into it
+    let still = 0;
+    for (let i = 0; i < 120 * 5; i++) {
+      const before = vehicle.groundedPosition.clone();
+      vehicle.update(step, { walk: { x: -Math.SQRT1_2, z: Math.SQRT1_2 }, sprint: true }); collideScenery(vehicle, chunks, step);
+      if (i >= 120 * 4) still = Math.max(still, before.distanceTo(vehicle.groundedPosition));
+    }
+    assert.ok(Math.abs(vehicle.u - (-44 + r)) < .01 && Math.abs(vehicle.s - (56 + r)) < .01, `in the corner, against both walls: (${vehicle.u.toFixed(2)}, ${vehicle.s.toFixed(2)})`);
+    assert.ok(still < 1e-3, `and held there without a tremor (${still.toFixed(4)} m a step)`);
+    // Up on the roof (set down over one wing), they walk the length of the other across the seam
+    const top = GROUND + 30;
+    vehicle.u = -52; vehicle.s = 76; vehicle.walker.takeOver(); vehicle.update(0, {});
+    assert.equal(vehicle.groundedPosition.y, top);
+    let slowest = Infinity, pushed = 0;
+    for (let i = 0; i < 120 * 7; i++) {
+      const before = vehicle.s;
+      vehicle.update(step, { walk: { x: 0, z: 1 } });
+      const at = vehicle.groundedPosition.clone();
+      collideScenery(vehicle, chunks, step);
+      pushed = Math.max(pushed, at.distanceTo(vehicle.groundedPosition));
+      if (i > 60) slowest = Math.min(slowest, (before - vehicle.s) / step);
+      assert.equal(vehicle.groundedPosition.y, top, `on the roof all the way (s ${vehicle.s.toFixed(1)})`);
+    }
+    assert.ok(vehicle.s < 48 && slowest > 4 && pushed === 0, `south across the seam at a steady ${slowest.toFixed(1)} m/s, to s ${vehicle.s.toFixed(1)}, nothing in the way`);
+    assert.ok(pieces.every(piece => vehicle.passes(piece)));
+  } finally { vehicle.disposeModel(); }
+  // The roof under a point on the seam, under a car's wheels either side of it, and under a machine set down across it
+  const seam = pieces[0].corners.map((p, i) => [p, pieces[0].corners[(i + 1) % pieces[0].corners.length]]).find((edge, i) => pieces[0].seams[i]);
+  const middle = { x: (seam[0].x + seam[1].x) / 2, z: (seam[0].z + seam[1].z) / 2 }, top = GROUND + 30;
+  assert.equal(roofAt(chunks.values(), middle, Infinity), top);
+  const wheels = [[-1, -2], [1, -2], [1, 2], [-1, 2]].map(([x, z]) => ({ x: middle.x + x, z: middle.z + z })), heights = [], solids = [];
+  surfacesUnder(chunks.values(), wheels, wheels.map(() => Infinity), heights, solids);
+  assert.deepEqual(heights, [top, top, top, top]);
+  assert.ok(new Set(solids).size === 2, 'wheels on both pieces');
+  assert.equal(roofUnder(chunks.values(), wheels, Infinity, true), top, 'a machine is held by the two pieces together');
+  assert.equal(roofUnder(chunks.values(), [...wheels, { x: -36, z: -64 }], Infinity, true), -Infinity, 'and not with a foot out over the yard');
+  const flight = flying('helicopter', { s: -middle.z, u: middle.x, heading: .4 }, chunks);
+  try {
+    flight.vehicle.pilot.y = top + 10; flight.vehicle.pilot.landed = false; flight.vehicle.update(0, {});
+    flight.run(10, { descend: 1 }, () => flight.vehicle.pilot.landed);
+    assert.ok(flight.vehicle.pilot.landed && flight.vehicle.groundedPosition.y === top, 'the helicopter sets down across the seam');
+    assert.ok(Math.hypot(flight.vehicle.groundedPosition.x - middle.x, flight.vehicle.groundedPosition.z - middle.z) < .5, 'where it came down');
+  } finally { flight.feet.clear(); flight.vehicle.disposeModel(); }
 });

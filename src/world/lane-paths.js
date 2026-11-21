@@ -12,8 +12,9 @@ import { surfaceAt } from './city-route.js';
 // is going round. Traffic and the autodrive share these curves.
 
 const LATERAL = 2.8;  // Comfortable sideways acceleration through a turn, m/s²
-const CLEARANCE = 1.4;  // Half a car and a little room from the curb
+const CLEARANCE = 1.15;  // Half a car and a little room from the curb
 const SNUG = 3;  // Tightest a car can turn
+const PIVOT = 1.5;  // and the fastest it turns about where it has to turn tighter, rad/s
 
 // Where a lane leaves a junction; where two streets simply meet (or a street
 // meets a park path) there is no box, but the turn still needs room
@@ -102,7 +103,7 @@ function sketch(controls, start, end) {
       tx0 = tx1; ty0 = ty1; qx0 = qx1; qy0 = qy1;
     }
     path.angle = Math.acos(Math.max(-1, Math.min(1, firstX * tx0 + firstY * ty0)));
-    path.radius = radius; path.speed = Math.max(1.8, Math.sqrt(LATERAL * radius));
+    path.radius = radius; path.speed = Math.min(Math.max(1.8, Math.sqrt(LATERAL * radius)), Math.max(.9, PIVOT * radius));
     return path;
   };
   return { path, finish, radiusAt };

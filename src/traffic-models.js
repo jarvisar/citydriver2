@@ -1,18 +1,22 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { stableShadowDepth } from './world/shadow-depth.js';
+import { CAR_SCALE, modeled, scaleOf, sized } from './vehicle-scale.js';
 
+// The shapes as modeled, each built at CAR_SCALE of that (see vehicle-scale.js):
+// a width, length and cabin here are the model's, and a shape's own `width`
+// and `length` are what it takes up in the street.
 export const TRAFFIC_MODELS = [
   { name: 'hatchback', width: 1.85, length: 3.45, cabin: [1.63, .75, 2.36], cabinZ: .455 },
   { name: 'sedan', width: 1.98, length: 4.25, cabin: [1.75, .7, 2.05], cabinZ: .05 },
   { name: 'wagon', width: 2, length: 4.55, cabin: [1.78, .85, 3.2], cabinZ: .495 },
   { name: 'pickup', width: 2.12, length: 5.2, cabin: [1.89, .95, 1.8], cabinZ: -.7 },
   { name: 'van', width: 2.08, length: 5.15, cabin: [1.93, 1.35, 4.2], cabinZ: .445 },
-];
+].map(shape => sized({ ...shape, scale: CAR_SCALE }));
 
 // Chooser-only: a low coupe with a long bonnet and a fastback. It is never
 // spawned into traffic, so the roads keep their ordinary-looking fleet.
-export const SPORTS_MODEL = { name: 'sports', width: 1.94, length: 4.2, cabin: [1.6, .56, 2], cabinZ: .38, drop: .2 };
+export const SPORTS_MODEL = sized({ name: 'sports', width: 1.94, length: 4.2, cabin: [1.6, .56, 2], cabinZ: .38, drop: .2, scale: CAR_SCALE });
 
 export const TRAFFIC_COLORS = ['#d8c7a0', '#e9e5d9', '#577f96', '#829789', '#b34e43', '#d2a345', '#58636a', '#b7c4c9', '#796c8c', '#397e7b'];
 
@@ -55,8 +59,8 @@ export function heightAt(points, z) {
 
 // A body's outline from the side, nose to tail, as the model and the chooser's
 // portrait both draw it: its top line and its underside, notched over the wheels.
-export function bodyProfile(spec) {
-  const { width: w, length: l, cabin: [, , cl], cabinZ: cz } = spec, body = BODIES[spec.name] ?? BODIES.sedan;
+export function bodyProfile(shape) {
+  const spec = modeled(shape), { width: w, length: l, cabin: [, , cl], cabinZ: cz } = spec, body = BODIES[spec.name] ?? BODIES.sedan;
   const [nose, tail] = body.corner, front = cz - cl / 2, rear = cz + cl / 2, wheelZ = l * .3;
   const top = increasing([[-l / 2, body.nose[1]], [-l / 2 + nose, body.bonnet], [front, body.scuttle], [rear, body.scuttle],
     ...(body.bed ? [[rear + .04, body.bed]] : []), [l / 2 - tail, body.deck], [l / 2, body.tail[1]]]);
@@ -156,8 +160,8 @@ function slab(points, bottom, height) {
 
 // Build one body shape as four merged geometries. Traffic bakes its wheels into
 // the details mesh; a driven car asks for them separately so they can turn.
-export function vehicleGeometry(spec, { separateWheels = false } = {}) {
-  const parts = { paint: [], details: [], headlights: [], taillights: [] };
+export function vehicleGeometry(shape, { separateWheels = false } = {}) {
+  const spec = modeled(shape), parts = { paint: [], details: [], headlights: [], taillights: [] };
   const wheels = [];
   function add(geometry, location, category, color) {
     geometry.deleteAttribute('uv');
@@ -452,7 +456,8 @@ export function createTrafficModels() {
       paints.push(paint); car.name = `traffic-${spec.name}`;
       const mesh = new THREE.Mesh(shape ? shape.template ??= markedBody(shape.parts(), TRAFFIC_LAMPS) : templates[index], paint);
       mesh.receiveShadow = mesh.castShadow = true; stableShadowDepth(mesh);
-      // (it never moves in its car)
+      // (it never moves in its car, where it stands at its shape's size)
+      mesh.scale.setScalar(scaleOf(spec)); mesh.updateMatrix();
       mesh.matrixAutoUpdate = false;
       car.add(mesh);
       return { car, paint, spec };

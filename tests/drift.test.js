@@ -325,15 +325,18 @@ test('sparks fly in the stage\'s color, a burst at each stage, flames while a tu
 test('every car\'s flames start on its back, low down, both sides', () => {
   const caster = new THREE.Raycaster(), back = new THREE.Vector3(0, 0, -1);
   for (const id of [...CAR_IDS, 'demolition']) {
+    // (the tail is in the body's own meters: a car built smaller than it is modeled has them smaller)
     const model = createCar(id), tail = tailPipes(model.body), box = new THREE.Box3().setFromObject(model.body);
-    assert.ok(tail.y > .1 && tail.y < Math.min(1.8, box.max.y - .2), `${id} at ${tail.y.toFixed(2)} m up`);
-    assert.ok(tail.z > box.max.z - .5, `${id}: ${tail.z.toFixed(2)} against its back at ${box.max.z.toFixed(2)}`);
+    const at = x => new THREE.Vector3(x, tail.y, tail.z).applyMatrix4(model.body.matrixWorld), middle = at(0);
+    assert.ok(middle.y > .1 && middle.y < Math.min(1.8, box.max.y - .2), `${id} at ${middle.y.toFixed(2)} m up`);
+    assert.ok(middle.z > box.max.z - .5, `${id}: ${middle.z.toFixed(2)} against its back at ${box.max.z.toFixed(2)}`);
     for (const x of [-tail.x, tail.x]) {
-      caster.set(new THREE.Vector3(x, tail.y, box.max.z + 1), back);
+      const flame = at(x);
+      caster.set(new THREE.Vector3(flame.x, flame.y, box.max.z + 1), back);
       const hit = caster.intersectObject(model.body, true)[0];
-      assert.ok(hit && Math.abs(hit.point.z - tail.z) < .1, `${id}'s ${x < 0 ? 'left' : 'right'} flame meets its bodywork`);
+      assert.ok(hit && Math.abs(hit.point.z - flame.z) < .1, `${id}'s ${x < 0 ? 'left' : 'right'} flame meets its bodywork`);
     }
-    assert.equal(CARS[id].shape.width > tail.x * 2, true);
+    assert.equal(CARS[id].shape.width > Math.abs(at(tail.x).x) * 2, true);
   }
 });
 

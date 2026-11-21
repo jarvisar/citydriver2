@@ -501,7 +501,10 @@ export class OnFoot {
       const [out, along] = v.spec.exit, x = p.x + rx * side * out + fx * along, z = p.z + rz * side * out + fz * along, y = this.room(x, z, p.y);
       if (Number.isFinite(y)) return { x, z, y, across: side };
     }
-    for (const [across, along] of DOORS) {
+    // (a bus lets its driver out by its door, on the curb's side: out of the
+    // other they stepped down into the oncoming lane)
+    const doors = v.spec.name === BUS_MODEL.name ? [DOORS[1], DOORS[0], DOORS[2], DOORS[3]] : DOORS;
+    for (const [across, along] of doors) {
       const side = across * (halfWidth + r + CLEAR), ahead = across ? doorAlong(v.spec) : along * (halfLength + r + CLEAR);
       const x = p.x + rx * side + fx * ahead, z = p.z + rz * side + fz * ahead, y = this.room(x, z, p.y);
       if (Number.isFinite(y)) return { x, z, y, across };

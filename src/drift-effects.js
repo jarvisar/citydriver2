@@ -95,6 +95,8 @@ export class DriftEffects {
     if (vehicle.walker) { this.jetpack(vehicle.walker, dt); this.draw(); return; }
     if (!drift || vehicle.pilot) { this.flames.count = this.flares.count = 0; this.seen = null; this.laid = [null, null]; this.draw(); return; }
     const air = vehicle.carAir, layout = air.layout, drifting = vehicle.drifting;
+    // (sparks and smoke sized to the car they come off: see vehicle-scale.js)
+    this.built = vehicle.modelScale ?? 1;
     // What has happened since the last frame (counts, so nothing is missed between frames)
     const seen = this.seen ?? { stages: drift.stagesReached, losses: drift.losses };
     const rose = drift.stagesReached > seen.stages, lost = drift.losses > seen.losses;
@@ -116,7 +118,7 @@ export class DriftEffects {
         if (rose) for (const wheel of wheels) for (let k = 0; k < BURST; k++) this.spark(car, wheel, velocity, out, stage, 1.7);
         this.flare(car, wheels, stage);
       }
-      wheels.forEach((wheel, i) => this.mark(car, wheel, i));
+      wheels.forEach((wheel, i) => this.mark(car, wheel, i, vehicle.modelScale ?? 1));
     } else { this.spawn[0] = this.spawn[1] = 0; this.laid = [null, null]; }
     // A charge lost (too slow, a crash): a puff of smoke off the back
     if (lost) for (const wheel of wheels) for (let k = 0; k < 3; k++) this.puff(car, wheel, velocity, out, 1.4);
@@ -128,16 +130,16 @@ export class DriftEffects {
     const r = this.random, p = this.at(car, wheel.x + out * .1, .06, wheel.z + .1).clone();
     // (off the back and out from the bend, up a little, dragged along with the car)
     const back = this.at(car, 0, 0, 1, way).sub(car.position), across = this.at(car, 1, 0, 0, side).sub(car.position);
-    const kick = (2.2 + r() * 2.8) * strength, spread = (r() - .3) * 2.4 * strength;
+    const built = this.built ?? 1, kick = (2.2 + r() * 2.8) * strength * built, spread = (r() - .3) * 2.4 * strength * built;
     this.list.push({
-      p, v: new THREE.Vector3(velocity.x * .55 + back.x * kick + across.x * out * spread, (1.5 + r() * 2.8) * strength, velocity.z * .55 + back.z * kick + across.z * out * spread),
-      age: 0, life: .24 + r() * .28, stage, size: 1 + r() * .8 + (stage - 1) * .25,
+      p, v: new THREE.Vector3(velocity.x * .55 + back.x * kick + across.x * out * spread, (1.5 + r() * 2.8) * strength * built, velocity.z * .55 + back.z * kick + across.z * out * spread),
+      age: 0, life: .24 + r() * .28, stage, size: (1 + r() * .8 + (stage - 1) * .25) * built,
     });
   }
   puff(car, wheel, velocity, out, strength = 1) {
     if (this.smoke.length >= PUFFS) this.smoke.shift();
     const r = this.random, p = this.at(car, wheel.x + out * .15, .18, wheel.z + .25).clone();
-    this.smoke.push({ p, v: new THREE.Vector3(velocity.x * .18 + (r() - .5) * 1.2, .5 + r() * .7, velocity.z * .18 + (r() - .5) * 1.2), age: 0, life: .55 + r() * .4, size: (.22 + r() * .12) * strength, grey: .82 + r() * .14 });
+    this.smoke.push({ p, v: new THREE.Vector3(velocity.x * .18 + (r() - .5) * 1.2, .5 + r() * .7, velocity.z * .18 + (r() - .5) * 1.2), age: 0, life: .55 + r() * .4, size: (.22 + r() * .12) * strength * (this.built ?? 1), grey: .82 + r() * .14 });
   }
   flare(car, wheels, stage) {
     this.flicker += .7;
@@ -151,14 +153,15 @@ export class DriftEffects {
     this.flares.instanceMatrix.needsUpdate = true; this.flares.instanceColor.needsUpdate = true;
   }
   // A length of tread from where this wheel last laid one to where it is
-  mark(car, wheel, index) {
+  mark(car, wheel, index, built = 1) {
     const p = this.at(car, wheel.x, 0, wheel.z), y = (Number.isFinite(wheel.floor) ? wheel.floor : p.y) + .025, last = this.laid[index];
     if (!last) { this.laid[index] = { x: p.x, y, z: p.z }; return; }
     const dx = p.x - last.x, dz = p.z - last.z, length = Math.hypot(dx, dz);
     if (length < MARK_STEP) return;
     // (a jump, a reset: start again rather than streak across)
     if (length > 4 || Math.abs(y - last.y) > .3) { this.laid[index] = { x: p.x, y, z: p.z }; return; }
-    matrix.compose(point.set((p.x + last.x) / 2, (y + last.y) / 2, (p.z + last.z) / 2), turn.setFromAxisAngle(up, Math.atan2(dx, dz)), size.set(1, 1, length + .08));
+    // (as wide as this car's tires: see vehicle-scale.js)
+    matrix.compose(point.set((p.x + last.x) / 2, (y + last.y) / 2, (p.z + last.z) / 2), turn.setFromAxisAngle(up, Math.atan2(dx, dz)), size.set(built, 1, length + .08));
     this.marks.setMatrixAt(this.markIndex, matrix);
     this.markIndex = (this.markIndex + 1) % MARKS;
     this.marks.count = Math.min(MARKS, this.marks.count + 1);
@@ -189,7 +192,8 @@ export class DriftEffects {
     let n = 0;
     for (const x of [-tail.x, tail.x]) for (const core of [false, true]) {
       const flicker = 1 + Math.sin(this.flicker + x * 9 + (core ? 2 : 0)) * .14;
-      const length = (core ? .55 : 1) * burning * flicker, width = (core ? .55 : 1.05) * Math.min(1.2, .8 + burning * .3);
+      // (sized to the car they come out of)
+      const built = vehicle.modelScale ?? 1, length = (core ? .55 : 1) * burning * flicker * built, width = (core ? .55 : 1.05) * Math.min(1.2, .8 + burning * .3) * built;
       matrix.compose(point.set(x, tail.y, tail.z).applyMatrix4(body.matrixWorld), turn, size.set(width, width, length));
       this.flames.setMatrixAt(n, matrix);
       // (the core only a little paler than the flame, so the stage's color holds)

@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { seededRandom } from './route.js';
 import { PAVEMENT_LEVEL as G } from './city-route.js';
-import { edgeFacade, edgeWindows, shopAwning, cornice, convexHull, exitDistance } from './city-building-parts.js';
+import { edgeFacade, edgeWindows, shopAwning, cornice, exitDistance } from './city-building-parts.js';
+import { footprintSolids } from './colliders.js';
 import { landmarkSite, venueFootprint } from './landmark-site.js';
 import { discoverySignFor, signCore } from './city-signs.js';
 import { round, clock } from './city-detail-assets.js';
@@ -101,7 +102,7 @@ export function buildLandmark(c, lot, place) {
   const sign = discoverySignFor(place.type, place.variant);
   // The building's record, collision and the venue's name across its front
   const record = height => c.features.buildings.push({ x: c.east + cx, s: c.start + cs, area: W * D, height, type: `landmark-${place.type}`, floors: Math.round(height / 3.6), roofType: 'flat', wall });
-  const solidBody = (ring, top) => c.polygonSolid(convexHull(ring).map(p => [p.x, p.y]), top);
+  const solidBody = (ring, top) => footprintSolids(c, ring, top);
   // A collider w by d at (u, v) in the site's axes; with a `top`, a step or
   // a ledge someone on foot can climb onto
   const block = (u, v, w, d, top) => {

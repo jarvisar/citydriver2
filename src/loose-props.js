@@ -89,7 +89,7 @@ const REST = 1.5;
 // over their feet to their head
 const BUMPER = .45, ROOF = 1.5, FEET = .05, TALL = 1.75;
 // A blow felt in the car counts for this much more in its thud and shake
-const FELT = 1.5;
+const FELT = 1.5, GIVES = .35;
 // A post knocked over snaps at its foot and starts to fall at this many rad/s
 // for each m/s of the blow, at least TOPPLE_LEAST, and never so fast that
 // its foot would leave the ground (its weight has to hold the foot down, so a
@@ -361,9 +361,11 @@ function inside(solid, x, z, fromX = NaN, fromZ = NaN) {
   // (each face as a way out along its normal: how far in the point is, and was)
   let entered = -Infinity;
   way.depth = Infinity;
-  const face = (ex, ez, reach) => {
+  const face = (ex, ez, reach, seam) => {
     const d = reach - (dx * ex + dz * ez);
     if (d <= 0) return false;
+    // (one piece of a footprint, see convexPieces in world/colliders.js: no way out across a seam into the next piece)
+    if (seam) return true;
     const was = reach - ((fromX - solid.x) * ex + (fromZ - solid.z) * ez);
     // (crossed coming in: the last such face is the one it came in by)
     if (was <= 0) {
@@ -380,9 +382,9 @@ function inside(solid, x, z, fromX = NaN, fromZ = NaN) {
       // (the edge's normal, turned out from the middle)
       let ex = (b.z - a.z) / length, ez = -(b.x - a.x) / length;
       if (ex * ((a.x + b.x) / 2 - solid.x) + ez * ((a.z + b.z) / 2 - solid.z) < 0) { ex = -ex; ez = -ez; }
-      if (!face(ex, ez, (a.x - solid.x) * ex + (a.z - solid.z) * ez)) return null;
+      if (!face(ex, ez, (a.x - solid.x) * ex + (a.z - solid.z) * ez, solid.seams?.[i])) return null;
     }
-    return way;
+    return way.depth < Infinity ? way : null;
   }
   const cos = Math.cos(solid.heading), sin = Math.sin(solid.heading);
   for (const side of [1, -1]) if (!face(side * cos, side * sin, solid.halfWidth) || !face(side * sin, -side * cos, solid.halfLength)) return null;
@@ -724,7 +726,10 @@ export class LooseProps {
   // and the car has taken its share of the blow
   hit(collider, contact, player) {
     const blow = this.knock(collider, contact, this.carOf(player));
-    if (blow) player.strike(blow.x, blow.z, blow.spin, Math.hypot(blow.x, blow.z) * FELT);
+    // (what gives way turns the car only GIVES of what the blow would: a lamp
+    // caught by a front corner spun a car with ordinary tires right round,
+    // which cost it three times what hitting the lamp square did)
+    if (blow) player.strike(blow.x, blow.z, blow.spin * GIVES, Math.hypot(blow.x, blow.z) * FELT);
     return Boolean(blow);
   }
   // Someone on foot walking into a ball (see KINDS' `kick`): it rolls off

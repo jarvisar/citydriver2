@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { stableShadowDepth } from './world/shadow-depth.js';
 import { bodyMaterial, lampGlow, markedBody, busGeometry, BUS_MODEL, BUS_AXLES, BUS_WHEEL, TRAFFIC_MODELS } from './traffic-models.js';
+import { CAR_SCALE, SLEEK_SCALE, modeled, sized } from './vehicle-scale.js';
 
 // The garage's oddballs: machines that share no bodywork with the road fleet
 // and are not meant to drive like it either. Like the coupe and the racer they
@@ -11,9 +12,12 @@ import { bodyMaterial, lampGlow, markedBody, busGeometry, BUS_MODEL, BUS_AXLES, 
 // set: `x` is the wheel's center from the middle of the car, and the collision
 // width is measured to the outside of the widest tire. `eye` is where the
 // first-person camera sits, and `chaseLift` raises the chase camera over a tall roof.
+// These are the shapes as modeled. The ones as chunky as the road cars are
+// built at their `scale` of it (see vehicle-scale.js); the trucks, the bus
+// and the fire engine are modeled at their real size.
 export const SPECIAL_SHAPES = {
   buggy: {
-    name: 'buggy', width: 1.96, length: 3.4, eye: [0, 1.38, -.55],
+    name: 'buggy', scale: CAR_SCALE, width: 1.96, length: 3.4, eye: [0, 1.38, -.55],
     wheels: { front: { radius: .4, width: .26, x: .85, z: -1.15 }, rear: { radius: .52, width: .42, x: .77, z: 1.05 } },
   },
   monster: {
@@ -21,7 +25,7 @@ export const SPECIAL_SHAPES = {
     wheels: { front: { radius: .85, width: .7, x: 1, z: -1.55 }, rear: { radius: .85, width: .7, x: 1, z: 1.55 } },
   },
   hotrod: {
-    name: 'hotrod', width: 2.02, length: 4, eye: [0, 1.4, -.3],
+    name: 'hotrod', scale: CAR_SCALE, width: 2.02, length: 4, eye: [0, 1.4, -.3],
     wheels: { front: { radius: .36, width: .2, x: .86, z: -1.5 }, rear: { radius: .56, width: .46, x: .78, z: 1.15 } },
   },
   rig: {
@@ -33,7 +37,7 @@ export const SPECIAL_SHAPES = {
     },
   },
   micro: {
-    name: 'micro', width: 1.5, length: 2.4, eye: [0, 1.3, -.72],
+    name: 'micro', scale: SLEEK_SCALE, width: 1.5, length: 2.4, eye: [0, 1.3, -.72],
     wheels: { front: { radius: .3, width: .18, x: .66, z: -.78 }, rear: { radius: .3, width: .18, x: .66, z: .78 } },
   },
   // The traffic's bus (see busGeometry), the driver up front on the left
@@ -49,7 +53,7 @@ export const SPECIAL_SHAPES = {
     wheels: { front: { radius: .55, width: .34, x: 1.06, z: -2.75 }, rear: { radius: .55, width: .56, x: .97, z: 2.3 } },
   },
   ambulance: {
-    name: 'ambulance', width: 2.3, length: 6.3, eye: [-.45, 1.85, -1.6], chaseLift: 1.2, door: 1.6, seat: .95,
+    name: 'ambulance', scale: SLEEK_SCALE, width: 2.3, length: 6.3, eye: [-.45, 1.85, -1.6], chaseLift: 1.2, door: 1.6, seat: .95,
     wheels: { front: { radius: .42, width: .26, x: .95, z: -1.95 }, rear: { radius: .42, width: .44, x: .9, z: 1.75 } },
   },
 };
@@ -61,8 +65,8 @@ export const PARKED_SPECIALS = [
   { name: 'fireengine', mass: 8, accel: 1.4, paint: '#c23a2e' },
   { name: 'ambulance', mass: 3.2, accel: 2.2, paint: '#eceee8' },
 ].map(({ name, ...more }) => {
-  const { width, length, door, seat } = SPECIAL_SHAPES[name];
-  return { name, width, length, door, seat, ...more };
+  const { width, length, door, seat, scale } = sized(SPECIAL_SHAPES[name]);
+  return { name, width, length, door, seat, scale, ...more };
 });
 // What a parked car of `name` is: one of the traffic's shapes or a parked special
 export const parkedSpec = name => TRAFFIC_MODELS.find(spec => spec.name === name) ?? PARKED_SPECIALS.find(spec => spec.name === name);
@@ -551,8 +555,8 @@ function mergedParts(kit) {
 // parts with the wheels fixed on as trim, which never turn. The demolition
 // truck drives about in the traffic, and the emergency vehicles' stand-ins
 // are knocked about in it (see PARKED_SPECIALS).
-export function specialGeometry(shape) {
-  const kit = partsKit();
+export function specialGeometry(built) {
+  const shape = modeled(built), kit = partsKit();
   BUILDERS[shape.name](kit);
   for (const { radius, width, x, z } of Object.values(shape.wheels)) for (const side of [-1, 1]) {
     // (a vertex at the bottom keeps the tire on the road, as the traffic's do)
@@ -573,7 +577,7 @@ function tinted(geometry, location, color) {
 }
 
 export function createSpecialCar(entry) {
-  const shape = entry.shape, kit = partsKit();
+  const shape = modeled(entry.shape), kit = partsKit();
   BUILDERS[shape.name](kit);
   const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: .74, flatShading: true, ...extra });
   // One draw for the body (see markedBody), its beacons dark until lit (see flash in vehicle.js)

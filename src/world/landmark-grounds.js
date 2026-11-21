@@ -367,9 +367,9 @@ export function buildGrounds(g, plan) {
     } else if (f.kind === 'lantern') fitting('lantern', u, v, 0, LAWN_TOP, p => c.post(p.x, p.s, .2));
     // (a bench looks the way `side` points along the street: its back is to local +x)
     else if (f.kind === 'seat') fitting('bench', u, v, g.along + (f.side > 0 ? Math.PI : 0), LAWN_TOP, () => hold(u, v, .7, 2));
-    else if (f.kind === 'bin') fitting('bin', u, v, 0, LAWN_TOP, p => c.post(p.x, p.s, .36));
+    else if (f.kind === 'bin') fitting('bin', u, v, 0, LAWN_TOP, p => c.post(p.x, p.s, .29));
     else if (f.kind === 'postbox') {
-      fitting('post-box', u, v, g.facing, PAVED_TOP, p => c.post(p.x, p.s, .3));
+      fitting('post-box', u, v, g.facing, PAVED_TOP, p => c.post(p.x, p.s, .28));
     } else if (f.kind === 'loading') {
       // (parked as any car is: knocked loose by a car, or driven off on foot)
       const models = g.type === 'depot' ? ['pickup', 'van'] : ['van', 'pickup'], pairs = w >= 8 ? [-1, 1] : [0];

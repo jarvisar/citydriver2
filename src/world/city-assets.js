@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { vehicleGeometry, TRAFFIC_MODELS, WHEEL } from '../traffic-models.js';
 import { specialGeometry, SPECIAL_SHAPES, PARKED_SPECIALS } from '../special-models.js';
+import { scaleOf } from '../vehicle-scale.js';
 import { compactGeometry } from './compact-geometry.js';
 
 // Small merged, flat-shaded street furniture with its colors baked into
@@ -54,58 +55,68 @@ const iron = '#3d4246', darkIron = '#2f3336', galvanised = '#9da3a6', timber = '
 // Local -x is toward the road.
 function lampPost() {
   const p = new Parts();
-  p.cylinder([0, 3.6, 0], .09, .15, 7.2, iron, 6);
-  p.cylinder([0, .18, 0], .22, .26, .36, darkIron, 6);
-  p.beam([0, 7.15, 0], [-1.6, 7.55, 0], .07, iron);
+  p.cylinder([0, 3.6, 0], .065, .105, 7.2, iron, 6);
+  p.cylinder([0, .18, 0], .165, .19, .36, darkIron, 6);
+  p.beam([0, 7.15, 0], [-1.6, 7.55, 0], .048, iron);
   p.box([-1.75, 7.5, 0], [.9, .24, .36], darkIron);
   p.box([-1.75, 7.36, 0], [.7, .06, .28], '#d9d5c4');
   return p.finish();
 }
-// A pedestal traffic signal on a street corner: three lamps in a hood.
+// A signal's three lamps stand at SIGNAL_LENSES above its middle one. Each
+// lit lens (see CityChunk.furnitureSteps) is LENS_RADIUS round, LENS_OUT
+// ahead of the head's middle
+export const SIGNAL_LENSES = [.26, 0, -.26], LENS_RADIUS = .084, LENS_OUT = .175;
+function signalLamps(p, y) {
+  for (const dy of SIGNAL_LENSES) {
+    p.cylinder([0, y + dy, .135], .1, .1, .05, '#1e282b', 12, [Math.PI / 2, 0, 0]);
+    const hood = new THREE.CylinderGeometry(.112, .112, .18, 8, 1, true, Math.PI / 2, Math.PI);
+    p.add(hood, [0, y + dy, .2], darkIron, [Math.PI / 2, 0, 0]);
+  }
+}
+// A pedestal traffic signal on a street corner: three lamps in a hood, the
+// middle one SIGNAL_HEIGHT up.
+export const SIGNAL_HEIGHT = 4;
 function trafficSignal() {
   const p = new Parts();
-  p.cylinder([0, 2.2, 0], .07, .1, 4.4, iron, 6);
-  p.box([0, 4.6, 0], [.34, 1.05, .3], darkIron);
-  for (const y of [4.92, 4.6, 4.28]) {
-    p.cylinder([0, y, .17], .125, .125, .06, '#1e282b', 12, [Math.PI / 2, 0, 0]);
-    const hood = new THREE.CylinderGeometry(.14, .14, .22, 8, 1, true, Math.PI / 2, Math.PI);
-    p.add(hood, [0, y, .25], darkIron, [Math.PI / 2, 0, 0]);
-  }
-  p.box([0, 5.16, .08], [.44, .06, .5], darkIron);
+  p.cylinder([0, 1.85, 0], .058, .08, 3.7, iron, 6);
+  p.box([0, SIGNAL_HEIGHT, 0], [.27, .84, .24], darkIron);
+  signalLamps(p, SIGNAL_HEIGHT);
+  p.box([0, SIGNAL_HEIGHT + .445, .065], [.35, .05, .4], darkIron);
   return p.finish();
 }
 // A signal head on its own, to hang from a mast arm: three lamps in hoods on
-// a backplate, centered on the middle lamp, lamps at SIGNAL_LENSES above it
-export const SIGNAL_LENSES = [.32, 0, -.32];
+// a backplate, centered on the middle lamp
 function signalHead() {
   const p = new Parts();
-  p.box([0, 0, 0], [.34, 1.05, .3], darkIron);
-  p.box([0, 0, -.12], [.62, 1.28, .04], '#262c2f');
-  p.box([0, .62, 0], [.08, .2, .08], darkIron);
-  for (const y of SIGNAL_LENSES) {
-    p.cylinder([0, y, .17], .125, .125, .06, '#1e282b', 12, [Math.PI / 2, 0, 0]);
-    const hood = new THREE.CylinderGeometry(.14, .14, .22, 8, 1, true, Math.PI / 2, Math.PI);
-    p.add(hood, [0, y, .25], darkIron, [Math.PI / 2, 0, 0]);
-  }
+  p.box([0, 0, 0], [.27, .84, .24], darkIron);
+  p.box([0, 0, -.095], [.5, 1.03, .04], '#262c2f');
+  p.box([0, .5, 0], [.07, .17, .07], darkIron);
+  signalLamps(p, 0);
   return p.finish();
 }
-// The pole of a mast-arm signal, taller than a pedestal's; the arm itself is
-// laid along local -x to whatever length the road needs
-export const MAST_HEIGHT = 6.7;
+// The pole of a mast-arm signal, taller than a pedestal's; the arm itself,
+// MAST_ARM thick, is laid along local -x to whatever length the road needs,
+// and a head hangs from it with its middle lamp MAST_DROP below the pole's top
+export const MAST_HEIGHT = 6.7, MAST_ARM = .15, MAST_DROP = .83;
 function signalMast() {
   const p = new Parts();
-  p.cylinder([0, .25, 0], .26, .3, .5, darkIron, 8);
-  p.cylinder([0, MAST_HEIGHT / 2, 0], .1, .15, MAST_HEIGHT, iron, 8);
-  p.cylinder([0, MAST_HEIGHT + .12, 0], .12, .1, .24, darkIron, 8);
+  p.cylinder([0, .25, 0], .185, .21, .5, darkIron, 8);
+  p.cylinder([0, MAST_HEIGHT / 2, 0], .075, .108, MAST_HEIGHT, iron, 8);
+  p.cylinder([0, MAST_HEIGHT + .12, 0], .09, .075, .24, darkIron, 8);
   return p.finish();
 }
+// A sign's post stands where the sign is placed, so its collider is the
+// post's own, and the plate hangs SIGN_OUT ahead of it
+const SIGN_OUT = .072;
+function signPost(p, top) { p.cylinder([0, top / 2, 0], .045, .055, top, galvanised, 6); }
 function stopSign() {
-  const p = new Parts();
+  // (the face at `k` of the size its lettering was drawn for, its middle `y` up)
+  const p = new Parts(), y = 2.52, k = .735;
   // Bare metal at the back; the white rim and red face sit ahead of the post.
-  p.cylinder([0, 1.4, -.085], .055, .07, 2.8, galvanised, 6);
-  p.cylinder([0, 2.8, 0], .7, .7, .06, galvanised, 8, [Math.PI / 2, Math.PI / 8, 0]);
-  p.cylinder([0, 2.8, .044], .685, .685, .024, '#f1ead6', 8, [Math.PI / 2, Math.PI / 8, 0]);
-  p.cylinder([0, 2.8, .066], .62, .62, .012, '#b74635', 8, [Math.PI / 2, Math.PI / 8, 0]);
+  signPost(p, y);
+  p.cylinder([0, y, SIGN_OUT], .7 * k, .7 * k, .06, galvanised, 8, [Math.PI / 2, Math.PI / 8, 0]);
+  p.cylinder([0, y, SIGN_OUT + .044], .685 * k, .685 * k, .024, '#f1ead6', 8, [Math.PI / 2, Math.PI / 8, 0]);
+  p.cylinder([0, y, SIGN_OUT + .066], .62 * k, .62 * k, .012, '#b74635', 8, [Math.PI / 2, Math.PI / 8, 0]);
   // S, T, O, P as continuous vector outlines.
   const glyphs = [
     { outline: [[0,0],[5,0],[5,4],[1.3,4],[1.3,5.7],[5,5.7],[5,7],[0,7],[0,2.7],[3.7,2.7],[3.7,1.3],[0,1.3]] },
@@ -116,18 +127,18 @@ function stopSign() {
   glyphs.forEach(({ outline, hole }, i) => {
     const shape = new THREE.Shape(outline.map(([x, y]) => new THREE.Vector2(x, y)));
     if (hole) shape.holes.push(new THREE.Path(hole.map(([x, y]) => new THREE.Vector2(x, y))));
-    const geometry = new THREE.ShapeGeometry(shape); geometry.scale(.038, .044, 1);
-    p.add(geometry, [-.437 + i * .228, 2.646, .084], '#fff2d9');
+    const geometry = new THREE.ShapeGeometry(shape); geometry.scale(.038 * k, .044 * k, 1);
+    p.add(geometry, [(-.437 + i * .228) * k, y - .154 * k, SIGN_OUT + .084], '#fff2d9');
   });
   return p.finish();
 }
 // A give-way sign: a white triangle, point down, in a red border.
 function yieldSign() {
-  const p = new Parts();
-  p.cylinder([0, 1.35, -.085], .055, .07, 2.7, galvanised, 6);
-  p.cylinder([0, 2.72, 0], .82, .82, .06, galvanised, 3, [Math.PI / 2, 0, 0]);
-  p.cylinder([0, 2.72, .044], .8, .8, .024, '#b74635', 3, [Math.PI / 2, 0, 0]);
-  p.cylinder([0, 2.72, .066], .61, .61, .012, '#f1ead6', 3, [Math.PI / 2, 0, 0]);
+  const p = new Parts(), y = 2.56;
+  signPost(p, y);
+  p.cylinder([0, y, SIGN_OUT], .58, .58, .06, galvanised, 3, [Math.PI / 2, 0, 0]);
+  p.cylinder([0, y, SIGN_OUT + .044], .566, .566, .024, '#b74635', 3, [Math.PI / 2, 0, 0]);
+  p.cylinder([0, y, SIGN_OUT + .066], .43, .43, .012, '#f1ead6', 3, [Math.PI / 2, 0, 0]);
   return p.finish();
 }
 // A promenade bench facing the water.
@@ -135,13 +146,13 @@ function bench() {
   const p = new Parts();
   for (const z of [-.8, .8]) {
     p.box([-.21, .22, z], [.07, .44, .07], darkIron);
-    p.box([.24, .5, z], [.07, 1, .07], darkIron);
+    p.box([.24, .44, z], [.07, .88, .07], darkIron);
     p.box([0, .41, z], [.55, .06, .07], darkIron);
   }
   // Broad timber slats with daylight below and between them; the same small
   // footprint and one shared prop mesh as the former slab-sided bench.
   for (const x of [-.19, 0, .19]) p.box([x, .47, 0], [.17, .07, 1.9], timber);
-  for (const y of [.73, .94]) p.box([.27 + (y - .73) * .12, y, 0], [.06, .17, 1.9], timber, [0, 0, -.12]);
+  for (const y of [.66, .82]) p.box([.27 + (y - .66) * .12, y, 0], [.06, .15, 1.9], timber, [0, 0, -.12]);
   return p.finish();
 }
 // Boats in the harbor and along the river, each lying along local z with
@@ -241,27 +252,29 @@ function mooringLine() {
 // A bus shelter: a flat roof on two posts with a glass back and a stop sign.
 function busShelter() {
   const p = new Parts();
-  for (const z of [-1.7, 1.7]) p.box([.6, 1.25, z], [.1, 2.5, .1], iron);
-  p.box([0, 2.55, 0], [1.6, .12, 4], darkIron);
+  // (the roof's underside 2.32 up, clear of the tallest hat by a hand)
+  for (const z of [-1.7, 1.7]) p.box([.6, 1.16, z], [.1, 2.32, .1], iron);
+  p.box([0, 2.37, 0], [1.6, .1, 4], darkIron);
   // Quiet frosted panels in a frame, with air below and above the screen.
   // Opaque baked colors keep this in the single furniture batch.
-  for (const z of [-.84, .84]) p.box([.62, 1.48, z], [.04, 1.7, 1.62], '#9dafad');
-  for (const y of [.61, 2.35]) p.box([.62, y, 0], [.09, .07, 3.4], iron);
-  p.box([.62, 1.48, 0], [.09, 1.7, .06], iron);
+  for (const z of [-.84, .84]) p.box([.62, 1.39, z], [.04, 1.52, 1.62], '#9dafad');
+  for (const y of [.61, 2.17]) p.box([.62, y, 0], [.09, .07, 3.4], iron);
+  p.box([.62, 1.39, 0], [.09, 1.52, .06], iron);
   p.box([0, .45, 0], [.5, .06, 3], timber);
   for (const z of [-1.15, 1.15]) p.box([0, .21, z], [.12, .42, .12], iron);
   // A blue transit flag faces the road; a bus symbol identifies the stop
   // without an invented route number or advertising on the shelter.
-  const blue = '#2f5f8a', white = '#f1ead6';
-  p.box([-.9, 2.93, 1.6], [.06, .66, .5], blue);
-  p.cylinder([-.9, 1.3, 1.6], .05, .05, 2.6, iron, 5);
+  // (the flag's middle `y` up, just over the roof, at `k` of the size it was drawn for)
+  const blue = '#2f5f8a', white = '#f1ead6', y = 2.645, k = .68;
+  p.box([-.9, y, 1.6], [.06, .66 * k, .5 * k], blue);
+  p.cylinder([-.9, 1.21, 1.6], .036, .036, 2.42, iron, 5);
   for (const side of [-1, 1]) {
     const face = -.9 + side * .042;
-    p.box([face, 2.95, 1.6], [.018, .38, .3], white);
-    p.box([face + side * .017, 3.01, 1.6], [.012, .15, .23], blue);
-    for (const z of [1.5, 1.7]) {
-      p.box([face, 2.74, z], [.018, .075, .06], white);
-      p.box([face + side * .017, 2.82, z], [.012, .045, .045], blue);
+    p.box([face, y + .02 * k, 1.6], [.018, .38 * k, .3 * k], white);
+    p.box([face + side * .017, y + .08 * k, 1.6], [.012, .15 * k, .23 * k], blue);
+    for (const z of [-.1, .1]) {
+      p.box([face, y - .19 * k, 1.6 + z * k], [.018, .075 * k, .06 * k], white);
+      p.box([face + side * .017, y - .11 * k, 1.6 + z * k], [.012, .045 * k, .045 * k], blue);
     }
   }
   return p.finish();
@@ -368,16 +381,18 @@ function hydrant() {
 // A pillar box for the post, red with a black foot and a slot to the road
 function postBox() {
   const p = new Parts(), red = '#a94036', edge = '#862f2a', paper = '#e4dcc7';
+  // (drawn 1.48 tall and built 1.3: what stands over its foot at `k` of its height)
+  const k = .863, up = y => .17 + (y - .17) * k;
   turned(p, [[0, 0], [.28, 0], [.28, .12], [.245, .17], [0, .17]], darkIron);
-  turned(p, [[0, .17], [.245, .17], [.245, 1.28], [.275, 1.28], [.275, 1.35], [.235, 1.43], [.12, 1.48], [0, 1.48]], red);
+  turned(p, [[0, .17], [.245, .17], [.245, up(1.28)], [.275, up(1.28)], [.275, up(1.35)], [.235, up(1.43)], [.12, up(1.48)], [0, up(1.48)]], red);
   // The road-facing panel tiles one face, including the slot and notice.
-  const front = (y, z, h, w, colour) => p.box([-.23, y, z], [.045, h, w], colour);
+  const front = (y, z, h, w, colour) => p.box([-.23, up(y), z], [.045, h * k, w], colour);
   for (const z of [-.14, .14]) front(.73, z, 1.04, .045, edge);
   front(.255, 0, .09, .235, edge); front(.56, 0, .52, .235, red);
   front(.91, 0, .18, .235, paper); front(1.045, 0, .09, .235, red);
   front(1.12, 0, .06, .235, darkIron); front(1.2, 0, .1, .235, red);
-  p.box([-.262, 1.17, 0], [.065, .04, .28], edge);
-  p.box([-.26, .57, -.085], [.04, .11, .035], galvanised);
+  p.box([-.262, up(1.17), 0], [.065, .04, .28], edge);
+  p.box([-.26, up(.57), -.085], [.04, .11, .035], galvanised);
   return p.finish();
 }
 // A utility cabinet, the kind that holds a junction's signal gear or a street's cables
@@ -447,9 +462,9 @@ function bikeRack() {
 
 function litterBin() {
   const p = new Parts();
-  p.cylinder([0, .45, 0], .34, .29, .9, '#465450', 8);
-  p.cylinder([0, .95, 0], .36, .36, .12, '#353f40', 8);
-  p.box([-.34, .76, 0], [.03, .16, .28], '#252e30');
+  p.cylinder([0, .425, 0], .27, .235, .85, '#465450', 8);
+  p.cylinder([0, .9, 0], .29, .29, .1, '#353f40', 8);
+  p.box([-.27, .72, 0], [.03, .15, .22], '#252e30');
   return p.finish();
 }
 
@@ -506,14 +521,16 @@ function foliageLobe(radius, phase) {
 
 // Pruned street trees: a broad crown and a narrower upright one, both fitted
 // between the shopfronts and the curb. The silhouette is shared at every LOD.
+// (`trunk`, the trunk's radius: its collider's, and its far-off stand-in's)
+const TRUNK = .036, CONIFER_TRUNK = .034;
 function streetTree(variant) {
   const trunk = new Parts(), crown = new Parts();
-  trunk.beam([0, -.04, 0], [.025, .66, 0], .048, '#ffffff', 5);
+  trunk.beam([0, -.04, 0], [.025, .66, 0], TRUNK, '#ffffff', 5);
   // (the upright crown has no lobe on its right: that branch stops well inside
   // the main one, where at full length its end poked out through a facet)
   for (const side of [-1, 1]) {
     const short = variant && side > 0;
-    trunk.beam([.02, .32, 0], [side * (short ? .13 : .22), .61, short ? .03 : .06], .028, '#ffffff', 5);
+    trunk.beam([.02, .32, 0], [side * (short ? .13 : .22), .61, short ? .03 : .06], .022, '#ffffff', 5);
   }
   const clusters = variant ? [[0, .79, 0, .3, 1.55], [-.12, .54, .025, .23, 1.1]]
     : [[0, .77, 0, .37, 1.05], [-.22, .62, .025, .27, 1], [.22, .62, -.07, .27, .95]];
@@ -525,18 +542,19 @@ function streetTree(variant) {
   const bark = trunk.finish(), leaves = crown.finish(), positions = leaves.attributes.position;
   let radius = 0;
   for (let i = 0; i < positions.count; i++) radius = Math.max(radius, Math.hypot(positions.getX(i), positions.getZ(i)));
-  return { bark, leaves, radius };
+  return { bark, leaves, radius, trunk: TRUNK };
 }
 
 // A blue P on a post, the panel across local x and read from either side
 // along local z, so it can come loose as one piece
 function parkingSign() {
-  const p = new Parts(), cream = '#f2f0e6';
-  p.box([0, 1.09, 0], [.08, 2.18, .08], galvanised);
-  p.box([0, 2.6, 0], [.78, .84, .04], cream);
-  p.box([0, 2.6, 0], [.7, .76, .058], '#2f5f9a');
+  // (the panel at `k` of the size its letter was drawn for, its middle `y` up)
+  const p = new Parts(), cream = '#f2f0e6', y = 2.365, k = .795;
+  p.box([0, 1.015, 0], [.065, 2.03, .065], galvanised);
+  p.box([0, y, 0], [.78 * k, .84 * k, .04], cream);
+  p.box([0, y, 0], [.7 * k, .76 * k, .058], '#2f5f9a');
   for (const side of [-1, 1]) {
-    const letter = (u, v, w, h) => p.box([u * side, 2.6 + v, .042 * side], [w, h, .02], cream);
+    const letter = (u, v, w, h) => p.box([u * k * side, y + v * k, .042 * side], [w * k, h * k, .02], cream);
     letter(-.1, 0, .09, .46); letter(.01, .19, .24, .08); letter(.01, .01, .24, .08); letter(.12, .1, .08, .26);
   }
   return p.finish();
@@ -546,13 +564,13 @@ function parkingSign() {
 // trunk, in a cooler green, inside the same clearance and height as the others
 function conifer() {
   const trunk = new Parts(), crown = new Parts();
-  trunk.beam([0, -.04, 0], [0, .5, 0], .045, '#ffffff', 5);
+  trunk.beam([0, -.04, 0], [0, .5, 0], CONIFER_TRUNK, '#ffffff', 5);
   [[.28, .44, .4, 0], [.52, .46, .31, .45], [.78, .46, .21, .9]].forEach(([bottom, height, radius, turn]) => {
     const cone = new THREE.ConeGeometry(radius, height, 7);
     cone.rotateY(turn); crown.add(cone, [0, bottom + height / 2, 0], '#b3cabd');
   });
   const bark = trunk.finish(), leaves = crown.finish();
-  return { bark, leaves, radius: .4 };
+  return { bark, leaves, radius: .4, trunk: CONIFER_TRUNK };
 }
 export const cityTrees = [streetTree(0), streetTree(1), conifer()];
 // (the conifer's index in cityTrees)
@@ -591,8 +609,8 @@ export function signalMastPiece(mast) {
   if (masts.has(key)) return masts.get(key);
   const length = Math.max(...mast) + .6, flat = g => { const copy = g.index ? g.toNonIndexed() : g.clone(); copy.deleteAttribute('uv'); return copy; };
   const arm = new Parts();
-  arm.box([-length / 2, MAST_HEIGHT - .2, 0], [length, .2, .2], iron);
-  const parts = [flat(cityAssets['signal-mast']), flat(arm.finish()), ...mast.map(along => flat(cityAssets['signal-head']).translate(-along, MAST_HEIGHT - .95, 0))];
+  arm.box([-length / 2, MAST_HEIGHT - .2, 0], [length, MAST_ARM, MAST_ARM], iron);
+  const parts = [flat(cityAssets['signal-mast']), flat(arm.finish()), ...mast.map(along => flat(cityAssets['signal-head']).translate(-along, MAST_HEIGHT - MAST_DROP, 0))];
   const geometry = mergeGeometries(parts);
   for (const part of parts) part.dispose();
   geometry.computeBoundingSphere();
@@ -613,7 +631,7 @@ function tint(g, color) {
 // Ten-sided tires match moving traffic; flat hub faces read at curb distance
 // without adding cylinders or a new batch for hundreds of parked cars.
 function parkedCar(spec) {
-  const { paint, details, headlights, taillights, wheels } = vehicleGeometry(spec, { separateWheels: true });
+  const { paint, details, headlights, taillights, wheels } = vehicleGeometry(spec, { separateWheels: true }), k = scaleOf(spec);
   const tyres = wheels.flatMap(({ x, y, z }) => {
     const tyre = new THREE.CylinderGeometry(WHEEL.radius, WHEEL.radius, WHEEL.width, 10);
     // Put a vertex at road level so a tire's flat does not leave a visible gap.
@@ -624,6 +642,8 @@ function parkedCar(spec) {
   });
   const trim = mergeGeometries([details, tint(headlights, '#d8d4c2'), tint(taillights, '#8a3a30'), ...tyres]);
   for (const g of [details, headlights, taillights, ...tyres]) g.dispose();
+  // (at the size the shape is built: see vehicle-scale.js)
+  paint.scale(k, k, k); trim.scale(k, k, k);
   paint.computeBoundingSphere(); trim.computeBoundingSphere();
   return { paint, trim };
 }
@@ -632,8 +652,9 @@ function parkedCar(spec) {
 function parkedSpecial(spec) {
   const { paint, details, headlights, taillights, beaconA, beaconB } = specialGeometry(SPECIAL_SHAPES[spec.name]);
   const lit = [tint(headlights, '#d8d4c2'), tint(taillights, '#8a3a30'), ...[beaconA, beaconB].filter(Boolean)];
-  const trim = mergeGeometries([details, ...lit]);
+  const trim = mergeGeometries([details, ...lit]), k = scaleOf(spec);
   for (const g of [details, ...lit]) g.dispose();
+  paint.scale(k, k, k); trim.scale(k, k, k);
   paint.computeBoundingSphere(); trim.computeBoundingSphere();
   return { paint, trim };
 }

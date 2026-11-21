@@ -13,7 +13,8 @@ test('third-person view stays behind the car, frames it on phones, and survives 
     const car = new DrivingController(); car.heading = heading; car.update(0, {});
     const rig = new ThirdPersonCamera(); rig.resize(aspect); rig.update(car.car, 0);
     const forward = new THREE.Vector3(Math.sin(heading), 0, -Math.cos(heading));
-    assert.ok(rig.camera.position.clone().sub(car.car.position).dot(forward) < -13.9);
+    // (14 m behind a car at its modeled size, nearer one built smaller: see chaseScale)
+    assert.ok(rig.camera.position.clone().sub(car.car.position).dot(forward) < -13.9 * (car.car.userData.chaseScale ?? 1));
     const projected = car.car.position.clone().project(rig.camera);
     assert.ok(Math.abs(projected.x) < .01 && projected.y > -.8 && projected.y < 0);
     car.render(0, 20000); rig.update(car.car, 1 / 60);

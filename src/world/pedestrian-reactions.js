@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { level } from '../loose-props.js';
 import { cityWalker } from './city-walkers.js';
+import { surfaceAt, PAVEMENT_LEVEL } from './city-route.js';
 
 // A pedestrian a moving car meets is knocked flying: a loose body like the
 // street furniture's (see LooseProps.person), which tumbles, lands and slides
@@ -103,7 +104,8 @@ export function nearestOnLoop(loop, x, y) {
     const a = points[i], b = points[(i + 1) % points.length], dx = b.x - a.x, dy = b.y - a.y, length = dx * dx + dy * dy;
     const t = length ? Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / length)) : 0;
     const d = (a.x + dx * t - x) ** 2 + (a.y + dy * t - y) ** 2;
-    if (d < best) { best = d; at = cumulative[i] + t * Math.sqrt(length); }
+    // (a walk bent round something keeps each point's distance round its base: see WalkSpace)
+    if (d < best) { best = d; at = cumulative[i] + t * (cumulative[i + 1] - cumulative[i]); }
   }
   return at;
 }
@@ -119,8 +121,9 @@ const WALKER_TURN = 1.2;
 export function walkPose(walker, walked) {
   const loop = walker.loop, travel = walker.phase + walked * walker.direction;
   const d = ((travel % loop.perimeter) + loop.perimeter) % loop.perimeter, points = loop.points, cumulative = loop.cumulative, n = points.length;
+  // (the side they are on: the last whose start they have reached)
   let i = 0;
-  while (i < n - 1 && cumulative[i + 1] <= d) i++;
+  for (let high = n - 1; i < high;) { const middle = (i + high + 1) >> 1; if (cumulative[middle] <= d) i = middle; else high = middle - 1; }
   const a = points[i], b = points[(i + 1) % n], span = (cumulative[i + 1] - cumulative[i]) || 1, t = (d - cumulative[i]) / span;
   const side = k => { const p = points[((k % n) + n) % n], q = points[(((k + 1) % n) + n) % n]; return Math.atan2(q.x - p.x, q.y - p.y); };
   const length = k => cumulative[((k % n) + n) % n + 1] - cumulative[((k % n) + n) % n];
@@ -265,6 +268,13 @@ const pieceAt = new THREE.Vector3();
 // truck flat out: slowing down near people is what spares them.
 const DODGE_SPEED = 5, DODGE_SEEN = 9, DODGE_AHEAD = 1.2, DODGE_CLEAR = .45, DIVE_MOST = 2.4, DIVE_HOLD = .6;
 const dodge = { x: 0, z: 0 };
+// Stepping round (see sidestep): someone walking sees a car at rest on the
+// pavement, or a heavy piece or a person lying there, SEEN m ahead on their
+// way and steps aside far enough to pass it ROUND_CLEAR m clear, no faster
+// aside than STEP_ASIDE (m/s) and no further than ROUND_MOST: a car right
+// across a pavement with a wall beside it is passed by the road
+const SEEN = 5, ROUND_CLEAR = .2, STEP_ASIDE = 2.2, ROUND_MOST = 4;
+const extent = { a0: 0, a1: 0, c0: 0, c1: 0 }, NONE = [];
 
 // One reusable set of car footprints per rendered frame. Broad bounds reject
 // almost every pedestrian before the swept rectangle test; there are no
@@ -274,6 +284,12 @@ const dodge = { x: 0, z: 0 };
 export class PedestrianContacts {
   constructor() {
     this.history = new WeakMap(); this.cars = []; this.count = 0; this.pieces = []; this.flying = 0; this.props = null; this.player = null; this.traffic = null; this.onFoot = null;
+    // The city's built cells, for their colliders (the world sets it: see
+    // CitydriverWorld.animate), and its walks (see WalkSpace). With them,
+    // people shoved, diving and walking back keep to where they can stand.
+    this.scenery = null; this.space = null;
+    // Cars at rest on a pavement and what lies in the way, to be stepped round (see sidestep)
+    this.rest = []; this.lying = NONE;
     // Told of each person knocked flying: `(by, at, kind)`, `by` the player's
     // car, a loose `piece` (`kind` its kind: a person, a lamp...), a `loose`
     // car (knocked off its lane or out of its bay) or ordinary `traffic`, and
@@ -286,6 +302,7 @@ export class PedestrianContacts {
   // `props` (LooseProps) takes those knocked flying; without it, nobody is
   update(player, traffic, time, props = null) {
     this.count = 0; this.flying = 0; this.player = player; this.traffic = traffic; this.props = props;
+    this.rest.length = 0; this.lying = props?.lying?.() ?? NONE;
     // (the player on foot is no car: see shove)
     this.onFoot = player?.walker ? player : null;
     if (!this.onFoot) this.add(player, time);
@@ -321,7 +338,7 @@ export class PedestrianContacts {
     if (!p || !car.spec) return;
     let previous = this.history.get(car);
     if (!previous) {
-      previous = { x: p.x, z: p.z, time, generation: car.generation };
+      previous = { x: p.x, z: p.z, time, generation: car.generation, restX: NaN, restZ: NaN, paved: undefined };
       this.history.set(car, previous);
     }
     // (a car knocked loose slides on with no speed of its own)
@@ -340,6 +357,17 @@ export class PedestrianContacts {
     footprint.cos = Math.cos(car.heading); footprint.sin = Math.sin(car.heading);
     footprint.width = car.spec.width / 2; footprint.length = car.spec.length / 2;
     footprint.moving = speed > 1.2;
+    // (at rest with a corner on a pavement, it is in someone's way: asked again only once it has moved)
+    if (!footprint.moving) {
+      if (previous.paved === undefined || (p.x - previous.restX) ** 2 + (p.z - previous.restZ) ** 2 > .09) {
+        previous.restX = p.x; previous.restZ = p.z; previous.paved = false;
+        for (let k = 0; k < 4 && !previous.paved; k++) {
+          const w = footprint.width * (k & 1 ? 1 : -1), l = footprint.length * (k & 2 ? 1 : -1);
+          previous.paved = surfaceAt(-(p.z + w * footprint.sin - l * footprint.cos), p.x + w * footprint.cos + l * footprint.sin) === 'pavement';
+        }
+      }
+      if (previous.paved) this.rest.push(footprint);
+    } else previous.paved = undefined;
     const radius = Math.hypot(footprint.width, footprint.length) + .4;
     footprint.minX = Math.min(footprint.px, p.x) - radius; footprint.maxX = Math.max(footprint.px, p.x) + radius;
     footprint.minZ = Math.min(footprint.pz, p.z) - radius; footprint.maxZ = Math.max(footprint.pz, p.z) + radius;
@@ -412,6 +440,8 @@ export class PedestrianContacts {
     const charged = !away && this.onFoot ? this.shove(person, matrix, frame, radius, time) : false;
     // Diving out of the way (a dive under way finishes even once dodging stops)
     if (!away && !charged && (this.dodge || person.dive)) this.dive(person, matrix, frame, radius, time);
+    // Stepping round what stands or lies on their way
+    if (!away && !charged) this.sidestep(person, matrix, frame, radius, time);
     const at = position.setFromMatrixPosition(matrix).applyMatrix4(frame), car = this.props && (charged ? { car: this.player } : this.hit(person, at.x, at.y, at.z, radius));
     if (!car) {
       // (the dive's leap is drawn once they are known to be clear: it
@@ -464,9 +494,12 @@ export class PedestrianContacts {
         const length = Math.hypot(ax, az); ax /= length; az /= length;
       }
       const push = (reach - distance) / Math.max(.3, ax * nx + az * nz);
-      shove.x += ax * push; shove.z += az * push;
-      const far = Math.hypot(shove.x, shove.z), over = Math.max(0, far - SHOVED);
-      if (over) { shove.x *= SHOVED / far; shove.z *= SHOVED / far; }
+      // (no further than where they can stand: against a wall, a post or the
+      // curb they are pushed no more, and the player is stopped instead)
+      const held = !this.standable(x + ax * push, z + az * push, radius);
+      if (!held) { shove.x += ax * push; shove.z += az * push; }
+      const far = Math.hypot(shove.x, shove.z), over = held ? push : Math.max(0, far - SHOVED);
+      if (far > SHOVED) { shove.x *= SHOVED / far; shove.z *= SHOVED / far; }
       player.walker.brush(nx, nz, over, Math.exp(-RESIST * dt));
       person.shovedBy = { x: p.x - f[12], z: p.z - f[14], until: time + LOOK };
     }
@@ -485,6 +518,7 @@ export class PedestrianContacts {
     let dive = person.dive;
     if (threat) {
       if (!dive) {
+        this.landing(threat, e[12] + f[12], e[14] + f[14], radius);
         dive = person.dive = { at: time, x: threat.x, z: threat.z, until: 0 };
         // (cartwheeling the way they dive)
         person.hopStart = time; person.hopSpin = e[0] * dive.x + e[2] * dive.z > 0 ? -1 : 1;
@@ -492,7 +526,7 @@ export class PedestrianContacts {
       dive.until = time + DIVE_HOLD;
     }
     if (!dive) return;
-    const out = smooth(Math.min(1, (time - dive.at) / PEDESTRIAN_HOP)), far = Math.hypot(dive.x, dive.z);
+    const out = smooth(Math.min(1, (time - dive.at) / PEDESTRIAN_HOP)), far = Math.hypot(dive.x, dive.z) || 1e-6;
     const k = out * Math.max(0, 1 - Math.max(0, time - Math.max(dive.until, dive.at + PEDESTRIAN_HOP)) * RETURN / far);
     if (k <= 0 && out === 1) { person.dive = null; return; }
     e[12] += dive.x * k; e[14] += dive.z * k;
@@ -511,13 +545,125 @@ export class PedestrianContacts {
       if (along < -reach || along > reach + Math.min(DODGE_SEEN, speed * DODGE_AHEAD) || Math.abs(across) > side + DODGE_CLEAR) continue;
       const way = Math.sign(across) || 1, far = Math.max(.5, Math.min(DIVE_MOST, side + DODGE_CLEAR - Math.abs(across)));
       dodge.x = -uz * way * far; dodge.z = ux * way * far;
+      // (and across its path to its other side, if that is not too far: see landing)
+      const other = side + DODGE_CLEAR + Math.abs(across);
+      dodge.ox = other <= DIVE_MOST ? uz * way * other : 0; dodge.oz = other <= DIVE_MOST ? -ux * way * other : 0;
       return dodge;
+    }
+    return null;
+  }
+  // Whether someone of `radius` can stand at (x, z): on a pavement (or, not
+  // `paved`, anywhere) and in none of the colliders of the cells built round
+  // them. True when the world is not known (see scenery).
+  standable(x, z, radius, paved = true) {
+    if (!this.scenery) return true;
+    if (paved && surfaceAt(-z, x) !== 'pavement') return false;
+    for (const chunk of this.scenery.values()) {
+      const b = chunk.collisionBounds;
+      if (!b || x < b.minX - radius || x > b.maxX + radius || z < b.minZ - radius || z > b.maxZ + radius) continue;
+      for (const solid of chunk.features.colliders) {
+        const dx = x - solid.x, dz = z - solid.z, reach = solid.reach + radius;
+        if (dx * dx + dz * dz >= reach * reach || solid.woken || solid.clutter || solid.shape || solid.top - PAVEMENT_LEVEL <= .3) continue;
+        if (!solid.corners || inside(solid.corners, x, z, radius)) return false;
+      }
+    }
+    return true;
+  }
+  // Whether the straight way from (ax, az) to (bx, bz) is one they can walk
+  walkable(ax, az, bx, bz, radius, paved = true) {
+    const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / .4));
+    for (let i = 1; i <= steps; i++) if (!this.standable(ax + (bx - ax) * i / steps, az + (bz - az) * i / steps, radius, paved)) return false;
+    return true;
+  }
+  // A dive (`way`: x, z, and ox, oz to the car's other side) from (x, z)
+  // lands where they can stand: the way first asked for, else the other
+  // way, else as far the first way as is clear (and they may yet be hit)
+  landing(way, x, z, radius) {
+    if (!this.scenery || this.walkable(x, z, x + way.x, z + way.z, radius)) return;
+    if ((way.ox || way.oz) && this.walkable(x, z, x + way.ox, z + way.oz, radius)) { way.x = way.ox; way.z = way.oz; return; }
+    let k = .75;
+    while (k > 0 && !this.walkable(x, z, x + way.x * k, z + way.z * k, radius)) k -= .25;
+    way.x *= k; way.z *= k;
+  }
+  // Someone walking steps round a car at rest on their way (the player's,
+  // parked or not, or one knocked there) and round heavy pieces and people
+  // lying there, as they step round the player on foot: aside as they come
+  // up to it, past it, and back onto their walk. To the side with less to go
+  // round where they can stand, on the pavement if either side is. `matrix`
+  // (in `frame`) is moved by how far aside they are.
+  sidestep(person, matrix, frame, radius, time) {
+    const e = matrix.elements, f = frame.elements, x = e[12] + f[12], z = e[14] + f[14], was = person.walked;
+    // (nothing to step round, nothing to do: where they were is only kept while something is about)
+    if (!this.rest.length && !this.lying.length && !person.aside) return;
+    const dt = was ? time - was.time : 0;
+    // (standing, they stay as far aside as they are)
+    let tx = person.aside?.x ?? 0, tz = person.aside?.z ?? 0;
+    if (dt > 0 && dt < .25) {
+      const vx = (x - was.x) / dt, vz = (z - was.z) / dt, speed = Math.hypot(vx, vz);
+      if (speed > .2) {
+        tx = tz = 0;
+        // (along and across the way they go: the nearest thing across it)
+        const ux = vx / speed, uz = vz / speed, y = e[13] + f[13], pad = radius + ROUND_CLEAR;
+        let a0 = Infinity, a1 = 0, c0 = 0, c1 = 0, ox = 0, oz = 0, most = 0;
+        // (what they are beside first, then what is nearest ahead, then what they have just passed)
+        const take = (cx, cz) => {
+          const urgent = extent.c0 >= 0 || extent.c1 <= 0 ? 0 : extent.a0 > 0 ? 1 - extent.a0 / SEEN : extent.a1 < 0 ? 1 + extent.a1 / 3 : 2;
+          if (urgent > most) { most = urgent; ({ a0, a1, c0, c1 } = extent); ox = cx; oz = cz; }
+        };
+        for (const car of this.rest) {
+          if (x < car.minX - SEEN || x > car.maxX + SEEN || z < car.minZ - SEEN || z > car.maxZ + SEEN || Math.abs(y - car.y) > 2) continue;
+          extent.a0 = extent.c0 = Infinity; extent.a1 = extent.c1 = -Infinity;
+          for (let k = 0; k < 4; k++) {
+            const w = car.width * (k & 1 ? 1 : -1), l = car.length * (k & 2 ? 1 : -1);
+            reach(car.x + w * car.cos + l * car.sin - x, car.z + w * car.sin - l * car.cos - z, ux, uz, pad);
+          }
+          take(car.x, car.z);
+        }
+        for (const piece of this.lying) {
+          if (Math.abs(piece.u - x) > SEEN + piece.reach || Math.abs(piece.s + z) > SEEN + piece.reach) continue;
+          extent.a0 = extent.c0 = Infinity; extent.a1 = extent.c1 = -Infinity;
+          for (let k = 0; k < piece.count; k++) reach(piece.discs[k * 2] - x, -piece.discs[k * 2 + 1] - z, ux, uz, pad + .15);
+          take(piece.u, -piece.s);
+        }
+        if (a0 < Infinity) {
+          // Which side: as they chose for it before, else the nearer side they can stand on
+          let round = person.round;
+          if (!round || (round.x - ox) ** 2 + (round.z - oz) ** 2 > .25) {
+            const along = (a0 + a1) / 2, sides = Math.abs(c1) <= Math.abs(c0) ? [c1, c0] : [c0, c1];
+            const stand = (side, paved) => Math.abs(side) <= ROUND_MOST && this.standable(x + ux * along - uz * side, z + uz * along + ux * side, radius, paved);
+            const side = sides.find(each => stand(each, true)) ?? sides.find(each => stand(each, false)) ?? 0;
+            round = person.round = { x: ox, z: oz, side };
+          }
+          const run = Math.max(1.2, Math.abs(round.side) * 2), k = a0 > 0 ? 1 - a0 / run : a1 < 0 ? 1 + a1 / run : 1, out = round.side * smooth(Math.max(0, Math.min(1, k)));
+          tx = -uz * out; tz = ux * out;
+        } else person.round = null;
+      }
+    }
+    if (was) { was.x = x; was.z = z; was.time = time; } else person.walked = { x, z, time };
+    // (aside, and back, no faster than a step)
+    const aside = person.aside ??= { x: 0, z: 0 }, gx = tx - aside.x, gz = tz - aside.z, gap = Math.hypot(gx, gz), step = STEP_ASIDE * Math.max(0, Math.min(.1, dt));
+    if (gap <= step || !(dt > 0 && dt < .25)) { aside.x = tx; aside.z = tz; } else { aside.x += gx / gap * step; aside.z += gz / gap * step; }
+    if (!aside.x && !aside.z && !tx && !tz) { person.aside = null; return; }
+    e[12] += aside.x; e[14] += aside.z;
+  }
+  // A turn on the way from (ax, az) to (bx, bz) that leaves both parts of it
+  // clear of walls and furniture, or null if the straight way is clear, or
+  // no turn nearby makes it so
+  detour(ax, az, bx, bz) {
+    const radius = .25;
+    if (!this.scenery || this.walkable(ax, az, bx, bz, radius, false)) return null;
+    const dx = bx - ax, dz = bz - az, length = Math.hypot(dx, dz) || 1;
+    // (aside from the middle of the way, then nearer either end, a little further each try)
+    for (const out of [1.2, -1.2, 2.4, -2.4, 3.6, -3.6, 5, -5]) for (const share of [.5, .3, .7]) {
+      const x = ax + dx * share - dz / length * out, z = az + dz * share + dx / length * out;
+      if (this.standable(x, z, radius, false) && this.walkable(ax, az, x, z, radius, false) && this.walkable(x, z, bx, bz, radius, false)) return { x, z };
     }
     return null;
   }
   // Getting up, then walking back to where they would be now (where they
   // rejoin their walk, which waits for them, or their own spot), briskly
-  // if it is far, turning at the end to face on
+  // if it is far, turning at the end to face on: round a wall, a post or a
+  // parked car between them and it, by one turn on the way (see detour).
   away(person, matrix, frame, time) {
     if (!person.rise && !person.back) return false;
     world.multiplyMatrices(frame, matrix).decompose(home, homeRotation, homeScale);
@@ -533,18 +679,43 @@ export class PedestrianContacts {
         return true;
       }
       const far = Math.hypot(home.x - rise.x, home.z - rise.z);
-      person.rise = null; person.back = { at: rise.at + PEDESTRIAN_RISE, x: rise.x, z: rise.z, speed: Math.min(PEDESTRIAN_HURRY, PEDESTRIAN_WALK_BACK + far / 25) };
+      person.rise = null; person.back = { at: rise.at + PEDESTRIAN_RISE, x: rise.x, z: rise.z, speed: Math.min(PEDESTRIAN_HURRY, PEDESTRIAN_WALK_BACK + far / 25), via: this.detour(rise.x, rise.z, home.x, home.z), rolling: false };
     }
-    const back = person.back, dx = home.x - back.x, dz = home.z - back.z, length = Math.hypot(dx, dz);
-    const along = eased(0, back.speed, time - back.at);
-    if (along >= length) { person.back = null; person.arrival = easing(0, back.speed, time - back.at); return false; }
-    const x = back.x + dx * along / length, z = back.z + dz * along / length, k = smooth(Math.max(0, 1 - (length - along) / TURN_IN));
+    const back = person.back;
+    // (to the turn first, then on from it, already walking: no easing from a standstill again)
+    let along = back.rolling ? back.speed * (time - back.at) : eased(0, back.speed, time - back.at);
+    if (back.via) {
+      const first = Math.hypot(back.via.x - back.x, back.via.z - back.z);
+      if (along >= first) { along -= first; back.x = back.via.x; back.z = back.via.z; back.via = null; back.rolling = true; back.at = time - along / back.speed; }
+    }
+    const to = back.via ?? home, dx = to.x - back.x, dz = to.z - back.z, length = Math.hypot(dx, dz) || 1e-6;
+    const pace = back.rolling ? back.speed : easing(0, back.speed, time - back.at);
+    if (!back.via && along >= length) { person.back = null; person.arrival = pace; return false; }
+    const x = back.x + dx * along / length, z = back.z + dz * along / length, k = back.via ? 0 : smooth(Math.max(0, 1 - (length - along) / TURN_IN));
     const ground = level(x, z), y = (Number.isNaN(ground) ? home.y : ground + lift(home)) * (1 - k) + home.y * k;
     rotation.slerpQuaternions(facing(dx, dz, face), homeRotation, k);
     matrix.copy(local.copy(frame).invert().multiply(world.compose(position.set(x, y, z), rotation, homeScale)));
-    lean(matrix, (1 - k) * (easing(0, back.speed, time - back.at) - 2.2) / .6);
+    lean(matrix, (1 - k) * (pace - 2.2) / .6);
     return true;
   }
+}
+
+// (x, z) as far along (ux, uz) and across it as `extent` reaches, `pad` wider
+function reach(dx, dz, ux, uz, pad) {
+  const along = dx * ux + dz * uz, across = dz * ux - dx * uz;
+  extent.a0 = Math.min(extent.a0, along - pad); extent.a1 = Math.max(extent.a1, along + pad);
+  extent.c0 = Math.min(extent.c0, across - pad); extent.c1 = Math.max(extent.c1, across + pad);
+}
+// Whether (x, z) is inside a collider's corners or within `radius` of them
+function inside(corners, x, z, radius) {
+  let within = false;
+  for (let i = 0, j = corners.length - 1; i < corners.length; j = i++) {
+    const a = corners[i], b = corners[j], ex = b.x - a.x, ez = b.z - a.z, l = ex * ex + ez * ez;
+    const t = l > 1e-12 ? Math.max(0, Math.min(1, ((x - a.x) * ex + (z - a.z) * ez) / l)) : 0;
+    if ((x - a.x - ex * t) ** 2 + (z - a.z - ez * t) ** 2 < radius * radius) return true;
+    if ((a.z > z) !== (b.z > z) && x < (b.x - a.x) * (z - a.z) / (b.z - a.z) + a.x) within = !within;
+  }
+  return within;
 }
 
 // How far above the ground a person's walk carries them (the bob of each step)

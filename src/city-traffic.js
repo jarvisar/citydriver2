@@ -65,7 +65,10 @@ const WARM_SLICE = .1, WARM_MOST = 64;
 // never came within NEAR m of the player rests only a fifth of the spread).
 // It slows at BUS_DECEL (m/s²) for a stop, pulls in by the curb from PULL_IN m
 // short of it, and pulls out at OUT_SPEED at most.
-const REST = 25, REST_SPREAD = 50, NEAR = 150, BUS_DECEL = 1.6, PULL_IN = 45, OUT_SPEED = 6;
+// Pulled in less than BUS_BESIDE from its lane (the curb is a step from the
+// curb lane on every bus road now), it has not left the lane: nothing passes
+// it there, and it needs no gap to pull out into.
+const REST = 25, REST_SPREAD = 50, NEAR = 150, BUS_DECEL = 1.9, PULL_IN = 45, OUT_SPEED = 6, BUS_BESIDE = 2.1;
 // Giving way to the player's siren (see EmergencyGear): a car ahead of them
 // going the same way, within YIELD_REACH meters, pulls over YIELD_SHIFT
 // meters toward the curb (short of any parking bays) and eases off to
@@ -136,7 +139,8 @@ const JOB_MODELS = {
 // index among the traffic's shapes, or by name for a parked special
 const standInModel = name => { const index = TRAFFIC_MODELS.findIndex(spec => spec.name === name); return index < 0 ? name : index; };
 // The lanes each way, as offsets right of the center line: the curb lane every
-// turn starts and ends in (the profile's), and on a boulevard or the parkway
+// turn starts and ends in (the profile's), and on a street with two lanes each
+// way (a boulevard, the parkway, an avenue: one with a `divider`)
 // the lane beside the median as well
 const laneCache = new Map();
 export function lanesOf(profile) {
@@ -154,15 +158,19 @@ function swerve(speed, out = [0, 0]) {
 // lane `to` over `dm` meters on: steering in as far as it may, and out again
 // in time to arrive square to the lane. (The slope it can still take out in
 // steps of `ease` meter by meter, not the smooth curve's: that one arrived
-// still turned a few degrees, and the car snapped straight.)
+// still turned a few degrees, and the car snapped straight.) A car gathering
+// speed still arrives a degree or two off square: in its lane, it takes
+// that out over the next steps as it would have, not all at once.
 function sway(state, to, dm, [most, ease]) {
   const gap = to - state.lane;
   if ((!gap && !state.slope) || !(dm > 0)) return;
-  const step = ease * dm, steps = (Math.sqrt(1 + 8 * Math.abs(gap) / (step * dm)) - 1) / 2;
+  const step = ease * dm;
+  if (!gap) { state.slope -= clamp(state.slope, -step, step); return; }
+  const steps = (Math.sqrt(1 + 8 * Math.abs(gap) / (step * dm)) - 1) / 2;
   const want = Math.sign(gap) * Math.min(most, steps * step);
   state.slope += clamp(want - state.slope, -step, step);
   state.lane += state.slope * dm;
-  if (gap && (to - state.lane) * gap <= 0) { state.lane = to; state.slope = 0; }
+  if ((to - state.lane) * gap <= 0) state.lane = to;
 }
 // How far on a car pulling out round something steers to move `shift`
 // meters across (see sway)
@@ -183,7 +191,7 @@ function aside(pose, shift) {
 // on its path ahead, the player included, and recycles beyond the local view.
 // A car's `along` runs on past the start of its turn, through the curve,
 // until it joins the next edge. Its `lane` is its offset right of the center
-// line, which it steers toward `laneTo`: on a boulevard it passes slower cars
+// line, which it steers toward `laneTo`: with two lanes each way it passes slower cars
 // and keeps right when it can, and anywhere it drives round a car or anything
 // else left standing in its way (see think). The last of the fleet is a bus
 // (see serve).
@@ -311,7 +319,7 @@ export class CityTraffic {
       this.choose(car);
       // and never part-way round it
       if (car.along > car.turn.start - 2) car.along = Math.max(0, car.turn.start - 2);
-      // (on a boulevard, some start by the median, if they need not leave it
+      // (with two lanes each way, some start by the median, if they need not leave it
       // soon; never the bus, which keeps to the curb lane for its stops)
       const lanes = lanesOf(edge.profile);
       if (!car.service && lanes.length > 1 && r(40) < .35 && (this.carriesOn(car) || this.lineAt(car) - car.along > 120)) {
@@ -320,6 +328,13 @@ export class CityTraffic {
         if (this.vehicles.some(other => other !== car && Math.hypot(at.s - other.s, at.u - other.u) < 14)) this.settle(car, edge.profile.lane);
       }
       car.speed = Math.min(car.speed, approachSpeed(car.turn, car.turn.start - car.along), bendSpeed(this.nav, edge, direction, along, car.lane), this.afterSpeed(car));
+      // (nor faster than it can brake for whoever is ahead on its street: put
+      // a few meters behind a bus standing at its line, it drove into it)
+      for (const other of this.vehicles) {
+        if (other === car || other.edge !== edge || other.direction !== direction || !(other.along > car.along)) continue;
+        const room = other.along - car.along - (car.spec.length + other.spec.length) / 2 - FOLLOW_GAP;
+        car.speed = Math.min(car.speed, Math.sqrt((other.speed ?? 0) ** 2 + 2 * FOLLOW_DECEL * Math.max(0, room)));
+      }
       this.pose(car); car.previousPosition.copy(car.position); car.previousQuaternion.copy(car.quaternion);
       car.car.visible = true;
       return true;
@@ -480,7 +495,7 @@ export class CityTraffic {
       if (!near || distance < near.distance) near = { d, distance, p };
     }
     if (!near || near.distance > 40) { car.stranded = WAIT; return; }
-    // (back to whichever of its street's lanes it is nearer, on a boulevard,
+    // (back to whichever of its street's lanes it is nearer, where there are two,
     // unless it must be in the curb lane for its turn)
     const lanes = lanesOf(car.edge.profile);
     if (lanes.length > 1) {
@@ -795,7 +810,7 @@ export class CityTraffic {
     const turn = car.turn, choice = car.next;
     car.along = Math.max(0, turn.end + car.along - turn.start - turn.length);
     // (in the same place across the road: by the median carried straight on
-    // into the next boulevard, and anything else steered out of on the way)
+    // into the next two-lane street, and anything else steered out of on the way)
     const home = car.edge.profile.lane, lane = car.lane - home + choice.edge.profile.lane, to = this.aim(car) - home + choice.edge.profile.lane;
     car.edge = choice.edge; car.direction = choice.direction; car.next = null; car.turn = null;
     const lanes = lanesOf(car.edge.profile);
@@ -863,7 +878,7 @@ export class CityTraffic {
     const control = approachControl(this.nav, car.edge, car.direction);
     return Math.min(control?.kind ? car.edge.length - control.stopDistance : car.edge.length, car.turn ? car.turn.start : car.edge.length);
   }
-  // Whether a car's way on is straight on into another boulevard, which it
+  // Whether a car's way on is straight on into another two-lane street, which it
   // may take from either lane
   carriesOn(car) {
     const next = car.next;
@@ -1006,7 +1021,7 @@ export class CityTraffic {
   }
   // Which lane a driver wants, a few times a second. Round something left
   // standing in its way, once it has waited behind it a moment, and back once
-  // past it. On a boulevard: over to the curb lane in good time for a turn
+  // past it. With two lanes each way: over to the curb lane in good time for a turn
   // (waiting at the merge point to be let in if it must); otherwise whichever
   // lane is going faster, keeping right when neither is, but never near the
   // line. It moves only into a gap it can take.
@@ -1178,14 +1193,23 @@ export class CityTraffic {
     if (car.around && !car.around.back && Math.abs(this.aim(car) - car.lane) > .2) limit = AROUND_SPEED;
     else if (car.around) limit = 7;
     if (car.merging) limit = Math.min(limit, Math.sqrt(2 * 4 * Math.max(0, this.lineAt(car) - MERGE_BY - car.along - car.spec.length / 2)), car.dropBack ? Math.max(0, car.speed - 2 * dt) : Infinity);
+    // Still on its way over to the curb lane for its turn, on a block too
+    // short to get there at speed (an avenue's can be 50 m): no faster than
+    // gets it there by the line, since the slower a car goes the more
+    // sharply it steers across (see swerve). Six meters are the easing in and out.
+    if (car.turn && !car.around && !this.carriesOn(car)) {
+      const over = Math.abs(this.aim(car) - car.lane), left = this.lineAt(car) - car.along;
+      if (over > .3 && left > 0) limit = Math.min(limit, Math.max(2.5, 1.8 * Math.max(1, left - 6) / over));
+    }
     return limit;
   }
   // The bus calls at the next stop along its way (see BusStops) if someone
   // is waiting there or wants to get off, and it can stop in time from the
   // curb lane. It slows for it, pulls in by the curb once on its street,
-  // waits while they get on and off, and pulls out when there is a gap in
-  // its lane. Held up on the way in by something standing there (the
-  // player's car, say), it gives up and drives on. The most it may go for all that.
+  // waits while they get on and off, and pulls out (when there is a gap in
+  // its lane, if it left it: see BUS_BESIDE). Held up on the way in by
+  // something standing there (the player's car, say), it gives up and drives
+  // on. The most it may go for all that.
   serve(car, dt, player) {
     const service = car.service, stops = this.stops;
     if (!stops) return Infinity;
@@ -1213,7 +1237,8 @@ export class CityTraffic {
     }
     if (service.state === 'wait') {
       service.wait -= dt;
-      if (service.wait > 0 || !this.clearFor(car, home, player)) return 0;
+      // (still in its lane, the cars queued behind it are no reason to wait: they would wait for ever)
+      if (service.wait > 0 || (Math.abs(car.lane - home) > BUS_BESIDE && !this.clearFor(car, home, player))) return 0;
       this.steerFor(car, home); service.state = 'out';
     }
     // Pulling out, and back in its lane

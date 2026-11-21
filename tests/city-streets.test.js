@@ -5,10 +5,11 @@ import { CITY, SIDEWALK, roundCorners } from '../src/world/city.js';
 import { yardDrive } from '../src/world/city-yards.js';
 import { surfaceAt, onRoadAt, citydriverRoute, journeyStart, PAVEMENT_LEVEL, ROAD_LEVEL } from '../src/world/city-route.js';
 import { navGraph } from '../src/world/nav-graph.js';
+import { reserved } from '../src/mapgen/road-hierarchy.js';
 import { junctionGeometry, stopLineDistance, CROSSWALK } from '../src/world/junction-geometry.js';
 import { difference, intersection, region, solids } from '../src/mapgen/booleans.js';
 import { junctionControls } from '../src/city-junctions.js';
-import { placeStreetFurniture, findBridges, cityCrosswalks, convexOverlap, parkingGaps, clearParkingMark, harbourRoutes, buildStreetSurfaces } from '../src/world/city-streets.js';
+import { placeStreetFurniture, findBridges, cityCrosswalks, convexOverlap, parkingGaps, clearParkingMark, harbourRoutes, buildStreetSurfaces, KERBSIDE } from '../src/world/city-streets.js';
 import { Surface } from '../src/world/surface.js';
 import { cityIslands } from '../src/world/city-islands.js';
 import { cityParks } from '../src/world/city-parks.js';
@@ -73,7 +74,8 @@ test('parking markings and parked cars leave the full width of curb openings cle
   }
   for (const car of furniture.filter(p => p.kind === 'parked' && p.yard === undefined)) {
     const f = front(car.yaw);
-    for (const along of [-2.6, 0, 2.6]) assert.ok(!index.find(car.u + f.x * along, car.s + f.y * along), 'parked cars leave the same openings clear');
+    // (its ends: the longest car parked is 4.2 m)
+    for (const along of [-2.2, 0, 2.2]) assert.ok(!index.find(car.u + f.x * along, car.s + f.y * along), 'parked cars leave the same openings clear');
   }
 });
 
@@ -157,8 +159,9 @@ test('curbside fittings stand on the lamps\' line, clear of the rest and of the 
   const shelters = furniture.filter(piece => piece.kind === 'shelter'), others = furniture.filter(piece => !['grass', 'rim', 'railing', 'parked', 'boat', 'mooring'].includes(piece.kind));
   for (const piece of placed) {
     const p = { x: piece.u, y: piece.s }, at = `${piece.kind} at ${piece.u.toFixed(1)},${piece.s.toFixed(1)}`;
-    // (the residents walk 1.5 m in from the curb, clear of them)
-    assert.ok(kerbs.some(kerb => Math.abs(distanceToPolyline(p, kerb) - .65) < .05), `${at} off the curb line`);
+    // (the residents walk along the lot line, clear of them; where the
+    // curb turns in on itself a fitting is a little nearer it)
+    assert.ok(kerbs.some(kerb => { const d = distanceToPolyline(p, kerb); return d > KERBSIDE.fitting - .2 && d < KERBSIDE.fitting + .05; }), `${at} off the curb line`);
     assert.ok(shelters.every(stop => Math.hypot(stop.u - p.x, stop.s - p.y) > 4.9), `${at} at a bus stop`);
     for (const other of others) if (other !== piece) assert.ok(Math.hypot(other.u - p.x, other.s - p.y) > 1.15, `${at} on a ${other.kind}`);
   }
@@ -462,8 +465,9 @@ test('a bridge has a footway along its deck that joins the promenade, and the cr
 
 test('the waterfront is finished: no land left bare, railings off the roads, one crosswalk to a short street', () => {
   // Every piece of land is under a block, a park, a carriageway or a pavement
+  // (a road's asphalt is laid out to its reserve, under its curbs)
   const covered = solids([...CITY.blocks.map(block => block.kerb), ...CITY.parkPlans.filter(park => !park.square).map(park => park.kerb),
-    ...CITY.roads.filter(road => road.kind !== 'path').map(road => bufferPolyline(road.points, road.profile.halfWidth)), ...CITY.cornerPatches, ...CITY.quays.map(quay => quay.polygon)]);
+    ...CITY.roads.filter(road => road.kind !== 'path').map(road => bufferPolyline(road.points, reserved(road.profile))), ...CITY.cornerPatches, ...CITY.quays.map(quay => quay.polygon)]);
   const bare = difference(CITY.land.map(piece => piece.outer), CITY.land.flatMap(piece => piece.holes), covered)
     .map(piece => calcPolygonArea(piece.outer) - piece.holes.reduce((sum, hole) => sum + calcPolygonArea(hole), 0)).filter(area => area >= .5).reduce((sum, area) => sum + area, 0);
   // (slivers of the booleans' rounding aside, even one that runs right round a block)

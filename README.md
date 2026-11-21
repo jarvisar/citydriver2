@@ -14,7 +14,7 @@ This is the sequel to [Citydriver](https://github.com/jarvisar/citydriver). The 
 - Six districts: Old town, Garden quarter, Warehouse district, Market district, Civic quarter and Midtown
 - Buildings shaped to fit their lots
 - Traffic that follows signals, stop signs and give-way signs
-- Traffic that changes lanes on the boulevards and drives around crashed and stopped cars
+- Traffic that changes lanes on the boulevards and avenues and drives around crashed and stopped cars
 - A bus that comes by now and then and stops at the bus shelters to let people on and off
 - Mario Kart style drifting with a drift boost that charges in three stages
 - Ramps and jumps, including a half-built bridge to jump the river

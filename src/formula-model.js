@@ -1,12 +1,14 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { stableShadowDepth } from './world/shadow-depth.js';
+import { SLEEK_SCALE } from './vehicle-scale.js';
 
 // An open-wheel racer: a narrow carbon tub slung between four exposed slicks,
 // with a front wing, sidepods, an airbox and a rear wing. Like the coupe it is
 // chooser-only, so the roads keep their ordinary-looking fleet.
+// (as modeled, and built a little smaller: see vehicle-scale.js)
 export const FORMULA_SHAPE = {
-  name: 'formula', width: 1.9, length: 5.2,
+  name: 'formula', scale: SLEEK_SCALE, width: 1.9, length: 5.2,
   // The chooser draws the wheels from `wheelRadius` and `wheelZ`.
   cabin: [.62, .34, 1.1], cabinZ: .12, cabinY: .52, wheelRadius: .38, wheelZ: 1.66,
   // First person sits just ahead of the halo rather than behind a windshield.
