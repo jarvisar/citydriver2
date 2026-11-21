@@ -31,7 +31,7 @@ async function fixture(url, scenario, gamePath, loaderPath, mobile = false) {
   await page.route(url, async route => {
     const response = await route.fetch();
     await route.fulfill({ response, body: (await response.text()).replace(
-      "location.hostname === 'citydriver2.jarvisar.com'", "location.hostname === '127.0.0.1'",
+      "location.hostname === 'citydriver.jarvisar.com'", "location.hostname === '127.0.0.1'",
     ) });
   });
   let release;

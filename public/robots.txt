@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://citydriver2.jarvisar.com/sitemap.xml
+Sitemap: https://citydriver.jarvisar.com/sitemap.xml
