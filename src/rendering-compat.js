@@ -81,12 +81,14 @@ export function rendererPrograms(renderer, { revision = THREE.REVISION, warn = c
   // safe public release hook in r186's program cache. Do not unpin a live
   // renderer. Weak keys let a lost/replaced context's old programs go away.
   const kept = new WeakSet();
-  let disabled = false;
+  let disabled = false, seen = -1, list = null;
   function visit(warm) {
     if (disabled) return;
     try {
-      checkThree(revision);
       const programs = renderer.info?.programs;
+      // (kept programs are never deleted, so a context's list only grows: every frame asks, and almost none has a new one)
+      if (!warm && programs === list && programs.length === seen) return;
+      checkThree(revision);
       requireCompatible(Array.isArray(programs), 'Missing renderer.info.programs');
       // Validate the whole batch before taking any references.
       for (const program of programs) requireCompatible(Number.isSafeInteger(program?.usedTimes) && program.usedTimes > 0
@@ -95,6 +97,7 @@ export function rendererPrograms(renderer, { revision = THREE.REVISION, warn = c
         if (warm) program.getUniforms();
         if (!kept.has(program)) { program.usedTimes++; kept.add(program); }
       }
+      list = programs; seen = programs.length;
     } catch (error) {
       if (!(error instanceof RenderingCompatibilityError)) throw error;
       disabled = true;
@@ -124,10 +127,11 @@ export function precompileShadowPrograms(renderer, scene, roots, lens) {
     const standIn = object.clone(false); standIn.material = depth; casters.add(standIn);
   });
   if (!casters.children.length) return;
-  const target = new THREE.WebGLRenderTarget(1, 1), previous = renderer.getRenderTarget();
-  try { renderer.setRenderTarget(target); renderer.compile(casters, lens, scene); }
+  // (the shadow pass draws with no scene, so no fog: three keys every program on whether there is one)
+  const target = new THREE.WebGLRenderTarget(1, 1), previous = renderer.getRenderTarget(), fog = scene.fog;
+  try { renderer.setRenderTarget(target); scene.fog = null; renderer.compile(casters, lens, scene); }
   finally {
-    renderer.setRenderTarget(previous); target.dispose();
+    scene.fog = fog; renderer.setRenderTarget(previous); target.dispose();
     for (const standIn of casters.children) standIn.morphTexture?.dispose();
   }
 }

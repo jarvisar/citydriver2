@@ -8,6 +8,8 @@ const signGeometry = new THREE.PlaneGeometry(1, 1);
 const DOMESTIC_GLASS = ['#506971', '#405a65', '#617980'], OFFICE_GLASS = ['#638793', '#567783', '#71929b'];
 
 export const ccw = polygon => signedArea(polygon) < 0 ? polygon.slice().reverse() : polygon;
+// All of a builder's steps at once, and what it returns
+export const through = steps => { for (;;) { const step = steps.next(); if (step.done) return step.value; } };
 // The pieces of a rectangle on a wall ({x0, x1, y0, y1}) outside a zone
 function cutAround(pieces, z) {
   return pieces.flatMap(r => {
@@ -43,22 +45,30 @@ export function edgeFacade(c, a, b) {
     position(offset, y, outward) { const p = point(offset, outward); return [p.x, y, -p.s]; },
     add(offset, y, outward, w, h, d, color, kind = 'solid', broad = false) {
       if (c.distant && kind === 'solid' && !broad) return;
-      let pieces = [{ x0: offset - w / 2, x1: offset + w / 2, y0: y - h / 2, y1: y + h / 2 }];
+      const x0 = offset - w / 2, x1 = offset + w / 2, y0 = y - h / 2, y1 = y + h / 2;
+      // (most walls have no sign to keep clear of: the one piece, as it is)
+      if (!this.clear.length) { if (!(w < 1 && h > 3) || y1 - y0 >= Math.min(2.2, h - .01)) place(x0, x1, y0, y1, outward, d, color, kind); return; }
+      let pieces = [{ x0, x1, y0, y1 }];
       for (const z of this.clear) pieces = cutAround(pieces, z);
       // (a pilaster cut short by a sign stops, rather than leaving a stub
       // that looks like the sign's post)
       if (w < 1 && h > 3) pieces = pieces.filter(r => r.y1 - r.y0 >= Math.min(2.2, h - .01));
-      for (const r of pieces) {
-        const p = point((r.x0 + r.x1) / 2, outward), pw = r.x1 - r.x0, ph = r.y1 - r.y0, py = (r.y0 + r.y1) / 2;
-        if (kind === 'inlay') {
-          // Opaque inserts share the body's draw and need just two faces.
-          const left = point(r.x0, outward + d / 2), right = point(r.x1, outward + d / 2);
-          c.bodies.face(left.x, r.y0, -left.s, right.x, r.y0, -right.s, right.x, r.y1, -right.s, color);
-          c.bodies.face(left.x, r.y0, -left.s, right.x, r.y1, -right.s, left.x, r.y1, -left.s, color);
-        } else if (c.distant && (kind === 'glass' || kind === 'lit')) c.item(`distant-${kind}`, signGeometry, c.materials[kind], [p.x, py, -p.s], [pw, ph, 1], color, yaw);
-        else c.box(p.x, py, p.s, pw, ph, d, color, kind, yaw);
-      }
+      for (const r of pieces) place(r.x0, r.x1, r.y0, r.y1, outward, d, color, kind);
     } };
+  // A piece of the wall's face from x0 to x1 along it and y0 to y1 up it
+  function place(x0, x1, y0, y1, outward, d, color, kind) {
+    const middle = (x0 + x1) / 2, pw = x1 - x0, ph = y1 - y0, py = (y0 + y1) / 2;
+    if (kind === 'inlay') {
+      // Opaque inserts share the body's draw and need just two faces.
+      const out = outward + d / 2, lx = mx + tx * x0 + nx * out, ls = my + ty * x0 + ny * out, rx = mx + tx * x1 + nx * out, rs = my + ty * x1 + ny * out;
+      c.bodies.face(lx, y0, -ls, rx, y0, -rs, rx, y1, -rs, color);
+      c.bodies.face(lx, y0, -ls, rx, y1, -rs, lx, y1, -ls, color);
+      return;
+    }
+    const px = mx + tx * middle + nx * outward, ps = my + ty * middle + ny * outward;
+    if (c.distant && (kind === 'glass' || kind === 'lit')) c.item(kind === 'glass' ? 'distant-glass' : 'distant-lit', signGeometry, c.materials[kind], [px, py, -ps], [pw, ph, 1], color, yaw);
+    else c.box(px, py, ps, pw, ph, d, color, kind, yaw);
+  }
 }
 
 // A wall's window bays, .9 m in from each end of its front. The segments of
@@ -123,8 +133,8 @@ export function edgeWindows(c, b, f, bottom, floors, random) {
     const y = bottom + 1.7 + floor * 3.6;
     if (modern) f.add(0, y - 1.42, .1, span + .1, .28, .3, '#b6c9c8', 'solid', true);
     if (b.type === 'deco' && floor === floors - 1) f.add(0, y + 1.55, .2, span + .4, .35, .5, '#ded2b8', 'solid', true);
-    for (const [k, { bay }] of windows.entries()) {
-      const offset = shown[k], occupancy = random(), lit = occupancy < .1;
+    for (let k = 0; k < windows.length; k++) {
+      const bay = windows[k].bay, offset = shown[k], occupancy = random(), lit = occupancy < .1;
       if (offset === null || windowWidth < .6) continue;
       // Balconies stack over one another, with a glazed door down to the
       // deck. The other bays keep their ordinary windows and sills.
@@ -186,8 +196,9 @@ export function shopAwning(c, f, offset, width, accent, variation) {
   const stripes = !c.distant && variation % 2 === 0 ? 8 : 1;
   const reach = 1.4 + variation * .16, back = G + 3.52, front = G + 3.04;
   const quad = (a, b, d, e, colour) => {
-    c.bodies.face(...a, ...b, ...d, colour); c.bodies.face(...a, ...d, ...e, colour);
-    c.bodies.face(...d, ...b, ...a, colour); c.bodies.face(...e, ...d, ...a, colour);
+    const bodies = c.bodies, ax = a[0], ay = a[1], az = a[2], bx = b[0], by = b[1], bz = b[2], dx = d[0], dy = d[1], dz = d[2], ex = e[0], ey = e[1], ez = e[2];
+    bodies.face(ax, ay, az, bx, by, bz, dx, dy, dz, colour); bodies.face(ax, ay, az, dx, dy, dz, ex, ey, ez, colour);
+    bodies.face(dx, dy, dz, bx, by, bz, ax, ay, az, colour); bodies.face(ex, ey, ez, dx, dy, dz, ax, ay, az, colour);
   };
   // At a distance a cream-striped canopy keeps its average color.
   const plain = c.distant && variation % 2 === 0 ? new THREE.Color(accent).lerp(new THREE.Color('#e6d8b8'), .5) : accent;

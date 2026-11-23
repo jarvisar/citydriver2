@@ -52,9 +52,10 @@ import { EmergencyGear } from './emergency.js';
 import { StuntChain } from './stunt-chain.js';
 import { JumpBook, starText, STAR_PAY } from './jump-book.js';
 import { setResidentWindow } from './world/resident.js';
-import { PlayerController } from './vehicle.js';
+import { PlayerController, prepareCar } from './vehicle.js';
 import { OnFoot, EnterMarker } from './on-foot.js';
 import { walkingInput, createWalkerModel } from './walker.js';
+import { cityWalker } from './world/city-walkers.js';
 import { CityTraffic } from './city-traffic.js';
 import { collideScenery, sightLine, cameraClearance } from './collision.js';
 import { PedestrianContacts } from './world/pedestrian-reactions.js';
@@ -65,7 +66,7 @@ import { MouseLook } from './mouse-look.js';
 import { createFullscreen } from './fullscreen.js';
 import { DriveAudio } from './audio.js';
 import { setupAudioMixer } from './audio/mixer.js';
-import { FrameClock, FramePacer } from './timing.js';
+import { FrameClock, FramePacer, PHYSICS_STEP } from './timing.js';
 import { setupControlHelp, controlHelpDismissed, updateControlHelp } from './control-help.js';
 import { BrowserVR } from './vr.js';
 import { VRStatus } from './vr-status.js';
@@ -78,6 +79,8 @@ setupControlHelp();
 const $ = selector => document.querySelector(selector);
 const MENU_MOVES = ['menuNext', 'menuPrevious', 'menuUp', 'menuDown'];
 const MENU_CRUISE_SPEED = 16 * 1.4;
+// Steps of the simulation run behind the loading screen (see boot)
+const WARM_STEPS = 16;
 // How fast the right stick turns the camera, pushed all the way (rad/s)
 const STICK_LOOK = 2.4;
 let paused = false, started = false, time = 0, hudTime = 0, gameMode = 'taxi';
@@ -546,7 +549,9 @@ async function boot() {
     // through dark: under the camera it popped from one car to the other.
     function takeCar(id, carPaint) {
       if (vehicle.carId === id && !vehicle.walker && !onFoot.borrowed && !onFoot.bay) return;
-      dipToDark(); onFoot.setCar(id, { paint: carPaint }); recoverCar();
+      // (the title's cars were built behind the loading screen: see prepared)
+      const model = prepared.get(id); prepared.clear();
+      dipToDark(); onFoot.setCar(id, { paint: carPaint, model }); recoverCar();
     }
     // Free drive in a cab the fleet owns is a taxi on standby: the fares wait
     // round it, and stopping in a ring starts a shift there and then (see
@@ -554,6 +559,7 @@ async function boot() {
     // into anything else, puts it away. A cab the fleet doesn't own is only a
     // test drive. The demolition truck is the same: the run's clock waits for
     // the first thing it hits (see DemolitionRun.standby).
+    const prepared = new Map();
     const ownCab = id => carEntry(id).taxi && taxi.fleet.owned.has(id);
     const streetCar = () => vehicle.actor.source !== 'garage';
     const workingCab = () => carEntry(vehicle.carId).taxi && (streetCar() || ownCab(vehicle.carId));
@@ -1950,7 +1956,10 @@ async function boot() {
         }
         hintMouseLook(dt); showHints(performance.now());
         if (input.touchStick.lookPointer !== null && looking()) rendering.look(0, 0);
-        world.update(vehicle.s, vehicle.u, { budgetMs: 3 }); vehicle.render(frameClock.alpha, world.origin); onFoot.render(frameClock.alpha, world.origin);
+        world.update(vehicle.s, vehicle.u, { budgetMs: 3 });
+        // (what can come loose in the chunks just built, made ready before a car reaches it: see LooseProps.warm)
+        props.warm(world.chunks);
+        vehicle.render(frameClock.alpha, world.origin); onFoot.render(frameClock.alpha, world.origin);
         // (on foot, what catches their eye, the camera included, as the colliders lie, and the car they would get into)
         const lens = rendering.camera.position;
         onFoot.lookAround(world, time, { x: lens.x, z: lens.z - world.origin });
@@ -1969,6 +1978,7 @@ async function boot() {
         pigeons.gather(world.chunks.values(), at.x, at.z, time, pigeonGround);
         pigeons.scare({ x: at.x, y: at.y, z: at.z, speed: Math.abs(vehicle.speed), car: !vehicle.walker, airborne: Boolean(vehicle.walker && !vehicle.walker.grounded) }, time, world.chunks.values());
         pigeons.render(world.origin, time);
+        if (!started && !vr.active) taxi.warmOffers(vehicle);
         applyWeather(dt);
       }
       // (a flying machine's climbs and dives count as surges too, and so does a
@@ -2038,6 +2048,12 @@ async function boot() {
       async ({ copy, show }) => { drawWorldMap(copy(worldMapDialog, { dialog: true })); copy($('#taxi-results')); copy($('#demolition-results')); await show(); },
     ]).catch(error => console.warn('Interface warm-up failed', error));
     await loadingStage('graphics');
+    // The cars the title's buttons put the player in, built here instead of at
+    // the tap (see prepareCar)
+    for (const id of [freeCarId, DEMOLITION_CAR, taxi.fleet.selected]) if (id !== vehicle.carId && !prepared.has(id)) prepared.set(id, prepareCar(id));
+    // and whatever round them can come loose, and a resident knocked flying,
+    // with a first knock of each kind tried out of sight (see LooseProps.warmupSteps)
+    for (const step of props.warmupSteps(world.chunks, [cityWalker])) void step;
     // (the shop signs are blank until their sheet has loaded)
     await signSheet;
     // (someone on foot, and their parachute)
@@ -2049,6 +2065,11 @@ async function boot() {
     await rendering.ambientOcclusion.prepare();
     await interfaceWarmed;
     changingJourney = false;
+    // The traffic's first steps plan every car's way on, and all the driving
+    // code runs cold: here, not in the title's first frames.
+    for (let step = 0; step < WARM_STEPS; step++) simulate(PHYSICS_STEP);
+    vehicle.render(0, world.origin); traffic.render(1, world.origin);
+    rendering.warmView(vehicle.car, world.origin);
     renderer.setAnimationLoop(frame);
     // `?xr` in development emulates a Quest 3 (see xr-emulator.js).
     const emulate = new URLSearchParams(window.location.search).get('xr');

@@ -126,12 +126,14 @@ try {
       const props = new LooseProps(scene, material);
       const stands = [...effects.warmupObjects(), ...props.warmupObjects()];
       const geometries = new Set(stands.map(mesh => mesh.geometry)), drawn = new Map();
+      let fogless = 0;
       const direct = renderer.renderBufferDirect;
       renderer.renderBufferDirect = function (...args) {
         if (geometries.has(args[2]) && args[4].count > 0) {
           const fog = Boolean(args[1].fog), modes = drawn.get(args[2]) ?? new Set();
           modes.add(fog); drawn.set(args[2], modes);
         }
+        if (!args[1].fog) fogless++;
         return direct.apply(this, args);
       };
       const has = renderer.extensions.has.bind(renderer.extensions);
@@ -143,9 +145,11 @@ try {
       await rendering.precompile(stands);
       const gl = renderer.getContext();
       if (gl.getError() !== gl.NO_ERROR) throw new Error('Hidden warm-up draw failed WebGL');
+      // (every view draws with fog in its programs, the overhead ones out of its reach: one set of programs)
       for (const geometry of geometries) {
-        if (drawn.get(geometry)?.size !== 2) throw new Error('Effect was not drawn with and without fog during warm-up');
+        if (!drawn.get(geometry)?.has(true)) throw new Error('Effect was not drawn during warm-up');
       }
+      if (fogless) throw new Error(`Warm-up drew ${fogless} times without fog, a second set of programs`);
       if (!renderer.getViewport(new THREE.Vector4()).equals(viewport) || !renderer.getScissor(new THREE.Vector4()).equals(scissor)
         || !renderer.getScissorTest() || renderer.autoClear || !renderer.shadowMap.autoUpdate || !renderer.shadowMap.needsUpdate
         || scene.fog !== fog || children.some((child, i) => scene.children[i] !== child)) throw new Error('Warm-up changed scene or renderer state');
@@ -159,9 +163,10 @@ try {
       for (const mesh of [...effects.group.children, props.bits.mesh, props.bits.puffs]) {
         mesh.visible = true; mesh.count = 1; mesh.setMatrixAt(0, matrix);
       }
-      for (const fogged of [false, true, false, true]) {
-        rendering.setView(fogged ? 2 : 0);
+      for (const chase of [false, true, false, true]) {
+        rendering.setView(chase ? 2 : 0);
         renderer.render(scene, lens);
+        if (!scene.fog) throw new Error('A view drew without fog in its programs');
       }
       const glError = gl.getError();
       if (links !== 0 || glError !== gl.NO_ERROR) throw new Error(`First use of a warmed effect compiled ${links} new programs or failed WebGL (${glError}, parallel ${parallel})`);

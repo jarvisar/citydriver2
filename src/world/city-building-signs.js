@@ -55,11 +55,22 @@ export function buildingSignage(b) {
 // end of the fascia, a little smaller if need be, if far less of it is hidden.
 const IN_FRONT = { lamp: .3, 'median-lamp': .3, lantern: .3, signal: .3 };
 function obstaclesBefore(c, f) {
-  const obstacles = [];
-  for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (const piece of c.world?.furnitureByChunk?.get(`${c.ix + dx},${c.iz + dz}`) ?? []) {
-    const reach = piece.kind === 'tree' ? piece.scale * .52 : IN_FRONT[piece.kind] ?? 0;
-    if (!reach) continue;
-    const q = f.local(piece.u - c.east, piece.s - c.start);
+  // (the trees and posts of this cell and those round it, listed once a
+  // build as x, s and reach: every sign of every front went through all
+  // their furniture, a third of a cell's fronts' time)
+  if (!c.standing) {
+    c.standing = [];
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (const piece of c.world?.furnitureByChunk?.get(`${c.ix + dx},${c.iz + dz}`) ?? []) {
+      const reach = piece.kind === 'tree' ? piece.scale * .52 : IN_FRONT[piece.kind] ?? 0;
+      if (reach) c.standing.push(piece.u - c.east, piece.s - c.start, reach);
+    }
+  }
+  const obstacles = [], standing = c.standing, middle = f.position(0, 0, 0);
+  for (let i = 0; i < standing.length; i += 3) {
+    // (the front is asked only about those near enough its middle to be before it)
+    const x = standing[i], s = standing[i + 1], reach = standing[i + 2], far = f.span / 2 + reach + 1;
+    if ((x - middle[0]) ** 2 + (s + middle[2]) ** 2 > far * far + 100) continue;
+    const q = f.local(x, s);
     if (q.outward > .5 && q.outward < 9 && Math.abs(q.offset) < f.span / 2 + reach) obstacles.push({ ...q, reach });
   }
   return obstacles;

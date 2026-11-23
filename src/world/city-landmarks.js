@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { seededRandom } from './route.js';
 import { PAVEMENT_LEVEL as G } from './city-route.js';
-import { edgeFacade, edgeWindows, shopAwning, cornice, exitDistance } from './city-building-parts.js';
+import { edgeFacade, edgeWindows, shopAwning, cornice, exitDistance, through } from './city-building-parts.js';
 import { footprintSolids } from './colliders.js';
 import { landmarkSite, venueFootprint } from './landmark-site.js';
 import { discoverySignFor, signCore } from './city-signs.js';
@@ -80,7 +80,10 @@ const KIND = {
   donut: 'diner', clock: 'plaza', art: 'plaza', garden: 'glasshouse',
 };
 
-export function buildLandmark(c, lot, place) {
+export function buildLandmark(c, lot, place) { return through(buildLandmarkSteps(c, lot, place)); }
+// (its grounds, body and windows a few steps each: a venue was a cell's
+// slowest step, up to a millisecond here)
+export function* buildLandmarkSteps(c, lot, place) {
   const site = place.footprint ?? venueFootprint(landmarkSite(lot), place.type);
   if (!site) return false;
   const random = seededRandom((lot.seed ^ 0x51ed) >>> 0), kind = KIND[place.type] ?? 'hall';
@@ -152,8 +155,9 @@ export function buildLandmark(c, lot, place) {
   // stands behind one
   const windowRuns = [];
   const windows = (ring, bottom, floors, type = 'deco') => windowRuns.push([ring, bottom, floors, type]);
-  const drawWindows = () => {
+  const drawWindows = function* () {
     for (const [ring, bottom, floors, type] of windowRuns) for (let i = 0; i < ring.length; i++) {
+      yield;
       const f = edgeFacade(c, ring[i], ring[(i + 1) % ring.length]);
       f.street = false;
       // (a board on this wall: square with it, and close to its face)
@@ -244,12 +248,13 @@ export function buildLandmark(c, lot, place) {
   keep.push(...flags);
   const layout = { c, at, box, localRing, onLot, type: place.type, variant: place.variant, W, D, setback, front, court, plinth: plinthAt, doors, along, facing, taken, keep, paved: Boolean(site.paved) };
   const plan = planGrounds(layout);
+  yield;
   // The grounds: the site laid to lawn (or paved, for a works, a station or a
   // market), the forecourt from the street to the door and a path round the
   // building, clipped to the lot; trees along the lot's edges and in its open
   // lawn, clear of both, the name's plinth and whatever the grounds hold; and
   // for a civic hall flower beds either side of the forecourt and its flags
-  const grounds = () => {
+  const grounds = function* () {
     if (plan.cover) c.polygon(lotLocal.map(p => [p.x, p.y]), G + .05, .06, plan.cover);
     else {
       c.polygon(lotLocal.map(p => [p.x, p.y]), G + .05, .06, LAWN);
@@ -271,6 +276,7 @@ export function buildLandmark(c, lot, place) {
     const paving = intersection(region(union(solids([apron, around.map(p => ({ x: p.x, y: p.s }))]))), solids([lotLocal]));
     // (its ten-centimeter edge at the pavement is closed as every thin slab's is, see addSurfacePolygon)
     for (const piece of paving) c.polygon(piece.outer.map(p => [p.x, p.y]), G + .07, .06, PAVING);
+    yield;
     // Where a tree may stand: on the lawn, clear of the lot's edge, the
     // building and the forecourt
     const edge = [...lotLocal, lotLocal[0]];
@@ -318,6 +324,7 @@ export function buildLandmark(c, lot, place) {
       plant(p, 7 + random() * 2.5);
       if (trees.length > before) placed++;
     }
+    yield;
     buildGrounds(layout, plan);
     // The skyline plants no trees but makes the same draws, so what is drawn
     // next (a tower's floors) matches the detailed building
@@ -422,7 +429,8 @@ export function buildLandmark(c, lot, place) {
     }
     c.post(p.x, p.s, size * .6);
   };
-  grounds();
+  yield* grounds();
+  yield;
   let top = G;
   if (kind === 'hall') {
     const H = place.type === 'cityhall' ? 15 : place.type === 'hospital' ? 16 : 12.5, body = localRing(W, D);
@@ -747,11 +755,11 @@ export function buildLandmark(c, lot, place) {
       c.post(pool.x, pool.s, 3.3);
     }
     plinthSign(-(W * .3), front + 1.8);
-    drawWindows();
+    yield* drawWindows();
     record(16);
     return true;
   }
-  drawWindows();
+  yield* drawWindows();
   record(top - G);
   solidBody(footprint ?? localRing(W, D), top);
   return true;

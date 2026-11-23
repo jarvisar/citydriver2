@@ -100,17 +100,20 @@ export class CityMapCache {
     this.showing.set(name, { runs: included, path });
     return path;
   }
-  whole(list, closed) {
+  // A layer's runs joined into one path: the same points in the same order as
+  // drawing its shapes into it one by one. (Chrome measures the whole path
+  // so far each time a shape in it is closed: the lots took 90 ms that way.)
+  whole(runs) {
     const path = this.makePath();
-    for (const points of list) { points.forEach((p, i) => path[i ? 'lineTo' : 'moveTo'](p.x, p.y)); if (closed) path.closePath(); }
+    for (const run of runs) path.addPath(run.path);
     return path;
   }
-  get water() { return this.#water ??= this.whole(this.shapes.water, true); }
-  get parks() { return this.#parks ??= this.whole(this.shapes.parks, true); }
-  get blocks() { return this.#blocks ??= this.whole(this.shapes.blocks, true); }
-  get lots() { return this.#lots ??= this.whole(this.shapes.lots, true); }
-  get grounds() { return this.#grounds ??= this.whole(this.shapes.grounds, true); }
-  get roads() { return this.#roads ??= new Map([...this.lines].map(([key, lines]) => [key, this.whole(lines, false)])); }
+  get water() { return this.#water ??= this.whole(this.runs.water); }
+  get parks() { return this.#parks ??= this.whole(this.runs.parks); }
+  get blocks() { return this.#blocks ??= this.whole(this.runs.blocks); }
+  get lots() { return this.#lots ??= this.whole(this.runs.lots); }
+  get grounds() { return this.#grounds ??= this.whole(this.runs.grounds); }
+  get roads() { return this.#roads ??= new Map([...this.strokes].map(([key, runs]) => [key, this.whole(runs)])); }
   #water = null; #parks = null; #blocks = null; #lots = null; #grounds = null; #roads = null;
   // Rotate a north-up bitmap each frame. The extra border covers turns and
   // short moves without rasterizing the streets again.

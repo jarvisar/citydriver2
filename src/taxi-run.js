@@ -438,6 +438,17 @@ export class TaxiRun {
   // Offers to work out ahead of need (see LOOK_AHEAD): the pickup sites
   // within `range` of `centre`, nearest first. Only the offer cache changes.
   lookAround(centre, range) { this.ahead = { centre, range, stops: null }; }
+  // On the title, the offers round the menu's cab, one a frame (see
+  // partyFor), so Taxi shift finds them ready. All at once at the tap they
+  // held up its first frame, 12 ms on a desktop. Only the offer cache changes.
+  warmOffers(player) {
+    const near = this.titleStops;
+    if (!near || Math.hypot(player.s - near.s, player.u - near.u) > B / 2) { this.titleStops = { s: player.s, u: player.u, stops: nearbyCustomerStops(player) }; return; }
+    while (near.stops.length) {
+      const stop = near.stops.shift();
+      if (!offers.has(stop.id)) { partyFor(stop); return; }
+    }
+  }
   lookAhead() {
     const ahead = this.ahead;
     // In overtime the shift ends with this ride

@@ -163,6 +163,17 @@ const position = new THREE.Vector3(), rotation = new THREE.Quaternion(), scale =
 // about its center of mass (the middle of that surface); and its turning
 // inertia per tonne, as a box its size.
 const shapes = new WeakMap();
+// The chunks whose furniture has had its shapes made ahead (see
+// LooseProps.warmupSteps), and the ways of coming loose tried out there
+const scanned = new WeakSet(), rehearsed = new Set();
+// The first of `colliders` from `i` on with a piece whose shape is yet to be made, or -1
+function unshaped(colliders, i) {
+  for (; i < colliders.length; i++) {
+    const pieces = colliders[i].prop?.pieces;
+    if (pieces) for (const piece of pieces) if (!shapes.has(piece.geometry)) return i;
+  }
+  return -1;
+}
 // How high a piece of standing furniture reaches (the world height of its
 // top: a tree's crown, a lamp's head), worked out once, for the helicopter
 // to fly over it or into it
@@ -180,34 +191,103 @@ export function propTop(collider) {
   }
   return prop.top;
 }
+// Models with the same corners (a tree's greens, a stall's awnings, a flag's
+// colors) stand on one shape: `forms` has each by a hash of its corners,
+// which are then compared
+const forms = new Map();
+function formOf(geometry) {
+  const position = geometry.attributes.position.array, index = geometry.index?.array ?? null;
+  if (geometry.userData.contact || geometry.attributes.position.isInterleavedBufferAttribute || !(position instanceof Float32Array)) return null;
+  const bits = new Uint32Array(position.buffer, position.byteOffset, position.length);
+  let hash = bits.length;
+  for (let i = 0; i < bits.length; i++) hash = Math.imul(hash ^ bits[i], 16777619);
+  if (index) for (let i = 0; i < index.length; i++) hash = Math.imul(hash ^ index[i], 16777619);
+  return { hash, bits, index };
+}
+function formed(form) {
+  const same = (a, b) => a === b || (a && b && a.length === b.length && a.every((v, i) => v === b[i]));
+  return forms.get(form.hash)?.find(made => same(made.bits, form.bits) && same(made.index, form.index))?.shape;
+}
+// A model's shape a little at a time (see LooseProps.warmupSteps): each step a
+// fraction of a millisecond, the last returning it. Worked out at the first
+// knock, a shape held that frame up a millisecond or more. The steps only
+// call the functions that do the work: a loop in a generator's own body is
+// not compiled while it runs, and is several times slower for it.
+function* shapeSteps(geometry) {
+  if (shapes.has(geometry)) return shapes.get(geometry);
+  const form = formOf(geometry);
+  let shape = form && formed(form);
+  if (!shape) {
+    shape = yield* (geometry.userData.contact ? contactSteps(geometry) : sampledSteps(geometry));
+    // (the first knock may have come meanwhile, and made it: that one stands)
+    if (shapes.has(geometry)) return shapes.get(geometry);
+    const made = form && formed(form);
+    if (made) shape = made;
+    else if (form) (forms.get(form.hash) ?? forms.set(form.hash, []).get(form.hash)).push({ ...form, shape });
+  }
+  shapes.set(geometry, shape);
+  return shape;
+}
 function shapeOf(geometry) {
   if (shapes.has(geometry)) return shapes.get(geometry);
-  if (geometry.userData.contact) return contactShape(geometry);
-  const position = geometry.attributes.position, index = geometry.index?.array, count = index ? index.length : position.count;
-  const vertex = i => index ? index[i] : i, a = new THREE.Vector3(), b = new THREE.Vector3(), samples = [];
-  for (let t = 0; t + 2 < count; t += 3) for (let e = 0; e < 3; e++) {
-    a.fromBufferAttribute(position, vertex(t + e)); b.fromBufferAttribute(position, vertex(t + (e + 1) % 3));
+  const steps = shapeSteps(geometry);
+  for (;;) { const step = steps.next(); if (step.done) return step.value; }
+}
+// A step walks the edges of this many corners' triangles, compares about
+// this many distances, welds this many corners, or hulls about this many
+const WALKED = 180, COMPARED = 60000, WELDED = 360, HULLED = 40;
+const edgeA = new THREE.Vector3(), edgeB = new THREE.Vector3();
+// The edges of the triangles at corners `from` to `to`, walked in short steps onto `samples`
+function walkEdges(position, index, from, to, samples) {
+  const a = edgeA, b = edgeB;
+  for (let t = from; t < to; t += 3) for (let e = 0; e < 3; e++) {
+    a.fromBufferAttribute(position, index ? index[t + e] : t + e); b.fromBufferAttribute(position, index ? index[t + (e + 1) % 3] : t + (e + 1) % 3);
     const steps = Math.max(1, Math.ceil(a.distanceTo(b) / .1));
     for (let k = 0; k < steps; k++) samples.push(a.x + (b.x - a.x) * k / steps, a.y + (b.y - a.y) * k / steps, a.z + (b.z - a.z) * k / steps);
   }
-  const total = samples.length / 3, com = new THREE.Vector3(), low = new THREE.Vector3(Infinity, Infinity, Infinity), high = low.clone().negate();
-  for (let i = 0; i < total; i++) { a.fromArray(samples, i * 3); com.add(a); low.min(a); high.max(a); }
-  com.divideScalar(total);
-  const nearest = new Float32Array(total).fill(Infinity), chosen = [], spacing = Math.min(.45, high.distanceTo(low) / 6);
+}
+// The samples' sum into `com`, and their bounds
+function span(samples, com, low, high) {
+  const a = edgeA;
+  for (let i = 0; i < samples.length; i += 3) { a.fromArray(samples, i); com.add(a); low.min(a); high.max(a); }
+}
+// The sample furthest from (x, y, z)
+function furthest(samples, x, y, z) {
   let pick = 0, far = -1;
-  for (let i = 0; i < total; i++) {
-    const d = (samples[i * 3] - com.x) ** 2 + (samples[i * 3 + 1] - com.y) ** 2 + (samples[i * 3 + 2] - com.z) ** 2;
+  for (let i = 0; i < samples.length / 3; i++) {
+    const d = (samples[i * 3] - x) ** 2 + (samples[i * 3 + 1] - y) ** 2 + (samples[i * 3 + 2] - z) ** 2;
     if (d > far) { far = d; pick = i; }
   }
+  return pick;
+}
+// Sample `pick` taken: each sample's distance to the `nearest` taken so far,
+// and into `taken` the one now furthest from them all and how far (squared)
+const taken = { pick: 0, far: 0 };
+function take(samples, nearest, pick) {
+  const total = nearest.length, x = samples[pick * 3], y = samples[pick * 3 + 1], z = samples[pick * 3 + 2];
+  let far = 0;
+  for (let i = 0; i < total; i++) {
+    const d = (samples[i * 3] - x) ** 2 + (samples[i * 3 + 1] - y) ** 2 + (samples[i * 3 + 2] - z) ** 2;
+    if (d < nearest[i]) nearest[i] = d;
+    if (nearest[i] > far) { far = nearest[i]; pick = i; }
+  }
+  taken.pick = pick; taken.far = far;
+}
+function* sampledSteps(geometry) {
+  const position = geometry.attributes.position, index = geometry.index?.array, count = index ? index.length : position.count, samples = [];
+  for (let t = 0; t + 2 < count; t += WALKED) { walkEdges(position, index, t, Math.min(t + WALKED, count - 2), samples); yield; }
+  const total = samples.length / 3, com = new THREE.Vector3(), low = new THREE.Vector3(Infinity, Infinity, Infinity), high = low.clone().negate();
+  span(samples, com, low, high);
+  com.divideScalar(total);
+  const nearest = new Float32Array(total).fill(Infinity), chosen = [], spacing = Math.min(.45, high.distanceTo(low) / 6);
+  let pick = furthest(samples, com.x, com.y, com.z);
+  yield;
+  const picks = Math.max(1, Math.floor(COMPARED / total));
   while (chosen.length < 56) {
-    chosen.push(pick); far = 0;
-    const x = samples[pick * 3], y = samples[pick * 3 + 1], z = samples[pick * 3 + 2];
-    for (let i = 0; i < total; i++) {
-      const d = (samples[i * 3] - x) ** 2 + (samples[i * 3 + 1] - y) ** 2 + (samples[i * 3 + 2] - z) ** 2;
-      if (d < nearest[i]) nearest[i] = d;
-      if (nearest[i] > far) { far = nearest[i]; pick = i; }
-    }
-    if (far < spacing ** 2) break;
+    chosen.push(pick);
+    take(samples, nearest, pick); pick = taken.pick;
+    if (taken.far < spacing ** 2) break;
+    if (chosen.length % picks === 0) yield;
   }
   const points = new Float32Array(chosen.length * 3);
   let radius = 0;
@@ -215,16 +295,16 @@ function shapeOf(geometry) {
     points[k * 3] = samples[i * 3] - com.x; points[k * 3 + 1] = samples[i * 3 + 1] - com.y; points[k * 3 + 2] = samples[i * 3 + 2] - com.z;
     radius = Math.max(radius, Math.hypot(points[k * 3], points[k * 3 + 1], points[k * 3 + 2]));
   });
-  const size = high.clone().sub(low), shape = {
-    points, com, size, radius, height: size.y, parts: partsOf(geometry, com),
+  yield;
+  const size = high.clone().sub(low);
+  return {
+    points, com, size, radius, height: size.y, parts: yield* partSteps(geometry, com),
     inertia: new THREE.Vector3((size.y ** 2 + size.z ** 2) / 12, (size.x ** 2 + size.z ** 2) / 12, (size.x ** 2 + size.y ** 2) / 12),
   };
-  shapes.set(geometry, shape);
-  return shape;
 }
 // A model that gives its own points to stand on (`userData.contact`, a person:
 // see walkerContact), about their middle
-function contactShape(geometry) {
+function* contactSteps(geometry) {
   const given = geometry.userData.contact, com = new THREE.Vector3(), a = new THREE.Vector3();
   const low = new THREE.Vector3(Infinity, Infinity, Infinity), high = low.clone().negate();
   for (let i = 0; i < given.length; i += 3) { a.fromArray(given, i); com.add(a); low.min(a); high.max(a); }
@@ -235,12 +315,11 @@ function contactShape(geometry) {
     a.fromArray(given, i).sub(com); a.toArray(points, i);
     radius = Math.max(radius, a.length());
   }
-  const size = high.clone().sub(low), shape = {
-    points, com, size, radius, height: size.y, parts: partsOf(geometry, com),
+  const size = high.clone().sub(low);
+  return {
+    points, com, size, radius, height: size.y, parts: yield* partSteps(geometry, com),
     inertia: new THREE.Vector3((size.y ** 2 + size.z ** 2) / 12, (size.x ** 2 + size.z ** 2) / 12, (size.x ** 2 + size.y ** 2) / 12),
   };
-  shapes.set(geometry, shape);
-  return shape;
 }
 // A model's solid parts, for other loose pieces to meet it (see meet). The
 // furniture is built of simple solids (a pole, an arm, a lamp's head, a
@@ -251,41 +330,55 @@ function contactShape(geometry) {
 // each), within a sphere ({ x, y, z, r }) that turns most points away first.
 // (One hull round the whole piece would fill in a lamp's arm and a cafe
 // parasol's shade.) Null if it has none.
-function partsOf(geometry, com) {
+function* partSteps(geometry, com) {
   const position = geometry.attributes.position, index = geometry.index?.array, count = index ? index.length : position.count;
   // (corners welded where parts of one solid meet, then joined triangle by triangle)
-  const weld = new Map(), parent = [], corners = [], at = new THREE.Vector3();
+  const welded = { weld: new Map(), parent: [], corners: [] };
+  for (let t = 0; t + 2 < count; t += WELDED) { weldCorners(position, index, t, Math.min(t + WELDED, count - 2), com, welded); yield; }
+  const parts = [];
+  let hulled = 0;
+  for (const points of joined(welded)) {
+    if ((hulled += points.length) > HULLED) { hulled = 0; yield; }
+    const part = hullOf(points);
+    if (part) parts.push(part);
+  }
+  return parts.length ? parts : null;
+}
+const rootOf = (parent, k) => { while (parent[k] !== k) k = parent[k] = parent[parent[k]]; return k; };
+function weldCorners(position, index, from, to, com, { weld, parent, corners }) {
+  const at = edgeA;
   const corner = i => {
     at.fromBufferAttribute(position, index ? index[i] : i);
     const key = `${Math.round(at.x * 1e4)},${Math.round(at.y * 1e4)},${Math.round(at.z * 1e4)}`;
     if (!weld.has(key)) { weld.set(key, corners.length); parent.push(corners.length); corners.push(at.clone().sub(com)); }
     return weld.get(key);
   };
-  const root = k => { while (parent[k] !== k) k = parent[k] = parent[parent[k]]; return k; };
-  for (let t = 0; t + 2 < count; t += 3) {
+  for (let t = from; t < to; t += 3) {
     const a = corner(t), b = corner(t + 1), c = corner(t + 2);
-    parent[root(a)] = root(b); parent[root(b)] = root(c);
+    parent[rootOf(parent, a)] = rootOf(parent, b); parent[rootOf(parent, b)] = rootOf(parent, c);
   }
+}
+// Each separate part's corners
+function joined({ parent, corners }) {
   const groups = new Map();
-  corners.forEach((p, k) => { const r = root(k); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(p); });
-  const parts = [];
-  for (const points of groups.values()) {
-    let hull;
-    try { hull = new ConvexHull().setFromPoints(points); } catch { continue; }
-    if (!hull.faces.length) continue;
-    // (each face once: a box's faces come as pairs of triangles)
-    const planes = [];
-    for (const face of hull.faces) {
-      const { x, y, z } = face.normal, c = face.constant;
-      let same = false;
-      for (let k = 0; k < planes.length && !same; k += 4) same = planes[k] * x + planes[k + 1] * y + planes[k + 2] * z > .9999 && Math.abs(planes[k + 3] - c) < 1e-4;
-      if (!same) planes.push(x, y, z, c);
-    }
-    const middle = new THREE.Box3().setFromPoints(points).getCenter(new THREE.Vector3());
-    const r = Math.sqrt(Math.max(...points.map(p => p.distanceToSquared(middle))));
-    parts.push({ x: middle.x, y: middle.y, z: middle.z, r, planes: new Float32Array(planes) });
+  corners.forEach((p, k) => { const r = rootOf(parent, k); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(p); });
+  return [...groups.values()];
+}
+function hullOf(points) {
+  let hull;
+  try { hull = new ConvexHull().setFromPoints(points); } catch { return null; }
+  if (!hull.faces.length) return null;
+  // (each face once: a box's faces come as pairs of triangles)
+  const planes = [];
+  for (const face of hull.faces) {
+    const { x, y, z } = face.normal, c = face.constant;
+    let same = false;
+    for (let k = 0; k < planes.length && !same; k += 4) same = planes[k] * x + planes[k + 1] * y + planes[k + 2] * z > .9999 && Math.abs(planes[k + 3] - c) < 1e-4;
+    if (!same) planes.push(x, y, z, c);
   }
-  return parts.length ? parts : null;
+  const middle = new THREE.Box3().setFromPoints(points).getCenter(new THREE.Vector3());
+  const r = Math.sqrt(Math.max(...points.map(p => p.distanceToSquared(middle))));
+  return { x: middle.x, y: middle.y, z: middle.z, r, planes: new Float32Array(planes) };
 }
 
 // A shape scaled by `s` (a Vector3), for a piece drawn scaled
@@ -470,7 +563,7 @@ export function overlap(a, b) {
   return Math.max(deepestIn(a, b).depth, deepestIn(b, a).depth);
 }
 // The deepest of `body`'s points inside one of `other`'s parts (see
-// partsOf): `depth` (0 if none is), the point (from body's center, in the
+// partSteps): `depth` (0 if none is), the point (from body's center, in the
 // world) `at`, and the way out through that part's nearest face (in the world) `n`.
 // With `entry`, a point that was outside a step ago goes back out the face it
 // came in by instead, as against a wall: a person falling onto a bench went
@@ -641,6 +734,69 @@ export class LooseProps {
       standIn.setColorAt(0, white);
       return standIn;
     });
+  }
+  // Whatever can come loose in `chunks` (a Map of them, or a list: see
+  // CityChunk.knockable) made ready before a car reaches it: each piece's
+  // model (a tree's or a mast's is made when first asked for) and its shape
+  // (see shapeSteps), and those of `models` besides (a resident's, see
+  // person). A step is a fraction of a millisecond, but for the first few of
+  // a visit, which run everything for the first time. A chunk is looked
+  // through once.
+  *warmupSteps(chunks, models = []) {
+    for (const geometry of models) yield* shapeSteps(geometry);
+    for (const chunk of chunks.values?.() ?? chunks) {
+      const colliders = chunk.features?.colliders;
+      if (!colliders || scanned.has(chunk)) continue;
+      for (let i = unshaped(colliders, 0); i >= 0; i = unshaped(colliders, i + 1)) {
+        yield;
+        for (const piece of colliders[i].prop.pieces) yield* shapeSteps(piece.geometry);
+      }
+      // (the first post found, and the first piece that flies)
+      if (rehearsed.size < 2) for (const collider of colliders) {
+        const kind = collider.prop?.pieces[0].kind, way = kind && (KINDS[kind].topples ? 'topple' : 'fling');
+        if (way && !rehearsed.has(way)) { rehearsed.add(way); yield* this.rehearse(collider); }
+      }
+      scanned.add(chunk);
+      yield;
+    }
+  }
+  // What a knock runs, run before the first one: code run for the first
+  // time is several times slower, and a visit's first lamp post cost a frame
+  // or two. `collider`'s pieces are knocked loose in a LooseProps of their
+  // own, which draws nothing, by a car as the player's is (see carOf), fall
+  // against a wall of their own and are driven through, a step at a time.
+  // Nothing of the city's is touched.
+  *rehearse(collider) {
+    const from = collider.prop, base = from.matrix(new THREE.Matrix4()), x = base.elements[12], y = base.elements[13], z = base.elements[14];
+    const stage = new LooseProps(new THREE.Object3D(), this.material), kinds = from.pieces.map(piece => piece.kind);
+    const wall = { x: x + 4, z, reach: 3, corners: [[-1, -2], [1, -2], [1, 2], [-1, 2]].map(([dx, dz]) => ({ x: x + 4 + dx, z: z + dz })) };
+    const chunks = new Map([[0, { collisionBounds: { minX: x - 9, maxX: x + 9, minZ: z - 9, maxZ: z + 9 }, features: { colliders: [wall] } }]]);
+    const nobody = { groundedPosition: new THREE.Vector3(x, y, z), spec: { breaks: kinds }, walker: { down: true } };
+    const standIn = { x, z, prop: { pieces: from.pieces, ready: true, matrix: target => target.copy(base), hide() {} } };
+    // (built as motion() and carOf build the player's, so the code is ready for theirs)
+    const car = { x: x - 2.6, z, heading: Math.PI / 2, halfWidth: .9, halfLength: 2.3, mass: 2.2, vx: 16, vz: 0, spin: 0 };
+    car.y = y; car.height = ROOF; car.profile = undefined; car.owner = null;
+    stage.breaks = kinds;
+    stage.knock(standIn, { x: -1, z: 0, depth: .05, point: { x: x - .3, z } }, car);
+    yield;
+    for (let step = 0; step < 30; step++) {
+      car.x += car.vx / 120;
+      for (const body of stage.bodies) stage.contact(body, car);
+      stage.update(1 / 120, nobody, null, chunks);
+      if (step % 4 === 3) { stage.render(); stage.lying(); }
+      yield;
+    }
+    stage.reset(); stage.dispose();
+  }
+  // A slice of that, `budget` ms of it, in a frame with time to spare: it
+  // carries on from frame to frame and takes in the chunks built since. False
+  // once there is nothing left to do.
+  warm(chunks, models = [], budget = .3) {
+    if (this.warmingOver !== chunks) { this.warming = null; this.warmingOver = chunks; }
+    this.warming ??= this.warmupSteps(chunks, models);
+    const until = performance.now() + budget;
+    do if (this.warming.next().done) { this.warming = null; return false; } while (performance.now() < until);
+    return true;
   }
   // A car running into standing furniture (`contact` as sceneryContacts
   // gives it, `car` as motion() gives it plus its ground height `y`): null if
@@ -918,7 +1074,7 @@ export class LooseProps {
     if (best >= 0) r.set(points[best], points[best + 1], points[best + 2]).applyQuaternion(body.q);
     // Someone on foot is narrower than the gaps between a long piece's
     // points (a fallen post's are up to a meter apart), so their outline
-    // is also tried against its solid parts (see partsOf)
+    // is also tried against its solid parts (see partSteps)
     if (round && body.shape.parts) {
       into.copy(body.q).invert();
       for (const [x, z] of OUTLINE) for (const up of OUTLINE_HEIGHTS) {

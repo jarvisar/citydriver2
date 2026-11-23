@@ -13,7 +13,7 @@ import { seededRandom, randomAt } from './route.js';
 import { residentWindow } from './resident.js';
 import { buildCityBuildingSteps } from './city-buildings.js';
 import { createSignMaterials, discoverySignFor, signCore } from './city-signs.js';
-import { cityItemMatrix, cityRigidFrame, cityAffinePoint, itemFrame } from './city-layout-render.js';
+import { cityItemMatrix, cityRigidFrame, itemFrame } from './city-layout-render.js';
 import { addSurfacePolygon, faceSlabEdges } from './city-surfaces.js';
 import { buildGrassFringeSteps, grassGeometry, MAX_LAWN_TUFTS } from './city-grass.js';
 import { createWaterMaterial } from './city-water.js';
@@ -119,7 +119,7 @@ function batchFlags(key, material, distant = false) {
 const SMALL_CASTERS = new Set(['residents', 'lantern', 'bin', 'bollard', 'railing', 'signal', 'signal-head', 'stop', 'yield', 'parking-sign', 'mooring-line',
   'hydrant', 'post-box', 'cabinet', 'news-boxes', 'bike-rack']);
 const smallCaster = key => SMALL_CASTERS.has(key) || key.startsWith('square-flowers-');
-const facadeTrim = ({ scale: [x, y, z] }) => Math.min(x, y, z) < .3 && Math.min(x, z) < .6;
+const facadeTrim = ({ scale }) => Math.min(scale[0], scale[1], scale[2]) < .3 && Math.min(scale[0], scale[2]) < .6;
 // A curbside fitting's collider: a post's radius, or a box across and along the curb
 const FITTINGS = { hydrant: [.2], 'post-box': [.28], cabinet: [.5, .9], 'news-boxes': [.5, 1.65], 'bike-rack': [.8, 1.3] };
 function castFirst() {
@@ -144,6 +144,81 @@ function applyShadowDetail(group, full) {
     else if (from !== undefined) mesh.userData.lowShadow = !full;
   }
 }
+// A geometry's bounding sphere, exactly as computeBoundingSphere finds it
+// (round the middle of its box, out to its furthest corner), read straight
+// from plain positions: a cell's merged and body meshes are tens of
+// thousands of corners, each read there through an accessor or three, twice
+function boundGeometry(geometry) {
+  const position = geometry.attributes.position, p = position?.array;
+  if (!(p instanceof Float32Array) || position.isInterleavedBufferAttribute || position.normalized || position.itemSize !== 3 || !position.count || geometry.morphAttributes.position) return geometry.computeBoundingSphere();
+  const n = position.count * 3;
+  let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity, most = 0;
+  for (let i = 0; i < n; i += 3) {
+    const x = p[i], y = p[i + 1], z = p[i + 2];
+    x0 = Math.min(x0, x); y0 = Math.min(y0, y); z0 = Math.min(z0, z); x1 = Math.max(x1, x); y1 = Math.max(y1, y); z1 = Math.max(z1, z);
+  }
+  const cx = (x0 + x1) * .5, cy = (y0 + y1) * .5, cz = (z0 + z1) * .5;
+  for (let i = 0; i < n; i += 3) { const dx = cx - p[i], dy = cy - p[i + 1], dz = cz - p[i + 2]; most = Math.max(most, dx * dx + dy * dy + dz * dz); }
+  // (three's own, with its complaint, for a corner that is no number)
+  if (Number.isNaN(most)) return geometry.computeBoundingSphere();
+  geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(cx, cy, cz), Math.sqrt(most));
+}
+// A cell's bodies as Surface.build makes them, but for how their sphere is found
+function bodiesGeometry(bodies) {
+  if (bodies.flows) return bodies.build();
+  const geometry = new THREE.BufferGeometry();
+  for (const name of ['position', 'normal', 'color']) geometry.setAttribute(name, new THREE.BufferAttribute(bodies.joined(`${name}s`), 3));
+  boundGeometry(geometry);
+  return geometry;
+}
+// A cell's building bodies: a Surface whose faces go straight into the
+// single-precision columns its mesh is drawn from, the same numbers to the
+// bit. (A Surface keeps them in full precision, for the static streets that
+// read them back, in blocks it joins and rounds at the end: a cell's bodies
+// are a million faces a load, and that was a tenth of building them.)
+const OVER = 1 + 4e-15, UNDER = 1 - 4e-15;
+// The last cell's columns, up to KEEP floats each, are the next cell's to
+// fill: made afresh for every cell and doubled as they filled, they were
+// zeroed and copied several times over
+const KEEP = 9 * 2 ** 14;
+let spareColumns = null;
+class Bodies extends Surface {
+  constructor() {
+    super();
+    this.columns = spareColumns ?? [new Float32Array(9 * 1024), new Float32Array(9 * 1024), new Float32Array(9 * 1024)];
+    spareColumns = null; this.painted = null;
+  }
+  // Its faces are read out: nothing more is added
+  release() { if (this.columns[0].length <= KEEP) spareColumns = this.columns; this.columns = null; }
+  face(ax, ay, az, bx, by, bz, cx, cy, cz, color, flow = null) {
+    const ux = bx - ax, uy = by - ay, uz = bz - az, vx = cx - ax, vy = cy - ay, vz = cz - az;
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    // The normal by a square root, which is within a few parts in 1e16 of
+    // Math.hypot (many times slower): hypot is asked only where a component
+    // is so near halfway between two single-precision numbers that its last
+    // bit could round it the other way
+    const square = nx * nx + ny * ny + nz * nz, root = Math.sqrt(square), f = Math.fround;
+    let x = nx / root, y = ny / root, z = nz / root;
+    if (!(square > 1e-200 && square < 1e200) || f(x * OVER) !== f(x * UNDER) || f(y * OVER) !== f(y * UNDER) || f(z * OVER) !== f(z * UNDER)) {
+      const length = Math.hypot(nx, ny, nz) || 1;
+      x = nx / length; y = ny / length; z = nz / length;
+    }
+    const o = this.size;
+    if (o + 9 > this.columns[0].length) this.columns = this.columns.map(column => { const next = new Float32Array(column.length * 2); next.set(column); return next; });
+    const p = this.columns[0], n = this.columns[1], c = this.columns[2];
+    p[o] = ax; p[o + 1] = ay; p[o + 2] = az; p[o + 3] = bx; p[o + 4] = by; p[o + 5] = bz; p[o + 6] = cx; p[o + 7] = cy; p[o + 8] = cz;
+    // (a color named as the face before's is the one already read; a Color itself may have changed)
+    if (color !== this.painted || typeof color !== 'string') { setColor(this.color, color); this.painted = color; }
+    const { r, g, b } = this.color;
+    for (let k = o; k < o + 9; k += 3) { n[k] = x; n[k + 1] = y; n[k + 2] = z; c[k] = r; c[k + 1] = g; c[k + 2] = b; }
+    this.size = o + 9;
+    if (flow) { this.flows ??= []; for (let i = 0; i < 3; i++) this.flows.push(flow[0], flow[1]); }
+  }
+  joined(name, Type = Float32Array) {
+    const column = this.columns[name === 'positions' ? 0 : name === 'normals' ? 1 : 2];
+    return Type === Float32Array ? column.slice(0, this.size) : new Type(column.subarray(0, this.size));
+  }
+}
 function finishBatchMesh(mesh, { castShadow, receiveShadow, ambientOcclusion }, structure) {
   mesh.renderOrder = structure ? -2 : 0;
   mesh.castShadow = castShadow; mesh.receiveShadow = receiveShadow;
@@ -153,7 +228,7 @@ function finishBatchMesh(mesh, { castShadow, receiveShadow, ambientOcclusion }, 
   mesh.matrixAutoUpdate = false;
   if (mesh.isInstancedMesh) mesh.computeBoundingSphere();
   // (a surface's geometry comes with its sphere)
-  else if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
+  else if (!mesh.geometry.boundingSphere) boundGeometry(mesh.geometry);
   return mesh;
 }
 
@@ -186,6 +261,45 @@ function vectors(attribute) {
   }
   return values;
 }
+// A model's corners (positions p, normals n and colors c, if it has them)
+// turned by an item's matrix and tinted its color, into a merged mesh's
+// columns from `at`
+function bake(m, tint, p, n, c, count, position, normal, color, at) {
+  const f = Math.fround;
+  const e0 = f(m[0]), e1 = f(m[1]), e2 = f(m[2]), e4 = f(m[4]), e5 = f(m[5]), e6 = f(m[6]), e8 = f(m[8]), e9 = f(m[9]), e10 = f(m[10]), e12 = f(m[12]), e13 = f(m[13]), e14 = f(m[14]);
+  const sx = e0 * e0 + e1 * e1 + e2 * e2, sy = e4 * e4 + e5 * e5 + e6 * e6, sz = e8 * e8 + e9 * e9 + e10 * e10;
+  const r = f(tint.r), g = f(tint.g), b = f(tint.b);
+  // (a corner's normal and color are most often those of the corner before: each is worked out once a run)
+  let ax = NaN, ay = NaN, az = NaN, n0 = 0, n1 = 0, n2 = 0, cr = NaN, cg = NaN, cb = NaN, c0 = 0, c1 = 0, c2 = 0;
+  for (let j = 0, o = at, end = count * 3; j < end; j += 3, o += 3) {
+    const x = p[j], y = p[j + 1], z = p[j + 2];
+    position[o] = e0 * x + e4 * y + e8 * z + e12;
+    position[o + 1] = e1 * x + e5 * y + e9 * z + e13;
+    position[o + 2] = e2 * x + e6 * y + e10 * z + e14;
+    if (n[j] !== ax || n[j + 1] !== ay || n[j + 2] !== az) {
+      ax = n[j]; ay = n[j + 1]; az = n[j + 2];
+      const nx = ax / sx, ny = ay / sy, nz = az / sz;
+      const wx = e0 * nx + e4 * ny + e8 * nz, wy = e1 * nx + e5 * ny + e9 * nz, wz = e2 * nx + e6 * ny + e10 * nz;
+      // Math.hypot is slow, and a square root is within a few parts in 1e16
+      // of it: that can round a component another way only from a hair off
+      // halfway between two numbers, and there hypot is asked
+      const square = wx * wx + wy * wy + wz * wz;
+      let unit = 32767 / Math.sqrt(square);
+      n0 = Math.round(wx * unit); n1 = Math.round(wy * unit); n2 = Math.round(wz * unit);
+      if (!(square > 1e-200 && square < 1e200) || Math.abs(wx * unit - n0) > .499999 || Math.abs(wy * unit - n1) > .499999 || Math.abs(wz * unit - n2) > .499999) {
+        unit = 32767 / (Math.hypot(wx, wy, wz) || 1);
+        n0 = Math.round(wx * unit); n1 = Math.round(wy * unit); n2 = Math.round(wz * unit);
+      }
+    }
+    normal[o] = n0; normal[o + 1] = n1; normal[o + 2] = n2;
+    const vr = c ? c[j] : 1, vg = c ? c[j + 1] : 1, vb = c ? c[j + 2] : 1;
+    if (vr !== cr || vg !== cg || vb !== cb) {
+      cr = vr; cg = vg; cb = vb;
+      c0 = Math.round(vr * r * 65535); c1 = Math.round(vg * g * 65535); c2 = Math.round(vb * b * 65535);
+    }
+    color[o] = c0; color[o + 1] = c1; color[o + 2] = c2;
+  }
+}
 function* mergeBatchSteps(entries, east, start, small = () => false) {
   // (what casts at low shadow detail first: see smallCaster)
   entries = [...entries.filter(([key]) => !small(key)), ...entries.filter(([key]) => small(key))];
@@ -197,7 +311,6 @@ function* mergeBatchSteps(entries, east, start, small = () => false) {
   }
   const position = new Float32Array(vertexCount * 3), normal = new Int16Array(vertexCount * 3), color = new Uint16Array(vertexCount * 3);
   const index = vertexCount > 65535 ? new Uint32Array(indexCount) : new Uint16Array(indexCount);
-  const f = Math.fround;
   let vertex = 0, next = 0;
   const record = {}, wakeable = [];
   let shadowFrom;
@@ -209,23 +322,7 @@ function* mergeBatchSteps(entries, east, start, small = () => false) {
     for (let k = 0; k < items.length; k++) {
       const item = items[k], matrix = cityItemMatrix(item, east, start, transform.matrix);
       matrix.toArray(matrices, k * 16);
-      const [e0, e1, e2, , e4, e5, e6, , e8, e9, e10, , e12, e13, e14] = matrix.elements.map(f);
-      const sx = e0 * e0 + e1 * e1 + e2 * e2, sy = e4 * e4 + e5 * e5 + e6 * e6, sz = e8 * e8 + e9 * e9 + e10 * e10;
-      setColor(tint, item.color);
-      const r = f(tint.r), g = f(tint.g), b = f(tint.b);
-      for (let i = 0, j = 0; i < count; i++, j += 3) {
-        const o = (vertex + i) * 3, x = p[j], y = p[j + 1], z = p[j + 2];
-        position[o] = e0 * x + e4 * y + e8 * z + e12;
-        position[o + 1] = e1 * x + e5 * y + e9 * z + e13;
-        position[o + 2] = e2 * x + e6 * y + e10 * z + e14;
-        const nx = n[j] / sx, ny = n[j + 1] / sy, nz = n[j + 2] / sz;
-        const wx = e0 * nx + e4 * ny + e8 * nz, wy = e1 * nx + e5 * ny + e9 * nz, wz = e2 * nx + e6 * ny + e10 * nz;
-        const unit = 32767 / (Math.hypot(wx, wy, wz) || 1);
-        normal[o] = Math.round(wx * unit); normal[o + 1] = Math.round(wy * unit); normal[o + 2] = Math.round(wz * unit);
-        color[o] = Math.round((c ? c[j] : 1) * r * 65535);
-        color[o + 1] = Math.round((c ? c[j + 1] : 1) * g * 65535);
-        color[o + 2] = Math.round((c ? c[j + 2] : 1) * b * 65535);
-      }
+      bake(matrix.elements, setColor(tint, item.color), p, n, c, count, position, normal, color, vertex * 3);
       if (source) for (let i = 0; i < source.length; i++) index[next++] = vertex + source[i];
       else for (let i = 0; i < count; i++) index[next++] = vertex + i;
       if (item.wakeable) wakeable.push(item.render = { start: vertex, count });
@@ -242,9 +339,16 @@ function* mergeBatchSteps(entries, east, start, small = () => false) {
   mesh.name = 'citydriver-merged'; mesh.userData.batches = record;
   castFrom(mesh, shadowFrom);
   for (const render of wakeable) render.mesh = mesh;
-  mesh.dispose = () => { geometry.dispose(); mesh.dispatchEvent({ type: 'dispose' }); };
+  mesh.dispose = mergedDisposal(mesh);
   return mesh;
 }
+// (Made out here, so that it holds the mesh and nothing else. Made inside the
+// merge, it held the merge's `small` too, and through that everything the
+// chunk's render steps had in hand: every item of every batch of every
+// detailed chunk stayed in memory as long as its merged mesh did.)
+const mergedDisposal = mesh => () => { mesh.geometry.dispose(); mesh.dispatchEvent({ type: 'dispose' }); };
+// Whether a batch, by its key, is one of the small casters (see smallCaster)
+const smallBatch = batchKey => smallCaster(batchKey.startsWith('structure-') ? batchKey.slice('structure-'.length) : batchKey);
 export function* blockBatches(group) {
   for (const mesh of group.children) {
     if (mesh.isInstancedMesh) yield { name: mesh.name.slice('citydriver-'.length), mesh, count: mesh.count, matrixAt: (i, target) => mesh.getMatrixAt(i, target) };
@@ -282,31 +386,37 @@ function* renderBatchSteps(group, batches, east = 0, start = 0, distant = false)
   for (const [batchKey, { geometry, material, items: built, structure }] of batches) {
     const key = structure ? batchKey.slice('structure-'.length) : batchKey;
     if (!built.length || merged.has(batchKey)) continue;
-    // (a building's trim last: see facadeTrim)
-    const items = batchKey === 'structure-solid' ? [...built.filter(item => !facadeTrim(item)), ...built.filter(facadeTrim)] : built;
+    // (a building's trim last, from `trimFrom`: see facadeTrim)
+    let items = built, trimFrom = -1;
+    if (batchKey === 'structure-solid') {
+      const trim = [];
+      items = [];
+      for (const item of built) (facadeTrim(item) ? trim : items).push(item);
+      if (trim.length) trimFrom = items.length;
+      for (const item of trim) items.push(item);
+    }
     const mesh = new THREE.InstancedMesh(geometry, material, items.length); mesh.name = `citydriver-${batchKey}`;
+    // (`painted`: the color `tint` holds, most often the next item's too)
+    let painted = null;
     for (let i = 0; i < items.length; i++) {
       // (a big batch, such as a block's window frames, spans several steps)
-      if (i && i % 500 === 0) yield;
+      if (i && i % 500 === 0) { yield; painted = null; }
       const item = items[i];
       const matrix = cityItemMatrix(item, east, start, transform.matrix);
-      mesh.setMatrixAt(i, matrix); mesh.setColorAt(i, setColor(tint, item.color));
+      if (item.color !== painted || typeof painted !== 'string') { setColor(tint, item.color); painted = item.color; }
+      mesh.setMatrixAt(i, matrix); mesh.setColorAt(i, tint);
       if (item.wakeable) item.render = { mesh, index: i };
-      if (item.signTile !== undefined) mesh.setColorAt(i, tint.setRGB(...item.signTile));
+      if (item.signTile !== undefined) { mesh.setColorAt(i, tint.setRGB(...item.signTile)); painted = null; }
       if (key === 'residents') setWalkerAppearance(mesh, i, item.appearance);
     }
     const flags = batchFlags(key, material, distant);
     finishBatchMesh(mesh, flags, structure);
-    if (flags.castShadow) {
-      const trimFrom = items === built ? -1 : items.findIndex(facadeTrim);
-      castFrom(mesh, smallCaster(key) ? 0 : trimFrom === -1 ? undefined : trimFrom);
-    }
+    if (flags.castShadow) castFrom(mesh, smallCaster(key) ? 0 : trimFrom === -1 ? undefined : trimFrom);
     group.add(mesh);
     yield;
   }
-  const small = batchKey => smallCaster(batchKey.startsWith('structure-') ? batchKey.slice('structure-'.length) : batchKey);
   for (const { keys, flags, structure } of merges.values()) {
-    const mesh = yield* mergeBatchSteps(keys.map(key => [key, batches.get(key)]), east, start, flags.castShadow ? small : undefined);
+    const mesh = yield* mergeBatchSteps(keys.map(key => [key, batches.get(key)]), east, start, flags.castShadow ? smallBatch : undefined);
     group.add(finishBatchMesh(mesh, flags, structure));
     yield;
   }
@@ -383,7 +493,8 @@ export class CityChunk {
     this.plan = { seed: Math.floor(randomAt(ix, iz + 7102, CITY.seed) * 0xffffffff) >>> 0, kind: 'blocks', ix, iz };
     this.group = new THREE.Group(); this.group.name = `citydriver-block-${this.index}`; this.group.updateMatrixWorld = settledMatrixWorld;
     this.features = { colliders: [], bridges: [], buildings: [], discoveries: [], medians: [], junctions: [], signals: [], lamps: [], shopLights: [] };
-    this.batches = new Map(); this.bodies = new Surface();
+    this.batches = new Map(); this.bodies = new Bodies(); this.laid = []; this.frames = [];
+    this.key0 = this.key1 = this.batch0 = this.batch1 = null; this.structure0 = this.structure1 = false;
     this.lots = world.lotsByChunk.get(this.index) ?? [];
     this.furniture = world.furnitureByChunk.get(this.index) ?? [];
     this.construction = this.buildSteps();
@@ -405,13 +516,24 @@ export class CityChunk {
     this.buildLife(); yield;
     yield* buildGrassFringeSteps(this); yield;
     yield* this.finishSteps();
-    this.surfacePoints = null; this.surfaceLayers = null;
+    // (and what its fronts' signs kept clear of: see obstaclesBefore)
+    this.surfacePoints = null; this.surfaceLayers = null; this.standing = null;
   }
   layoutFrame(s, u) { return cityRigidFrame(s, u); }
   item(key, geometry, material, p, scale = [1, 1, 1], color = '#ffffff', yaw = 0, roll = 0, structure = this.buildingStructure === true) {
-    if (structure) key = structureKey(key);
-    let batch = this.batches.get(key);
-    if (!batch) this.batches.set(key, batch = { geometry, material, items: [], structure });
+    // (a building's boxes and panes come by the thousand, a batch or two at
+    // a time: the last two batches asked for are at hand, by key and kind)
+    let batch = key === this.key0 && structure === this.structure0 ? this.batch0 : null;
+    if (!batch) {
+      if (key === this.key1 && structure === this.structure1) batch = this.batch1;
+      else {
+        const name = structure ? structureKey(key) : key;
+        batch = this.batches.get(name);
+        if (!batch) this.batches.set(name, batch = { geometry, material, items: [], structure });
+      }
+      this.key1 = this.key0; this.structure1 = this.structure0; this.batch1 = this.batch0;
+      this.key0 = key; this.structure0 = structure; this.batch0 = batch;
+    }
     const anchor = this.layoutAnchor ?? { s: this.start - p[2], u: this.east + p[0] };
     const item = { p, scale, color, yaw, roll, anchor, frame: this.layoutPlacement ?? this.layoutFrame(anchor.s, anchor.u) };
     batch.items.push(item);
@@ -429,13 +551,26 @@ export class CityChunk {
     try { return this.rigid(x, s, build, placement); }
     finally { this.buildingStructure = previous; }
   }
+  // structure() round a builder that takes steps (nothing else builds in
+  // this cell between them), and what it returns
+  *structureSteps(x, s, steps) {
+    const previous = this.buildingStructure, previousAnchor = this.layoutAnchor, previousPlacement = this.layoutPlacement;
+    this.buildingStructure = true;
+    this.layoutAnchor = { s: this.start + s, u: this.east + x };
+    this.layoutPlacement = this.layoutFrame(this.layoutAnchor.s, this.layoutAnchor.u);
+    try { return yield* steps; }
+    finally { this.buildingStructure = previous; this.layoutAnchor = previousAnchor; this.layoutPlacement = previousPlacement; }
+  }
   polygon(points, y, height, color, kind = 'solid') { addSurfacePolygon(this, points, y, height, color, kind); }
   // A building's footprint; `top` (its roof's height) makes it something the
   // chase camera cannot see through (see sightLine). A pitched roof sets
   // `ridge` on what this returns, which the helicopter lands on.
   polygonSolid(points, top) {
     if (this.distant) return null;
-    const solid = { logicalPolygon: points.map(([x, s]) => [this.east + x, this.start + s]), top };
+    // (its corners are kept beside it until mapFeatures gives it them: see `laid`)
+    const solid = { top }, corners = new Array(points.length);
+    for (let i = 0; i < points.length; i++) corners[i] = { x: this.east + points[i][0], z: -(this.start + points[i][1]) };
+    (this.laid ??= [])[this.features.colliders.length] = corners;
     this.features.colliders.push(solid);
     return solid;
   }
@@ -485,14 +620,21 @@ export class CityChunk {
   // (always inside rigid, which places it)
   solid(x, s, width, depth) {
     if (this.distant) return null;
-    const solid = {
-      x: this.east + x, z: -this.start - s,
-      heading: 0, halfWidth: width / 2, halfLength: depth / 2, reach: Math.hypot(width, depth) / 2, anchor: this.layoutAnchor, frame: this.layoutPlacement,
-    };
-    this.features.colliders.push(solid);
+    const solid = { x: this.east + x, z: -this.start - s, heading: 0, halfWidth: width / 2, halfLength: depth / 2, reach: Math.hypot(width, depth) / 2 };
+    this.lay(solid);
     return solid;
   }
-  post(x, s, radius) { if (!this.distant) this.features.colliders.push({ x: this.east + x, z: -this.start - s, reach: radius, anchor: this.layoutAnchor, frame: this.layoutPlacement }); }
+  post(x, s, radius) { if (!this.distant) this.lay({ x: this.east + x, z: -this.start - s, reach: radius }); }
+  // A collider placed in the layout's frame, which mapFeatures moves it by.
+  // Its anchor and frame are kept beside it till then (`laid`, `frames`, by
+  // its place among the colliders), and a footprint's corners: held on the
+  // collider and deleted once used, they left every collider a slow object
+  // for good, as a deleted key does
+  lay(solid) {
+    const index = this.features.colliders.push(solid) - 1;
+    if (this.layoutAnchor != null) (this.laid ??= [])[index] = this.layoutAnchor;
+    if (this.layoutPlacement != null) (this.frames ??= [])[index] = this.layoutPlacement;
+  }
   prop(name, x, s, yaw = 0, y = PAVEMENT_LEVEL, scale = [1, 1, 1]) {
     if (this.distant) return null;
     return this.item(name, cityAssets[name], this.materials.props, [x, y, -s], scale, '#ffffff', yaw, 0, ['shelter', 'tank', 'kiosk', 'bandstand'].includes(name));
@@ -855,11 +997,11 @@ export class CityChunk {
     // The cell's building bodies are one flat-shaded mesh, with the edges of its thin paving
     faceSlabEdges(this); yield;
     if (!this.bodies.empty) {
-      const mesh = new THREE.Mesh(this.bodies.build(), this.materials['merged-solid']);
+      const mesh = new THREE.Mesh(bodiesGeometry(this.bodies), this.materials['merged-solid']);
       mesh.name = 'citydriver-bodies'; mesh.userData.bodies = true; mesh.dispose = () => mesh.geometry.dispose();
       this.group.add(finishBatchMesh(mesh, { castShadow: true, receiveShadow: true, ambientOcclusion: true }, true));
     }
-    this.bodies = null;
+    this.bodies.release?.(); this.bodies = null;
     yield;
     yield* renderBatchSteps(this.group, this.batches, this.east, this.start, this.distant);
     this.signalMesh = this.group.getObjectByName('citydriver-signal-lens');
@@ -886,30 +1028,43 @@ export class CityChunk {
       this.collisionBounds.minZ = Math.min(this.collisionBounds.minZ, c.z - c.reach);
       this.collisionBounds.maxZ = Math.max(this.collisionBounds.maxZ, c.z + c.reach);
     }
-    this.batches = null;
+    this.batches = this.batch0 = this.batch1 = null;
   }
   mapFeatures() {
-    for (const c of this.features.colliders) {
-      if (c.logicalPolygon) {
-        const n = c.logicalPolygon.length;
-        c.corners = c.logicalPolygon.map(([u, s]) => ({ x: u, z: -s }));
-        c.x = c.corners.reduce((sum, p) => sum + p.x, 0) / n; c.z = c.corners.reduce((sum, p) => sum + p.z, 0) / n;
-        c.reach = Math.max(...c.corners.map(p => Math.hypot(p.x - c.x, p.z - c.z)));
-        c.heading = 0; delete c.logicalPolygon; continue;
+    const colliders = this.features.colliders, laid = this.laid ?? [], frames = this.frames ?? [];
+    for (let i = 0; i < colliders.length; i++) {
+      const c = colliders[i];
+      // A footprint: its corners (see polygonSolid; an outline of its own for
+      // one a builder pushed itself, as city-jump-models.js does)
+      const outline = c.logicalPolygon, corners = outline ? outline.map(([u, s]) => ({ x: u, z: -s })) : c.x === undefined ? laid[i] : null;
+      if (corners) {
+        const n = corners.length;
+        let x = 0, z = 0, reach = -Infinity;
+        for (let k = 0; k < n; k++) { x += corners[k].x; z += corners[k].z; }
+        c.corners = corners; c.x = x / n; c.z = z / n;
+        for (let k = 0; k < n; k++) reach = Math.max(reach, Math.hypot(corners[k].x - c.x, corners[k].z - c.z));
+        c.reach = reach; c.heading = 0;
+        if (outline) delete c.logicalPolygon;
+        continue;
       }
-      const s = -c.z, u = c.x, anchor = c.anchor ?? { s, u }, frame = c.frame ?? this.layoutFrame(anchor.s, anchor.u);
-      const p = cityAffinePoint(s, u, anchor, frame);
-      c.x = p.u; c.z = -p.s;
+      // (cityAffinePoint of each point in its frame, or one square to the map at its anchor: see cityRigidFrame)
+      const s = -c.z, u = c.x, anchor = laid[i], frame = frames[i], as = anchor ? anchor.s : s, au = anchor ? anchor.u : u;
+      let fs = as, fu = au, ns = 1, nu = 0, es = -0, eu = 1;
+      if (frame) { fs = frame.s; fu = frame.u; ns = frame.ns; nu = frame.nu; es = frame.es; eu = frame.eu; }
+      const ds = s - as, du = u - au;
+      c.x = fu + ds * nu + du * eu; c.z = -(fs + ds * ns + du * es);
       if (c.halfWidth !== undefined) {
-        c.corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([dx, ds]) => {
-          const v = cityAffinePoint(s + ds * c.halfLength, u + dx * c.halfWidth, anchor, frame);
-          return { x: v.u, z: -v.s };
-        });
-        c.reach = Math.max(...c.corners.map(v => Math.hypot(v.x - c.x, v.z - c.z)));
-        c.heading = Math.atan2(frame.nu, frame.ns);
+        const corners = new Array(4);
+        let reach = -Infinity;
+        for (let k = 0; k < 4; k++) {
+          const ds = s + (k < 2 ? -1 : 1) * c.halfLength - as, du = u + (k === 1 || k === 2 ? 1 : -1) * c.halfWidth - au;
+          const corner = corners[k] = { x: fu + ds * nu + du * eu, z: -(fs + ds * ns + du * es) };
+          reach = Math.max(reach, Math.hypot(corner.x - c.x, corner.z - c.z));
+        }
+        c.corners = corners; c.reach = reach; c.heading = Math.atan2(nu, ns);
       }
-      delete c.anchor; delete c.frame;
     }
+    this.laid = this.frames = null;
   }
   dispose() {
     this.construction?.return(); this.construction = null;

@@ -27,6 +27,8 @@ export const CLOSE = .65, FILE = .9;
 const STEP = .5, SLOPE = .35, MARGIN = .08, WALL = .2, KERB = .35, HALF = PAIR + BODY;
 // How far toward the curb a walk may be bent (m)
 const OUT_MOST = 1.6;
+// A walk is laid and routed SLICE samples a step when a chunk's survey does it
+const SLICE = 128;
 
 // What stands on a pavement, as the colliders have it (see
 // CityChunk.furnitureSteps, which these follow): a post's radius, or a box
@@ -45,24 +47,77 @@ const TRUNK = Math.max(...cityTrees.map(tree => {
 })) * 1.06;
 
 const CELL = 4, key = (ix, iy) => ix * 65536 + iy;
-const span = { low: 0, high: 0, across: 0, gap: 0 };
+const span = { low: 0, high: 0, qx: 0, qy: 0 };
+const grown = (old, size, Type = Float64Array) => { const next = new Type(size); if (old) next.set(old); return next; };
+// All of a generator's steps at once, and what it returns
+const through = steps => { for (;;) { const step = steps.next(); if (step.done) return step.value; } };
+// A number for each key, or -1: the keys in a table with their numbers
+// beside them, each in the first free place from where its hash puts it (a
+// Map's lookups were a third of routing a walk)
+class Table {
+  constructor(bits = 10) { this.size = 0; this.shift = 32 - bits; this.keys = new Float64Array(1 << bits); this.values = new Int32Array(1 << bits).fill(-1); }
+  get(key) {
+    const keys = this.keys, values = this.values, mask = values.length - 1;
+    for (let at = Math.imul(key, 0x9e3779b1) >>> this.shift; ; at = (at + 1) & mask) {
+      if (values[at] < 0) return -1;
+      if (keys[at] === key) return values[at];
+    }
+  }
+  set(key, value) {
+    if (this.size * 2 >= this.values.length) {
+      const { keys, values } = this;
+      this.shift--; this.size = 0; this.keys = new Float64Array(values.length * 2); this.values = new Int32Array(values.length * 2).fill(-1);
+      for (let at = 0; at < values.length; at++) if (values[at] >= 0) this.set(keys[at], values[at]);
+    }
+    const mask = this.values.length - 1;
+    let at = Math.imul(key, 0x9e3779b1) >>> this.shift;
+    while (this.values[at] >= 0 && this.keys[at] !== key) at = (at + 1) & mask;
+    if (this.values[at] < 0) this.size++;
+    this.keys[at] = key; this.values[at] = value;
+  }
+}
+// A route's working columns, kept from one to the next, and what it meets
+// (a route taking steps keeps its meetings till it is done: one routed
+// meanwhile makes its own)
+let lows = new Float64Array(0), highs = new Float64Array(0), outX = new Float64Array(0), outY = new Float64Array(0), kept = new Uint8Array(0), gathered = new Int32Array(64), spareMeetings = null;
+// The boxes round each stretch of a walk (see boxed), round each RUN of them and round the whole walk
+const RUN = 8, whole = new Float64Array(4);
+let boxes = new Float64Array(0), runs = new Float64Array(0);
 
 export class WalkSpace {
   constructor() {
-    this.cells = new Map(); this.loops = new Map(); this.surveyed = new Set();
+    this.loops = new Map(); this.surveyed = new Set();
     // (where a bus stop's riders wait: nobody else stands there)
     this.waits = [];
     this.routed = 0; this.stamp = 0;
+    // What stands there, in columns (as an object each, with a list for
+    // every cell, they were 5 MB): a disc at (x, y), or a wall's face from
+    // there to its far end (`tail`: where in `ends`, past 0), `radius` thick
+    this.count = 0; this.x = new Float64Array(0); this.y = new Float64Array(0); this.radius = new Float64Array(0);
+    this.tail = new Int32Array(0); this.seen = new Float64Array(0); this.groups = []; this.ends = [];
+    // A cell's pieces, in the order they came: its first entry (`cells`),
+    // each entry's piece and the entry after it, and a first entry's last
+    this.cells = new Table(); this.entries = 0; this.piece = new Int32Array(0); this.next = new Int32Array(0); this.last = new Int32Array(0);
   }
   // Something standing there: a disc, or (to `bx`, `by`) a wall's face that thick
   obstacle(x, y, radius, group, bx = x, by = y) {
-    const item = { x, y, bx, by, radius, group, seen: 0 };
+    const item = this.count++;
+    if (item === this.x.length) {
+      const size = Math.max(1024, item * 2);
+      this.x = grown(this.x, size); this.y = grown(this.y, size); this.radius = grown(this.radius, size); this.tail = grown(this.tail, size, Int32Array); this.seen = grown(this.seen, size);
+    }
+    this.x[item] = x; this.y[item] = y; this.radius[item] = radius; this.groups.push(group);
+    if (bx !== x || by !== y) { this.ends.push(bx - x, by - y); this.tail[item] = this.ends.length / 2; }
     const x0 = Math.floor((Math.min(x, bx) - radius) / CELL), x1 = Math.floor((Math.max(x, bx) + radius) / CELL), y0 = Math.floor((Math.min(y, by) - radius) / CELL), y1 = Math.floor((Math.max(y, by) + radius) / CELL);
     for (let ix = x0; ix <= x1; ix++) for (let iy = y0; iy <= y1; iy++) {
-      const k = key(ix, iy);
-      let list = this.cells.get(k);
-      if (!list) this.cells.set(k, list = []);
-      list.push(item);
+      const k = key(ix, iy), entry = this.entries++, first = this.cells.get(k);
+      if (entry === this.piece.length) {
+        const size = Math.max(2048, entry * 2);
+        this.piece = grown(this.piece, size, Int32Array); this.next = grown(this.next, size, Int32Array); this.last = grown(this.last, size, Int32Array);
+      }
+      this.piece[entry] = item; this.next[entry] = -1;
+      if (first < 0) this.cells.set(k, entry); else this.next[this.last[first]] = entry;
+      this.last[first < 0 ? entry : first] = entry;
     }
   }
   // A box as a row of discs down its longer side, close enough together to
@@ -76,7 +131,8 @@ export class WalkSpace {
   }
   // A piece of street furniture (see placeStreetFurniture) as what it takes up
   add(piece) {
-    const kind = piece.kind, x = piece.u, y = piece.s, yaw = piece.yaw ?? 0, group = { kind };
+    // (a piece's parts are passed together: its group is only a number of its own)
+    const kind = piece.kind, x = piece.u, y = piece.s, yaw = piece.yaw ?? 0, group = -this.count - 1;
     if (POSTS[kind]) this.obstacle(x, y, POSTS[kind], group);
     else if (kind === 'tree') this.obstacle(x, y, Math.max(.28, TRUNK * piece.scale), group);
     else if (BOXES[kind]) {
@@ -113,15 +169,22 @@ export class WalkSpace {
     }
     return true;
   }
-  // The first thing within `reach` of (x, y), or null
+  // Whether anything stands within `reach` of (x, y)
   near(x, y, reach) {
     // (a piece is in every cell it reaches into, so the cells within reach are enough)
     const x0 = Math.floor((x - reach) / CELL), x1 = Math.floor((x + reach) / CELL), y0 = Math.floor((y - reach) / CELL), y1 = Math.floor((y + reach) / CELL);
     for (let ix = x0; ix <= x1; ix++) for (let iy = y0; iy <= y1; iy++) {
-      const list = this.cells.get(key(ix, iy));
-      if (list) for (const item of list) if (offBy(item, x, y) < reach) return item;
+      for (let entry = this.cells.get(key(ix, iy)); entry >= 0; entry = this.next[entry]) if (this.offBy(this.piece[entry], x, y) < reach) return true;
     }
-    return null;
+    return false;
+  }
+  // How far (x, y) is from a piece's surface (under 0 inside a disc)
+  offBy(item, x, y) {
+    const ex = x - this.x[item], ey = y - this.y[item], tail = this.tail[item];
+    if (!tail) return Math.hypot(ex, ey) - this.radius[item];
+    const dx = this.ends[tail * 2 - 2], dy = this.ends[tail * 2 - 1], length = dx * dx + dy * dy;
+    const t = length > 1e-12 ? Math.max(0, Math.min(1, (ex * dx + ey * dy) / length)) : 0;
+    return Math.hypot(ex - dx * t, ey - dy * t) - this.radius[item];
   }
   // Whether the straight way from a to b ({ x, y }) is clear for a body
   open(a, b, radius = BODY, margin = MARGIN) {
@@ -132,17 +195,21 @@ export class WalkSpace {
   // A block's walk: { index, points, cumulative, perimeter, direction, pace,
   // tight }, or null if it has none
   block(index) {
-    if (!this.loops.has(index)) {
-      const block = CITY.blocks[index];
-      let loop = null;
-      if (block?.kerb.length >= 3) {
-        // (a block with no lot line, a broken one, keeps to the same way in from its curb)
-        const base = block.inner?.length >= 3 ? largest(growRound([block.inner], WALK_OUT)) : offsetPolygon(block.kerb, -(SIDEWALK - WALK_OUT));
-        loop = this.lay(base, block.kerb, index, WALK_OUT - HALF - WALL);
-      }
-      this.loops.set(index, loop);
-    }
+    if (!this.loops.has(index)) through(this.laying(index));
     return this.loops.get(index);
+  }
+  // A block's walk laid a few steps at a time (see survey)
+  *laying(index) {
+    const block = CITY.blocks[index];
+    let loop = null;
+    if (block?.kerb.length >= 3) {
+      // (a block with no lot line, a broken one, keeps to the same way in from its curb)
+      const base = block.inner?.length >= 3 ? largest(growRound([block.inner], WALK_OUT)) : offsetPolygon(block.kerb, -(SIDEWALK - WALK_OUT));
+      yield;
+      loop = yield* this.laySteps(base, block.kerb, index, WALK_OUT - HALF - WALL);
+    }
+    // (unless it was wanted at once meanwhile, and laid then)
+    if (!this.loops.has(index)) this.loops.set(index, loop);
   }
   // The walk along a big park's pavement, which is too narrow for a band of
   // its own: just inside its lawn's edge
@@ -158,7 +225,8 @@ export class WalkSpace {
   // give toward the wall: sampled evenly, and routed. Its people are placed
   // by how far round the base they are (`cumulative`, `perimeter`), so
   // routing it again round something new moves nobody along it.
-  lay(base, kerb, index, room) {
+  lay(base, kerb, index, room) { return through(this.laySteps(base, kerb, index, room)); }
+  *laySteps(base, kerb, index, room) {
     if (base.length < 3) return null;
     let length = 0;
     const n = base.length;
@@ -174,11 +242,13 @@ export class WalkSpace {
     // (the way out to the curb at each sample, and how far out leaves a pair
     // on the pavement, KERB off its edge)
     const nx = new Float32Array(count), ny = new Float32Array(count), most = new Float32Array(count), probe = { x: 0, y: 0 };
-    for (let i = 0; i < count; i++) {
+    // (SLICE probes a step: on a narrow pavement a sample takes a dozen or more)
+    for (let i = 0, probes = 0; i < count; i++) {
+      if (probes >= SLICE) { yield; probes = 0; }
       const a = (i + count - 1) % count, b = (i + 1) % count, tx = px[b] - px[a], ty = py[b] - py[a], l = Math.hypot(tx, ty) || 1;
       nx[i] = ty / l; ny[i] = -tx / l;
       let out = OUT_MOST;
-      for (; out > -room; out -= .1) { probe.x = px[i] + nx[i] * (out + HALF + KERB); probe.y = py[i] + ny[i] * (out + HALF + KERB); if (insideIndexed(probe, kerb)) break; }
+      for (; out > -room; out -= .1) { probes++; probe.x = px[i] + nx[i] * (out + HALF + KERB); probe.y = py[i] + ny[i] * (out + HALF + KERB); if (insideIndexed(probe, kerb)) break; }
       most[i] = out;
     }
     const loop = {
@@ -187,59 +257,120 @@ export class WalkSpace {
       direction: randomAt(index, 7741, CITY.seed) < .5 ? 1 : -1, pace: 1.25 + randomAt(index, 7742, CITY.seed) * .7,
       base: { count, spacing, px, py, nx, ny, most, room },
     };
-    this.route(loop);
+    yield;
+    yield* this.routeSteps(loop);
     this.routed++;
     return loop;
   }
   // A walk's line through what stands along it: `points`, each `cumulative`
   // meters round its base
-  route(loop) {
-    const { count, spacing, px, py, nx, ny, most, room } = loop.base, low = new Float64Array(count).fill(-room), high = Float64Array.from(most);
+  route(loop) { return through(this.routeSteps(loop)); }
+  // (SLICE samples a step. Anything set down while it is at it, it starts
+  // again: the samples before it never saw that.)
+  *routeSteps(loop) {
+    const { count, spacing, px, py, nx, ny, most, room } = loop.base;
     // What stands near each sample. A piece is passed on one side all the way
-    // by: the side its nearest part is off the walk, unless it says (`out`)
-    const met = [], sides = new Map(), reach = OUT_MOST + HALF + MARGIN, stamp = ++this.stamp;
-    let near = [], cx0 = NaN, cx1 = NaN, cy0 = NaN, cy1 = NaN;
+    // by: the side its nearest part is off the walk, unless it says (`out`).
+    // (Each meeting is four numbers in `met`: the sample, from and to along
+    // its line, and the group's number, which `sides` gives and `owners`
+    // takes back; `gaps` and `outs` are each group's nearest and its side.)
+    const meetings = spareMeetings ?? { met: new Float64Array(1024), gaps: new Float64Array(64), outs: new Uint8Array(64), owners: [], sides: new Map() };
+    spareMeetings = null;
+    let { met, gaps, outs } = meetings, metCount = 0;
+    const { owners, sides } = meetings, reach = OUT_MOST + HALF + MARGIN;
+    owners.length = 0; sides.clear();
+    let pieceCount, stamp, X, Y, R, tails, ends, seen, groups, cells, pieces, after;
+    // (`lately`: the group met last, most often the next one's too, and its number)
+    let near = 0, cx0 = NaN, cx1 = NaN, cy0 = NaN, cy1 = NaN, lately = sides, side = -1;
     for (let i = 0; i < count; i++) {
-      const x = px[i], y = py[i];
+      if (i % SLICE === 0) {
+        if (i) yield;
+        if (!i || this.count !== pieceCount) {
+          if (i) { i = 0; metCount = 0; owners.length = 0; sides.clear(); lately = sides; }
+          pieceCount = this.count; stamp = ++this.stamp; this.stamp += count;
+          ({ x: X, y: Y, radius: R, tail: tails, ends, seen, groups, cells, piece: pieces, next: after } = this);
+        }
+        // (the pieces gathered, as others may have gathered theirs meanwhile)
+        cx0 = NaN;
+      }
+      const x = px[i], y = py[i], ux = nx[i], uy = ny[i];
       const x0 = Math.floor((x - reach) / CELL), x1 = Math.floor((x + reach) / CELL), y0 = Math.floor((y - reach) / CELL), y1 = Math.floor((y + reach) / CELL);
       // (the pieces in the cells round a sample, gathered again only as it moves on to others)
       if (x0 !== cx0 || x1 !== cx1 || y0 !== cy0 || y1 !== cy1) {
-        near = []; cx0 = x0; cx1 = x1; cy0 = y0; cy1 = y1;
+        near = 0; cx0 = x0; cx1 = x1; cy0 = y0; cy1 = y1;
         for (let ix = x0; ix <= x1; ix++) for (let iy = y0; iy <= y1; iy++) {
-          const list = this.cells.get(key(ix, iy));
-          if (list) for (const item of list) if (item.seen !== stamp + i) { item.seen = stamp + i; near.push(item); }
+          for (let entry = cells.get(key(ix, iy)); entry >= 0; entry = after[entry]) {
+            const item = pieces[entry];
+            if (seen[item] === stamp + i) continue;
+            seen[item] = stamp + i;
+            if (near === gathered.length) gathered = grown(gathered, near * 2, Int32Array);
+            gathered[near++] = item;
+          }
         }
       }
-      for (const item of near) {
-        if (!crossing(item, x, y, nx[i], ny[i], item.radius + HALF + MARGIN) || span.low > OUT_MOST + 1 || span.high < -room - 1) continue;
-        const side = sides.get(item.group);
-        if (!side || span.gap < side.gap) sides.set(item.group, { gap: span.gap, out: span.across > 0 });
-        met.push(i, span.low, span.high, item.group);
+      for (let m = 0; m < near; m++) {
+        // Where the line from the sample out along (ux, uy) runs within
+        // `clear` of the piece, from `from` to `to` along it; (qx, qy) is
+        // the piece's nearest point
+        const item = gathered[m], ax = X[item] - x, ay = Y[item] - y, clear = R[item] + HALF + MARGIN, tail = tails[item];
+        let from, to, qx = ax, qy = ay;
+        if (tail) {
+          if (!crossing(ax, ay, ends[tail * 2 - 2], ends[tail * 2 - 1], ux, uy, clear)) continue;
+          from = span.low; to = span.high; qx = span.qx; qy = span.qy;
+        } else {
+          const b = ax * ux + ay * uy, d = b * b - (ax * ax + ay * ay - clear * clear);
+          if (!(d > 0)) continue;
+          const r = Math.sqrt(d);
+          from = b - r; to = b + r;
+          if (!(from < to)) continue;
+        }
+        if (from > OUT_MOST + 1 || to < -room - 1) continue;
+        // (how far along the line the nearest point is, and how far off the piece's surface)
+        const group = groups[item], gap = Math.hypot(qx, qy) - R[item];
+        if (group !== lately) {
+          lately = group; side = sides.get(group) ?? -1;
+          if (side < 0) {
+            sides.set(group, side = owners.length); owners.push(group);
+            if (side === gaps.length) { gaps = grown(gaps, side * 2); outs = grown(outs, side * 2, Uint8Array); }
+            gaps[side] = gap; outs[side] = qx * ux + qy * uy > 0 ? 1 : 0;
+          }
+        }
+        if (gap < gaps[side]) { gaps[side] = gap; outs[side] = qx * ux + qy * uy > 0 ? 1 : 0; }
+        if (metCount === met.length) met = grown(met, metCount * 2);
+        met[metCount] = i; met[metCount + 1] = from; met[metCount + 2] = to; met[metCount + 3] = side; metCount += 4;
       }
     }
-    this.stamp += count;
-    for (let k = 0; k < met.length; k += 4) {
-      const i = met[k];
-      if (met[k + 3].out ?? sides.get(met[k + 3]).out) high[i] = Math.min(high[i], met[k + 1]); else low[i] = Math.max(low[i], met[k + 2]);
+    if (lows.length < count) { lows = new Float64Array(count); highs = new Float64Array(count); outX = new Float64Array(count); outY = new Float64Array(count); kept = new Uint8Array(count); }
+    const low = lows, high = highs;
+    for (let i = 0; i < count; i++) { low[i] = -room; high[i] = most[i]; }
+    for (let k = 0; k < metCount; k += 4) {
+      const i = met[k], side = met[k + 3];
+      if (owners[side].out ?? outs[side]) high[i] = Math.min(high[i], met[k + 1]); else low[i] = Math.max(low[i], met[k + 2]);
     }
+    meetings.met = met; meetings.gaps = gaps; meetings.outs = outs; owners.length = 0; sides.clear(); spareMeetings = meetings;
     // No faster aside than SLOPE: each limit reaches along the walk either way
+    const aside = SLOPE * spacing;
     for (let pass = 0; pass < 2; pass++) {
-      for (let i = 0; i < count; i++) { const j = (i + count - 1) % count; high[i] = Math.min(high[i], high[j] + SLOPE * spacing); low[i] = Math.max(low[i], low[j] - SLOPE * spacing); }
-      for (let i = count - 1; i >= 0; i--) { const j = (i + 1) % count; high[i] = Math.min(high[i], high[j] + SLOPE * spacing); low[i] = Math.max(low[i], low[j] - SLOPE * spacing); }
+      for (let i = 0, j = count - 1; i < count; j = i++) { high[i] = Math.min(high[i], high[j] + aside); low[i] = Math.max(low[i], low[j] - aside); }
+      for (let i = count - 1, j = 0; i >= 0; j = i--) { high[i] = Math.min(high[i], high[j] + aside); low[i] = Math.max(low[i], low[j] - aside); }
     }
     // Along the line where it is free, else as near it as the limits allow.
     // With no room for a pair, down the middle of what room there is
-    let worst = 0;
-    const points = new Array(count);
+    let worst = 0, worstAt = -1;
     for (let i = 0; i < count; i++) {
       const squeeze = low[i] - high[i], out = squeeze > 0 ? (low[i] + high[i]) / 2 : Math.max(low[i], Math.min(0, high[i]));
-      points[i] = { x: px[i] + nx[i] * out, y: py[i] + ny[i] * out };
-      if (squeeze > worst) { worst = squeeze; loop.squeezedAt = points[i]; }
+      outX[i] = px[i] + nx[i] * out; outY[i] = py[i] + ny[i] * out;
+      if (squeeze > worst) { worst = squeeze; worstAt = i; }
     }
     // (only the points that shape it are kept, each still at its own distance round the base)
-    const keep = simplify(points, .02);
+    simplify(outX, outY, count, .02, kept);
     loop.points = []; loop.cumulative = [];
-    for (let i = 0; i < count; i++) if (keep[i]) { loop.points.push(points[i]); loop.cumulative.push(i * spacing); }
+    for (let i = 0; i < count; i++) {
+      if (!kept[i] && i !== worstAt) continue;
+      const point = { x: outX[i], y: outY[i] };
+      if (i === worstAt) loop.squeezedAt = point;
+      if (kept[i]) { loop.points.push(point); loop.cumulative.push(i * spacing); }
+    }
     loop.cumulative.push(loop.perimeter + loop.cumulative[0]);
     // No room somewhere for two side by side (squeezed by less than their
     // margins, they still touch nothing): a pair closes up all the way round,
@@ -258,10 +389,24 @@ export class WalkSpace {
     if (this.surveyed.has(chunk.index)) return;
     const solids = chunk.features.colliders.filter(c => !c.parked && !c.clutter && !c.shape && !(c.top !== undefined && c.top - PAVEMENT_LEVEL <= .3)), walled = new Set();
     for (const index of blocks) {
-      const loop = this.block(index), tried = new Set();
+      // (laying a walk takes steps of its own)
+      const laid = !this.loops.has(index);
+      if (laid) yield* this.laying(index);
+      const loop = this.loops.get(index), tried = new Set();
       if (!loop) continue;
+      if (laid) yield;
       for (let again = 0; again < 2; again++) {
-        const found = solids.filter(solid => !tried.has(solid) && this.meets(loop, solid));
+        // (SLICE / 2 colliders a step, all against the walk as it was at the start)
+        const found = [];
+        let points = loop.points, stretches = 0;
+        for (let k = 0; k < solids.length; k++) {
+          if (k % (SLICE / 2) === 0) {
+            if (k) yield;
+            if (loop.points !== points) { points = loop.points; found.length = 0; k = 0; }
+            stretches = boxed(points);
+          }
+          if (!tried.has(solids[k]) && touching(points, stretches, solids[k])) found.push(solids[k]);
+        }
         if (!found.length) break;
         for (const solid of found) {
           tried.add(solid);
@@ -278,7 +423,7 @@ export class WalkSpace {
           });
           else this.obstacle(solid.x, -solid.z, solid.reach, group);
         }
-        this.route(loop);
+        yield* this.routeSteps(loop);
       }
       yield;
     }
@@ -286,35 +431,64 @@ export class WalkSpace {
     this.surveyed.add(chunk.index);
   }
   // Whether a pair on a walk would touch a collider (see CityChunk's)
-  meets(loop, solid) {
-    const points = loop.points, n = points.length, reach = solid.reach + HALF, cx = solid.x, cy = -solid.z;
-    for (let i = 0; i < n; i++) {
-      const a = points[i], b = points[(i + 1) % n];
-      if (Math.min(a.x, b.x) > cx + reach || Math.max(a.x, b.x) < cx - reach || Math.min(a.y, b.y) > cy + reach || Math.max(a.y, b.y) < cy - reach) continue;
-      const length = Math.hypot(b.x - a.x, b.y - a.y), steps = Math.max(1, Math.ceil(length / .4));
-      for (let k = 0; k <= steps; k++) {
-        const x = a.x + (b.x - a.x) * k / steps, y = a.y + (b.y - a.y) * k / steps;
-        if ((x - cx) ** 2 + (y - cy) ** 2 > reach * reach) continue;
-        if (!solid.corners) return true;
-        if (within(solid.corners, x, -y, HALF)) return true;
-      }
-    }
-    return false;
-  }
+  meets(loop, solid) { return touching(loop.points, boxed(loop.points), solid); }
 }
 
-// How far (x, y) is from an obstacle's surface (under 0 inside a disc)
-function offBy(item, x, y) {
-  const dx = item.bx - item.x, dy = item.by - item.y, length = dx * dx + dy * dy;
-  const t = length > 1e-12 ? Math.max(0, Math.min(1, ((x - item.x) * dx + (y - item.y) * dy) / length)) : 0;
-  return Math.hypot(x - item.x - dx * t, y - item.y - dy * t) - item.radius;
+// The box round each stretch of a walk (from a point to the next: x from
+// and to, y from and to) into `boxes`, and round each RUN of stretches into
+// `runs`, for touching. How many stretches.
+function boxed(points) {
+  const n = points.length;
+  if (boxes.length < n * 4) { boxes = new Float64Array(n * 4); runs = new Float64Array(Math.ceil(n / RUN) * 4); }
+  whole[0] = whole[2] = Infinity; whole[1] = whole[3] = -Infinity;
+  for (const p of points) { whole[0] = Math.min(whole[0], p.x); whole[1] = Math.max(whole[1], p.x); whole[2] = Math.min(whole[2], p.y); whole[3] = Math.max(whole[3], p.y); }
+  for (let i = 0; i < n; i++) {
+    const a = points[i], b = points[(i + 1) % n], o = i * 4, r = Math.floor(i / RUN) * 4;
+    const x0 = boxes[o] = Math.min(a.x, b.x), x1 = boxes[o + 1] = Math.max(a.x, b.x), y0 = boxes[o + 2] = Math.min(a.y, b.y), y1 = boxes[o + 3] = Math.max(a.y, b.y);
+    if (i % RUN === 0) { runs[r] = x0; runs[r + 1] = x1; runs[r + 2] = y0; runs[r + 3] = y1; continue; }
+    if (x0 < runs[r]) runs[r] = x0;
+    if (x1 > runs[r + 1]) runs[r + 1] = x1;
+    if (y0 < runs[r + 2]) runs[r + 2] = y0;
+    if (y1 > runs[r + 3]) runs[r + 3] = y1;
+  }
+  return n;
 }
-// Where the line from (x, y) along (nx, ny) runs within `room` of an
-// obstacle: false if nowhere, else into `span` from `low` to `high` along
-// it, with how far along it the obstacle's nearest point is (`across`) and
-// how far off its surface (`gap`)
-function crossing(item, x, y, nx, ny, room) {
-  const ax = item.x - x, ay = item.y - y, dx = item.bx - item.x, dy = item.by - item.y, length = Math.hypot(dx, dy);
+// Whether a pair on a walk's line (its n stretches boxed) would touch a
+// collider: at a point every .4 m or so along it, within reach of the
+// collider's middle and in it or beside it
+function touching(points, n, solid) {
+  const reach = solid.reach + HALF, cx = solid.x, cy = -solid.z, x0 = cx - reach, x1 = cx + reach, y0 = cy - reach, y1 = cy + reach;
+  if (whole[0] > x1 || whole[1] < x0 || whole[2] > y1 || whole[3] < y0) return false;
+  for (let i = 0; i < n; i++) {
+    if (i % RUN === 0) { const r = i / RUN * 4; if (runs[r] > x1 || runs[r + 1] < x0 || runs[r + 2] > y1 || runs[r + 3] < y0) { i += RUN - 1; continue; } }
+    const o = i * 4;
+    if (boxes[o] > x1 || boxes[o + 1] < x0 || boxes[o + 2] > y1 || boxes[o + 3] < y0) continue;
+    const a = points[i], b = points[(i + 1) % n], ex = b.x - a.x, ey = b.y - a.y, length = Math.hypot(ex, ey), steps = Math.max(1, Math.ceil(length / .4));
+    // (only the points that can be within reach: a step over at each end, and a hair further off than the test below allows)
+    let from = 0, to = steps;
+    const long = ex * ex + ey * ey;
+    if (long > 1e-12) {
+      const wx = cx - a.x, wy = cy - a.y, t = (wx * ex + wy * ey) / long, wide = reach + 1e-6, clear = wide * wide - (wx * wx + wy * wy - t * t * long);
+      if (clear < 0) continue;
+      const half = Math.sqrt(clear / long);
+      from = Math.max(0, Math.ceil((t - half) * steps) - 1); to = Math.min(steps, Math.floor((t + half) * steps) + 1);
+    }
+    for (let k = from; k <= to; k++) {
+      const x = a.x + (b.x - a.x) * k / steps, y = a.y + (b.y - a.y) * k / steps;
+      if ((x - cx) ** 2 + (y - cy) ** 2 > reach * reach) continue;
+      if (!solid.corners) return true;
+      if (within(solid.corners, x, -y, HALF)) return true;
+    }
+  }
+  return false;
+}
+
+// Where the line from a sample along (nx, ny) runs within `room` of a wall's
+// face, which begins (ax, ay) from the sample and runs (dx, dy): false if
+// nowhere, else into `span` from `low` to `high` along the line, with the
+// face's nearest point to the sample (`qx`, `qy`)
+function crossing(ax, ay, dx, dy, nx, ny, room) {
+  const length = Math.hypot(dx, dy);
   let low = Infinity, high = -Infinity;
   for (let end = 0; end < (length > 1e-9 ? 2 : 1); end++) {
     const cx = ax + dx * end, cy = ay + dy * end, b = cx * nx + cy * ny, d = b * b - (cx * cx + cy * cy - room * room);
@@ -327,9 +501,9 @@ function crossing(item, x, y, nx, ny, room) {
     if (Math.abs(lv) > 1e-9) { const a = (-room - pv) / lv, b = (room - pv) / lv; from = Math.min(a, b); to = Math.max(a, b); } else if (Math.abs(pv) >= room) from = Infinity;
     if (Math.abs(lu) > 1e-9) { const a = -pu / lu, b = (length - pu) / lu; from = Math.max(from, Math.min(a, b)); to = Math.min(to, Math.max(a, b)); } else if (pu < 0 || pu > length) from = Infinity;
     if (from < to) { low = Math.min(low, from); high = Math.max(high, to); }
-    const s = Math.max(0, Math.min(length, pu)), qx = ax + ux * s, qy = ay + uy * s;
-    span.across = qx * nx + qy * ny; span.gap = Math.hypot(qx, qy) - item.radius;
-  } else { span.across = ax * nx + ay * ny; span.gap = Math.hypot(ax, ay) - item.radius; }
+    const s = Math.max(0, Math.min(length, pu));
+    span.qx = ax + ux * s; span.qy = ay + uy * s;
+  } else { span.qx = ax; span.qy = ay; }
   if (!(low < high)) return false;
   span.low = low; span.high = high;
   return true;
@@ -348,19 +522,24 @@ function within(corners, x, z, reach) {
 
 const largest = pieces => pieces.reduce((best, piece) => !best || calcPolygonArea(piece.outer) > calcPolygonArea(best) ? piece.outer : best, null) ?? [];
 
-// Which points of a closed line to keep: all but those within `tolerance` of
-// the line through the kept ones either side
-function simplify(points, tolerance) {
-  const n = points.length, keep = new Uint8Array(n);
-  if (n < 8) return keep.fill(1);
-  const half = n >> 1, stack = [[0, half], [half, n]];
+// Which of the first n points (xs, ys) of a closed line to keep, into `keep`:
+// all but those within `tolerance` of the line through the kept ones either side
+function simplify(xs, ys, n, tolerance, keep) {
+  if (n < 8) { keep.fill(1, 0, n); return; }
+  keep.fill(0, 0, n);
+  const half = n >> 1, stack = [0, half, half, n];
   keep[0] = keep[half] = 1;
   while (stack.length) {
-    const [from, to] = stack.pop(), a = points[from], b = points[to % n], dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy) || 1;
-    let most = tolerance, at = -1;
-    for (let i = from + 1; i < to; i++) { const d = Math.abs((points[i].x - a.x) * dy - (points[i].y - a.y) * dx) / length; if (d > most) { most = d; at = i; } }
+    const to = stack.pop(), from = stack.pop(), ax = xs[from], ay = ys[from], dx = xs[to % n] - ax, dy = ys[to % n] - ay, length = Math.hypot(dx, dy) || 1;
+    // (`over`: no point with less across than that is further off than the furthest so far, so only the others are divided)
+    let most = tolerance, over = tolerance * length * .999999, at = -1;
+    for (let i = from + 1; i < to; i++) {
+      const across = Math.abs((xs[i] - ax) * dy - (ys[i] - ay) * dx);
+      if (across <= over) continue;
+      const d = across / length;
+      if (d > most) { most = d; over = across; at = i; }
+    }
     if (at < 0) continue;
-    keep[at] = 1; stack.push([from, at], [at, to]);
+    keep[at] = 1; stack.push(from, at, at, to);
   }
-  return keep;
 }

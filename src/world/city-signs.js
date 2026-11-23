@@ -159,45 +159,81 @@ export function signCore(sign, width, height) {
   return { width: width * w, height: height * h, y: height * y };
 }
 
-// The sheet, loading as soon as a page imports this: null where there is no
-// page (Node), or if it cannot be had (its signs are then left blank)
-// (decoded off the main thread, not at the first drawImage)
-export const signSheet = globalThis.document ? new Promise(resolve => {
-  const image = new Image();
-  image.src = SIGN_SHEET_URL;
-  image.decode().then(() => resolve(image), () => { console.warn('The sign sheet did not load'); resolve(null); });
-}) : Promise.resolve(null);
-// The atlas is drawn once a page: the discovery boards at once, the sheet's
-// designs as soon as it has loaded. Each face's edge pixels are copied out
-// into its gutter.
-let atlasCanvas = null;
-function spread(ctx, [x, y, w, h]) {
-  const g = GUTTER, canvas = ctx.canvas;
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(canvas, x, y, w, 1, x, y - g, w, g);
-  ctx.drawImage(canvas, x, y + h - 1, w, 1, x, y + h, w, g);
-  ctx.drawImage(canvas, x, y - g, 1, h + 2 * g, x - g, y - g, g, h + 2 * g);
-  ctx.drawImage(canvas, x + w - 1, y - g, 1, h + 2 * g, x + w, y - g, g, h + 2 * g);
-  ctx.imageSmoothingEnabled = true;
-}
-function drawAtlas() {
-  const canvas = document.createElement('canvas'); canvas.width = SIGN_ATLAS.width; canvas.height = SIGN_ATLAS.height;
-  const ctx = canvas.getContext('2d');
+// The whole atlas on a canvas its size: the discovery boards, the sheet's
+// designs from its image (left blank without it), and each face's edge
+// pixels copied out into its gutter
+export function paintAtlas(ctx, sheet) {
+  const g = GUTTER, canvas = ctx.canvas, blank = new ImageData(1, 1);
   for (const sign of DISCOVERY_SIGNS) {
     const [x, y, w, h] = sign.atlas;
     ctx.save(); ctx.translate(x, y); ctx.scale(w / 512, h / (512 / sign.aspect));
     drawSign(ctx, sign); ctx.restore();
-    spread(ctx, sign.atlas);
+    // (a pixel written to its gutter has the browser draw each board on its
+    // own, as it did when each one's gutter was copied straight after it:
+    // drawn in one batch, a GPU canvas anti-aliases the odd stroke differently)
+    ctx.putImageData(blank, x - g, y - g);
   }
-  signSheet.then(image => {
-    if (!image) return;
+  if (sheet) {
     ctx.imageSmoothingQuality = 'high';
     for (const sign of BUSINESS_SIGNS) {
       const [x, y, w, h] = sign.atlas;
       if (sign.backing) { ctx.fillStyle = sign.backing; ctx.fillRect(x, y, w, h); }
-      ctx.drawImage(image, ...sign.rect, x, y, w, h);
-      spread(ctx, sign.atlas);
+      ctx.drawImage(sheet, ...sign.rect, x, y, w, h);
     }
+  }
+  // (the gutters from a copy of the canvas, made once for all the faces: a
+  // canvas drawn onto itself is copied whole first, for each of 3,200 draws,
+  // which took seconds where the browser draws canvases without the GPU)
+  const still = globalThis.document ? document.createElement('canvas') : new OffscreenCanvas(1, 1);
+  still.width = canvas.width; still.height = canvas.height;
+  still.getContext('2d').drawImage(canvas, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  for (const { atlas: [x, y, w, h] } of SIGN_CATALOG) {
+    const rows = [[y, y - g], [y + h - 1, y + h]];
+    for (const [from, to] of rows) ctx.drawImage(still, x, from, w, 1, x, to, w, g);
+    for (const [from, to] of [[x, x - g], [x + w - 1, x + w]]) {
+      ctx.drawImage(still, from, y, 1, h, to, y, g, h);
+      // (a corner is its face's corner pixel)
+      for (const [above, below] of rows) ctx.drawImage(still, from, above, 1, 1, to, below, g, g);
+    }
+  }
+  ctx.imageSmoothingEnabled = true;
+  still.width = still.height = 0;
+}
+// A page has the atlas drawn off the main thread, starting as soon as this
+// is imported (sign-atlas-worker.js: the boards' fonts and the sheet's
+// decoding held loading up for a third of a second). `signSheet` is then
+// { picture, worker }, the finished atlas as a bitmap and the worker that
+// drew it, kept for the page's life: the picture lives on the worker's
+// graphics, and with the worker let go before the canvas has copied it, the
+// canvas is left with something else. Where a worker cannot draw it,
+// it is { sheet }, the sheet's image for the page to draw the atlas from
+// (null if it cannot be had: its signs are then left blank). Without a page
+// (Node) it is null.
+const workerPicture = () => new Promise(resolve => {
+  try {
+    const worker = new Worker(new URL('./sign-atlas-worker.js', import.meta.url), { type: 'module' });
+    const fail = () => { worker.terminate(); resolve(null); };
+    worker.onmessage = ({ data }) => data ? resolve({ picture: data, worker }) : fail();
+    worker.onerror = worker.onmessageerror = fail;
+  } catch { resolve(null); }
+});
+const sheetImage = () => new Promise(resolve => {
+  const image = new Image();
+  image.src = SIGN_SHEET_URL;
+  image.decode().then(() => resolve(image), () => { console.warn('The sign sheet did not load'); resolve(null); });
+});
+export const signSheet = globalThis.document
+  ? workerPicture().then(drawn => drawn ?? sheetImage().then(sheet => ({ sheet })))
+  : Promise.resolve(null);
+// The atlas's canvas is filled once a page, as soon as `signSheet` is here
+let atlasCanvas = null;
+function drawAtlas() {
+  const canvas = document.createElement('canvas'); canvas.width = SIGN_ATLAS.width; canvas.height = SIGN_ATLAS.height;
+  const ctx = canvas.getContext('2d');
+  signSheet.then(({ picture, sheet }) => {
+    if (picture) { ctx.drawImage(picture, 0, 0); picture.close(); }
+    else paintAtlas(ctx, sheet);
   });
   return canvas;
 }
@@ -224,7 +260,7 @@ export function createSignMaterial({ map: shared = undefined, edge = null } = {}
     map = new THREE.CanvasTexture(atlasCanvas); map.colorSpace = THREE.SRGBColorSpace;
     // (fascias are mostly seen at a slant, from along the street)
     map.anisotropy = 8;
-    signSheet.then(image => { if (image) map.needsUpdate = true; });
+    signSheet.then(() => { map.needsUpdate = true; });
   }
   const material = new THREE.MeshStandardMaterial({
     map, alphaTest: .5, roughness: edge ? .8 : .62, metalness: 0, side: edge ? THREE.DoubleSide : THREE.FrontSide,

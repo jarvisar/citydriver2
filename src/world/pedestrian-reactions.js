@@ -275,6 +275,9 @@ const dodge = { x: 0, z: 0 };
 // across a pavement with a wall beside it is passed by the road
 const SEEN = 5, ROUND_CLEAR = .2, STEP_ASIDE = 2.2, ROUND_MOST = 4;
 const extent = { a0: 0, a1: 0, c0: 0, c1: 0 }, NONE = [];
+// Getting back round something (see detour): how far aside a turn is tried
+// (m), and the furthest
+const TURNS = [1.2, -1.2, 2.4, -2.4, 3.6, -3.6, 5, -5], TURN_MOST = 5;
 
 // One reusable set of car footprints per rendered frame. Broad bounds reject
 // almost every pedestrian before the swept rectangle test; there are no
@@ -441,7 +444,8 @@ export class PedestrianContacts {
     // Diving out of the way (a dive under way finishes even once dodging stops)
     if (!away && !charged && (this.dodge || person.dive)) this.dive(person, matrix, frame, radius, time);
     // Stepping round what stands or lies on their way
-    if (!away && !charged) this.sidestep(person, matrix, frame, radius, time);
+    // (the test sidestep makes first, here: calling it at all made its closures' context for every resident every frame)
+    if (!away && !charged && (this.rest.length || this.lying.length || person.aside)) this.sidestep(person, matrix, frame, radius, time);
     const at = position.setFromMatrixPosition(matrix).applyMatrix4(frame), car = this.props && (charged ? { car: this.player } : this.hit(person, at.x, at.y, at.z, radius));
     if (!car) {
       // (the dive's leap is drawn once they are known to be clear: it
@@ -650,15 +654,22 @@ export class PedestrianContacts {
   // clear of walls and furniture, or null if the straight way is clear, or
   // no turn nearby makes it so
   detour(ax, az, bx, bz) {
-    const radius = .25;
-    if (!this.scenery || this.walkable(ax, az, bx, bz, radius, false)) return null;
-    const dx = bx - ax, dz = bz - az, length = Math.hypot(dx, dz) || 1;
-    // (aside from the middle of the way, then nearer either end, a little further each try)
-    for (const out of [1.2, -1.2, 2.4, -2.4, 3.6, -3.6, 5, -5]) for (const share of [.5, .3, .7]) {
-      const x = ax + dx * share - dz / length * out, z = az + dz * share + dx / length * out;
-      if (this.standable(x, z, radius, false) && this.walkable(ax, az, x, z, radius, false) && this.walkable(x, z, bx, bz, radius, false)) return { x, z };
-    }
-    return null;
+    const radius = .25, scenery = this.scenery;
+    if (!scenery) return null;
+    // (tried against only what stands near the way and its turns: against
+    // every built cell's colliders, at up to a few thousand points, it took
+    // up to 15 ms)
+    this.scenery = nearWay(scenery, Math.min(ax, bx) - TURN_MOST, Math.max(ax, bx) + TURN_MOST, Math.min(az, bz) - TURN_MOST, Math.max(az, bz) + TURN_MOST, radius);
+    try {
+      if (this.walkable(ax, az, bx, bz, radius, false)) return null;
+      const dx = bx - ax, dz = bz - az, length = Math.hypot(dx, dz) || 1;
+      // (aside from the middle of the way, then nearer either end, a little further each try)
+      for (const out of TURNS) for (const share of [.5, .3, .7]) {
+        const x = ax + dx * share - dz / length * out, z = az + dz * share + dx / length * out;
+        if (this.standable(x, z, radius, false) && this.walkable(ax, az, x, z, radius, false) && this.walkable(x, z, bx, bz, radius, false)) return { x, z };
+      }
+      return null;
+    } finally { this.scenery = scenery; }
   }
   // Getting up, then walking back to where they would be now (where they
   // rejoin their walk, which waits for them, or their own spot), briskly
@@ -700,6 +711,24 @@ export class PedestrianContacts {
   }
 }
 
+// The cells of `scenery` with only their colliders that someone of `radius`
+// anywhere in the box could be in (see standable), as cells for it
+function nearWay(scenery, minX, maxX, minZ, maxZ, radius) {
+  const cells = [];
+  for (const chunk of scenery.values()) {
+    const b = chunk.collisionBounds;
+    if (!b || maxX < b.minX - radius || minX > b.maxX + radius || maxZ < b.minZ - radius || minZ > b.maxZ + radius) continue;
+    const colliders = [];
+    for (const solid of chunk.features.colliders) {
+      if (solid.woken || solid.clutter || solid.shape || solid.top - PAVEMENT_LEVEL <= .3) continue;
+      // (a centimeter to spare, for the rounding of the points along the way)
+      const dx = Math.max(minX - solid.x, 0, solid.x - maxX), dz = Math.max(minZ - solid.z, 0, solid.z - maxZ), reach = solid.reach + radius + .01;
+      if (dx * dx + dz * dz < reach * reach) colliders.push(solid);
+    }
+    cells.push({ collisionBounds: b, features: { colliders } });
+  }
+  return cells;
+}
 // (x, z) as far along (ux, uz) and across it as `extent` reaches, `pad` wider
 function reach(dx, dz, ux, uz, pad) {
   const along = dx * ux + dz * uz, across = dz * ux - dx * uz;

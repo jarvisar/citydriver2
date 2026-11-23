@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { cityWalker, walkerFloat, createWalkerMaterial, walkerAppearance, setWalkerAppearance, setWalkerTurn, taxiGroupAppearance } from './world/city-life.js';
 import { ROAD_LEVEL, PAVEMENT_LEVEL, roadAt, surfaceAt } from './world/city-route.js';
 import { profileOf } from './world/city.js';
-import { RATINGS } from './taxi-run.js';
+import { RATINGS, FARE_BANDS, MOODS } from './taxi-run.js';
 import { taxiResultModel } from './result-model.js';
 import { taxiHudModel } from './run-hud-model.js';
 import { renderRunHud } from './run-hud-dom.js';
@@ -53,6 +53,9 @@ const markerScale = 1.3;
 // Riders' meshes kept for reuse, of each party size: a pickup window holds
 // about sixty fares, half of them lone riders
 const SPARE_RIDERS = 48;
+// Fares stood on the pavement each frame (see fareSpots), besides any within
+// PLACED_NEAR meters of the cab: until then they are where the street has them
+const PLACED_A_FRAME = 2, PLACED_NEAR = 80;
 // Hints for new drivers, each shown once in the instruction line and saved
 export const HINTS = {
   rings: 'Stop in any ring for a fare · green rings pay most',
@@ -186,10 +189,17 @@ export class TaxiView {
     });
     return this.palette.get(color);
   }
-  // Stand-ins for the marker programs, warmed with the city before the first fare.
+  // Stand-ins for the marker programs, warmed with the city before the first
+  // fare, and every badge a fare can wear: drawn at a shift's start, they
+  // held up its first frame.
   warmupObjects() {
-    const { solid, glow } = this.markerMaterials('#ffd240'), badge = this.badge(1, '#ffd240');
-    return [new THREE.Mesh(this.ring, solid), new THREE.Mesh(this.beam, glow), new THREE.Mesh(this.navigation.geometry, this.navigation.material), ...(badge ? [new THREE.Sprite(badge)] : []), ...this.labels.warmupObjects()];
+    const { solid, glow } = this.markerMaterials('#ffd240'), badges = [this.badge(1, '#ffd240')];
+    for (const { color } of FARE_BANDS) {
+      this.markerMaterials(color);
+      for (let count = 1; count <= 4; count++) badges.push(this.badge(count, color));
+      for (const mood of Object.keys(MOODS)) badges.push(this.badge(1, color, mood));
+    }
+    return [new THREE.Mesh(this.ring, solid), new THREE.Mesh(this.beam, glow), new THREE.Mesh(this.navigation.geometry, this.navigation.material), ...badges.filter(Boolean).map(badge => new THREE.Sprite(badge)), ...this.labels.warmupObjects()];
   }
   // A fare still waiting keeps its marker through a refresh. A marker depends
   // only on its stop, apart from its bob, which follows its place in the list.
@@ -269,12 +279,14 @@ export class TaxiView {
     if (!shown) return;
     if (this.revision !== run.revision) this.rebuild(run);
     this.group.position.z = origin;
+    // (a couple of fares a frame find their place on the pavement: all at once, a drop-off's new fares held the frame up)
+    let placing = PLACED_A_FRAME;
     for (const marker of this.markers) {
       const selected = run.status === 'driving' || marker.stop.id === run.boarding?.id;
       marker.group.position.set(marker.stop.u, 0, -marker.stop.s);
       if (marker.person) {
         const { person } = marker;
-        if (!marker.placed && contacts?.space) { marker.spots = fareSpots(marker.stop, marker.street, person.count, contacts.space); marker.placed = true; }
+        if (!marker.placed && contacts?.space && (Math.hypot(marker.stop.s - vehicle.s, marker.stop.u - vehicle.u) < PLACED_NEAR || placing-- > 0)) { marker.spots = fareSpots(marker.stop, marker.street, person.count, contacts.space); marker.placed = true; }
         marker.group.updateMatrix();
         // (the taxi, where they stand, for them to watch it pull up)
         const taxi = this.watch.set(vehicle.u, 0, -vehicle.s).applyMatrix4(this.unplace.copy(marker.group.matrix).invert());

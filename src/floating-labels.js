@@ -12,9 +12,15 @@ const LABELS = 12, LABEL_LIFE = 1.8, LABEL_RISE = 2, LABEL_HEIGHT = 2.4, FIRST_P
 const PIXEL_HEIGHT = 80, WORLD_HEIGHT = 1, PITCH = 1.06;
 const AMOUNT_FONT = "700 104px Oswald, 'Arial Narrow', Arial, sans-serif", CAPTION_FONT = "600 44px Oswald, 'Arial Narrow', Arial, sans-serif";
 const eye = new THREE.Vector3(), base = new THREE.Vector3(), front = new THREE.Vector3(), up = new THREE.Vector3(), depth = new THREE.Vector3(), screen = new THREE.Vector3();
+// The window's size, kept from its resize events: read every frame, it made a
+// phone's browser lay the page out there and then, just after the HUD changed
+const view = { width: 1280, height: 800 };
+const measure = () => { view.width = globalThis.innerWidth || 1280; view.height = globalThis.innerHeight || 800; return view; };
+measure(); globalThis.addEventListener?.('resize', measure);
+const viewport = () => globalThis.addEventListener ? view : measure();
 // Use CSS pixels and the shorter edge so rotating a phone cannot enlarge its rewards.
-const pixelHeight = () => Math.max(52, Math.min(PIXEL_HEIGHT, Math.min(globalThis.innerWidth || 1280, globalThis.innerHeight || 800) * .14));
-const stackSlots = () => Math.max(1, Math.min(4, Math.floor(((globalThis.innerHeight || 800) - 180) / (pixelHeight() * PITCH))));
+const pixelHeight = () => Math.max(52, Math.min(PIXEL_HEIGHT, Math.min(viewport().width, viewport().height) * .14));
+const stackSlots = () => Math.max(1, Math.min(4, Math.floor((viewport().height - 180) / (pixelHeight() * PITCH))));
 
 export class FloatingLabels {
   constructor(scene, name) {
@@ -31,8 +37,18 @@ export class FloatingLabels {
     this.next = 0; this.lastTime = null; this.shown = true;
     this.calm = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
   }
-  // A stand-in for the labels' program, compiled with the city
-  warmupObjects() { return this.labels.length ? [new THREE.Sprite(this.labels[0].material)] : []; }
+  // A stand-in for the labels' program, compiled with the city. A label is
+  // drawn once here and wiped, so the lettering is ready: a visit's first
+  // label took several times as long to draw as the next.
+  warmupObjects() {
+    if (!this.labels.length) return [];
+    const label = this.labels[0];
+    if (label.age >= LABEL_LIFE) {
+      this.draw(label, '+$1,234,567,890s', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', '#9ff2e6');
+      label.ctx.clearRect(0, 0, label.canvas.width, label.canvas.height);
+    }
+    return [new THREE.Sprite(label.material)];
+  }
   reset() {
     for (const label of this.labels) { label.age = Infinity; label.sprite.visible = false; }
     this.lastTime = null;
@@ -45,6 +61,18 @@ export class FloatingLabels {
   pop({ amount, caption = '', colour }) {
     if (!this.labels.length || !this.shown) return false;
     const label = this.labels[this.next]; this.next = (this.next + 1) % this.labels.length;
+    this.draw(label, amount, caption, colour);
+    // Short screens fit fewer slots. Reuse the oldest rather than covering another reward.
+    const rising = this.labels.filter(other => other !== label && other.age < LABEL_LIFE);
+    const stack = Array.from({ length: stackSlots() }, (_, slot) => slot).find(slot => !rising.some(other => other.stack === slot))
+      ?? rising.reduce((oldest, other) => other.age > oldest.age ? other : oldest).stack;
+    for (const other of rising) if (other.stack === stack) { other.age = LABEL_LIFE; other.sprite.visible = false; }
+    Object.assign(label, { age: 0, stack });
+    label.sprite.visible = true; label.material.opacity = 1;
+    return true;
+  }
+  // `amount` under its `caption` on a label's canvas
+  draw(label, amount, caption, colour) {
     const { ctx, canvas } = label;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.lineJoin = 'round';
@@ -85,14 +113,6 @@ export class FloatingLabels {
     ink.addColorStop(0, '#ffffff'); ink.addColorStop(.45, '#fffbea'); ink.addColorStop(1, accent);
     ctx.fillStyle = ink; ctx.fillText(amount, x, baseline, 680);
     label.map.needsUpdate = true;
-    // Short screens fit fewer slots. Reuse the oldest rather than covering another reward.
-    const rising = this.labels.filter(other => other !== label && other.age < LABEL_LIFE);
-    const stack = Array.from({ length: stackSlots() }, (_, slot) => slot).find(slot => !rising.some(other => other.stack === slot))
-      ?? rising.reduce((oldest, other) => other.age > oldest.age ? other : oldest).stack;
-    for (const other of rising) if (other.stack === stack) { other.age = LABEL_LIFE; other.sprite.visible = false; }
-    Object.assign(label, { age: 0, stack });
-    label.sprite.visible = true; label.material.opacity = 1;
-    return true;
   }
   // Moves the labels up and fades them, over `car` (the player's, as drawn),
   // `height` its height. `camera`, if given, keeps near labels small.
@@ -106,9 +126,13 @@ export class FloatingLabels {
     }
     const dt = this.lastTime === null ? 0 : Math.min(.1, Math.max(0, time - this.lastTime));
     this.lastTime = time;
-    const viewportHeight = globalThis.innerHeight || 800, viewportWidth = globalThis.innerWidth || 1280, labelHeight = pixelHeight();
-    let highest = 0;
-    for (const label of this.labels) if (label.age < LABEL_LIFE) highest = Math.max(highest, label.stack);
+    let highest = -1;
+    for (const label of this.labels) {
+      if (label.age < LABEL_LIFE) highest = Math.max(highest, label.stack);
+      else if (label.sprite.visible) label.sprite.visible = false;
+    }
+    if (highest < 0) return;
+    const { height: viewportHeight, width: viewportWidth } = viewport(), labelHeight = pixelHeight();
     const slots = stackSlots();
     // A rotation can leave more live rewards than the shorter screen can hold.
     if (highest >= slots) {

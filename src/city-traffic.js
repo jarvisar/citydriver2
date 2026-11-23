@@ -1197,9 +1197,13 @@ export class CityTraffic {
     // short to get there at speed (an avenue's can be 50 m): no faster than
     // gets it there by the line, since the slower a car goes the more
     // sharply it steers across (see swerve). Six meters are the easing in and out.
-    if (car.turn && !car.around && !this.carriesOn(car)) {
-      const over = Math.abs(this.aim(car) - car.lane), left = this.lineAt(car) - car.along;
-      if (over > .3 && left > 0) limit = Math.min(limit, Math.max(2.5, 1.8 * Math.max(1, left - 6) / over));
+    // (nearly every car is in its lane: that is the cheap test, so it goes first)
+    if (car.turn && !car.around) {
+      const over = Math.abs(this.aim(car) - car.lane);
+      if (over > .3 && !this.carriesOn(car)) {
+        const left = this.lineAt(car) - car.along;
+        if (left > 0) limit = Math.min(limit, Math.max(2.5, 1.8 * Math.max(1, left - 6) / over));
+      }
     }
     return limit;
   }

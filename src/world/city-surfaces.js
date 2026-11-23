@@ -170,6 +170,30 @@ export function containsPoint(polygon, x, s, margin = 0) {
     return sign * (dx * (s - a[1]) - ds * (x - a[0])) >= margin * Math.hypot(dx, ds) - EPS;
   });
 }
+// A polygon's edges, for containsPoint asked of many points (see
+// edgesContain): which way it winds, then for each edge where it starts, its
+// way along and its length
+export function polygonEdges(polygon) {
+  const n = polygon.length, edges = new Float64Array(1 + n * 5);
+  edges[0] = Math.sign(signedArea(polygon));
+  for (let i = 0; i < n; i++) {
+    const a = polygon[i], b = polygon[(i + 1) % n], dx = b[0] - a[0], ds = b[1] - a[1], o = 1 + i * 5;
+    edges[o] = a[0]; edges[o + 1] = a[1]; edges[o + 2] = dx; edges[o + 3] = ds; edges[o + 4] = Math.sqrt(dx * dx + ds * ds);
+  }
+  return edges;
+}
+// containsPoint of the polygon those edges are, to the bit. An edge's length
+// here is a square root's, within a part in 1e15 of Math.hypot's (which is
+// many times slower): hypot is asked only where that could tell
+export function edgesContain(edges, x, s, margin = 0) {
+  const sign = edges[0], end = edges.length;
+  if (end < 16) return false;
+  for (let o = 1; o < end; o += 5) {
+    const dx = edges[o + 2], ds = edges[o + 3], side = sign * (dx * (s - edges[o + 1]) - ds * (x - edges[o])), limit = margin * edges[o + 4] - EPS;
+    if (Math.abs(side - limit) > 1e-9 * (1 + Math.abs(limit)) ? side < limit : !(side >= margin * Math.hypot(dx, ds) - EPS)) return false;
+  }
+  return true;
+}
 // Subtract a convex walkway from a convex planting panel. Resulting pieces
 // remain convex, so rendering and collisions can use the same footprints.
 export function subtractPolygon(subject, input) {

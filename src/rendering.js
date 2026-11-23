@@ -41,7 +41,10 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   // box the HUD is laid out in, so the scene and the panels always agree. The
   // window's size can disagree with it: in Android Chrome's fullscreen,
   // viewport units came out a toolbar taller than the screen.
-  const viewSize = () => ({ width: canvas.clientWidth || window.innerWidth, height: canvas.clientHeight || window.innerHeight });
+  // (measured once a resize: asked every frame while a view's height eases,
+  // it made the browser lay the page out again in each of them)
+  let box = null;
+  const viewSize = () => box ??= { width: canvas.clientWidth || window.innerWidth, height: canvas.clientHeight || window.innerHeight };
   function resizeCanvas() {
     if (renderer.xr.isPresenting) return;
     const { width, height } = viewSize(), ratio = drawingPixelRatio(graphics.settings, window.devicePixelRatio, width, height);
@@ -65,6 +68,12 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   const carSilhouette = new CarSilhouette(scene);
   const clouds = new SkyClouds(scene);
   const drivingFog = fogMaterials ? new PlayerFog('#c2e2db') : new THREE.Fog('#c2e2db', 100, 205);
+  // The overhead views have no fog to see, but draw with the same one pushed
+  // out of reach (to OUT_OF_REACH m). Three keys every program on whether the
+  // scene has fog: without one the title compiled a second copy of every
+  // program, and changing which fog it has makes every material look its
+  // program up again.
+  const OUT_OF_REACH = 3e4;
   const sky = new THREE.HemisphereLight('#e4f2f5', '#617149', 1.45); scene.add(sky);
   const sun = new THREE.DirectionalLight('#fff1db', 2.5); sun.castShadow = true;
   // (each fit sets the shadow camera's extent and depth, and the biases that
@@ -101,13 +110,12 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
     onReady: () => { if (!document.hidden && !renderer.xr.isPresenting) { warmAmbientOcclusion(); render(); } },
     onFail: () => graphics.failAmbientOcclusion(),
   });
-  // The overhead views draw through an orthographic lens without fog, the
-  // chase and first-person views through a perspective one with it. N8AO
-  // builds its shaders for one kind of lens at a time, and three keys each AO
-  // prepass program on whether there is fog. So AO is drawn the other way once
-  // as it loads, and the render after it covers this frame. Otherwise the first
-  // frame after the title compiled them all (150 ms on an RTX 4080, more
-  // without the browser's shader cache).
+  // The overhead views draw through an orthographic lens, the chase and
+  // first-person views through a perspective one. N8AO builds its shaders for
+  // one kind of lens at a time. So AO is drawn the other way once as it loads,
+  // and the render after it covers this frame. Otherwise the first frame after
+  // the title compiled them (150 ms on an RTX 4080, more without the browser's
+  // shader cache).
   const warmLens = new THREE.PerspectiveCamera(), warmOffset = new THREE.Vector3(-8, 4, -8);
   function warmAmbientOcclusion() {
     if (!followedCar) return;
@@ -120,7 +128,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
       if (drivingFog.isPlayerFog) drivingFog.origin.copy(followedCar.position);
     }
     try {
-      scene.fog = lens.isPerspectiveCamera ? drivingFog : null;
+      scene.fog = drivingFog;
       ambientOcclusion.render(lens);
       programs.warm();
     } finally { scene.fog = fog; }
@@ -160,8 +168,8 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   function updateFog() {
     // Overhead cameras turn distance fog into a wash across the top of the city.
     // Only perspective views need fog to conceal the distant streaming boundary.
-    if (!activeCamera().isPerspectiveCamera) { scene.fog = null; return; }
     scene.fog = drivingFog;
+    if (!activeCamera().isPerspectiveCamera) { drivingFog.near = OUT_OF_REACH; drivingFog.far = 2 * OUT_OF_REACH; return; }
     const profile = weatherFog ?? cityFog;
     // Matching the sky exactly lets fully faded terrain disappear without a seam.
     scene.fog.color.copy(scene.background);
@@ -220,7 +228,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
   }
   // The box changes without a window resize too (entering fullscreen, the
   // toolbars settling after a turn), so it is watched itself.
-  const onResize = () => { graphics.suspend(); resizeCanvas(); resize(); };
+  const onResize = () => { box = null; graphics.suspend(); resizeCanvas(); resize(); };
   // (a new reach shows at once, paused or not)
   graphics.onChange(() => { updateFog(); if (initialized) fitShadow(activeCamera(), previousOrigin); });
   window.addEventListener('resize', onResize); globalThis.ResizeObserver && new ResizeObserver(onResize).observe(canvas); resize();
@@ -286,24 +294,21 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
       draw(vrCamera.camera, true);
     } else draw(activeCamera());
   }
-  // Fog is part of every material's program, and only the perspective views
-  // draw with it, so compile the scene both ways. Warm-up objects stand in for
-  // materials that are not on screen yet.
-  // Otherwise the first chase-camera frame, river or fare stalls the drive
-  // while the browser compiles shaders, which phones feel the most.
+  // Every view draws with fog in its programs (see OUT_OF_REACH), so the
+  // scene is compiled once. Warm-up objects stand in for materials that are not on
+  // screen yet. Otherwise the first river or fare stalls the drive while the
+  // browser compiles shaders, which phones feel the most.
   function precompile(warmupObjects = []) {
     const warmup = new THREE.Group(), fog = scene.fog, lens = activeCamera(), pending = [];
     for (const object of [...warmupObjects, carSilhouette.warmup]) warmup.add(object);
     const parallel = renderer.extensions.has('KHR_parallel_shader_compile'), skyVisible = clouds.group.visible, starsVisible = clouds.stars.visible;
     clouds.group.visible = clouds.stars.visible = true;
     try {
-      for (const variant of [null, drivingFog]) {
-        scene.fog = variant;
-        for (const target of [scene, warmup]) {
-          fogMaterials?.prepare(target);
-          if (parallel) pending.push(renderer.compileAsync(target, lens, scene));
-          else renderer.compile(target, lens, scene);
-        }
+      scene.fog = drivingFog;
+      for (const target of [scene, warmup]) {
+        fogMaterials?.prepare(target);
+        if (parallel) pending.push(renderer.compileAsync(target, lens, scene));
+        else renderer.compile(target, lens, scene);
       }
     } finally { scene.fog = fog; clouds.group.visible = skyVisible; clouds.stars.visible = starsVisible; }
     precompileShadowPrograms(renderer, scene, [scene, warmup], lens);
@@ -312,9 +317,8 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
     const textures = new Set();
     for (const target of [scene, warmup]) target.traverse(object => { for (const material of [object.material].flat()) if (material?.map) textures.add(material.map); });
     for (const texture of textures) renderer.initTexture(texture);
-    // A program's first draw also reads back its uniforms and info log, which
-    // for the fogged half waited for the first chase-camera frame (the title's
-    // overhead views draw without fog). Do that now, behind the loading screen.
+    // A program's first draw also reads back its uniforms and info log. Do
+    // that now, behind the loading screen.
     return Promise.all(pending).then(() => {
       programs.warm();
       // Linking does not finish a driver's first-draw setup. Exercise the real
@@ -342,7 +346,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
           if (light.shadow) { light.shadow.map = object.shadow.map; light.shadow.matrix.copy(object.shadow.matrix); }
           drawScene.add(light);
         });
-        for (const variant of [null, drivingFog]) { drawScene.fog = variant; renderer.render(drawScene, lens); }
+        drawScene.fog = drivingFog; renderer.render(drawScene, lens);
         // Finish the queued draws before loading clears, rather than merely
         // moving the stall to the next frame.
         const gl = renderer.getContext();
@@ -355,6 +359,18 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
         renderer.xr.enabled = xrEnabled; renderer.autoClear = autoClear;
       }
     });
+  }
+  // Draws the chase view once, behind the loading screen, and goes back. The
+  // title's overhead view runs none of its camera's code and never draws much
+  // of what it sees, and the first frame after a title button did all of that
+  // (40 ms on a phone).
+  function snap() { initialized = false; cameraTransition.cancel(); thirdPerson.snap(); firstPerson.snap(); }
+  function warmView(car, origin) {
+    const index = view, chase = views.findIndex(each => each.thirdPerson);
+    if (index === chase || renderer.xr.isPresenting) return;
+    setView(chase);
+    try { update(car, 0, origin); draw(activeCamera()); }
+    finally { setView(index); snap(); }
   }
   function setView(index, remember = false, glide = false) {
     if (!Number.isInteger(index) || !views[index]) return views[view].label;
@@ -439,7 +455,7 @@ export function createRendering(canvas, graphics = new Graphics(), { showCarSilh
     }
   };
   const stencil = renderer.getContext().getContextAttributes()?.stencil === true;
-  return { renderer, scene, graphics, ambientOcclusion, vrCamera, stencil, render, precompile, addCuller, setSightLine, setGround, setCameraClearance, look, zoom, setZoom, recenter, cameraPreferences, useCameraProfile,
+  return { renderer, scene, graphics, ambientOcclusion, vrCamera, stencil, render, precompile, warmView, addCuller, setSightLine, setGround, setCameraClearance, look, zoom, setZoom, recenter, cameraPreferences, useCameraProfile,
     get cameraMode() { return cameraMode; }, get viewIndex() { return view; }, get zoomLevel() { return thirdPerson.zoomTarget; },
-    enterVR, exitVR, setView, toggleAO() { return graphics.toggleAmbientOcclusion(); }, get camera() { return activeCamera(); }, update, resize, recordFrame, setWeather, get viewLabel() { return views[view].label; }, get chaseView() { return Boolean(views[view].thirdPerson); }, get firstPersonView() { return Boolean(views[view].firstPerson); }, toggleView() { return setView((view + 1) % views.length, true); }, snap() { initialized = false; cameraTransition.cancel(); thirdPerson.snap(); firstPerson.snap(); } };
+    enterVR, exitVR, setView, toggleAO() { return graphics.toggleAmbientOcclusion(); }, get camera() { return activeCamera(); }, update, resize, recordFrame, setWeather, get viewLabel() { return views[view].label; }, get chaseView() { return Boolean(views[view].thirdPerson); }, get firstPersonView() { return Boolean(views[view].firstPerson); }, toggleView() { return setView((view + 1) % views.length, true); }, snap };
 }

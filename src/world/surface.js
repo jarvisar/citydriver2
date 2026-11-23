@@ -24,7 +24,7 @@ export function setColor(target, value) {
 // last up to a limit, never copied as they fill and joined once when built.
 // `size` floats of each are used.)
 export class Surface {
-  constructor() { this.size = 0; this.blocks = []; this.block = null; this.room = 0; this.flows = null; this.color = new THREE.Color(); }
+  constructor() { this.size = 0; this.blocks = []; this.block = null; this.room = 0; this.flows = null; this.color = new THREE.Color(); this.last = null; }
   face(ax, ay, az, bx, by, bz, cx, cy, cz, color, flow = null) {
     const ux = bx - ax, uy = by - ay, uz = bz - az, vx = cx - ax, vy = cy - ay, vz = cz - az;
     let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
@@ -32,7 +32,10 @@ export class Surface {
     if (!this.room) this.addBlock();
     const block = this.block, o = block.used, p = block.positions, n = block.normals, c = block.colors;
     p[o] = ax; p[o + 1] = ay; p[o + 2] = az; p[o + 3] = bx; p[o + 4] = by; p[o + 5] = bz; p[o + 6] = cx; p[o + 7] = cy; p[o + 8] = cz;
-    const { r, g, b } = setColor(this.color, color);
+    // (most faces come in runs of one color, a string or a number, already
+    // set; a Color may have changed since)
+    if (color !== this.last || typeof color === 'object') { setColor(this.color, color); this.last = color; }
+    const { r, g, b } = this.color;
     for (let k = o; k < o + 9; k += 3) { n[k] = nx; n[k + 1] = ny; n[k + 2] = nz; c[k] = r; c[k + 1] = g; c[k + 2] = b; }
     block.used = o + 9; this.room -= 9; this.size += 9;
     if (flow) { this.flows ??= []; for (let i = 0; i < 3; i++) this.flows.push(flow[0], flow[1]); }
@@ -126,12 +129,19 @@ export class Surface {
       if (!tile) tiles.set(key, tile = []);
       tile.push(face);
     }
-    const attributes = [['position', p, 3], ['normal', this.joined('normals'), 3], ['color', this.joined('colors'), 3], ...(this.flows ? [['flowDirection', this.flows, 2]] : [])];
+    const attributes = [['position', p, 3], ['normal', this.joined('normals'), 3], ['color', this.joined('colors'), 3], ...(this.flows ? [['flowDirection', Float32Array.from(this.flows), 2]] : [])];
     return [...tiles.values(), wide].filter(faces => faces.length).map(faces => {
       const geometry = new THREE.BufferGeometry();
+      // (copied in runs of faces one after another, as most of a tile's are)
+      const runs = [];
+      for (let i = 0; i < faces.length;) {
+        let end = i + 1;
+        while (end < faces.length && faces[end] === faces[end - 1] + 1) end++;
+        runs.push(faces[i], end - i); i = end;
+      }
       for (const [name, values, size] of attributes) {
         const stride = size * 3, array = new Float32Array(faces.length * stride);
-        for (let i = 0, to = 0; i < faces.length; i++) for (let from = faces[i] * stride, end = from + stride; from < end;) array[to++] = values[from++];
+        for (let k = 0, to = 0; k < runs.length; k += 2) { const from = runs[k] * stride, length = runs[k + 1] * stride; array.set(values.subarray(from, from + length), to); to += length; }
         geometry.setAttribute(name, new THREE.BufferAttribute(array, size));
       }
       geometry.computeBoundingSphere();

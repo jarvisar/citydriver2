@@ -6,7 +6,7 @@ import { buildingSignage, shopSigns, upstairsSign, crownSign, lobbySign, worksSi
 import { SIGNS_BY_USE } from './city-signs.js';
 import { grassArea } from './city-grass.js';
 import { placeForLot, placeForBlock } from '../city-exploration.js';
-import { buildLandmark } from './city-landmarks.js';
+import { buildLandmarkSteps } from './city-landmarks.js';
 import { creamTrim, ccw, edgeFacade, bayLayout, windowBays, edgeWindows, shopAwning, cornice, exitDistance } from './city-building-parts.js';
 import { footprintSolids } from './colliders.js';
 import { averagePoint, insidePolygon, polygonBounds, offsetPolygon, offsetPolygonMapped, calcPolygonArea, signedArea, distanceToPolyline, dedupePolygon, isSimple, fitRectangle } from '../mapgen/polygon-util.js';
@@ -270,6 +270,17 @@ function blockPlots(block) {
 function neighboursOf(lot) {
   return blockPlots(lot.block).filter(p => p.index !== lot.index).map(p => p.polygon);
 }
+// Whether wall i of the building planned on a lot (its footprint `ring`) has
+// an outlook (see wallHasOutlook), found once a lot: a lot is planned for the
+// skyline, again close to, and again whenever its cell comes back, and the
+// answer was a twentieth of building a cell
+let outlooks = null;
+function outlook(lot, ring, i) {
+  if (!outlooks || outlooks.city !== CITY.lots) { outlooks = new Map(); outlooks.city = CITY.lots; }
+  let walls = outlooks.get(lot.index);
+  if (!walls) outlooks.set(lot.index, walls = []);
+  return walls[i] ??= wallHasOutlook(ring, i, neighboursOf(lot));
+}
 
 // What stands on a lot: a building shaped like the lot, or a garden where
 // the lot is too small or too awkward for one.
@@ -379,9 +390,8 @@ export function planLot(c, lot) {
   const domestic = !shopfront && (house || type === 'townhouse' || (type === 'pavilion' && insets.lawn));
   // Windows on the street, on the yard when there is room behind, and on the
   // sides only where there is a gap to look out of
-  const neighbours = lot.index === undefined ? null : neighboursOf(lot);
   const windows = wallKinds.map((kind, i) => street[i] || (kind === 'rear' && (rear > 2.4 || footprintOut !== footprint))
-    || (kind === 'side' && (insets.side > 1.5 || Boolean(neighbours && wallHasOutlook(footprintOut, i, neighbours)))));
+    || (kind === 'side' && (insets.side > 1.5 || (lot.index !== undefined && outlook(lot, footprintOut, i)))));
   const plan = { kind: 'building', lot, district, footprint: local(footprintOut, c), lotLocal: local(polygon, c), court: local(court, c), street, windows, type, floors, area: massedArea, breadth,
     wall: pick(style.walls, random), accent: pick(ACCENTS, random), roof: pick(pitched ? TILES[district] ?? ROOFS : ROOFS, random), roofType: house ? 'hip' : pitched ? 'gable' : stepped ? 'terrace' : 'flat', eaves,
     setbackFloors: stepped ? Math.max(2, Math.floor(floors * .57)) : floors, seed: (lot.seed + 9973) >>> 0, variation: integer(random, 0, 3),
@@ -443,7 +453,7 @@ export function shopFront(c, b, facade, base, primary) {
   const f = { ...facade, span,
     add: (offset, ...args) => facade.add(offset + shift, ...args),
     position: (offset, ...args) => facade.position(offset + shift, ...args),
-    local(x, s) { const p = facade.local(x, s); return { ...p, offset: p.offset - shift }; } };
+    local(x, s) { const p = facade.local(x, s); p.offset -= shift; return p; } };
   // A shop round a curve (see facadeRuns) carries on over each bend: its
   // fascia meets the next wall's and its bays run up to the bend. A free end
   // keeps a pier, narrower on a short front, and so does the lobby's side.
@@ -1134,7 +1144,8 @@ export function runJoins(ring, runs) {
 // story, or a block's tall shop or lobby floor
 const baseHeight = b => b.type === 'warehouse' ? 4.8 : b.domestic ? 3.6 : 5.4;
 
-function buildBuilding(c, b) {
+// (a wall's front a step: a tower's was up to a millisecond here)
+function* buildBuildingSteps(c, b) {
   const random = seededRandom(b.seed ^ 0x3c6ef372), bodies = c.bodies, ring = b.footprint, n = ring.length;
   const base = baseHeight(b), height = base + b.floors * 3.6, lower = b.setbackFloors, lowerTop = G + base + lower * 3.6;
   const centre = averagePoint(ring);
@@ -1183,6 +1194,7 @@ function buildBuilding(c, b) {
       if (f.span < 2.5) continue;
       groundFloor(c, { ...b, shopfront: false }, f, base, i === longest, random);
       edgeWindows(c, b, f, G + base, lower, random);
+      yield;
     }
   }
   // Facades, wall by wall: the longest street wall carries the door or the sign
@@ -1223,10 +1235,12 @@ function buildBuilding(c, b) {
     const garden = b.domestic && b.lawn && !f.street;
     if (b.windows[i]) edgeWindows(c, b, f, garden ? G : G + base, garden ? lower + 1 : lower, random);
     if (i === primary && b.windows[i]) fireEscape(c, b, f, G + base, lower);
+    yield;
   }
   if (b.lawn && !c.distant) frontGarden(c, b, ring, primary, random, runs);
   // (a party wall standing clear of the house next door: see paintWall)
   if (!c.distant && b.lot?.index !== undefined) for (let i = 0; i < n; i++) if (!b.street[i] && !b.windows[i]) paintWall(c, b, ring, i, lowerTop - G);
+  yield;
   if (b.roofType === 'hip') { hipRoof(c, b, bodies, ring, lowerTop, solids); return; }
   if (b.roofType === 'gable') { gableRoof(c, b, bodies, ring, lowerTop, random, solids); return; }
   const trim = b.type === 'office' ? '#b8cccd' : '#d6c9b1';
@@ -1243,7 +1257,7 @@ function buildBuilding(c, b) {
       for (let i = 0; i < upper.length; i++) {
         const f = edgeFacade(c, upper[i], upper[(i + 1) % upper.length]);
         f.street = true;
-        if (f.span >= 2.5) edgeWindows(c, b, f, lowerTop + .12, b.floors - lower, random);
+        if (f.span >= 2.5) { edgeWindows(c, b, f, lowerTop + .12, b.floors - lower, random); yield; }
       }
       ({ deck, holes } = cornice(bodies, upper, upperTop, trim, b.roof, wall, .85)); top = upperTop;
       // (the podium's roof, round the tower, is lower: someone up there stood on air over it)
@@ -1286,8 +1300,8 @@ export function* buildCityBuildingSteps(c) {
   const plan = [];
   for (const lot of c.lots) { plan.push(planLot(c, lot)); yield; }
   for (const b of plan) {
-    if (b.kind === 'landmark') { if (!c.structure(0, 0, () => buildLandmark(c, b.lot, b.place))) buildGarden(c, b.lot); }
-    else if (b.kind === 'building') c.structure(0, 0, () => buildBuilding(c, b));
+    if (b.kind === 'landmark') { if (!(yield* c.structureSteps(0, 0, buildLandmarkSteps(c, b.lot, b.place)))) buildGarden(c, b.lot); }
+    else if (b.kind === 'building') yield* c.structureSteps(0, 0, buildBuildingSteps(c, b));
     else if (b.kind === 'garden') buildGarden(c, b.lot);
     yield;
   }

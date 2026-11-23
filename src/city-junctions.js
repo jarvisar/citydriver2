@@ -367,9 +367,11 @@ export class JunctionTraffic {
   // was coming down flat out, and a quarter of all the player's collisions
   // were with cars crossing in front of them.)
   playerIn(movement, player) {
+    // (read once: on the player's car they go through getters)
     const b = movement.bounds, reach = Math.min(PLAYER_AHEAD, Math.max(0, player.speed ?? 0) * 3), hx = Math.sin(player.heading), hy = Math.cos(player.heading);
+    const u = player.u, s = player.s;
     for (let d = 0; d <= reach; d += reach > 40 ? 3 : 2) {
-      const x = player.u + hx * d, y = player.s + hy * d;
+      const x = u + hx * d, y = s + hy * d;
       if (x < b.minX - 3.5 || x > b.maxX + 3.5 || y < b.minY - 3.5 || y > b.maxY + 3.5) continue;
       for (const p of movement.points) if (Math.hypot(p.x - x, p.y - y) < 3.5) return true;
     }

@@ -252,10 +252,19 @@ export function createCar(id = DEFAULT_CAR) {
 }
 // Every machine the player drives or flies knocks over trees and bus shelters (see LooseProps)
 const BREAKS = ['tree', 'shelter'];
-// Each kind of car's flame points (see tailPipes), worked out once a visit
-const TAILS = new Map();
+// Each kind of car's flame points (see tailPipes) and body (see carProfile),
+// worked out once a visit: every car of a kind is the same shape
+const TAILS = new Map(), PROFILES = new Map();
 // Who flies each kind of flying machine (see fit)
 const PILOTS = { helicopter: Helicopter, plane: Plane };
+// A car built ahead of the moment it is wanted (for setCar's `model`), its
+// flame points and body found too: built at the tap that asked for it, a
+// title button froze a phone for a tenth of a second.
+export function prepareCar(id) {
+  const model = createCar(id), entry = carEntry(id);
+  if (!PILOTS[entry.kind] && !TAILS.has(id)) { TAILS.set(id, tailPipes(model.body)); PROFILES.set(id, carProfile(model.car, entry.shape.length)); }
+  return model;
+}
 
 // Ground steeper than this is a cliff face rather than a hillside.
 const STEEP = 1.2;
@@ -372,7 +381,7 @@ export class ActorMotion {
     // street round it looks the size it is.
     if (scale !== 1) this.car.userData.chaseScale = this.car.userData.overheadScale = .1 + .9 * scale;
     // (its shape along its length, for loose pieces to meet: see carProfile)
-    const profile = carProfile(model.car, length);
+    const profile = wheeled ? PROFILES.get(carId) ?? PROFILES.set(carId, carProfile(model.car, length)).get(carId) : carProfile(model.car, length);
     // (and for someone getting in and out, where its door is, meters ahead of
     // its middle, how high its seat, and where to step down: see OnFoot)
     // (and where its boost flames come out, the same for every car of a kind)
@@ -829,11 +838,12 @@ export class PlayerController {
     motion.walker.down = null;
     actor.transfer('inactive'); actor.visual.removeFromParent();
   }
-  setCar(id, { paint = null } = {}) {
+  // (`model`: one prepareCar built for this car, to drive instead of building another)
+  setCar(id, { paint = null, model = null } = {}) {
     const old = this.actor, previous = old.motion, parent = old.visual.parent;
     const state = { s: previous.s, u: previous.u, heading: previous.heading, distance: previous.distance };
     const speed = previous.speed, height = previous.groundedPosition.y, flew = Boolean(previous.pilot);
-    const motion = new ActorMotion(previous.route, state, CARS[id] ? id : DEFAULT_CAR, paint);
+    const motion = new ActorMotion(previous.route, state, CARS[id] ? id : DEFAULT_CAR, paint, CARS[id] ? model : null);
     this.context(motion, previous); this.releasePerson(); this.actor = motion.actor; this.owned.add(this.actor);
     this.actor.transfer('player', parent); this.actor.visual.visible = true;
     if (old.source === 'garage') { old.dispose(); this.owned.delete(old); }

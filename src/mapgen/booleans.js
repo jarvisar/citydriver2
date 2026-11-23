@@ -1,6 +1,7 @@
 import ClipperLib from 'clipper-lib';
 import Vector from './vector.js';
 import { offsetPolygon, dedupePolygon, signedArea } from './polygon-util.js';
+import { quickenSweep } from './clipper-sweep.js';
 
 // Polygon booleans for the shore and the blocks, with Clipper
 // (https://www.angusj.com/delphi/clipper.php) in whole millimeters: integer
@@ -12,6 +13,8 @@ import { offsetPolygon, dedupePolygon, signedArea } from './polygon-util.js';
 // outer anticlockwise and its holes clockwise: the region is always on the
 // left of a ring.
 const SCALE = 1000;
+// (the same results in about half the time: see clipper-sweep.js)
+quickenSweep(ClipperLib);
 const toPath = ring => ring.map(p => ({ X: Math.round(p.x * SCALE), Y: Math.round(p.y * SCALE) }));
 const fromPath = path => dedupePolygon(path.map(p => new Vector(p.X / SCALE, p.Y / SCALE)), 1e-6);
 

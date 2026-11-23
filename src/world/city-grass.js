@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { seededRandom } from './route.js';
 import { cityAffinePoint } from './city-layout-render.js';
-import { containsPoint, signedArea } from './city-surfaces.js';
+import { polygonEdges, edgesContain, signedArea } from './city-surfaces.js';
 
 // Three tapered, leaning blades: twelve opaque triangles, shared city material.
 // Solid facets read from every camera angle without alpha textures or animation.
@@ -38,12 +38,14 @@ const FRINGE_CHECKS = 3000;
 // curved block protects its actual footprint. Grass never changes collision.
 export function* buildGrassFringeSteps(c) {
   if (c.distant || !c.grassAreas?.length) return;
-  const random = seededRandom(c.plan.seed ^ 0x36f91b27), candidates = [], accepted = [];
-  const obstacles = [];
+  // (`taken`: the tufts so far, u then s)
+  const random = seededRandom(c.plan.seed ^ 0x36f91b27), candidates = [], taken = [];
+  const obstacles = [], margins = [];
   const protect = (polygon, margin = .7) => {
     // Test offset half-planes directly: clipping an existing polygon against
     // outward edges cannot expand it, and silently loses the clearance margin.
-    if (polygon.length >= 3) obstacles.push({ polygon, margin });
+    // (Each as its edges, worked out once for all the points asked of it.)
+    if (polygon.length >= 3) { obstacles.push(polygonEdges(polygon)); margins.push(margin); }
   };
   let hull = null;
   for (const collider of c.features.colliders) {
@@ -55,9 +57,9 @@ export function* buildGrassFringeSteps(c) {
   }
   // Setback aprons and small seating pads need not be recorded as walks.
   // Respect their rendered ground triangles too, including shifted lot edges.
-  const lawnHeight = Math.min(...c.grassAreas.map(area => area.y));
+  const lawnHeight = Math.min(...c.grassAreas.map(area => area.y)), lawnColours = new Set(c.grassAreas.map(area => area.color));
   for (const item of c.batches.get('surface-solid')?.items ?? []) {
-    if (item.p[1] + item.scale[1] / 2 < lawnHeight + .005 || c.grassAreas.some(area => area.color === item.color)) continue;
+    if (item.p[1] + item.scale[1] / 2 < lawnHeight + .005 || lawnColours.has(item.color)) continue;
     const f = item.frame;
     protect([[f.u, f.s], [f.u + f.eu, f.s + f.es], [f.u + f.nu, f.s + f.ns]], .65);
   }
@@ -82,26 +84,34 @@ export function* buildGrassFringeSteps(c) {
   for (let i = candidates.length - 1; i > 0; i--) {
     const j = Math.floor(random() * (i + 1)); [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
   }
-  const tint = new THREE.Color();
+  const tint = new THREE.Color(), areas = c.grassAreas, lawns = areas.map(area => polygonEdges(area.polygon));
   let checks = 0;
   for (const center of candidates) {
     if (checks > FRINGE_CHECKS) { checks = 0; yield; }
     const count = random() < .55 ? 2 : 1;
-    for (let i = 0; i < count && accepted.length < MAX_GRASS_TUFTS; i++) {
-      checks += c.grassAreas.length + obstacles.length + accepted.length;
+    for (let i = 0; i < count && taken.length < MAX_GRASS_TUFTS * 2; i++) {
+      checks += areas.length + obstacles.length + taken.length / 2;
       const x = center[0] + (i ? .8 + random() * .4 : 0), s = center[1] + (i ? (random() - .5) * 1.3 : 0);
-      const area = c.grassAreas.find(area => containsPoint(area.polygon, x, s, .9));
-      if (!area) continue;
-      const p = [c.east + x, c.start + s];
-      if (obstacles.some(({ polygon, margin }) => containsPoint(polygon, ...p, -margin)) || accepted.some(q => Math.hypot(p[0] - q[0], p[1] - q[1]) < .85)) continue;
+      let lawn = 0;
+      while (lawn < lawns.length && !edgesContain(lawns[lawn], x, s, .9)) lawn++;
+      if (lawn === lawns.length) continue;
+      const area = areas[lawn], u = c.east + x, v = c.start + s;
+      let clear = true;
+      for (let k = 0; clear && k < obstacles.length; k++) clear = !edgesContain(obstacles[k], u, v, -margins[k]);
+      // (within .85 m of another tuft: by a square root, and by Math.hypot where its last bit could tell)
+      for (let k = 0; clear && k < taken.length; k += 2) {
+        const du = u - taken[k], dv = v - taken[k + 1], apart = du * du + dv * dv;
+        clear = !(apart < .7224 || (apart <= .7226 && Math.hypot(du, dv) < .85));
+      }
+      if (!clear) continue;
       // A fringe in maintained city lawns, not knee-high weeds. Keep its
       // simple silhouette subordinate to the curb and the planted trees.
       const width = .65 + random() * .3, height = .4 + random() * .25;
       tint.set(area.color).multiplyScalar(.92 + random() * .35);
       c.item('grass-fringe', grassGeometry, c.materials.props, [x, area.y, -s], [width, height, width], `#${tint.getHexString()}`, random() * Math.PI * 2);
-      accepted.push(p);
+      taken.push(u, v);
     }
-    if (accepted.length === MAX_GRASS_TUFTS) break;
+    if (taken.length === MAX_GRASS_TUFTS * 2) break;
   }
   c.grassAreas = null;
 }

@@ -17,8 +17,9 @@ import * as THREE from 'three';
 // as [radius, water y], and how many jets arch in from the pool's edge.
 
 // Fountains within NEAR (m) of the camera are drawn, at most MOST of them;
-// their shapes are made from AHEAD, and those of KEEP fountains are kept
-const NEAR = 85, AHEAD = 140, MOST = 4, KEEP = 24, GRAVITY = 9.8;
+// their shapes are made from AHEAD, a part a frame (one already within NEAR
+// HURRY ms of them a frame), and those of KEEP fountains are kept
+const NEAR = 85, AHEAD = 140, MOST = 4, KEEP = 24, GRAVITY = 9.8, HURRY = .3, BIG = 'big';
 // Each vertex's `flow` is (meters along the water's way, a coordinate across
 // it counted in streams, how far it has torn into streams, kind + seed)
 const WATER = 0, FOAM = 1, RIPPLE = 2, SPLASH = 3;
@@ -77,12 +78,14 @@ class Shape {
       return [x + Math.cos(a) * r, y + (i ? 0 : height), z + Math.sin(a) * r, WHITE, i ? .45 : .7, [y, 0, 0, SPLASH + seed]];
     });
   }
-  geometry() {
+  *geometry() {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.position, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.colour, 4));
     g.setAttribute('flow', new THREE.Float32BufferAttribute(this.flow, 4));
     g.setIndex(this.index);
+    // (the normals next, the biggest part: see FountainJets.ahead)
+    yield BIG;
     g.computeVertexNormals();
     g.computeBoundingSphere();
     return g;
@@ -103,6 +106,13 @@ function measure(points, start = 0) {
 
 // A fountain's water, round its own axis
 export function fountainGeometry(f) {
+  const steps = fountainSteps(f);
+  for (;;) { const step = steps.next(); if (step.done) return step.value; }
+}
+// The same a part at a time, the last step returning it (see
+// FountainJets.ahead): made in one go, a big fountain's water held a frame
+// up a millisecond or more
+export function* fountainSteps(f) {
   const shape = new Shape(), seed = k => (((f.phase ?? 0) * .137 + k * .618) % 1 + 1) % 1 * .999;
   const [poolRadius, poolY] = f.pool, bowls = f.bowls ?? [];
   const ripples = (from, to, y, count, salt) => {
@@ -118,11 +128,13 @@ export function fountainGeometry(f) {
   const crown = measure([{ r: 0, y: top + .14 }, { r: .07, y: top + .12 }, ...fall(.1, top, out, 0, catchY, 8)], f.plume)
     .map((p, k, all) => ({ ...p, alpha: .62 - .14 * k / all.length, tear: Math.min(1, Math.max(0, (k - 2) / (all.length - 5))) }));
   shape.lathe(crown, 20, 18, WATER, seed(2));
+  yield;
   shape.ring(Math.max(.05, land - .08), land + .16, catchY + .012, 24, FOAM, seed(3), .7);
   if (bowls.length) ripples(land + .14, catchRadius * .92, catchY, 2, 4);
   // A curtain over each bowl's rim, down to the bowl below or the pool,
   // landing well inside it
-  bowls.forEach(([radius, y], k) => {
+  for (const [k, [radius, y]] of bowls.entries()) {
+    yield;
     const [belowRadius, belowY] = bowls[k + 1] ?? [poolRadius, poolY], start = radius + .04, spill = y + .03, lift = .22;
     const time = (lift + Math.sqrt(lift * lift + 2 * GRAVITY * (spill - belowY))) / GRAVITY;
     const reach = Math.max(.1, Math.min(.42 + .12 * radius, (belowRadius - .25 - start) / time));
@@ -130,22 +142,25 @@ export function fountainGeometry(f) {
       .map((p, i, all) => ({ ...p, alpha: .74 - .2 * i / all.length, tear: Math.max(0, (i - 2) / (all.length - 3)) * .9 }));
     const segments = Math.max(16, Math.min(40, Math.round(Math.PI * 2 * radius / .24))), landing = curtain.at(-1).r;
     shape.lathe(curtain, segments, Math.round(Math.PI * 2 * radius / .2), WATER, seed(10 + k), Math.PI / segments);
+    yield;
     shape.ring(landing - .1, landing + .2, belowY + .012, Math.max(20, segments), FOAM, seed(20 + k), .72);
     ripples(landing + .16, belowRadius - .1, belowY, k === bowls.length - 1 ? 3 : 2, 30 + k);
-  });
+  }
   // Jets arching in from just under the pool's edge to land between the
   // curtain and the basin's wall, each with its splash
   const inner = (bowls.at(-1)?.[0] ?? 0) + .5, from = poolRadius - .18, span = from - inner;
   if (f.ring && bowls.length && span > .28) {
     const height = Math.min(2.2, .55 + .4 * span), rise = Math.sqrt(2 * GRAVITY * height), flight = 2 * rise / GRAVITY, speed = span / flight;
     for (let k = 0; k < f.ring; k++) {
+      if (k % 3 === 0) yield;
       const a = (k + .5) / f.ring * Math.PI * 2, cos = Math.cos(a), sin = Math.sin(a);
       const path = Array.from({ length: 14 }, (_, i) => { const t = i / 13 * flight, r = from - speed * t; return [cos * r, poolY - .02 + rise * t - GRAVITY * t * t / 2, sin * r]; });
       shape.tube(path, t => .036 - t * .008, 5, .7, seed(40 + k));
       shape.splash(cos * inner, poolY + .01, sin * inner, .18, .22, seed(60 + k));
     }
   }
-  return shape.geometry();
+  yield;
+  return yield* shape.geometry();
 }
 
 // One material for all of it: water lit as anything else, its streaks, the
@@ -222,7 +237,8 @@ export class FountainJets {
       scene.add(mesh);
       return mesh;
     });
-    this.shapes = new Map();
+    // (and those part made, by key: see fountainSteps)
+    this.shapes = new Map(); this.making = new Map();
     this.eye = new THREE.Vector3(); this.near = [];
   }
   // After dark the water glows (see CitydriverWorld.setWindowGlow)
@@ -235,33 +251,50 @@ export class FountainJets {
     near.length = 0;
     if (camera) camera.getWorldPosition(this.eye);
     // (nothing allocated a frame: a fountain keeps its distance on itself;
-    // and one coming near has its shapes made ahead, one a frame)
-    let ready = false;
+    // and one coming near has its shapes made ahead, a part of one a frame)
+    let next = null;
     for (const chunk of chunks) {
       const fountains = chunk.features?.fountains;
       if (fountains) for (const fountain of fountains) {
         fountain.distance = camera ? Math.hypot(fountain.x - this.eye.x, fountain.z + origin - this.eye.z) : 0;
+        fountain.key ??= this.key(fountain);
         if (fountain.distance < NEAR) near.push(fountain);
-        else if (fountain.distance < AHEAD && !ready && !this.shapes.has(fountain.key ??= this.key(fountain))) { this.shape(fountain); ready = true; }
+        else if (fountain.distance < AHEAD && !next && !this.shapes.has(fountain.key)) next = fountain;
       }
     }
     near.sort(byDistance);
+    // One in reach without its shapes (a chunk built with it already near,
+    // or a jump) has them made first, up to HURRY ms of them a frame, and
+    // shows once they are: made whole, four at once held a frame up several
+    // milliseconds
+    for (let n = 0; n < MOST && n < near.length; n++) if (!this.shapes.has(near[n].key)) { next = near[n]; break; }
+    if (next) this.ahead(next, next.distance < NEAR ? performance.now() + HURRY : 0);
     for (let n = 0; n < MOST; n++) {
-      const mesh = this.meshes[n], fountain = near[n];
-      mesh.visible = Boolean(fountain);
-      if (!fountain) continue;
-      mesh.geometry = this.shape(fountain);
+      const mesh = this.meshes[n], fountain = near[n], geometry = fountain && this.shapes.get(fountain.key);
+      mesh.visible = Boolean(geometry);
+      if (!geometry) continue;
+      mesh.geometry = geometry;
       mesh.position.set(fountain.x, 0, fountain.z + origin);
     }
   }
   // A fountain's shapes, made when first wanted and kept (a chunk built
   // again makes new records for the same fountains, so they go by place)
   key(fountain) { return `${fountain.x.toFixed(1)},${fountain.z.toFixed(1)}`; }
-  shape(fountain) {
-    const key = fountain.key ??= this.key(fountain);
-    let geometry = this.shapes.get(key);
-    if (geometry) return geometry;
-    geometry = fountainGeometry(fountain);
+  // The next part of a fountain's shapes (see fountainSteps), and more until
+  // `until` (a performance.now() time), leaving the biggest for a frame of its own
+  ahead(fountain, until = 0) {
+    const key = fountain.key;
+    let steps = this.making.get(key);
+    if (!steps) {
+      // (a few part-made at most: those of fountains driven away from go, oldest first)
+      if (this.making.size >= MOST) this.making.delete(this.making.keys().next().value);
+      this.making.set(key, steps = fountainSteps(fountain));
+    }
+    let step;
+    do step = steps.next(); while (!step.done && step.value !== BIG && performance.now() < until);
+    if (step.done) { this.making.delete(key); this.keep(key, step.value); }
+  }
+  keep(key, geometry) {
     this.shapes.set(key, geometry);
     if (this.shapes.size > KEEP) for (const [old, kept] of this.shapes) {
       if (this.meshes.some(mesh => mesh.geometry === kept)) continue;
@@ -269,9 +302,10 @@ export class FountainJets {
     }
     return geometry;
   }
-  // (its program, compiled with the city)
+  // (its program, compiled with the city, on water as big as any: making it
+  // runs the code a first fountain near the player would run cold)
   warmupObjects() {
-    this.warmup ??= fountainGeometry({ spout: 1, plume: .6, bowls: [[.8, .9]], pool: [2.6, .5], ring: 6 });
+    this.warmup ??= fountainGeometry({ spout: 2.4, plume: 1.6, bowls: [[.7, 2.1], [1.3, 1.3], [2, .8]], pool: [4.6, .5], ring: 10 });
     return [new THREE.Mesh(this.warmup, this.material)];
   }
   dispose() {
